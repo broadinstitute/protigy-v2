@@ -1,0 +1,14 @@
+name: new-protigy-test5
+title: New-Protigy-Test
+username: svartany
+account: svartany
+server: rstudio-connect.broadapps.org
+hostUrl: https://rstudio-connect.broadapps.org/__api__
+appId: 114
+bundleId: 533
+url: https://rstudio-connect.broadapps.org/content/01890772-4939-4837-804e-12f8a282704f/
+when: 1682527063.68291
+lastSyncTime: 1682527063.68293
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: test_data/.DS_Store|test_rmd.html|test_rmd.Rmd
