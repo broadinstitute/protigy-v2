@@ -1,10 +1,10 @@
 ## Define UI
-shinyUI(fluidPage(dashboardPage(
+shinyUI(dashboardPage(
   
   dashboardHeader(title = 'New Protigy?'),
   
   dashboardSidebar(
-    tagList("Setup goes here")
+    setupSidebarUI()
   ),
   
   dashboardBody(
@@ -47,4 +47,4 @@ shinyUI(fluidPage(dashboardPage(
     
     
   )
-)))
+))

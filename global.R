@@ -1,6 +1,6 @@
 ###############################################################################
 ## Run this when publishing to RStudio Connect
-# options(repos = c(BiocManager::repositories())
+# options(repos = c(BiocManager::repositories()))
 ###############################################################################
 
 library(shiny)
@@ -37,3 +37,14 @@ col.of.interest <- "PAM50"
 GENEMAX <- 20
 FILENAMESTRING <- "New-Protigy"
 MAX_ANNO_LEVELS <- 5
+
+UPLOADMAX <- 100 # maximum file upload size in MB
+
+
+
+
+# set maximum upload size
+options(shiny.maxRequestSize = UPLOADMAX*1024^2)
+
+
+

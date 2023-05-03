@@ -1,14 +1,14 @@
 name: new-protigy-test6
-title: New-Protigy-Test
+title:
 username: svartany
 account: svartany
 server: rstudio-connect.broadapps.org
 hostUrl: https://rstudio-connect.broadapps.org/__api__
 appId: 115
-bundleId: 534
+bundleId: 537
 url: https://rstudio-connect.broadapps.org/content/69e26cff-ca91-4cc3-af43-8d5890c6cf99/
-when: 1682530300.49328
-lastSyncTime: 1682530300.4933
+when: 1683040388.75894
+lastSyncTime: 1683040388.75895
 asMultiple: FALSE
 asStatic: FALSE
-ignoredFiles: test_data/.DS_Store|test_rmd.html|test_rmd.Rmd
+ignoredFiles: test_data/.DS_Store|test_data/BRCA/phosphoproteome-aggregate.gct|test_data/BRCA/proteome-aggregate.gct|test_data/BRCA/rna-aggregate.gct

@@ -1,5 +1,6 @@
 shinyServer(function(input, output, session) { 
-  setupTabServer()
+  setupSidebarServer()
   heatmapTabServer()
+  
 
 })
