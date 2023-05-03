@@ -21,7 +21,7 @@ summaryTabUI <- function(id = "summaryTab") {
 }
 
 # server for the summary tab
-setupTabServer <- function(id = "summaryTab") { moduleServer( id,
+summaryTabServer <- function(id = "summaryTab") { moduleServer( id,
   ## module function
   function (input, output, session) {
     

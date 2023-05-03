@@ -19,7 +19,7 @@ library(shinyalert)
 library(shinyjqui)
 
 # source helper functions
-lapply(list.files('src/', full.names = T, recursive = T), source)
+lapply(list.files('src', full.names = T, recursive = T, pattern = ".*\\.R"), source)
 
 # for now, load GCT
 if(!('GCTs' %in% ls())) {
