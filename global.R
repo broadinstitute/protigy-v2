@@ -17,6 +17,7 @@ library(WriteXLS)
 library(RColorBrewer)
 library(shinyalert)
 library(shinyjqui)
+library(yaml)
 
 # source helper functions
 lapply(list.files('src', full.names = T, recursive = T, pattern = ".*\\.R"), source)
