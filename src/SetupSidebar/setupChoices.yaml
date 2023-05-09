@@ -1,0 +1,32 @@
+
+intensity_data:
+- 'Yes'
+- 'No'
+
+log_transformation:
+- 'log10'
+- 'log2'
+- 'None'
+
+
+data_normalization:
+- 'Median'
+- 'Median (non-zero)'
+- 'Quantile'
+- 'VSN'
+- 'Median-MAD'
+- 'Median-MAD (non-zero)'
+- '2-component'
+- 'Upper-quartile'
+- 'None'
+
+max_missing:
+  min: 0
+  max: 100
+  step: 1
+  
+data_filter:
+- 'Reproducibility'
+- 'StdDev'
+- 'None'
+

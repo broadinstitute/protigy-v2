@@ -41,8 +41,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # initialize object for GCT parameters
     GCT_parameters <- reactiveValues()
     
-    # read in default settings
+    # read in default settings and choices from yamls
     default_parameters <- read_yaml('src/SetupSidebar/setupDefaults.yaml')
+    parameter_choices <- read_yaml('src/SetupSidebar/setupChoices.yaml')
     
     # initialize reactiveValues for back/next logic
     backNextLogic <- reactiveValues(placeChanged = 0)
@@ -104,7 +105,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns, 
                                                    label = label,
-                                                   parameters = GCT_parameters[[label]])})
+                                                   parameters = GCT_parameters[[label]],
+                                                   parameter_choices = parameter_choices)})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -226,30 +228,30 @@ labelSetupUI <- function(ns, gctFileNames) {
 }
 
 # function containing setup elements for a single GCT file
-gctSetupUI <- function(ns, label, parameters) {
+gctSetupUI <- function(ns, label, parameters, parameter_choices) {
   tagList(
     p(strong(paste('Setup for', label))),
     fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
                                     'Intensity data',
-                                    choices = c('Yes', 'No'),
+                                    choices = parameter_choices$intensity_data,
                                     selected = parameters$intensity_data))),
     fluidRow(column(12, selectInput(ns(paste0(label, '_log_transform')),
                                     label = 'Log-transformation',
-                                    choices = SETUP_LOG_TRANSFORM$choices,
+                                    choices = parameter_choices$log_transformation,
                                     selected = parameters$log_transform))),
     fluidRow(column(12, selectInput(ns(paste0(label, '_data_normalization')),
                                     label = 'Data normalization',
-                                    choices = SETUP_DATA_NORMALIZATION$choices,
+                                    choices = parameter_choices$data_normalization,
                                     selected = parameters$data_normalization))),
-    numericInput(ns(paste0(label, '_max_missing')), 
-                 'Max. % missing values',
-                 min = 0,
-                 max = 100,
-                 value = parameters$max_missing,
-                 step = 1),
+    fluidRow(column(12, numericInput(ns(paste0(label, '_max_missing')), 
+                                     'Max. % missing values',
+                                     min = parameter_choices$max_missing$min,
+                                     max = parameter_choices$max_missing$max,
+                                     value = parameters$max_missing,
+                                     step = parameter_choices$max_missing$step))),
     fluidRow(column(12, selectInput(ns(paste0(label, '_data_filter')),
                                     label = 'Filter data',
-                                    choices = SETUP_FILTER_DATA$choices,
+                                    choices = parameter_choices$data_filter,
                                     selected = parameters$data_filter))),
     checkboxInput(ns('applyToAll'), 'Apply settings to all -omes')
   )
