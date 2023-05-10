@@ -26,5 +26,6 @@ processGCT <- function(parameters) {
   # log transformation
   
   # return processed GCT files
+  message("DONE WITH GCT PROCESSING")
   return(GCTs)
 }

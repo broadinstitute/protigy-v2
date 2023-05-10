@@ -1,8 +1,8 @@
-###############################################################################
+################################################################################
 # Module: SERVER
 # This function contains the entire app's server logic. It calls on module
 # server functions and handles any global variable logic.
-###############################################################################
+################################################################################
 
 shinyServer(function(input, output, session) { 
   

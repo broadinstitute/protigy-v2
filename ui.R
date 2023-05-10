@@ -1,4 +1,10 @@
-## Define UI
+################################################################################
+# Module: UI
+# This function contains the entire app's UI setup. It mainly consists of the 
+# dashboardPage and navbar. All module-specific UI content should be called 
+# using UI module functions.
+################################################################################
+
 shinyUI(dashboardPage(
   
   dashboardHeader(title = 'New Protigy?'),

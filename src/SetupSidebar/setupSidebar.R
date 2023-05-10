@@ -9,7 +9,6 @@ setupSidebarUI <- function(id = "setupSidebar") {
   ns <- NS(id) # namespace function, wrap UI inputId's and outputId's with this (e.g. `ns(id)`)
   
   tagList(
-    
     # file input
     fileInput(ns("gctFiles"), 
               paste("Chose GCT file(s). All files should include the same samples."),
@@ -52,7 +51,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # code for label assignment because it has to be used in 2 separate observeEvent() calls
     labelAssignment <- function() {
       output$sideBarMain <- renderUI({labelSetupUI(ns = ns, gctFileNames = input$gctFiles$name)})
-      output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), "Submit")})
+      output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), 
+                                                   "Submit",
+                                                   class="btn btn-primary")})
       output$leftButton <- NULL
     }
     
@@ -84,8 +85,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     observeEvent(input$submitLabelsButton, {
       new_parameters <- list()
       apply(input$gctFiles, 1, function(file) {
-        file = as.list(file)
-        label <- input[[paste0('Label_', file$name)]] # same inputId as in labelSetupUI()
+        file <- as.list(file)
+        label <- input[[paste0('Label_', file$name)]] # same inputId notation as in labelSetupUI()
         new_parameters[[label]] <<- c(gct_file_path = file$datapath,
                                       gct_file_name = file$name,
                                       default_parameters)
@@ -104,7 +105,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns, 
                                                    label = label,
-                                                   parameters = GCT_parameters()[[label]],
+                                                   parameters = GCT_parameters(),
                                                    parameter_choices = parameter_choices)})
         
         # left button (back to labels or just back)
@@ -116,7 +117,10 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         
         # right button (next or submit gct for processing)
         if (backNextLogic$place == backNextLogic$maxPlace) {
-          output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), "Submit")})
+          output$rightButton <- renderUI({
+            actionButton(ns("submitGCTButton"),
+                         "Submit",
+                         class="btn btn-primary")})
         } else {
           output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
         }
@@ -125,7 +129,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # change next button to submit button if applyToAll == TRUE
     observeEvent(input$applyToAll, {
       if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
-        output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), "Submit")})
+        output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), 
+                                                     "Submit", 
+                                                     class="btn btn-primary")})
       } else {
         output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
       }
@@ -161,13 +167,12 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       
       # select labels for assignment
       if (input$applyToAll) {
-        # assign to all labels
-        assignment_labels = names(GCT_parameters())
+        assignment_labels = names(GCT_parameters()) # all labels
       } else {
-        assignment_labels <- current_label
+        assignment_labels <- current_label # just the current label
       }
 
-      # assign outputs based on current user selection
+      # assign outputs based on current user selections
       new_parameters <- GCT_parameters()
       for (label in assignment_labels) {
         new_parameters[[label]]$log_transform <- input[[paste0(current_label, '_log_transform')]]
@@ -203,9 +208,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       GCTs(processGCT(GCT_parameters())) # set GCTs reactiveVal
-      message('DONE')
     })
-    
     
     # return GCT parameters and GCTs (both are reactiveVals)
     return(list(
@@ -215,60 +218,3 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     
   }) # end moduleServer()
 } # end setupSidebarServer
-    
-
-################################################################################
-# Helper UI functions
-################################################################################
-
-# function for label assignment UI
-labelSetupUI <- function(ns, gctFileNames) {
-  tagList(
-    p(strong('Assign labels')),
-    lapply(gctFileNames, function(file) {
-      textInput(inputId = ns(paste0('Label_', file)),
-                label = file,
-                placeholder = "Proteome or Prot")
-    })
-  )
-}
-
-# function containing setup elements for a single GCT file
-gctSetupUI <- function(ns, label, parameters, parameter_choices) {
-  tagList(
-    p(strong(paste('Setup for', label))),
-    fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
-                                    'Intensity data',
-                                    choices = parameter_choices$intensity_data,
-                                    selected = parameters$intensity_data))),
-    fluidRow(column(12, selectInput(ns(paste0(label, '_log_transform')),
-                                    label = 'Log-transformation',
-                                    choices = parameter_choices$log_transformation,
-                                    selected = parameters$log_transform))),
-    fluidRow(column(12, selectInput(ns(paste0(label, '_data_normalization')),
-                                    label = 'Data normalization',
-                                    choices = parameter_choices$data_normalization,
-                                    selected = parameters$data_normalization))),
-    fluidRow(column(12, numericInput(ns(paste0(label, '_max_missing')), 
-                                     'Max. % missing values',
-                                     min = parameter_choices$max_missing$min,
-                                     max = parameter_choices$max_missing$max,
-                                     value = parameters$max_missing,
-                                     step = parameter_choices$max_missing$step))),
-    fluidRow(column(12, selectInput(ns(paste0(label, '_data_filter')),
-                                    label = 'Filter data',
-                                    choices = parameter_choices$data_filter,
-                                    selected = parameters$data_filter))),
-    checkboxInput(ns('applyToAll'), 'Apply settings to all -omes')
-  )
-}
-
-# function for advanced settings UI
-advancedSettingsUI <- function(ns) {
-  tagList(
-    p(strong("Advanced settings")),
-    fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
-    fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
-    hr()
-  )
-}

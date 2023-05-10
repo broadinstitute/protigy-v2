@@ -1,6 +1,6 @@
 ###############################################################################
 # Module: GLOBAL
-# This code is one once at the beginning of each R session. It contains global
+# This code is run once at the beginning of each R session. It contains global
 # libraries, functions, and objects that should be shared across all users.
 ###############################################################################
 # Run this when publishing to RStudio Connect:

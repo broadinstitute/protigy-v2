@@ -1,3 +1,5 @@
+# yaml containing detault options for GCT setup
+
 log_transform: None
 data_normalization: None
 data_filter: None
