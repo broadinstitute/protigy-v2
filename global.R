@@ -1,8 +1,13 @@
 ###############################################################################
-## Run this when publishing to RStudio Connect
+# Module: GLOBAL
+# This code is one once at the beginning of each R session. It contains global
+# libraries, functions, and objects that should be shared across all users.
+###############################################################################
+# Run this when publishing to RStudio Connect:
 # options(repos = c(BiocManager::repositories()))
 ###############################################################################
 
+# load all libraries here
 library(shiny)
 library(shinydashboard)
 library(cmapR)
@@ -22,6 +27,19 @@ library(yaml)
 # source helper functions
 lapply(list.files('src', full.names = T, recursive = T, pattern = ".*\\.R"), source)
 
+# define global variables
+FILENAMESTRING <- "New-Protigy" # filename prefix for downloads
+UPLOADMAX <- 100 # maximum file upload size in MB
+
+# set maximum upload size
+options(shiny.maxRequestSize = UPLOADMAX*1024^2)
+
+
+
+################################################################################
+# Everything under this is temporary
+################################################################################
+
 # for now, load GCT
 if(!('GCTs' %in% ls())) {
   # files to load
@@ -35,17 +53,7 @@ if(!('GCTs' %in% ls())) {
 # for now, hard code
 col.of.interest <- "PAM50"
 
+# variables for multi-ome data viewer
 GENEMAX <- 20
-FILENAMESTRING <- "New-Protigy"
 MAX_ANNO_LEVELS <- 5
-
-UPLOADMAX <- 100 # maximum file upload size in MB
-
-
-
-
-# set maximum upload size
-options(shiny.maxRequestSize = UPLOADMAX*1024^2)
-
-
 

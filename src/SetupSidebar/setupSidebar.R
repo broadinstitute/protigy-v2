@@ -38,15 +38,16 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
-    # initialize object for GCT parameters
-    GCT_parameters <- reactiveValues()
+    # initialize objects for GCT and parameters
+    GCT_parameters <- reactiveVal()
+    GCTs <- reactiveVal()
+    
+    # initialize reactiveValues for back/next logic
+    backNextLogic <- reactiveValues(placeChanged = 0)
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml('src/SetupSidebar/setupDefaults.yaml')
     parameter_choices <- read_yaml('src/SetupSidebar/setupChoices.yaml')
-    
-    # initialize reactiveValues for back/next logic
-    backNextLogic <- reactiveValues(placeChanged = 0)
     
     # code for label assignment because it has to be used in 2 separate observeEvent() calls
     labelAssignment <- function() {
@@ -79,33 +80,31 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
     })
     
-    
-    
     # update GCT_parameters with gct file paths and labels once labels are submitted
     observeEvent(input$submitLabelsButton, {
-      GCT_parameters <<- reactiveValues() # remove current entries
+      new_parameters <- list()
       apply(input$gctFiles, 1, function(file) {
         file = as.list(file)
-        label <- input[[paste0('Label_', file$name)]]
-        GCT_parameters[[label]] <<- do.call('reactiveValues', 
-                                            c(gct_file_path = file$datapath, 
-                                              gct_file_name = file$name,
-                                              default_parameters))
+        label <- input[[paste0('Label_', file$name)]] # same inputId as in labelSetupUI()
+        new_parameters[[label]] <<- c(gct_file_path = file$datapath,
+                                      gct_file_name = file$name,
+                                      default_parameters)
       })
+      GCT_parameters(new_parameters) # update GCT_parameters reactiveVal
     })
     
-    # display the correct GCT processing page
+    # display the correct GCT processing page, handling back/next logic
     observeEvent(
       eventExpr = backNextLogic$placeChanged, 
       ignoreInit = TRUE,
       handlerExpr = {
         # get the correct label for this file
-        label = names(GCT_parameters)[backNextLogic$place]
+        label = names(GCT_parameters())[backNextLogic$place]
         
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns, 
                                                    label = label,
-                                                   parameters = GCT_parameters[[label]],
+                                                   parameters = GCT_parameters()[[label]],
                                                    parameter_choices = parameter_choices)})
         
         # left button (back to labels or just back)
@@ -123,6 +122,15 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         }
     })
     
+    # change next button to submit button if applyToAll == TRUE
+    observeEvent(input$applyToAll, {
+      if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
+        output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), "Submit")})
+      } else {
+        output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
+      }
+    }) 
+    
     # reactive to the next button
     observeEvent(input$nextButton, {
       if (backNextLogic$place < backNextLogic$maxPlace) {
@@ -139,15 +147,6 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
     })
     
-    # change next button to submit button if applyToAll == TRUE
-    observeEvent(input$applyToAll, {
-      if (input$applyToAll) {
-        output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), "Submit")})
-      } else {
-        output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
-      }
-    }) 
-    
     # once GCT setup submitted, go to advanced settings
     observeEvent(input$submitGCTButton, {
       output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns)})
@@ -158,24 +157,26 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # code to collect user inputs because it has to be used in separate observeEvent() calls
     collectInputs <- function() {
       # get the current label
-      current_label <- names(GCT_parameters)[backNextLogic$place]
+      current_label <- names(GCT_parameters())[backNextLogic$place]
       
       # select labels for assignment
       if (input$applyToAll) {
         # assign to all labels
-        assignment_labels = names(GCT_parameters)
+        assignment_labels = names(GCT_parameters())
       } else {
         assignment_labels <- current_label
       }
-      
+
       # assign outputs based on current user selection
+      new_parameters <- GCT_parameters()
       for (label in assignment_labels) {
-        GCT_parameters[[label]]$log_transform <<- input[[paste0(current_label, '_log_transform')]]
-        GCT_parameters[[label]]$data_normalization <<- input[[paste0(current_label, '_data_normalization')]]
-        GCT_parameters[[label]]$data_filter <<- input[[paste0(current_label, '_data_filter')]]
-        GCT_parameters[[label]]$max_missing <<- input[[paste0(current_label, '_max_missing')]]
-        GCT_parameters[[label]]$intensity_data <<- input[[paste0(current_label, '_intensity_data')]]
+        new_parameters[[label]]$log_transform <- input[[paste0(current_label, '_log_transform')]]
+        new_parameters[[label]]$data_normalization <- input[[paste0(current_label, '_data_normalization')]]
+        new_parameters[[label]]$data_filter <- input[[paste0(current_label, '_data_filter')]]
+        new_parameters[[label]]$max_missing <- input[[paste0(current_label, '_max_missing')]]
+        new_parameters[[label]]$intensity_data <- input[[paste0(current_label, '_intensity_data')]]
       }
+      GCT_parameters(new_parameters) # assign reactiveVal
     }
     
     # collect user options once next button is hit
@@ -199,15 +200,20 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       priority = 1, # this code is executed before other observeEvent with priority = 0 (default)
       handlerExpr = collectInputs())
     
-    # return GCT parameters and submitGCTButton so GCT processing can happen in main server
+    # process GCTs 
+    observeEvent(input$submitGCTButton, {
+      GCTs(processGCT(GCT_parameters())) # set GCTs reactiveVal
+      message('DONE')
+    })
+    
+    
+    # return GCT parameters and GCTs (both are reactiveVals)
     return(list(
-      GCT_parameters = reactive(GCT_parameters),
-      submitGCTButton = reactive(input$submitGCTButton)
+      GCT_parameters = GCT_parameters,
+      GCTs = GCTs
     ))
     
   }) # end moduleServer()
-  
-  
 } # end setupSidebarServer
     
 
