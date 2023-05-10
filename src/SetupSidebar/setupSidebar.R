@@ -53,7 +53,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       output$sideBarMain <- renderUI({labelSetupUI(ns = ns, gctFileNames = input$gctFiles$name)})
       output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), 
                                                    "Submit",
-                                                   class="btn btn-primary")})
+                                                   class = "btn btn-primary")})
       output$leftButton <- NULL
     }
     
@@ -120,7 +120,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
           output$rightButton <- renderUI({
             actionButton(ns("submitGCTButton"),
                          "Submit",
-                         class="btn btn-primary")})
+                         class = "btn btn-primary")})
         } else {
           output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
         }
@@ -131,7 +131,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
         output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), 
                                                      "Submit", 
-                                                     class="btn btn-primary")})
+                                                     class = "btn btn-primary")})
       } else {
         output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
       }
