@@ -24,9 +24,6 @@ library(shinyalert)
 library(shinyjqui)
 library(yaml)
 
-# source helper functions
-lapply(list.files('src', full.names = T, recursive = T, pattern = ".*\\.R"), source)
-
 # define global variables
 FILENAMESTRING <- "New-Protigy" # filename prefix for downloads
 UPLOADMAX <- 100 # maximum file upload size in MB
@@ -41,14 +38,14 @@ options(shiny.maxRequestSize = UPLOADMAX*1024^2)
 ################################################################################
 
 # for now, load GCT
-if(!('GCTs' %in% ls())) {
-  # files to load
-  gct_files <- c(Prot = 'test_data/BRCA/proteome-aggregate.gct', 
-                 Phos = 'test_data/BRCA/phosphoproteome-aggregate.gct',
-                 RNA = 'test_data/BRCA/rna-aggregate.gct')
-  
-  GCTs <- lapply(gct_files, parse_gctx)
-}
+# if(!('GCTs' %in% ls())) {
+#   # files to load
+#   gct_files <- c(Prot = 'test_data/BRCA/proteome-aggregate.gct', 
+#                  Phos = 'test_data/BRCA/phosphoproteome-aggregate.gct',
+#                  RNA = 'test_data/BRCA/rna-aggregate.gct')
+#   
+#   GCTs <- lapply(gct_files, parse_gctx)
+# }
 
 # for now, hard code
 col.of.interest <- "PAM50"

@@ -1,15 +1,17 @@
 ################################################################################
 # Module: TEMPLATE
-# This code contains the UI and Server modules
 ################################################################################
 
 ## Steps for adding a new module
 # 1. add core UI and server logic here
-# 2. add helper functions or additional scripts in corresponding folder
+# 2. add helper functions in this same script
 # 3. add necessary libraries in global.R
 # 4. call your UI function in ui.R
 # 5. call your server function in server.R
 
+################################################################################
+# Shiny funcions (UI and server)
+################################################################################
 
 # UI for the summary tab
 templateTabUI <- function(id = "templateTab") {
@@ -32,7 +34,17 @@ templateTabServer <- function(id = "templateTab") { moduleServer(
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
+    # TODO: source your helper functions locally
+    source('helperCode.R', local=T)
+    
     # TODO: add server logic here
     
   })
 }
+
+
+################################################################################
+# Helper functions
+################################################################################
+
+# add your helper functions here

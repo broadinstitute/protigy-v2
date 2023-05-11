@@ -29,8 +29,10 @@ shinyServer(function(input, output, session) {
   
   
   ## module server function calls
-  heatmapTabServer()
-  summaryTabServer()
+  # heatmapTabServer()
+  # summaryTabServer()
   
 
 })
+
+

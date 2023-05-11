@@ -1,8 +1,11 @@
 ################################################################################
 # Module: SETUP SIDEBAR
-# This code contains the UI and Server modules
 ################################################################################
 
+
+################################################################################
+# Shiny functions (server and UI)
+################################################################################
 
 # UI for the summary tab
 setupSidebarUI <- function(id = "setupSidebar") {
@@ -45,8 +48,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     backNextLogic <- reactiveValues(placeChanged = 0)
     
     # read in default settings and choices from yamls
-    default_parameters <- read_yaml('src/SetupSidebar/setupDefaults.yaml')
-    parameter_choices <- read_yaml('src/SetupSidebar/setupChoices.yaml')
+    default_parameters <- system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp')
+    parameter_choices <- system.file('setup_parameters/setupChoices.yaml', package = 'protigyRevamp')
     
     # code for label assignment because it has to be used in 2 separate observeEvent() calls
     labelAssignment <- function() {
@@ -219,3 +222,103 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     
   }) # end moduleServer()
 } # end setupSidebarServer
+
+
+
+
+
+################################################################################
+# Helper UI functions. Most of these are called in renderUI() functions inside 
+# of setupSidebarServer()
+################################################################################
+
+# function for label assignment UI
+labelSetupUI <- function(ns, gctFileNames) {
+  tagList(
+    p(strong('Assign labels')),
+    lapply(gctFileNames, function(file) {
+      textInput(inputId = ns(paste0('Label_', file)),
+                label = file,
+                placeholder = "Proteome or Prot")
+    })
+  )
+}
+
+# function containing setup elements for a single GCT file
+gctSetupUI <- function(ns, label, parameters, parameter_choices) {
+  tagList(
+    p(strong(paste('Setup for', label))),
+    fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
+                                    'Intensity data',
+                                    choices = parameter_choices$intensity_data,
+                                    selected = parameters[[label]]$intensity_data))),
+    fluidRow(column(12, selectInput(ns(paste0(label, '_log_transform')),
+                                    label = 'Log-transformation',
+                                    choices = parameter_choices$log_transformation,
+                                    selected = parameters[[label]]$log_transform))),
+    fluidRow(column(12, selectInput(ns(paste0(label, '_data_normalization')),
+                                    label = 'Data normalization',
+                                    choices = parameter_choices$data_normalization,
+                                    selected = parameters[[label]]$data_normalization))),
+    fluidRow(column(12, numericInput(ns(paste0(label, '_max_missing')), 
+                                     'Max. % missing values',
+                                     min = parameter_choices$max_missing$min,
+                                     max = parameter_choices$max_missing$max,
+                                     value = parameters[[label]]$max_missing,
+                                     step = parameter_choices$max_missing$step))),
+    fluidRow(column(12, selectInput(ns(paste0(label, '_data_filter')),
+                                    label = 'Filter data',
+                                    choices = parameter_choices$data_filter,
+                                    selected = parameters[[label]]$data_filter))),
+    if (length(parameters) > 1) {
+      fluidRow(column(12, checkboxInput(ns('applyToAll'), 'Apply settings to all -omes')))
+    }
+  )
+}
+
+# function for advanced settings UI
+advancedSettingsUI <- function(ns, labels) {
+  tagList(
+    p(strong("Advanced settings")),
+    if (length(labels) > 1) {
+      fluidRow(column(12, selectInput(ns('defaultOme'),
+                                      "Default -ome",
+                                      choices = labels)))
+    },
+    fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
+    fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
+    hr()
+  )
+}
+
+
+################################################################################
+# Helper functions for the setup sidebar module
+################################################################################
+
+# function to parse, normalize, filter, etc. GCT file(s)
+# INPUT: parameters list from setup 
+# OUTPUT: list of processed GCTs
+processGCT <- function(parameters) {
+  
+  message("\nProcessing GCTs...")
+  
+  # parse GCTs
+  GCTs <- lapply(parameters, function(p) parse_gctx(p$gct_file_path))
+  
+  # validate GCTs
+  
+  # handle intensity data?
+  
+  # max missing value filter
+  
+  # data filter
+  
+  # data normalization
+  
+  # log transformation
+  
+  # return processed GCT files
+  message("DONE WITH GCT PROCESSING")
+  return(GCTs)
+}
