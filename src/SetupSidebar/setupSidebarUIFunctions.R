@@ -49,9 +49,14 @@ gctSetupUI <- function(ns, label, parameters, parameter_choices) {
 }
 
 # function for advanced settings UI
-advancedSettingsUI <- function(ns) {
+advancedSettingsUI <- function(ns, labels) {
   tagList(
     p(strong("Advanced settings")),
+    if (length(labels) > 1) {
+      fluidRow(column(12, selectInput(ns('defaultOme'),
+                                    "Default -ome",
+                                    choices = labels)))
+    },
     fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
     fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
     hr()

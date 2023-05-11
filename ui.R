@@ -14,7 +14,6 @@ shinyUI(dashboardPage(
   ),
   
   dashboardBody(
-    
     # custom CSS for the navbar title and settings icon
     tags$head(tags$style(
       type = 'text/css',

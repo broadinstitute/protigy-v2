@@ -155,7 +155,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     
     # once GCT setup submitted, go to advanced settings
     observeEvent(input$submitGCTButton, {
-      output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns)})
+      labels = names(GCT_parameters())
+      output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns, labels = labels)})
       output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
       output$rightButton <- NULL
     })
