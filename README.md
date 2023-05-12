@@ -1,9 +1,10 @@
 # proteomics-protigy-revamp
 
-### proposed global variables
+### Useful resources
 
-list of GCTs with label -\> GCT object - GCTs need to be validated to make sure rdesc and cdesc match with mat
-
-colors in some way - for now, maybe use a function that automatically generates colors for ALL annotations - user can click a button to re-generate colors (essentially set new random seed) - allow space for development of custom color selection in the future
-
-some form of storing setup parameters - what statistical test was run - p-value - etc
+- [Basics for R shiny modules](https://shiny.posit.co/r/articles/improve/modules/)
+- [More info on Shiny modules](https://mastering-shiny.org/scaling-modules.html)
+- [Basics for shiny code in an R package](https://mastering-shiny.org/scaling-packaging.html)
+- [Basics for testing your app](https://mastering-shiny.org/scaling-testing.html)
+- R package code structure for [R scripts](https://r-pkgs.org/code.html) and [other components](https://r-pkgs.org/misc.html)
+- [Advanced deployment](https://engineering-shiny.org/deploy.html)
