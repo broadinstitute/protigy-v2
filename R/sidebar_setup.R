@@ -48,8 +48,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     backNextLogic <- reactiveValues(placeChanged = 0)
     
     # read in default settings and choices from yamls
-    default_parameters <- system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp')
-    parameter_choices <- system.file('setup_parameters/setupChoices.yaml', package = 'protigyRevamp')
+    default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp'))
+    parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'protigyRevamp'))
     
     # code for label assignment because it has to be used in 2 separate observeEvent() calls
     labelAssignment <- function() {
