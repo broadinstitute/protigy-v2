@@ -23,7 +23,7 @@ shinyUI(dashboardPage(
   
     navbarPage(
       title = '',
-      tabPanel("Summary"),
+      tabPanel("Summary", summaryTabUI()),
       navbarMenu(
         "Clustering",
         tabPanel("Static Heatmap"),
@@ -47,7 +47,7 @@ shinyUI(dashboardPage(
         tabPanel("2")),
       navbarMenu(
         "Multi-ome",
-        tabPanel('Heatmap'),
+        tabPanel('Heatmap', heatmapTabUI()),
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
       tabPanel("Export")

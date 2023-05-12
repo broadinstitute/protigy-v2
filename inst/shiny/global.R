@@ -8,21 +8,21 @@
 ###############################################################################
 
 # load all libraries here
-library(shiny)
-library(shinydashboard)
-library(cmapR)
-library(ggplot2)
-library(plotly)
-library(tools)
-library(dplyr)
-library(circlize)
-library(ComplexHeatmap)
-library(shinyBS)
-library(WriteXLS)
-library(RColorBrewer)
-library(shinyalert)
-library(shinyjqui)
-library(yaml)
+# library(shiny)
+# library(shinydashboard)
+# library(cmapR)
+# library(ggplot2)
+# library(plotly)
+# library(tools)
+# library(dplyr)
+# library(circlize)
+# library(ComplexHeatmap)
+# library(shinyBS)
+# library(WriteXLS)
+# library(RColorBrewer)
+# library(shinyalert)
+# library(shinyjqui)
+# library(yaml)
 
 # define global variables
 FILENAMESTRING <- "New-Protigy" # filename prefix for downloads
@@ -38,14 +38,14 @@ options(shiny.maxRequestSize = UPLOADMAX*1024^2)
 ################################################################################
 
 # for now, load GCT
-# if(!('GCTs' %in% ls())) {
-#   # files to load
-#   gct_files <- c(Prot = 'test_data/BRCA/proteome-aggregate.gct', 
-#                  Phos = 'test_data/BRCA/phosphoproteome-aggregate.gct',
-#                  RNA = 'test_data/BRCA/rna-aggregate.gct')
-#   
-#   GCTs <- lapply(gct_files, parse_gctx)
-# }
+if(!('GCTs' %in% ls())) {
+  # files to load
+  gct_files <- c(Prot = system.file('test_data/BRCA/proteome-aggregate.gct', package = "protigyRevamp"),
+                 Phos = system.file('test_data/BRCA/phosphoproteome-aggregate.gct', package = "protigyRevamp"),
+                 RNA = system.file('test_data/BRCA/rna-aggregate.gct', package = "protigyRevamp"))
+
+  GCTs <- lapply(gct_files, parse_gctx)
+}
 
 # for now, hard code
 col.of.interest <- "PAM50"

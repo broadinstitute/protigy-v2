@@ -8,3 +8,20 @@ License: use_mit_license()
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
+Imports: 
+    circlize,
+    cmapR,
+    ComplexHeatmap,
+    dplyr,
+    ggplot2,
+    pkgload,
+    plotly,
+    RColorBrewer,
+    shiny,
+    shinyalert,
+    shinyBS,
+    shinydashboard,
+    shinyjqui,
+    WriteXLS,
+    yaml,
+    grid
