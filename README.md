@@ -8,6 +8,7 @@
 -   [Basics for testing your app](https://mastering-shiny.org/scaling-testing.html)
 -   R package code structure for [R scripts](https://r-pkgs.org/code.html) and [other components](https://r-pkgs.org/misc.html)
 -   [Advanced deployment](https://engineering-shiny.org/deploy.html)
+-   [Handling package dependencies](https://r-pkgs.org/dependencies-in-practice.html)
 
 ### Managing package dependencies
 
@@ -16,7 +17,7 @@ Dependencies need to be listed in 2 places:
 1.  In the `DESCRIPTION` file under `Imports`. This add the dependency as a part of your package metadata. Importantly, this **does not load the dependency!**
     -   You can use the function `usethis::use_package` to automatically add the dependency to your imports section (e.g. run \``usethis::use_package("shiny")` from the R console)
     -   Alternatively, you can manually edit the `DESCRIPTION` file.
-2.  In `R/launchApp.R` as an `@import` or `@importFrom` statement. This actually loads the package when the app runs.
+2.  In `R/protigyRevamp-package.R` as an `@import` or `@importFrom` statement. This actually loads the package when the app runs.
     -   `@import` will load the entire package. It's similar to `library` or `require`.
     -   `@importFrom` lets you load only specific functions. This is best if you're only using a couple functions from a large package.
     -   **IMPORTANT:** If you edit any `@import` or `@importFrom` commands, you need to update your package `NAMESPACE`! To do this, run `devtools::document()`.
