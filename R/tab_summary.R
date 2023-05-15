@@ -6,9 +6,7 @@ summaryTabUI <- function(id = "summaryTab") {
   ns <- NS(id) # namespace function
   
   tagList(
-    selectInput(ns('ome'), 'Select -ome', 
-                choices = names(GCTs),
-                selected = names(GCTs)[1]),
+    selectInput(ns('ome'), 'Select -ome', choices = NULL),
     fluidRow(box(
       title = "Quantified Features",
       solidHeader = TRUE,
@@ -21,15 +19,37 @@ summaryTabUI <- function(id = "summaryTab") {
 }
 
 # server for the summary tab
-summaryTabServer <- function(id = "summaryTab") { moduleServer( id,
+summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer( id,
   ## module function
   function (input, output, session) {
     
     # get namespace
     ns <- session$ns
     
+    # gather GCTs and parameters
+    GCTs <- reactive({
+      validate(need(GCTs_and_params()$GCTs, "GCTs not yet processed"))
+      GCTs_and_params()$GCTs
+    })
+    parameters <- reactive({
+      validate(need(GCTs_and_params()$GCTs, "GCTs not yet processed"))
+      GCTs_and_params()$parameters
+    })
+    
+    # update -ome options once GCTs processed
+    observe({
+      omes <- names(GCTs())
+      updateSelectInput(inputId = 'ome', 
+                        choices = omes, 
+                        selected = omes[1])
+    })
+    
     output$summary.quant.features <- renderPlotly({
-      summary.quant.features(GCTs[[input$ome]], col.of.interest)
+      validate(
+        need(GCTs, "GCTs not yet processed") %then%
+        need(input$ome, "Ome not selected") %then%
+        need(input$ome %in% names(GCTs()), "Invalid -ome selection"))
+      summary.quant.features(GCTs()[[input$ome]], col.of.interest)
       })
   })
 }

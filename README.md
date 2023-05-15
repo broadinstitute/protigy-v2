@@ -20,7 +20,7 @@ Dependencies need to be listed in 2 places:
 2.  In `R/protigyRevamp-package.R` as an `@import` or `@importFrom` statement. This actually loads the package when the app runs.
     -   `@import` will load the entire package. It's similar to `library` or `require`.
     -   `@importFrom` lets you load only specific functions. This is best if you're only using a couple functions from a large package.
-    -   **IMPORTANT:** If you edit any `@import` or `@importFrom` commands, you need to update your package `NAMESPACE`! To do this, run `devtools::document()`.
+    -   **IMPORTANT:** If you edit any `@import` or `@importFrom` commands, you need to update your package's `NAMESPACE`! To do this, run `devtools::document()`.
 
 ### Testing
 
