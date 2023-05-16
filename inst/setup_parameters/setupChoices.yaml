@@ -1,33 +1,52 @@
 # yaml containing user all user for GCT setup
+# intensity_data_yes = options for when user uploads intentisy data
+# intensity_data_no = options for when user uploads non-intentisy data
 
 intensity_data:
 - 'Yes'
 - 'No'
 
 log_transformation:
-- 'log10'
-- 'log2'
-- 'None'
+  - 'log10'
+  - 'log2'
+  - 'None'
 
 
 data_normalization:
-- 'Median'
-- 'Median (non-zero)'
-- 'Quantile'
-- 'VSN'
-- 'Median-MAD'
-- 'Median-MAD (non-zero)'
-- '2-component'
-- 'Upper-quartile'
-- 'None'
+  intensity_data_yes:
+    - 'Median (non-zero)'
+    - 'Median-MAD (non-zero)'
+    - 'Upper-quartile'
+    - 'Quantile'
+    - 'VSN'
+    - 'None'
+  intensity_data_no:
+    - 'Median'
+    - 'Median (non-zero)'
+    - 'Quantile'
+    - 'VSN'
+    - 'Median-MAD'
+    - 'Median-MAD (non-zero)'
+    - '2-component'
+    - 'Upper-quartile'
+    - 'None'
 
 max_missing:
-  min: 0
-  max: 100
-  step: 1
+  intensity_data_yes:
+    min: 0
+    max: 99
+    step: 1
+  intensity_data_no:
+    min: 0
+    max: 100
+    step: 1
   
 data_filter:
-- 'Reproducibility'
-- 'StdDev'
-- 'None'
+  intensity_data_yes:
+    - 'StdDev'
+    - 'None'
+  intensity_data_no:
+    - 'Reproducibility'
+    - 'StdDev'
+    - 'None'
 
