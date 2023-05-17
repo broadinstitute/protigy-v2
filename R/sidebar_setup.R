@@ -43,9 +43,14 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # initialize object containing GCT and parameters
     GCTs_and_params <- reactiveVal()
     
-    # initialize other reactiveValues used in this module
+    # initialize reactiveValues with back/next logic for when user navigates
+    # through each GCT file to input parameters
     backNextLogic <- reactiveValues(placeChanged = 0)
     labelsGO <- reactiveVal(0)
+    
+    # initialize reactiveVal to indicate when labels & gcts are validated + submitted
+    labelsGO <- reactiveVal(0)
+    gctsGO <- reactiveVal(0)
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp'))
@@ -74,14 +79,16 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     
     # validate labels once submitted
     observeEvent(input$submitLabelsButton, {
-      out <- my_shinnyalert_tryCatch({
+      out <- my_shinyalert_tryCatch({
+        # check that each label is a valid name
         for (filename in input$gctFiles$name) {
           label = input[[paste0('Label_', filename)]]
           if (make.names(label) != label) {
             stop(paste("Invalid label for", filename))
           }
         }
-      }, return.error = F, return.success = T, return.warning = T)
+        TRUE # return value if there is no error
+      }, return.error = FALSE)
       
       # increment labelsGO if labels are valid
       if (out) labelsGO(labelsGO() + 1)
@@ -157,7 +164,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
     }) 
     
-    # reactive to the next button
+    # logic for when next button is clicked
     observeEvent(input$nextButton, {
       if (backNextLogic$place < backNextLogic$maxPlace) {
         backNextLogic$place <- backNextLogic$place + 1
@@ -165,7 +172,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
     })
 
-    # reactive to the back button
+    # logic for when back button is clicked
     observeEvent(input$backButton, {
       if (backNextLogic$place > 1) {
         backNextLogic$place <- backNextLogic$place - 1
@@ -174,7 +181,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     })
     
     # once GCT setup submitted, go to advanced settings
-    observeEvent(input$submitGCTButton, {
+    observeEvent(gctsGO(), {
       labels = names(GCTs_and_params()$parameters)
       output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns, labels = labels)})
       output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
@@ -231,8 +238,17 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- GCTs_and_params()$parameters
-      GCTs <- processGCT(parameters)
-      GCTs_and_params(list(GCTs = GCTs, parameters = parameters)) # set GCTs_and_params reactiveVal
+      
+      # call processGCTs function in a tryCatch
+      GCTs <- my_shinyalert_tryCatch(
+        expr = {processGCT(parameters)},
+        return.error = NULL)
+      
+      # set GCTs_and_params reactiveVal
+      GCTs_and_params(list(GCTs = GCTs, parameters = parameters)) 
+      
+      # increment gctsGO reactiveVal to show that processing is done
+      if (!is.null(GCTs)) gctsGO(gctsGO() + 1)
     })
     
     # return GCTs and parameters together in one list

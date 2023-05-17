@@ -1,3 +1,5 @@
+#' @title Launch protigy revamp shiny application
+#' @description Runs the app stored in the inst/shiny directory.
 #' @export
 #' @import shinydashboard
 #' @import ggplot2
