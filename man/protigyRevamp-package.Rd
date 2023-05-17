@@ -9,11 +9,12 @@
 What the package does (one paragraph).
 }
 \author{
-\strong{Maintainer}: 
+\strong{Maintainer}: Natalie Clark \email{nclark@broadinstitute.org}
 
-Other contributors:
+Authors:
 \itemize{
-  \item Stephanie svartany@broadinstitute.org Vartany
+  \item Stephanie Vartany \email{svartany@broadinstitute.org}
+  \item D R Mani \email{manidr@broadinstitute.org}
 }
 
 }

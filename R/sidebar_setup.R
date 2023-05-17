@@ -43,8 +43,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # initialize object containing GCT and parameters
     GCTs_and_params <- reactiveVal()
     
-    # initialize reactiveValues for back/next logic
+    # initialize other reactiveValues used in this module
     backNextLogic <- reactiveValues(placeChanged = 0)
+    labelsGO <- reactiveVal(0)
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp'))
@@ -71,8 +72,24 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       ignoreInit = TRUE,
       handlerExpr = {labelAssignment()})
     
-    # once labels assignment submitted, set values for back/next logic
+    # validate labels once submitted
     observeEvent(input$submitLabelsButton, {
+      out <- my_shinnyalert_tryCatch({
+        for (filename in input$gctFiles$name) {
+          label = input[[paste0('Label_', filename)]]
+          if (make.names(label) != label) {
+            stop(paste("Invalid label for", filename))
+          }
+        }
+      }, return.error = F, return.success = T, return.warning = T)
+      
+      # increment labelsGO if labels are valid
+      if (out) labelsGO(labelsGO() + 1)
+    })
+    
+    
+    # once labels assignment submitted, set values for back/next logic
+    observeEvent(labelsGO(), {
       # current place in the next/back logic
       backNextLogic$place <- 1 
       
@@ -81,10 +98,10 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       
       # indicates if place or something about GCT files changed
       backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
-    })
+    }, ignoreInit = TRUE)
     
     # update GCT parameters with gct file paths and labels once labels are submitted
-    observeEvent(input$submitLabelsButton, {
+    observeEvent(labelsGO(), {
       new_parameters <- list()
       apply(input$gctFiles, 1, function(file) {
         file <- as.list(file)
@@ -94,7 +111,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
                                       default_parameters)
       })
       GCTs_and_params(list(parameters = new_parameters)) # update GCT parameters reactiveVal
-    })
+    }, ignoreInit = TRUE)
     
     # display the correct GCT processing page, handling back/next logic
     observeEvent(
@@ -387,3 +404,7 @@ processGCT <- function(parameters) {
   message("DONE WITH GCT PROCESSING")
   return(GCTs)
 }
+
+
+
+

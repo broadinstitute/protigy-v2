@@ -3,6 +3,7 @@
 
 ## usethis namespace: start
 #' @export
+#' @import shiny
 #' @import shinydashboard
 #' @import ggplot2
 #' @import dplyr
@@ -16,5 +17,8 @@
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom yaml read_yaml
 #' @importFrom shinyjqui orderInput updateOrderInput
+#' @importFrom grDevices colorRampPalette dev.off pdf
+#' @importFrom methods new
+#' @importFrom stats sd
 ## usethis namespace: end
 NULL

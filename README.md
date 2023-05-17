@@ -15,7 +15,7 @@
 Dependencies need to be listed in 2 places:
 
 1.  In the `DESCRIPTION` file under `Imports`. This add the dependency as a part of your package metadata. Importantly, this **does not load the dependency!**
-    -   You can use the function `usethis::use_package` to automatically add the dependency to your imports section (e.g. run \``usethis::use_package("shiny")` from the R console)
+    -   You can use the function `usethis::use_package` to automatically add the dependency to your imports section (e.g. run `usethis::use_package("shiny")` from the R console)
     -   Alternatively, you can manually edit the `DESCRIPTION` file.
 2.  In `R/protigyRevamp-package.R` as an `@import` or `@importFrom` statement. This actually loads the package when the app runs.
     -   `@import` will load the entire package. It's similar to `library` or `require`.

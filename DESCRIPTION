@@ -1,8 +1,11 @@
 Package: protigyRevamp
 Title: Revamp of the original Protigy app
 Version: 0.0.0.9000
-Authors@R: 
-    person("Stephanie", "Vartany", "svartany@broadinstitute.org")
+Authors@R: c(
+    person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
+    person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),
+    person("Natalie", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre"))
+  )
 Description: What the package does (one paragraph).
 License: use_mit_license()
 Encoding: UTF-8
@@ -23,7 +26,10 @@ Imports:
     shinyjqui,
     WriteXLS,
     yaml,
-    grid
+    grid,
+    methods,
+    stats,
+    grDevices
 Depends:
     shiny
 Suggests: 
