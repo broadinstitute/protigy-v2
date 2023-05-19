@@ -9,7 +9,8 @@
 
 # UI for the summary tab
 setupSidebarUI <- function(id = "setupSidebar") {
-  ns <- NS(id) # namespace function, wrap UI inputId's and outputId's with this (e.g. `ns(id)`)
+  # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
+  ns <- NS(id) 
   
   tagList(
     # file input
@@ -40,13 +41,14 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
+    ### INITIALIZATION ###
+    
     # initialize object containing GCT and parameters
     GCTs_and_params <- reactiveVal()
     
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
     backNextLogic <- reactiveValues(placeChanged = 0)
-    labelsGO <- reactiveVal(0)
     
     # initialize reactiveVal to indicate when labels & gcts are validated + submitted
     labelsGO <- reactiveVal(0)
@@ -56,6 +58,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp'))
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'protigyRevamp'))
     
+    
+    ### STEP 1: LABEL ASSIGNMENT ###
+    
     # code for label assignment because it has to be used in 2 separate observeEvent() calls
     labelAssignment <- function() {
       output$sideBarMain <- renderUI({labelSetupUI(ns = ns, gctFileNames = input$gctFiles$name)})
@@ -63,13 +68,26 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
                                                    "Submit",
                                                    class = "btn btn-primary")})
       output$leftButton <- NULL
+      
+      # update with saved labels if they exist
+      if (!is.null(names(GCTs_and_params()$parameters))) {
+        for (label in names(GCTs_and_params()$parameters)) {
+          filename <- GCTs_and_params()$parameters[[label]]$gct_file_name
+          updateTextInput(inputId = paste0('Label_', filename),
+                          value = label)
+        }
+        
+      }
     }
     
     # once files uploaded, display label assignment
     observeEvent(
       eventExpr = input$gctFiles, 
       ignoreInit = TRUE,
-      handlerExpr = {labelAssignment()})
+      handlerExpr = {
+        GCTs_and_params(NULL) # reset GCT files
+        labelAssignment()
+      })
     
     # also display label assignment if user navigates back to it
     observeEvent(
@@ -80,20 +98,17 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # validate labels once submitted
     observeEvent(input$submitLabelsButton, {
       out <- my_shinyalert_tryCatch({
-        # check that each label is a valid name
-        for (filename in input$gctFiles$name) {
-          label = input[[paste0('Label_', filename)]]
-          if (make.names(label) != label) {
-            stop(paste("Invalid label for", filename))
-          }
-        }
-        TRUE # return value if there is no error
+        all_labels <- sapply(input$gctFiles$name, 
+                             function(n) input[[paste0('Label_', n)]])
+        validate_labels(all_labels)
       }, return.error = FALSE)
       
       # increment labelsGO if labels are valid
       if (out) labelsGO(labelsGO() + 1)
     })
     
+    
+    ### STEP 2: INPUT GCT PARAMETERS ###
     
     # once labels assignment submitted, set values for back/next logic
     observeEvent(labelsGO(), {
@@ -133,7 +148,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
                                                    label = label,
                                                    parameters = GCTs_and_params()$parameters,
                                                    parameter_choices = parameter_choices,
-                                                   default_parameters = default_parameters)})
+                                                   current_place = backNextLogic$place,
+                                                   max_place = backNextLogic$maxPlace)})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -153,8 +169,10 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         }
     })
     
-    # change next button to submit button if applyToAll == TRUE
+    # change next/back buttons if applyToAll == TRUE
     observeEvent(input$applyToAll, {
+      
+      # change next button to submit
       if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
         output$rightButton <- renderUI({actionButton(ns("submitGCTButton"), 
                                                      "Submit", 
@@ -162,6 +180,15 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       } else {
         output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
       }
+      
+      # change back button to "back to labels"
+      if (input$applyToAll | backNextLogic$place == 1) {
+        output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back")})
+      } else {
+        output$leftButton <- renderUI({actionButton(ns("backButton"), "Back")})
+      }
+      
+      actionButton(ns("backToLabelsButton"), "Back")
     }) 
     
     # logic for when next button is clicked
@@ -180,13 +207,16 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
     })
     
+    
+    ### STEP 3: ADVANCED SETTINGS ###
+    
     # once GCT setup submitted, go to advanced settings
     observeEvent(gctsGO(), {
       labels = names(GCTs_and_params()$parameters)
       output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns, labels = labels)})
       output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
       output$rightButton <- NULL
-    })
+    }, ignoreInit = TRUE)
     
     # code to collect user inputs because it has to be used in separate observeEvent() calls
     collectInputs <- function() {
@@ -235,6 +265,9 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       priority = 1, # this code is executed before other observeEvent with priority = 0 (default)
       handlerExpr = collectInputs())
     
+    
+    ### GCT PROCESSING ###
+    
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- GCTs_and_params()$parameters
@@ -254,7 +287,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
     # return GCTs and parameters together in one list
     return(GCTs_and_params)
     
-  }) # end moduleServer()
+  }) # end moduleServer
 } # end setupSidebarServer
 
 
@@ -279,9 +312,9 @@ labelSetupUI <- function(ns, gctFileNames) {
 }
 
 # function containing setup elements for a single GCT file
-gctSetupUI <- function(ns, label, parameters, parameter_choices, default_parameters) {
+gctSetupUI <- function(ns, label, parameters, parameter_choices, current_place, max_place) {
   tagList(
-    p(strong(paste('Setup for', label))),
+    p(strong(paste0('Setup for ', label, ' (', current_place, '/', max_place, ')'))),
     
     ## intentisy data input
     fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
@@ -394,6 +427,28 @@ advancedSettingsUI <- function(ns, labels) {
 # Helper functions for the setup sidebar module
 ################################################################################
 
+# function to validate file labels
+# all_labels is a named vector:
+# elements in vector are all user inputted labels
+# names are the corresponding file names
+validate_labels <- function(all_labels) {
+  # check that each label is a valid name
+  for (i in seq_along(all_labels)) {
+    label = all_labels[i]
+    filename = names(all_labels)[i]
+    if (make.names(label) != label) {
+      stop(paste("Invalid label for", filename))
+    }
+  }
+  
+  # check that labels aren't repeated
+  if (length(unique(all_labels)) != length(all_labels)) {
+    stop("All labels must be unique")
+  }
+  
+  return(TRUE)
+}
+
 # function to parse, normalize, filter, etc. GCT file(s)
 # INPUT: parameters list from setup 
 # OUTPUT: named list of processed GCTs
@@ -417,7 +472,7 @@ processGCT <- function(parameters) {
   # log transformation
   
   # return processed GCT files
-  message("DONE WITH GCT PROCESSING")
+  message("\nDone with GCT processing!")
   return(GCTs)
 }
 
