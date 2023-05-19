@@ -146,8 +146,8 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns,
                                                    label = label,
-                                                   parameters = GCTs_and_params()$parameters,
                                                    parameter_choices = parameter_choices,
+                                                   parameters = GCTs_and_params()$parameters,
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace)})
         
@@ -167,6 +167,61 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         } else {
           output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
         }
+    })
+    
+    # # update inputs to whatever is currently in parameters
+    # parameters <- GCTs_and_params()$parameters
+    # updateSelectInput(inputId = paste0(label, '_intensity_data'),
+    #                   selected = parameters[[label]]$intensity_data)
+    # updateSelectInput(inputId = paste0(label, '_log_transform'),
+    #                   selected = parameters[[label]]$log_transform)
+    # updateSelectInput(inputId = paste0(label, '_data_normalization'),
+    #                   selected = parameters[[label]]$data_normalization)
+    # updateSelectInput(inputId = paste0(label, '_data_filter'),
+    #                   selected = parameters[[label]]$data_filter)
+    # updateNumericInput(inputId = paste0(label, '_max_missing'),
+    #                    value = parameters[[label]]$max_missing)
+    
+    # update parameter choices when intensity data is toggled
+    current_intensity <- reactive({
+      label <- names(GCTs_and_params()$parameters)[isolate(backNextLogic$place)]
+      input[[paste0(label, '_intensity_data')]]})
+    observeEvent(current_intensity(), {
+      # first get all the current inputs
+      collectInputs()
+      
+      # gather current label and parameters
+      label = names(GCTs_and_params()$parameters)[backNextLogic$place]
+      parameters = GCTs_and_params()$parameters[[label]]
+      
+      # indicator for intensity data (check out the yaml format)
+      ind = paste0("intensity_data_", tolower(current_intensity()))
+      
+      # update data normalization
+      updateSelectInput(
+        inputId = paste0(label, '_data_normalization'),
+        choices = parameter_choices$data_normalization[[ind]],
+        selected = ifelse(
+          parameters$data_normalization %in% parameter_choices$data_normalization[[ind]],
+          parameters$data_normalization,
+          default_parameters$data_normalization))
+      
+      # update data filter
+      updateSelectInput(
+        inputId = paste0(label, '_data_filter'),
+        choices = parameter_choices$data_filter[[ind]],
+        selected = ifelse(
+          parameters$data_filter %in% parameter_choices$data_filter[[ind]],
+          parameters$data_filter,
+          default_parameters$data_filter))
+      
+      # update max missing
+      updateNumericInput(
+        inputId = paste0(label, '_max_missing'),
+        min = parameter_choices$max_missing[[ind]]$min,
+        max = parameter_choices$max_missing[[ind]]$max,
+        step = parameter_choices$max_missing[[ind]]$step,
+        value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
     })
     
     # change next/back buttons if applyToAll == TRUE
@@ -312,9 +367,11 @@ labelSetupUI <- function(ns, gctFileNames) {
 }
 
 # function containing setup elements for a single GCT file
-gctSetupUI <- function(ns, label, parameters, parameter_choices, current_place, max_place) {
+gctSetupUI <- function(ns, label, parameter_choices, parameters, current_place, max_place) {
   tagList(
-    p(strong(paste0('Setup for ', label, ' (', current_place, '/', max_place, ')'))),
+    p(strong('Setup for ', 
+             span(label, style = "color:#00c0ef"),
+             paste0(' (', current_place, '/', max_place, ')'))), 
     
     ## intentisy data input
     fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
@@ -326,82 +383,30 @@ gctSetupUI <- function(ns, label, parameters, parameter_choices, current_place, 
     fluidRow(column(12, selectInput(ns(paste0(label, '_log_transform')),
                                     label = 'Log-transformation',
                                     choices = parameter_choices$log_transformation,
-                                    selected = parameters[[label]]$log_transform))),
+                                    selected = parameters[[label]]$log_transformation))),
     
-    ## data normalization input (2 conditional panels)
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'Yes'"),
-      fluidRow(
-        column(12,
-               selectInput(ns(paste0(label, '_data_normalization')),
-                           label = 'Data normalization',
-                           choices = parameter_choices$data_normalization$intensity_data_yes,
-                           selected = parameters[[label]]$data_normalization))),
-      ns = ns
-    ),
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'No'"),
-      fluidRow(
-        column(12, 
-               selectInput(ns(paste0(label, '_data_normalization')),
-                           label = 'Data normalization',
-                           choices = parameter_choices$data_normalization$intensity_data_no,
-                           selected = parameters[[label]]$data_normalization))),
-      ns = ns
-    ),
+    ## data normalization input
+    fluidRow(column(12, selectInput(ns(paste0(label, '_data_normalization')),
+                                    label = 'Data normalization',
+                                    choices = parameter_choices$data_normalization$intensity_data_no,
+                                    selected = parameters[[label]]$data_normalization))),
     
     ## max missing value input (2 conditional panels)
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'Yes'"),
-      fluidRow(
-        column(12,
-               numericInput(ns(paste0(label, '_max_missing')), 
-                            'Max. % missing values',
-                            min = parameter_choices$max_missing$intensity_data_yes$min,
-                            max = parameter_choices$max_missing$intensity_data_yes$max,
-                            value = min(c(parameters[[label]]$max_missing,
-                                          parameter_choices$max_missing$intensity_data_yes$max)),
-                            step = parameter_choices$max_missing$intensity_data_yes$step))),
-      ns = ns
-    ),
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'No'"),
-      fluidRow(
-        column(12, 
-               numericInput(ns(paste0(label, '_max_missing')), 
-                            'Max. % missing values',
-                            min = parameter_choices$max_missing$intensity_data_no$min,
-                            max = parameter_choices$max_missing$intensity_data_no$max,
-                            value = min(c(parameters[[label]]$max_missing,
-                                          parameter_choices$max_missing$intensity_data_no$max)),
-                            step = parameter_choices$max_missing$intensity_data_no$step))),
-      ns = ns
-    ),
+    fluidRow(column(12, numericInput(ns(paste0(label, '_max_missing')), 
+                                     'Max. % missing values',
+                                     min = parameter_choices$max_missing$intensity_data_no$min,
+                                     max = parameter_choices$max_missing$intensity_data_no$max,
+                                     step = parameter_choices$max_missing$intensity_data_no$step,
+                                     value = parameters[[label]]$max_missing))),
     
     ## data filter input (2 conditional panels)
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'Yes'"),
-      fluidRow(
-        column(12,
-               selectInput(ns(paste0(label, '_data_filter')),
-                           label = 'Filter data',
-                           choices = parameter_choices$data_filter$intensity_data_yes,
-                           selected = parameters[[label]]$data_filter))),
-      ns = ns
-    ),
-    conditionalPanel(
-      condition = paste0("input['", label, "_intensity_data'] == 'No'"),
-      fluidRow(
-        column(12, 
-               selectInput(ns(paste0(label, '_data_filter')),
-                           label = 'Filter data',
-                           choices = parameter_choices$data_filter$intensity_data_no,
-                           selected = parameters[[label]]$data_filter))),
-      ns = ns
-    ),
+    fluidRow(column(12, selectInput(ns(paste0(label, '_data_filter')),
+                                    label = 'Filter data',
+                                    choices = parameter_choices$data_filter$intensity_data_no,
+                                    selected = parameters[[label]]$data_filter))),
     
     ## apply to all checkbox
-    if (length(parameters) > 1) {
+    if (max_place > 1) {
       fluidRow(column(12, checkboxInput(ns('applyToAll'), 'Apply settings to all -omes')))
     }
   )
