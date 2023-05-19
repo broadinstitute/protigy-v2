@@ -15,6 +15,7 @@ Authors:
 \itemize{
   \item Stephanie Vartany \email{svartany@broadinstitute.org}
   \item D R Mani \email{manidr@broadinstitute.org}
+  \item C Williams \email{wcorinne@broadinstitute.org}
 }
 
 }
