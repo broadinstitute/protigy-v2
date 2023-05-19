@@ -10,6 +10,22 @@
 -   [Advanced deployment](https://engineering-shiny.org/deploy.html)
 -   [Handling package dependencies](https://r-pkgs.org/dependencies-in-practice.html)
 
+### Tips, Tricks, and Gotcha's
+
+1.  **Loading changes:** Anytime you change anything in the package, you will need to re-load it with `devtools::load_all(".")`. This can be done using the shortcut `Cmd`/`Ctrl` + `shift` + `L`.
+
+2.  **When to use `ns()`:** The `ns()` function is critical for shiny modules. It allows you to keep input/output names contained within your module. *If you do not correctly use `ns()`, UI elements will not act properly, causing a world of frustrating errors :(*
+
+    Use `ns()` in these cases:
+
+    -   Anytime you set an `inputId` or `outputId` in your module's main UI function. For example: `textInput(inputId = ns('myText'))` or `plotOutput(outputId = ns("myPlot"))`.
+    -   When you define UI within a `renderUI()` block in your server function. For example: `renderUI({textInput(inputId = ns('myText'))})`. (Note: you need to have the line `ns <- session$ns` somewhere in your server function to be able to use `ns` from within the server.)
+    -   Some special functions require `ns` as an input, such as `conditionalPanel`.
+
+    Do NOT use `ns()` when:
+
+    -   You are updating a UI element *outside* of a `renderUI()` block. For example: `updateTextInput("myText")`.
+
 ### Managing package dependencies
 
 Dependencies need to be listed in 2 places:
