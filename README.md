@@ -14,7 +14,9 @@
 
 1.  **Loading changes:** Anytime you change anything in the package, you will need to re-load it with `devtools::load_all(".")`. This can be done using the shortcut `Cmd`/`Ctrl` + `shift` + `L`.
 
-2.  **When to use `ns()`:** The `ns()` function is critical for shiny modules. It allows you to keep input/output names contained within your module. *If you do not correctly use `ns()`, UI elements will not act properly, causing a world of frustrating errors :(*
+2.  **Checking package validity:** Every once in a while, run `devtools::check()`. This makes sure everything in the package looks OK and checks for code errors. This check is also run automatically anytime you push to github.
+
+3.  **When to use `ns()`:** The `ns()` function is critical for shiny modules. It allows you to keep input/output names contained within your module. *If you do not correctly use `ns()`, UI elements will not act properly, causing a world of frustrating errors :(*
 
     Use `ns()` in these cases:
 
