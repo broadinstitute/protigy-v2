@@ -26,6 +26,10 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer(
     # get namespace
     ns <- session$ns
     
+    # for now, hard code this
+    warning("hard coded column of interest in summary tab")
+    col.of.interest <- "PAM50"
+    
     # gather GCTs and parameters
     GCTs <- reactive({
       validate(need(GCTs_and_params()$GCTs, "GCTs not yet processed"))
@@ -44,13 +48,23 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer(
                         selected = omes[1])
     })
     
-    output$summary.quant.features <- renderPlotly({
+    # summary quant features plot (non-interactive)
+    summary.quant.features.plot <- reactive({
       validate(
         need(GCTs, "GCTs not yet processed") %then%
-        need(input$ome, "Ome not selected") %then%
-        need(input$ome %in% names(GCTs()), "Invalid -ome selection"))
+          need(input$ome, "Ome not selected") %then%
+          need(input$ome %in% names(GCTs()), "Invalid -ome selection"))
       summary.quant.features(GCTs()[[input$ome]], col.of.interest)
-      })
+    })
+    
+    # reactive version of summary quant features for display
+    output$summary.quant.features <- renderPlotly({ggplotly(summary.quant.features.plot())})
+    
+    all_summary_plots <- reactive({list(
+      summary.quant.features = summary.quant.features.plot()
+    )})
+    
+    return(all_summary_plots)
   })
 }
 
@@ -69,9 +83,5 @@ summary.quant.features <- function (gct, col.of.interest) {
     geom_bar(stat = 'identity') +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
   
-  if(interactive()) {
-    return(ggplotly(p))
-  } else {
-    return(p)
-  }
+  return(p)
 }
