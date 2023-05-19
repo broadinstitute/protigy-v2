@@ -14,6 +14,11 @@
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom yaml read_yaml
 #' @importFrom shinyjqui orderInput updateOrderInput
+#' @importFrom zip zip
 launchApp <- function() {
-  shiny::runApp(appDir = system.file("shiny", package = "protigyRevamp"))
+  
+  shiny::runApp(shiny::shinyApp(
+    ui = app_UI, 
+    server = app_server,
+    onStart = app_onStart))
 }

@@ -1,11 +1,11 @@
 ################################################################################
-# Module: UI
+# UI
 # This function contains the entire app's UI setup. It mainly consists of the 
 # dashboardPage and navbar. All module-specific UI content should be called 
 # using UI module functions.
 ################################################################################
 
-shinyUI(dashboardPage(
+app_UI <- function(request) {dashboardPage(
   
   dashboardHeader(title = 'New Protigy?'),
   
@@ -47,10 +47,12 @@ shinyUI(dashboardPage(
         tabPanel("2")),
       navbarMenu(
         "Multi-ome",
-        tabPanel('Heatmap', heatmapTabUI()),
+        tabPanel('Heatmap'),
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
-      tabPanel("Export")
+      tabPanel("Export", exportTabUI())
       ) #end navbarPage
   ) # end dashboardBody
-))
+) # end dashboardPage
+}
+

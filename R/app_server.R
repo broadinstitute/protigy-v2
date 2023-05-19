@@ -1,11 +1,10 @@
 ################################################################################
-# Module: SERVER
+# SERVER
 # This function contains the entire app's server logic. It calls on module
 # server functions and handles any global variable logic.
 ################################################################################
 
-shinyServer(function(input, output, session) { 
-
+app_server <- function(input, output, session) { 
   ## sidebar set up server
   # output: GCTs_and_params reactiveVal
   # this is a nested list with fields:
@@ -16,10 +15,14 @@ shinyServer(function(input, output, session) {
   
   
   ## module server function calls
-  heatmapTabServer()
-  summaryTabServer(GCTs_and_params = GCTs_and_params)
+  # heatmapTabServer()
+  all_summary_plots <- summaryTabServer(GCTs_and_params = GCTs_and_params)
+  
+  ## export server
+  all_plots <- reactive({c(all_summary_plots())})
+  exportTabServer(all_plots = all_plots)
   
 
-})
+}
 
 
