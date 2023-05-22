@@ -44,8 +44,6 @@ Dependencies need to be listed in 2 places:
 
 1.  To begin a test, open the script you want to write tests for and run `usethis::use_test()`. This will create a corresponding test file in `tests/testthat`.
 2.  Add tests using the `testthat` format (a dummy example should be auto-generated so you can see the format). Common tests will utilize `expect_equal()` or `expect_snapshot()`. Read more [here](https://mastering-shiny.org/scaling-testing.html).
+3.  Check out the ways to run a test [here](https://devtools.r-lib.org/reference/test.html). My preference is using `devtools::test_active_file()`.
 
 ### Module Requirements
-
-
-
