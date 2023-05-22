@@ -17,8 +17,6 @@ my_shinyalert_tryCatch <- function(expr,
                                    show.error = T,
                                    return.error = NULL) {
   tryCatch({
-    
-    # evaluate expression
     # catch warnings and continue execution
     withCallingHandlers(
       expr = expr, 
@@ -90,3 +88,4 @@ smart_trim <- function(labels, trim_length=10, default_trim=c("beginning", "end"
   
   return(unname(labels_trimmed)) # return the trimmed vectors, unnamed
 }
+
