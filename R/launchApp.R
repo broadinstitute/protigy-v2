@@ -16,7 +16,6 @@
 #' @importFrom shinyjqui orderInput updateOrderInput
 #' @importFrom zip zip
 launchApp <- function() {
-  
   shiny::runApp(shiny::shinyApp(
     ui = app_UI, 
     server = app_server,
