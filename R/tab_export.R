@@ -19,6 +19,9 @@ exportTabUI <- function(id = "exportTab") {
   
   tagList(
     
+    checkboxGroupInput(ns("omesForExport"),"Omes for export:"),
+    checkboxGroupInput(ns("plotsForExport"),"Plots for export:"),
+    
     downloadButton(ns("downloadPlots"), label = "Download Plots")
     
   ) # end tagList
@@ -34,31 +37,73 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
-    # directory name where all plots will be saved
-    dir_name <- "Plots"
-    zip_dir <- tempfile("plots")
-    plots_dir <- file.path(zip_dir, dir_name)
-    dir.create(plots_dir, recursive = T)
+    all_plot_types <- reactive({setdiff(names(all_plots()), "omes")})
+    
+    observe({
+      plots <- all_plots()
+
+      # update omes for export
+      updateCheckboxGroupInput(inputId = "omesForExport",
+                               choices = plots$omes,
+                               selected = plots$omes)
+      
+      # update plots for export
+      all_plot_types <- setdiff(names(plots), "omes")
+      updateCheckboxGroupInput(inputId = "plotsForExport",
+                               choices = all_plot_types,
+                               selected = all_plot_types)
+    })
+    
     
     output$downloadPlots <- downloadHandler(
       filename = "my_plots.zip",
       content = function(file) {
         cat("Downloading plots\n")
         
-        plots <- all_plots()
+        # directory name where all plots will be saved
+        dir_name <- "Plots"
+        zip_dir <- tempfile("plots")
+        plots_dir <- file.path(zip_dir, dir_name)
+        dir.create(plots_dir, recursive = T)
         
-        lapply(seq_along(plots), function(i) {
-          p = plots[[i]]
-          p_name = paste0(names(plots)[[i]], '.pdf')
+        # gather inputs
+        plots <- all_plots()
+        selected_omes <- input$omesForExport
+        selected_plots <- input$plotsForExport
+        
+        # make a folder for each -ome
+        lapply(selected_omes, function(ome) dir.create(file.path(plots_dir, ome)))
+        
+        # loop through selected plots
+        lapply(selected_plots, function(tab_name) {
+          plots_all_omes = plots[[tab_name]]
           
-          ggsave(
-            filename = p_name, 
-            plot = p, 
-            device = 'pdf',
-            path = plots_dir
-          )
+          # loop through selected omes
+          lapply(selected_omes, function(ome) {
+            plots_this_ome <- plots_all_omes[[ome]]
+            
+            # save each plot for this ome
+            for(i in seq_along(plots_this_ome)) {
+              p = plots_this_ome[[i]]()
+              p_name = paste0(names(plots_this_ome)[[i]], '.pdf')
+              
+              # save ggplot
+              if (is.ggplot(p)) {
+                ggsave(
+                  filename = p_name, 
+                  plot = p, 
+                  device = 'pdf',
+                  path = file.path(plots_dir, ome)
+                )
+              } else {
+                warning(paste("Invalid plot...skipping", p_name))
+              }
+              
+            }
+          })
         })
         
+        # zip the outputs
         zip::zip(file, file.path(dir_name, list.files(plots_dir)), 
                  recurse = TRUE, root = zip_dir)
       }

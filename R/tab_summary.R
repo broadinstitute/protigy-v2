@@ -19,7 +19,7 @@ summaryTabUI <- function(id = "summaryTab") {
 }
 
 # server for the summary tab
-summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer( id,
+summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { moduleServer( id,
   ## module function
   function (input, output, session) {
     
@@ -41,14 +41,15 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer(
     })
     
     # update -ome options once GCTs processed
+    observe(updateSelectInput(inputId = 'ome', choices = names(GCTs())))
+    
+    # update-omes choice based on default set in globals
     observe({
-      omes <- names(GCTs())
-      updateSelectInput(inputId = 'ome', 
-                        choices = omes, 
-                        selected = omes[1])
+      validate(need(globals()$default_ome, "Default -ome not set"))
+      updateSelectInput(inputId = 'ome', selected = globals()$default_ome)
     })
     
-    # summary quant features plot (non-interactive)
+    # summary quant features plot
     summary.quant.features.plot <- reactive({
       validate(
         need(GCTs, "GCTs not yet processed") %then%
@@ -58,11 +59,21 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params) { moduleServer(
     })
     
     # reactive version of summary quant features for display
-    output$summary.quant.features <- renderPlotly({ggplotly(summary.quant.features.plot())})
+    output$summary.quant.features <- renderPlotly({
+      ggplotly(summary.quant.features.plot())})
     
-    all_summary_plots <- reactive({list(
-      summary.quant.features = summary.quant.features.plot()
-    )})
+    # gather all plots
+    all_summary_plots <- reactive({
+      plots <- list()
+      for (ome in names(GCTs())) {
+        plots[[ome]] <- list(
+          summary.quant.features = reactive(summary.quant.features(GCTs()[[ome]], col.of.interest)),
+          another.plot = reactive(ggplot())
+        )
+      }
+      plots
+    })
+    
     
     return(all_summary_plots)
   })
