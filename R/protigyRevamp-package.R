@@ -20,5 +20,6 @@
 #' @importFrom grDevices colorRampPalette dev.off pdf
 #' @importFrom methods new
 #' @importFrom stats sd
+#' @importFrom zip zip
 ## usethis namespace: end
 NULL

@@ -6,7 +6,7 @@
 \alias{protigyRevamp-package}
 \title{protigyRevamp: Revamp of the original Protigy app}
 \description{
-What the package does (one paragraph).
+A tool for proteomic data analysis and visualization.
 }
 \author{
 \strong{Maintainer}: Natalie Clark \email{nclark@broadinstitute.org}
