@@ -9,7 +9,7 @@
 #' @import dplyr
 #' @import ComplexHeatmap
 #' @importFrom grid gpar
-#' @importFrom cmapR parse_gctx write_gct meta mat merge_gct
+#' @importFrom cmapR parse_gctx write_gct meta mat merge_gct subset_gct GCT
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly
 #' @importFrom circlize colorRamp2
 #' @importFrom shinyBS tipify

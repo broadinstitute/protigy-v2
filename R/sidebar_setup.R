@@ -284,6 +284,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       output$rightButton <- NULL
     }, ignoreInit = TRUE)
     
+    # add default -ome to globals
     observeEvent(input$default_ome, {
       current_globals <- globals()
       current_globals$default_ome <- input$default_ome
@@ -428,6 +429,9 @@ advancedSettingsUI <- function(ns, labels) {
                                       "Default -ome",
                                       choices = labels)))
     },
+    fluidRow(column(12, selectInput(ns('default_annotation'),
+                                    "Default annotation of interest",
+                                    choices = NULL))),
     fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
     fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
     hr()
@@ -480,6 +484,20 @@ processGCT <- function(parameters) {
   # data filter
   
   # data normalization
+  GCTs_normalized <- mapply(function(gct, ome) {
+    data_norm_method <- parameters[[ome]]$data_normalization
+    
+    if (data_norm_method == "None") {
+      return(gct)
+    } else {
+      data.norm <- normalize.data(gct@mat, data_norm_method)
+      
+      GCT(mat = data.norm,
+          cdesc = gct@cdesc,
+          rdesc = gct@rdesc)
+    }
+    
+  }, GCTs, names(GCTs), SIMPLIFY = FALSE)
   
   # log transformation
   

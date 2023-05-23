@@ -32,7 +32,11 @@ Imports:
     stats,
     grDevices,
     zip,
-    stringr
+    stringr,
+    vsn,
+    preprocessCore,
+    mixtools,
+    mclust
 Depends:
     shiny
 Suggests: 
