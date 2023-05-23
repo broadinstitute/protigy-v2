@@ -7,6 +7,7 @@ summaryTabUI <- function(id = "summaryTab") {
   
   tagList(
     selectInput(ns('ome'), 'Select -ome', choices = NULL),
+    selectInput(ns('col_of_interest'), "Annotation of interest", choices = NULL),
     fluidRow(box(
       title = "Quantified Features",
       solidHeader = TRUE,
@@ -27,8 +28,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     ns <- session$ns
     
     # for now, hard code this
-    warning("hard coded column of interest in summary tab")
-    col.of.interest <- "PAM50"
+    warning("Column of interest may not exist!")
     
     # gather GCTs and parameters
     GCTs <- reactive({
@@ -43,9 +43,16 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     # update -ome options once GCTs processed
     observe(updateSelectInput(inputId = 'ome', choices = names(GCTs())))
     
+    # update annotaion of interest once GCTs processed
+    observe({
+      req(GCTs(), input$ome, input$ome %in% names(GCTs()))
+      updateSelectInput(inputId = 'col_of_interest',
+                        choices = names(GCTs()[[input$ome]]@cdesc))
+    })
+    
     # update-omes choice based on default set in globals
     observe({
-      validate(need(globals()$default_ome, "Default -ome not set"))
+      req(globals()$default_ome, "Default -ome not set")
       updateSelectInput(inputId = 'ome', selected = globals()$default_ome)
     })
     
@@ -54,8 +61,11 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
       validate(
         need(GCTs, "GCTs not yet processed") %then%
           need(input$ome, "Ome not selected") %then%
-          need(input$ome %in% names(GCTs()), "Invalid -ome selection"))
-      summary.quant.features(GCTs()[[input$ome]], col.of.interest)
+          need(input$ome %in% names(GCTs()), "Invalid -ome selection") %then%
+          need(input$col_of_interest, "Missing annotation selection") %then%
+          need(input$col_of_interest %in% names(GCTs()[[input$ome]]@cdesc),
+               "invalid annotation selection"))
+      summary.quant.features(GCTs()[[input$ome]], input$col_of_interest)
     })
     
     # reactive version of summary quant features for display
@@ -64,12 +74,27 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     
     # gather all plots
     all_summary_plots <- reactive({
+      
+      validate(
+        need(GCTs, "GCTs not yet processed") %then%
+          need(input$ome, "Ome not selected") %then%
+          need(input$ome %in% names(GCTs()), "Invalid -ome selection") %then%
+          need(input$col_of_interest, "Missing annotation selection"))
+      
       plots <- list()
       for (ome in names(GCTs())) {
-        plots[[ome]] <- list(
-          summary.quant.features = reactive(summary.quant.features(GCTs()[[ome]], col.of.interest)),
-          another.plot = reactive(ggplot())
-        )
+        
+        if (input$col_of_interest %in% names(GCTs()[[ome]]@cdesc)) {
+          plots[[ome]] <- list(
+            summary.quant.features = summary.quant.features(GCTs()[[ome]], input$col_of_interest),
+            another.plot = ggplot()
+          )
+        } else {
+          warning(paste(input$col_of_interest, "not found in", ome))
+          
+        }
+        
+        
       }
       plots
     })
@@ -80,13 +105,13 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
 }
 
 # plots
-summary.quant.features <- function (gct, col.of.interest) {
+summary.quant.features <- function (gct, col_of_interest) {
   # get number of non-missing per sample
   sample_id <- colnames(gct@mat)
   non.missing <- as.data.frame(apply(gct@mat, 2, function(x) sum(!is.na(x))))
   names(non.missing) <- "numFeatures"
   non.missing$SampleID <- as.factor(as.character(rownames(non.missing)))
-  non.missing$group <- as.factor(as.character(gct@cdesc[[col.of.interest]]))
+  non.missing$group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
   
   non.missing$SampleID <- with(non.missing, reorder(SampleID, as.integer(group)))
   

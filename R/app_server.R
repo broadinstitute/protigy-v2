@@ -21,15 +21,13 @@ app_server <- function(input, output, session) {
     globals = sidebar_output$globals)
   
   ## gather all plots
-  all_plots <- reactive({
-    validate(need(names(sidebar_output$GCTs_and_params()$GCTs), "No GCTs"),
-             need(all_summary_plots(), "summary plots"))
-    list(
-      omes = names(sidebar_output$GCTs_and_params()$GCTs),
-      summary_plots = all_summary_plots()
+  all_plots <- list(
+      omes = reactive(names(sidebar_output$GCTs_and_params()$GCTs)),
+      plots = list(
+        summary_plots = all_summary_plots
+      )
     )
-  })
-  
+
   ## export tab
   exportTabServer(all_plots = all_plots)
   

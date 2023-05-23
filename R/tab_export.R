@@ -40,25 +40,31 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
     all_plot_types <- reactive({setdiff(names(all_plots()), "omes")})
     
     observe({
-      plots <- all_plots()
-
       # update omes for export
       updateCheckboxGroupInput(inputId = "omesForExport",
-                               choices = plots$omes,
-                               selected = plots$omes)
+                               choices = all_plots$omes(),
+                               selected = all_plots$omes())
+    })
       
+    observe({
       # update plots for export
-      all_plot_types <- setdiff(names(plots), "omes")
       updateCheckboxGroupInput(inputId = "plotsForExport",
-                               choices = all_plot_types,
-                               selected = all_plot_types)
+                               choices = names(all_plots$plots),
+                               selected = names(all_plots$plots))
     })
     
     
     output$downloadPlots <- downloadHandler(
       filename = "my_plots.zip",
       content = function(file) {
-        cat("Downloading plots\n")
+        
+        # show a notification that plots are downloading
+        id <- showNotification(
+          "Compiling plots...", 
+          duration = NULL, 
+          closeButton = FALSE
+        )
+        on.exit(removeNotification(id), add = TRUE)
         
         # directory name where all plots will be saved
         dir_name <- "Plots"
@@ -67,7 +73,7 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
         dir.create(plots_dir, recursive = T)
         
         # gather inputs
-        plots <- all_plots()
+        plots <- all_plots$plots
         selected_omes <- input$omesForExport
         selected_plots <- input$plotsForExport
         
@@ -76,7 +82,7 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
         
         # loop through selected plots
         lapply(selected_plots, function(tab_name) {
-          plots_all_omes = plots[[tab_name]]
+          plots_all_omes = plots[[tab_name]]()
           
           # loop through selected omes
           lapply(selected_omes, function(ome) {
@@ -84,7 +90,7 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
             
             # save each plot for this ome
             for(i in seq_along(plots_this_ome)) {
-              p = plots_this_ome[[i]]()
+              p = plots_this_ome[[i]]
               p_name = paste0(names(plots_this_ome)[[i]], '.pdf')
               
               # save ggplot
