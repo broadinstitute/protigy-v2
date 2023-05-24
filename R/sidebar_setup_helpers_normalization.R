@@ -14,7 +14,7 @@
 
 
 #############################################################################################
-normalize.data  <- function(data,
+normalize.data  <- function(data, # a data matrix
                             method=c('Median',
                                      'Median (non-zero)',
                                      'Quantile', 

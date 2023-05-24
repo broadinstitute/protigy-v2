@@ -26,8 +26,9 @@ my_shinyalert_tryCatch <- function(expr,
           if (is.null(text.warning)) {text.warning <- paste0(cond$message)}
           
           shinyalert::shinyalert(
-            text = text.warning,
-            type = "warning"
+            text = HTML(text.warning),
+            type = "warning",
+            html = TRUE
           )
         }
       }
@@ -41,8 +42,9 @@ my_shinyalert_tryCatch <- function(expr,
       if (is.null(text.error)) {text.error <- paste0(cond$message)}
       
       shinyalert::shinyalert(
-        text = text.error,
-        type = "error"
+        text = HTML(text.error),
+        type = "error",
+        html = TRUE
       )
     }
     
