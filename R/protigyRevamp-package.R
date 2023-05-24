@@ -19,7 +19,7 @@
 #' @importFrom shinyjqui orderInput updateOrderInput
 #' @importFrom grDevices colorRampPalette dev.off pdf
 #' @importFrom methods new
-#' @importFrom stats sd
+#' @importFrom stats density mad median quantile sd
 #' @importFrom zip zip
 ## usethis namespace: end
 NULL

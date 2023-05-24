@@ -36,7 +36,9 @@ Imports:
     vsn,
     preprocessCore,
     mixtools,
-    mclust
+    mclust,
+    nlme,
+    data.table
 Depends:
     shiny
 Suggests: 
