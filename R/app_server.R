@@ -12,17 +12,19 @@ app_server <- function(input, output, session) {
   #   $parameters = names list of input parameters from setup
   # names always correspond to GCT labels (typed by user)
   sidebar_output <- setupSidebarServer()
+  GCTs_and_params <- sidebar_output$GCTs_and_params
+  globals <- sidebar_output$globals
   
   
   ## module server function calls
   # heatmapTabServer()
   all_summary_plots <- summaryTabServer(
-    GCTs_and_params = sidebar_output$GCTs_and_params,
-    globals = sidebar_output$globals)
+    GCTs_and_params = GCTs_and_params,
+    globals = globals)
   
   ## gather all plots
   all_plots <- list(
-      omes = reactive(names(sidebar_output$GCTs_and_params()$GCTs)),
+      omes = reactive(names(GCTs_and_params()$GCTs)),
       plots = list(
         summary_plots = all_summary_plots
       )
@@ -30,7 +32,6 @@ app_server <- function(input, output, session) {
 
   ## export tab
   exportTabServer(all_plots = all_plots)
-  
 
 }
 

@@ -106,7 +106,9 @@ gctSetupUI <- function(ns,
 }
 
 # function for advanced settings UI
-advancedSettingsUI <- function(ns, labels) {
+advancedSettingsUI <- function(ns, parameters) {
+  labels <- names(parameters)
+  
   tagList(
     h4("Advanced settings"),
     if (length(labels) > 1) {
@@ -114,9 +116,6 @@ advancedSettingsUI <- function(ns, labels) {
                                       "Default -ome",
                                       choices = labels)))
     },
-    fluidRow(column(12, selectInput(ns('default_annotation'),
-                                    "Default annotation of interest",
-                                    choices = NULL))),
     fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
     fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
     hr()

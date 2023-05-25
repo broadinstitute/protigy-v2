@@ -26,7 +26,7 @@
 
     Do NOT use `ns()` when:
 
-    -   You are updating a UI element *outside* of a `renderUI()` block. For example: `updateTextInput("myText")`.
+    -   You are updating a UI element in the server *outside* of a `renderUI()` block. For example: `updateTextInput("myText")`.
 
 ### Managing package dependencies
 
@@ -35,9 +35,10 @@ Dependencies need to be listed in 2 places:
 1.  In the `DESCRIPTION` file under `Imports`. This add the dependency as a part of your package metadata. Importantly, this **does not load the dependency!**
     -   You can use the function `usethis::use_package` to automatically add the dependency to your imports section (e.g. run `usethis::use_package("shiny")` from the R console)
     -   Alternatively, you can manually edit the `DESCRIPTION` file.
-2.  In `R/protigyRevamp-package.R` as an `@import` or `@importFrom` statement. This actually loads the package when the app runs.
+2.  In `R/protigyRevamp-package.R` as a roxygen `@import` or `@importFrom` statement. This actually loads the package when the app runs.
     -   `@import` will load the entire package. It's similar to `library` or `require`.
     -   `@importFrom` lets you load only specific functions. This is best if you're only using a couple functions from a large package.
+    -   Alternatively, you could put the `@import` or `@importFrom` statement just before your function definition. This would load the dependency only when that function is called. This is best for helper functions that require specific packages (e.g. some normalization and filtering functions).
     -   **IMPORTANT:** If you edit any `@import` or `@importFrom` commands, you need to update your package's `NAMESPACE`! To do this, run `devtools::document()`.
 
 ### Testing

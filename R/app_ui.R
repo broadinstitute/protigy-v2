@@ -6,7 +6,6 @@
 ################################################################################
 
 app_UI <- function(request) {dashboardPage(
-  
   dashboardHeader(title = 'New Protigy?'),
   
   dashboardSidebar(
@@ -15,11 +14,14 @@ app_UI <- function(request) {dashboardPage(
   
   dashboardBody(
     # custom CSS for the navbar title and settings icon
-    tags$head(tags$style(
-      type = 'text/css',
-      HTML('.navbar-brand {display:none;}'),
-      HTML('.main-header .sidebar-toggle:before {content: "\\2699";}'))
-    ),
+    # tags$head(tags$style(
+    #   type = 'text/css',
+    #   HTML('.navbar-brand {display:none;}'),
+    #   HTML('.main-header .sidebar-toggle:before {content: "\\2699";}'))
+    # ),
+    
+    # include custom CSS
+    includeCSS(system.file("custom.css", package = "protigyRevamp")),
   
     navbarPage(
       title = '',

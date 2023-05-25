@@ -299,13 +299,29 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
     })
     
+    # set new global variables
+    observeEvent(gctsGO(), {
+      parameters <- GCTs_and_params()$parameters
+      all_omes <- names(parameters)
+      
+      new_globals <- list()
+      new_globals$omes <- all_omes
+      new_globals$default_ome <- all_omes[1]
+      new_globals$default_annotations <- list()
+      for (ome in all_omes) {
+        new_globals$default_annotations[[ome]] <- parameters[[ome]]$groups_column
+      }
+      globals(new_globals)
+    })
+    
     
     ### STEP 4: ADVANCED SETTINGS ###
     
     # once GCT setup submitted, go to advanced settings
     observeEvent(gctsGO(), {
       labels = names(GCTs_and_params()$parameters)
-      output$sideBarMain <- renderUI({advancedSettingsUI(ns = ns, labels = labels)})
+      output$sideBarMain <- renderUI({
+        advancedSettingsUI(ns = ns, parameters = GCTs_and_params()$parameters)})
       output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
       output$rightButton <- NULL
     }, ignoreInit = TRUE)
@@ -315,7 +331,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       current_globals <- globals()
       current_globals$default_ome <- input$default_ome
       globals(current_globals)
-    })
+    }, ignoreInit = TRUE)
     
 
     

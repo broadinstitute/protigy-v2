@@ -49,17 +49,8 @@ processGCT <- function(GCTs, parameters) {
       data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
       
       
-      ## TODO: data filter
-      method <- params$data_filter
-      if (method == "None") {
-        data.filtered <- data.norm
-      } else if (method == "Reproducibility") {
-        #data.filtered <- my.reproducibility.filter(data.norm, groups.vector)
-        warning("DATA FILTER NOT COMPLETED")
-        data.filtered <- data.norm
-      }
-      
-      #my.reproducibility.filter
+      ## data filter
+      data.filtered <- perform_data_filtering(data.missing.filtered, params$data_filter)
       
       
       
@@ -151,3 +142,23 @@ perform_missing_filter <- function(data, max_missing) {
   data <- data[missing_percent <= max_missing, ]
   return(data)
 }
+
+# perform data filtering
+perform_data_filtering <- function(data, method) {
+  if (method == "None") {
+    data.filtered <- data
+  } else if (method == "Reproducibility") {
+    #data.filtered <- my.reproducibility.filter(data.norm, groups.vector)
+    warning("DATA FILTER NOT COMPLETED")
+    data.filtered <- data
+  } else if (method == "StdDev") {
+    warning("DATA FILTER NOT COMPLETED")
+    data.filtered <- data
+  } else {
+    stop("Invalid data filter selected")
+  }
+  
+  return(data.filtered)
+}
+
+
