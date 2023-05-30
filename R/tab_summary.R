@@ -36,16 +36,24 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     
     # summary plots tabs
     output$summary_plots_tabs <- renderUI({
-      req(all_omes(), default_ome())
-    
+      req(all_omes(), default_ome(), default_annotations(), GCTs())
+
       tabs <- lapply(all_omes(), function(ome){
-        tabPanel(ome)
+        tabPanel(
+          title = ome,
+          selectInput(ns(paste0(ome, "_summary_quant_features_annotation")),
+                      "Group by",
+                      choices = names(GCTs()[[ome]]@cdesc),
+                      selected = default_annotations()[[ome]]),
+          plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot")))
+        )
       })
       
-      do.call(tabBox, c(tabs, list(id = ns("summary_plots"),
-                                   title = "Summary Plots",
-                                   width = 12,
-                                   selected = isolate(default_ome()))))
+      do.call(tabBox, c(rev(tabs), list(id = ns("summary_plots"),
+                                        title = "Quantified Features",
+                                        width = 12,
+                                        selected = isolate(default_ome()),
+                                        side = "right")))
     })
     
     # update selected tab based on default -ome
@@ -53,13 +61,46 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
       updateTabsetPanel(inputId = "summary_plots", selected = default_ome())
     })
     
-    # summary plots list
-    summary_quant_features_plots_list <- reactive({
+    # summary quant features plots annotations
+    summary_quant_features_annotations <- reactive({
       
+      req(default_annotations())
+      
+      sapply(all_omes(), function(ome) {
+        if (paste0(ome, "_summary_quant_features_annotation") %in% names(input)) {
+          input[[paste0(ome, "_summary_quant_features_annotation")]]
+        } else {
+          default_annotations()[[ome]]
+        }
+      }, simplify = FALSE)
     })
     
+    # summary plots list
+    summary_quant_features_plots_list <- reactive({
+      validate(
+        need(GCTs(), "GCTs not yet processed") %then%
+        need(all_omes(), "Omes not avaliable") %then%
+        need(default_annotations(), "Default annotation not avaliable"))
+      
+      all_gcts <- GCTs()
+      all_annotations <- summary_quant_features_annotations()
+
+      sapply(all_omes(), function(ome) {
+        summary.quant.features(all_gcts[[ome]], all_annotations[[ome]])
+      }, simplify = FALSE)
+    })
+    
+    # render plot for each -ome
+    observeEvent(input$summary_plots, {
+      current_ome <- input$summary_plots
+      output[[paste0(current_ome, "_summary_quant_features_plot")]] <- renderPlotly({
+        ggplotly(summary_quant_features_plots_list()[[current_ome]])
+      })
+    })
+    
+    
     # # summary quant features plot
-    # summary.quant.features.plot <- reactive({
+    # # summary.quant.features.plot <- reactive({
     #   validate(
     #     need(GCTs, "GCTs not yet processed") %then%
     #       need(input$ome, "Ome not selected") %then%
@@ -102,7 +143,20 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     # })
     
     
-    all_summary_plots <- reactiveVal()
+    all_summary_plots <- reactive({
+      # gather all of the lists of plots
+      quant_features_plots = summary_quant_features_plots_list()
+      
+      # make a list with all plots for each ome
+      # the names for this list are the omes
+      sapply(all_omes(), function(ome) {
+        list(
+          quant_features_plot = quant_features_plots[[ome]] + 
+            ggtitle(paste("Quantified features:", ome))
+        )
+      }, simplify = FALSE)
+
+    })
     
     return(all_summary_plots)
   })
@@ -121,7 +175,10 @@ summary.quant.features <- function (gct, col_of_interest) {
   
   p <- ggplot(data = non.missing, aes(x = SampleID, y = numFeatures, fill = group)) +
     geom_bar(stat = 'identity') +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    xlab("# Quantified Features") +
+    ylab("Sample columns") + 
+    labs(fill = col_of_interest)
   
   return(p)
 }

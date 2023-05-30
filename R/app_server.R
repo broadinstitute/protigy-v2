@@ -9,7 +9,7 @@ app_server <- function(input, output, session) {
   # output: GCTs_and_params reactiveVal
   # this is a nested list with fields:
   #   $GCTs = named list of parsed and processed GCT objects
-  #   $parameters = names list of input parameters from setup
+  #   $parameters = named list of input parameters from setup
   # names always correspond to GCT labels (typed by user)
   sidebar_output <- setupSidebarServer()
   GCTs_and_params <- sidebar_output$GCTs_and_params
