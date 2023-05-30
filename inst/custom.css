@@ -1,0 +1,78 @@
+/* Remove space for the title in the navbar*/
+.navbar-brand {
+  display:none;
+}
+
+/* Add the settings icon in the shinydashboard header*/
+.main-header .sidebar-toggle:before {
+  content: "\2699";
+}
+
+/* this is all styling for tabBoxes*/
+.nav-tabs {
+  background-color: #3c8cbc;
+}
+.nav-tabs-custom .nav-tabs li.active:hover a, .nav-tabs-custom .nav-tabs li.active a {
+  background-color: white;
+  border-color: transparent;
+}
+.nav-tabs-custom .nav-tabs li.active {
+    border-top-color: #3c8cbc;
+}
+.nav-tabs-custom .nav-tabs li.header {
+    color: white; 
+ }
+.nav-tabs-custom .nav-tabs li a {
+    color: white;
+    border-radius: 0;
+}
+
+/* minimize padding between elements in sidebar*/
+section.sidebar .shiny-input-container {
+  padding: 0px 10px 0px 10px;
+  white-space: normal;
+  margin-bottom: 10px;
+  font-size: 10pt;
+}
+section.sidebar h4 {
+  padding-left: 10px;
+  margin-top: 0px;
+}
+section.sidebar hr {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+section.sidebar {
+  margin-top: 10px;
+}
+
+/* small inputs for sidebar: selectize inputs*/   
+.small-input .selectize-input {
+  height: min-content;
+  font-size: 10pt;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 10px;
+  padding-right: 10px;
+  min-height: min-content;
+  border-radius: 2px;
+}
+
+/* small inputs for sidebar: selectize inputs that use updateInput somewhere*/   
+.small-input .selectize-control {
+  padding: 0px;
+}
+
+/* small inputs for sidebar: textInput or similar inputs*/
+.small-input .form-control {
+  border-radius: 2px;
+  font-size: 10pt;
+  height: min-content;
+  padding: 5px;
+  min-height: min-content;
+}
+
+/* the labels for all inputs*/
+.small-input .control-label {
+  font-weight: 400;
+}

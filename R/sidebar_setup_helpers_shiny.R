@@ -13,9 +13,11 @@ labelSetupUI <- function(ns, gctFileNames) {
   tagList(
     h4('Assign labels'),
     lapply(gctFileNames, function(file) {
-      textInput(inputId = ns(paste0('Label_', file)),
-                label = file,
-                placeholder = "Proteome or Prot")
+      add_classes(
+        textInput(inputId = ns(paste0('Label_', file)),
+                  label = file,
+                  placeholder = "Proteome or Prot"),
+        classes = "small-input")
     })
   )
 }
@@ -41,54 +43,75 @@ gctSetupUI <- function(ns,
        paste0(' (', current_place, '/', max_place, ')')), 
     
     ## groups column selection
-    fluidRow(column(12, selectInput(ns(paste0(label, '_groups_column')),
-                                    "Groups column",
-                                    choices = groups_choices,
-                                    selected = ifelse(
-                                      is.null(parameters[[label]]$groups_column),
-                                      groups_choices[1],
-                                      parameters[[label]]$groups_column)))),
+    add_classes(
+        selectInput(
+          ns(paste0(label, '_groups_column')),
+          "Groups column",
+          choices = groups_choices,
+          selected = ifelse(
+            is.null(parameters[[label]]$groups_column),
+            groups_choices[1],
+            parameters[[label]]$groups_column)),
+        classes = "small-input"),
     
     ## intentisy data input
-    fluidRow(column(12, selectInput(ns(paste0(label, '_intensity_data')), 
-                                    'Intensity data',
-                                    choices = parameter_choices$intensity_data,
-                                    selected = parameters[[label]]$intensity_data))),
+    add_classes(
+      selectInput(
+        ns(paste0(label, '_intensity_data')),
+        'Intensity data',
+        choices = parameter_choices$intensity_data,
+        selected = parameters[[label]]$intensity_data),
+      classes = "small-input"),
     
     ## log transformation input
-    fluidRow(column(12, selectInput(ns(paste0(label, '_log_transformation')),
-                                    label = 'Log-transformation',
-                                    choices = parameter_choices$log_transformation,
-                                    selected = parameters[[label]]$log_transformation))),
+    add_classes(
+      selectInput(
+        ns(paste0(label, '_log_transformation')),
+        label = 'Log-transformation',
+        choices = parameter_choices$log_transformation,
+        selected = parameters[[label]]$log_transformation),
+      classes = "small-input"),
     
     ## data normalization input
-    fluidRow(column(12, selectInput(ns(paste0(label, '_data_normalization')),
-                                    label = 'Data normalization',
-                                    choices = parameter_choices$data_normalization$intensity_data_no,
-                                    selected = parameters[[label]]$data_normalization))),
+    add_classes(
+      selectInput(
+        ns(paste0(label, '_data_normalization')),
+        label = 'Data normalization',
+        choices = parameter_choices$data_normalization$intensity_data_no,
+        selected = parameters[[label]]$data_normalization),
+      classes = "small-input"),
     
     ## group-wise normalization
     conditionalPanel(
       condition = paste0("input['", label, "_data_normalization'] != 'None'"),
-      checkboxInput(ns(paste0(label, '_group_normalization')),
-                                        label = "Perform group-wise normalization",
-                                        value = parameters[[label]]$group_normalization),
+      add_classes(
+        checkboxInput(
+          ns(paste0(label, '_group_normalization')),
+          label = "Perform group-wise normalization",
+          value = parameters[[label]]$group_normalization),
+        classes = "small-input"),
       ns = ns
     ),
     
     ## max missing value input
-    fluidRow(column(12, numericInput(ns(paste0(label, '_max_missing')), 
-                                     'Max. % missing values',
-                                     min = parameter_choices$max_missing$intensity_data_no$min,
-                                     max = parameter_choices$max_missing$intensity_data_no$max,
-                                     step = parameter_choices$max_missing$intensity_data_no$step,
-                                     value = parameters[[label]]$max_missing))),
+    add_classes(
+      numericInput(
+        ns(paste0(label, '_max_missing')), 
+        'Max. % missing values',
+        min = parameter_choices$max_missing$intensity_data_no$min,
+        max = parameter_choices$max_missing$intensity_data_no$max,
+        step = parameter_choices$max_missing$intensity_data_no$step,
+        value = parameters[[label]]$max_missing),
+      classes = "small-input"),
     
     ## data filter input 
-    fluidRow(column(12, selectInput(ns(paste0(label, '_data_filter')),
-                                    label = 'Filter data',
-                                    choices = parameter_choices$data_filter$intensity_data_no,
-                                    selected = parameters[[label]]$data_filter))),
+    add_classes(
+      selectInput(
+        ns(paste0(label, '_data_filter')),
+        label = 'Filter data',
+        choices = parameter_choices$data_filter$intensity_data_no,
+        selected = parameters[[label]]$data_filter),
+      classes = "small-input"),
     
     ## apply to all checkbox
     if (max_place > 1) {
@@ -97,7 +120,9 @@ gctSetupUI <- function(ns,
         condition = paste0("['", 
                            paste(groups_choices_all_omes, collapse = "', '"), 
                            "'].includes(input['", label, "_groups_column'])"),
-        fluidRow(column(12, checkboxInput(ns('applyToAll'), 'Apply settings to all -omes'))),
+        add_classes(
+          checkboxInput(ns('applyToAll'), 'Apply settings to all -omes'),
+          classes = "small-input"),
         ns = ns
       )
       

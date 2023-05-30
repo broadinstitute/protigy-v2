@@ -91,3 +91,8 @@ smart_trim <- function(labels, trim_length=10, default_trim=c("beginning", "end"
   return(unname(labels_trimmed)) # return the trimmed vectors, unnamed
 }
 
+# add css class to shiny element
+add_classes <- function(el, classes) {
+  el$attribs$class <- paste(el$attribs$class, classes)
+  el
+}
