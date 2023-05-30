@@ -309,7 +309,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       new_globals$default_ome <- all_omes[1]
       new_globals$default_annotations <- list()
       for (ome in all_omes) {
-        new_globals$default_annotations[[ome]] <- parameters[[ome]]$groups_column
+        new_globals$default_annotations[[ome]] <- parameters[[ome]]$annotation_column
       }
       globals(new_globals)
     })
@@ -364,7 +364,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         new_parameters[[label]]$max_missing <- input[[paste0(current_label, '_max_missing')]]
         new_parameters[[label]]$intensity_data <- input[[paste0(current_label, '_intensity_data')]]
         new_parameters[[label]]$group_normalization <- input[[paste0(current_label, '_group_normalization')]]
-        new_parameters[[label]]$groups_column <- input[[paste0(current_label, '_groups_column')]]
+        new_parameters[[label]]$annotation_column <- input[[paste0(current_label, '_annotation_column')]]
       }
       
       # assign reactiveVal

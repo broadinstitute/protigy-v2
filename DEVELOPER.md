@@ -9,6 +9,8 @@
 -   R package code structure for [R scripts](https://r-pkgs.org/code.html) and [other components](https://r-pkgs.org/misc.html)
 -   [Advanced deployment](https://engineering-shiny.org/deploy.html)
 -   [Handling package dependencies](https://r-pkgs.org/dependencies-in-practice.html)
+-   [Custom CSS for shiny](https://unleash-shiny.rinterface.com/beautify-css.html#beautify-css)
+-   [Testing your app](https://mastering-shiny.org/scaling-testing.html)
 
 ### Tips, Tricks, and Gotcha's
 
@@ -27,6 +29,8 @@
     Do NOT use `ns()` when:
 
     -   You are updating a UI element in the server *outside* of a `renderUI()` block. For example: `updateTextInput("myText")`.
+
+4.  **Custom CSS**: If you need to customize the user interface, I recommend getting comfortable using "inspect element". This lets you see all the possible fields you can edit and what class(es) each element belongs to. Then [add your custom CSS](https://unleash-shiny.rinterface.com/beautify-css.html#beautify-css).
 
 ### Managing package dependencies
 

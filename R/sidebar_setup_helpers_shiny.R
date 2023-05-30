@@ -45,8 +45,8 @@ gctSetupUI <- function(ns,
     ## groups column selection
     add_classes(
         selectInput(
-          ns(paste0(label, '_groups_column')),
-          "Groups column",
+          ns(paste0(label, '_annotation_column')),
+          "Analysis annotation column",
           choices = groups_choices,
           selected = ifelse(
             is.null(parameters[[label]]$groups_column),
