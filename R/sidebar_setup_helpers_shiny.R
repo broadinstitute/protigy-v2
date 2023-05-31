@@ -36,7 +36,6 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
-  
   tagList(
     h4('Setup for ',
        strong(span(label, style = "color:#00c0ef")),
@@ -49,9 +48,9 @@ gctSetupUI <- function(ns,
           "Analysis annotation column",
           choices = groups_choices,
           selected = ifelse(
-            is.null(parameters[[label]]$groups_column),
+            is.null(parameters[[label]]$annotation_column),
             groups_choices[1],
-            parameters[[label]]$groups_column)),
+            parameters[[label]]$annotation_column)),
         classes = "small-input"),
     
     ## intentisy data input
@@ -93,6 +92,23 @@ gctSetupUI <- function(ns,
       ns = ns
     ),
     
+    ## group-wise normalization column
+    conditionalPanel(
+      condition = paste0("(input['", label, "_data_normalization'] != 'None')",
+                         " && (input['", label, "_group_normalization'])"),
+      add_classes(
+        selectInput(
+          ns(paste0(label, '_group_normalization_column')),
+          label = "Column for group normalization",
+          choices = groups_choices,
+          selected = ifelse(
+            is.null(parameters[[label]]$group_normalization_column),
+            groups_choices[1],
+            parameters[[label]]$group_normalization_column)),
+        classes = "small-input"),
+      ns = ns
+    ),
+    
     ## max missing value input
     add_classes(
       numericInput(
@@ -116,10 +132,14 @@ gctSetupUI <- function(ns,
     ## apply to all checkbox
     if (max_place > 1) {
       # only shows up if the groups column selection is present in all -omes
+      # AND if there's either no group normalization or the group normalization
+      # column is also present in all omes
       conditionalPanel(
-        condition = paste0("['", 
-                           paste(groups_choices_all_omes, collapse = "', '"), 
-                           "'].includes(input['", label, "_groups_column'])"),
+        condition = paste0("['", paste(groups_choices_all_omes, collapse = "', '"), 
+                           "'].includes(input['", label, "_annotation_column']) ",
+                           "&& (!input['", label, "_group_normalization'] || ",
+                           "['", paste(groups_choices_all_omes, collapse = "', '"), 
+                           "'].includes(input['", label, "_group_normalization_column']))"),
         add_classes(
           checkboxInput(ns('applyToAll'), 'Apply settings to all -omes'),
           classes = "small-input"),

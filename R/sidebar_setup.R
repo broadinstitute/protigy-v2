@@ -286,9 +286,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       GCTs <- GCTs_internal_reactive()
       
       # call processGCTs function in a tryCatch
-      GCTs_processed <- my_shinyalert_tryCatch(
-        expr = {processGCT(GCTs = GCTs, parameters = parameters)},
-        return.error = NULL)
+      GCTs_processed <- processGCT(GCTs = GCTs, parameters = parameters)
       
       if (!is.null(GCTs_processed)) {
         # set GCTs_and_params reactiveVal
@@ -365,6 +363,7 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         new_parameters[[label]]$intensity_data <- input[[paste0(current_label, '_intensity_data')]]
         new_parameters[[label]]$group_normalization <- input[[paste0(current_label, '_group_normalization')]]
         new_parameters[[label]]$annotation_column <- input[[paste0(current_label, '_annotation_column')]]
+        new_parameters[[label]]$group_normalization_column <- input[[paste0(current_label, '_group_normalization_column')]]
       }
       
       # assign reactiveVal
