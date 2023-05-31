@@ -10,8 +10,6 @@ processGCT <- function(GCTs, parameters) {
   
   message("\nProcessing GCTs...")
   
-  # TODO: validate GCTs
-  
   processing_out <- mapply(
     GCTs, names(GCTs),
     SIMPLIFY = FALSE,
@@ -27,6 +25,10 @@ processGCT <- function(GCTs, parameters) {
         return.error = NULL,
         
         expr = {
+          ## validate GCT
+          gct <- validateGCT(gct)
+          
+          ## extract data and parameters
           cdesc <- gct@cdesc
           rdesc <- gct@rdesc
           data <- gct@mat
@@ -47,14 +49,11 @@ processGCT <- function(GCTs, parameters) {
           data.norm <- output_list$data.norm
           params$data_normalization <- output_list$updated_method
           
-          
           ## missing value filter
           data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
           
-          
           ## data filter
           data.filtered <- perform_data_filtering(data.missing.filtered, params$data_filter)
-          
 
           ## re-compine GCT and return
           GCT(cdesc = cdesc, 
@@ -146,7 +145,6 @@ perform_data_normalization <- function(data, method, cdesc,
       # send out a warning
       # the HTML will be rendered as part of a shinyalert
       warning(paste(
-        '<b>Warning in normalization for', ome, '</b><br>',
         'The two-component normalization failed to converge on at least one',
         'data column. Please note that this type of normalization expects',
         '<b>log-ratio</b> data that is approximately <b>centered around',
@@ -184,4 +182,33 @@ perform_data_filtering <- function(data, method) {
   return(data.filtered)
 }
 
+# validate GCT is the correct input
+validateGCT <- function(gct) {
+  mat <- gct@mat
+  cdesc <- gct@cdesc
+  rdesc <- gct@rdesc
 
+  # check that rid matches rdesc matches row names
+  if (!setequal(rownames(mat), rownames(rdesc))) {
+    error("GCT data row names not match `rdesc` row names.")
+  }
+  
+  # check that cid matches cdesc matches column names
+  if (!setequal(colnames(mat), rownames(cdesc))) {
+    error("GCT data column names does not match `cdesc` row names.")
+  }
+  
+  # check for infinities
+  if (any(is.infinite(mat))) {
+    warning("Data contains infinities, are you sure you want to continue?")
+  }
+  
+  # make sure cdesc/rdesc order matches data column/row names
+  # warning here if rows/columns are misaligned?
+  cdesc <- cdesc[colnames(mat), , drop = FALSE]
+  rdesc <- rdesc[rownames(mat), , drop = FALSE]
+  
+  cat("GCT looks good!\n")
+  
+  return(GCT(mat = mat, rdesc = rdesc, cdesc = cdesc))
+}
