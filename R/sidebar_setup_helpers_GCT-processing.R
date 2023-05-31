@@ -190,12 +190,12 @@ validateGCT <- function(gct) {
 
   # check that rid matches rdesc matches row names
   if (!setequal(rownames(mat), rownames(rdesc))) {
-    error("GCT data row names not match `rdesc` row names.")
+    stop("GCT data row names not match `rdesc` row names.")
   }
   
   # check that cid matches cdesc matches column names
   if (!setequal(colnames(mat), rownames(cdesc))) {
-    error("GCT data column names does not match `cdesc` row names.")
+    stop("GCT data column names does not match `cdesc` row names.")
   }
   
   # check for infinities
