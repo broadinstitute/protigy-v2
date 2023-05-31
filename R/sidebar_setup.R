@@ -218,6 +218,37 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
     })
     
+    
+    # reset applyToAll to FALSE if it is not a valid option
+    groups_in_all_omes <- reactive({
+      base::Reduce(base::intersect, lapply(GCTs_internal_reactive(), function(gct) names(gct@cdesc)))
+    })
+    observe({
+      req(parameters_internal_reactive(), groups_in_all_omes())
+      
+      # get relevant inputs
+      current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+      current_annotation_column <- input[[paste0(current_label, "_annotation_column")]]
+      current_group_norm_column <- input[[paste0(current_label, "_group_normalization_column")]]
+      current_group_norm_selection <- input[[paste0(current_label, "_group_normalization")]]
+      
+      # get the groups/columns that are present in all omes
+      groups_in_all <- isolate(groups_in_all_omes())
+      
+      # condition for when to update applyToAll to false
+      # NOTE: if something changes here, also check out the `gctSetupUI()`
+      # function to determine when applyToAll actually shows up in the UI
+      condition <- !(current_annotation_column %in% groups_in_all) |
+        (current_group_norm_selection & !(current_group_norm_column %in% groups_in_all))
+      
+      # update applyToAll to FALSE if necessary
+      if (TRUE %in% condition) {
+        updateCheckboxInput(inputId = "applyToAll", value = FALSE)
+      }
+    })
+    
+    
+    
     # change next/back buttons if applyToAll == TRUE
     observeEvent(input$applyToAll, {
       
