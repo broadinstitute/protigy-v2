@@ -1,3 +1,13 @@
+################################################################################
+# Module: UTILITIES
+# 
+# This script contains functions that are used throughout the app. If you are 
+# a developer, please feel free to use these functions generously.
+#
+# Current utility functions include:
+# 1. `%then%`: used in `validate()` statements
+# 2. Using roxygen import tags for dependencies instead of p_load()
+################################################################################
 
 # helper function for some  validate() statements
 # makes only the first erroneous need() statement show up

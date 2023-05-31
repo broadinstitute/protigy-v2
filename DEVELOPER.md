@@ -1,4 +1,4 @@
-# proteomics-protigy-revamp
+# Developer Notes, Resources, and Recommendations
 
 ### Useful resources
 
