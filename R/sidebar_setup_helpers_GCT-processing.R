@@ -121,6 +121,14 @@ perform_data_normalization <- function(data, method, cdesc,
       groups.vector <- cdesc[[group.normalization.column]]
       names(groups.vector) <- rownames(cdesc)
       
+      # warning if there is any level in groups.vector with only one element
+      freq_count <- aggregate(groups.vector, list(element = groups.vector), length)[[2]]
+      if (any(freq_count == 1)) {
+        warning(
+          "One or more levels in the group normalization column only contain ",
+          "one element. Consider group normalizing by a different column.")
+      }
+      
       # perform group-wise normalization
       data.norm <- normalize.data(data, method, groups.vector)
     } else {
