@@ -38,7 +38,7 @@ gctSetupUI <- function(ns,
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
   tagList(
     h4('Setup for ',
-       strong(span(label, style = "color:#00c0ef")),
+       strong(span(label, style = "color:#a4dc84")),
        paste0(' (', current_place, '/', max_place, ')')), 
     
     ## groups column selection
