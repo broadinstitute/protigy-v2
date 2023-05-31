@@ -45,7 +45,8 @@ app_UI <- function(request) {dashboardPage(
         tabPanel('Heatmap'),
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
-      tabPanel("Export", exportTabUI())
+      tabPanel("Customize", icon = icon("wand-magic-sparkles")),
+      tabPanel("Export", exportTabUI(), icon = icon("download"))
       ) #end navbarPage
   ) # end dashboardBody
 ) # end dashboardPage
