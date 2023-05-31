@@ -46,14 +46,14 @@ normalize.data  <- function(data, # a data matrix
       
       gg.idx = names(grp.vec)[ which(grp.vec == gg) ]
       
-      data.group <- data[, gg.idx]
+      data.group <- data[, gg.idx, drop = FALSE]
       
       data.group.norm <- normalize.data.helper(data.group, method=match.arg(method), per_group = TRUE)
       
       if(gg == groups[1]){
         data.norm <- data.group.norm  
       } else {
-        data.norm <- cbind(data.norm, data.group.norm[, gg.idx])
+        data.norm <- cbind(data.norm, data.group.norm)
       }
     } ## end for
     

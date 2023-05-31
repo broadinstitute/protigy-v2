@@ -8,14 +8,17 @@
 # wrapper for shinyalert and tryCatch to handle errors gracefully
 # can specify the following:
 #   show.warning/error = show the shiny alert
-#   text.warning/error = message for shiny alert
+#   text.warning/error = message for shiny alert, can include raw HTML
+#   return.warning/error = append the warning/error message to text.warning/error
 #   return.error = what to return if there is an error
 my_shinyalert_tryCatch <- function(expr,
                                    text.warning = NULL,
-                                   show.warning = T,
+                                   show.warning = TRUE,
+                                   append.warning = FALSE,
                                    text.error = NULL,
-                                   show.error = T,
-                                   return.error = NULL) {
+                                   show.error = TRUE,
+                                   return.error = NULL,
+                                   append.error = TRUE) {
   tryCatch({
     # catch warnings and continue execution
     withCallingHandlers(
@@ -23,7 +26,11 @@ my_shinyalert_tryCatch <- function(expr,
       warning = function(cond) {
         # display shiny alert
         if (show.warning) {
-          if (is.null(text.warning)) {text.warning <- paste0(cond$message)}
+          if (is.null(text.warning)) {
+            text.warning <- paste0(cond$message)
+          } else if (append.warning) {
+            text.warning <- paste(text.warning, paste0(cond$message))
+          }
           
           shinyalert::shinyalert(
             text = HTML(text.warning),
@@ -39,7 +46,11 @@ my_shinyalert_tryCatch <- function(expr,
     
     # display shiny alert
     if (show.error) {
-      if (is.null(text.error)) {text.error <- paste0(cond$message)}
+      if (is.null(text.error)) {
+        text.error <- paste0(cond$message)
+      } else if (append.error) {
+        text.error <- paste(text.error, paste0(cond$message))
+      }
       
       shinyalert::shinyalert(
         text = HTML(text.error),

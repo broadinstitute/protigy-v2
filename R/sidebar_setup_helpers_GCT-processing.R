@@ -17,60 +17,61 @@ processGCT <- function(GCTs, parameters) {
     SIMPLIFY = FALSE,
     USE.NAMES = TRUE,
     FUN = function(gct, ome) {
-      cdesc <- gct@cdesc
-      rdesc <- gct@rdesc
-      data <- gct@mat
-      params <- parameters[[ome]]
       
-      # get groups vector
-      groups.vector <- cdesc[[params$groups_column]]
-      names(groups.vector) <- rownames(cdesc)
-      
-      ## log transformation
-      output_list <- perform_log_transformation(data, params$log_transformation)
-      data.log.trans <- output_list$data.log.trans
-      params$log_transformation <- output_list$updated_method
-      
-      ## data normalization
-      if (params$group_normalization) {
-        output_list <- perform_data_normalization(
-          data = data.log.trans, 
-          method = params$data_normalization)
-      } else {
-        output_list <- perform_data_normalization(
-          data = data.log.trans, 
-          method = params$data_normalization,
-          groups.vector = groups.vector)
-      }
-      data.norm <- output_list$data.norm
-      params$data_normalization <- output_list$updated_method
-      
-      ## missing value filter
-      data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
-      
-      
-      ## data filter
-      data.filtered <- perform_data_filtering(data.missing.filtered, params$data_filter)
-      
-      
-      
-      ## re-compine GCT
-      gct_processed <- GCT(cdesc = cdesc,
-                           rdesc = rdesc,
-                           mat = data.filtered)
-      
-      gct_processed
+      # wrap everything in a try/catch statement
+      my_shinyalert_tryCatch(
+        text.warning = paste0("<b>Warning in ", ome, ":</b>"),
+        append.warning = TRUE,
+        text.error = paste0("<b>Error in ", ome, ":</b>"),
+        append.error = TRUE,
+        return.error = NULL,
+        
+        expr = {
+          cdesc <- gct@cdesc
+          rdesc <- gct@rdesc
+          data <- gct@mat
+          params <- parameters[[ome]]
+          
+          ## log transformation
+          output_list <- perform_log_transformation(data, params$log_transformation)
+          data.log.trans <- output_list$data.log.trans
+          params$log_transformation <- output_list$updated_method
+          
+          ## data normalization
+          output_list <- perform_data_normalization(
+            data = data.log.trans, 
+            method = params$data_normalization,
+            perform.group.normalization = params$group_normalization,
+            group.normalization.column = params$group_normalization_column,
+            cdesc = cdesc)
+          data.norm <- output_list$data.norm
+          params$data_normalization <- output_list$updated_method
+          
+          
+          ## missing value filter
+          data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
+          
+          
+          ## data filter
+          data.filtered <- perform_data_filtering(data.missing.filtered, params$data_filter)
+          
+
+          ## re-compine GCT and return
+          GCT(cdesc = cdesc, 
+              rdesc = rdesc,
+              mat = data.filtered)
+        }
+      )
     })
   
-  
-  
-  
-  
-  
+  # have the whole output be NULL if there was an error
+  if (any(sapply(processing_out, is.null))) {
+    processing_out <- NULL
+  }
   
   # return processed GCT files
   message("\nDone with GCT processing!")
-  return(GCTs)
+  return(processing_out)
 }
 
 # perform log transformation
@@ -108,12 +109,26 @@ perform_log_transformation <- function(data, method) {
 }
 
 # perform data normalization
-perform_data_normalization <- function(data, method, groups.vector = NULL) {
+perform_data_normalization <- function(data, method, cdesc,
+                                       perform.group.normalization,
+                                       group.normalization.column) {
   if (method == "None") {
     data.norm <- data
   } else {
-    data.norm <- normalize.data(data, method, groups.vector)
     
+    if (perform.group.normalization) {
+      # get groups vector
+      groups.vector <- cdesc[[group.normalization.column]]
+      names(groups.vector) <- rownames(cdesc)
+      
+      # perform group-wise normalization
+      data.norm <- normalize.data(data, method, groups.vector)
+    } else {
+      
+      # perform regular normalization
+      data.norm <- normalize.data(data, method)
+    }
+
     # if two-component norm fails....
     if(inherits(data.norm, 'try-error')){
       # reset to no normalization
