@@ -28,7 +28,7 @@ setupSidebarUI <- function(id = "setupSidebar") {
 }
 
 # server for the sidebar setup
-setupSidebarServer <- function(id = "setupSidebar") { moduleServer( 
+setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer( 
   id,
   
   ## module function
@@ -333,6 +333,11 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       }
       globals(new_globals)
     })
+    
+    # move the current tab to the summary tab
+    observeEvent(gctsGO(), {
+      updateTabsetPanel(session = parent, inputId = "navbar-tabs", selected = "Summary")
+    }, ignoreInit = TRUE)
     
     
     ### STEP 4: ADVANCED SETTINGS ###

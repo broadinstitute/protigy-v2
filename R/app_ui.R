@@ -18,6 +18,13 @@ app_UI <- function(request) {dashboardPage(
   
     navbarPage(
       title = '',
+      navbarMenu(
+        "Help",
+        tabPanel("General", helpGeneralTabUI()),
+        tabPanel("Analysis", helpAnalysisTabUI()),
+        icon = icon("question")
+      ),
+      tabPanel("Customize", icon = icon("wand-magic-sparkles")),
       tabPanel("Summary", summaryTabUI()),
       navbarMenu(
         "Clustering",
@@ -45,8 +52,8 @@ app_UI <- function(request) {dashboardPage(
         tabPanel('Heatmap'),
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
-      tabPanel("Customize", icon = icon("wand-magic-sparkles")),
-      tabPanel("Export", exportTabUI(), icon = icon("download"))
+      tabPanel("Export", exportTabUI(), icon = icon("download")),
+      id = "navbar-tabs"
       ) #end navbarPage
   ) # end dashboardBody
 ) # end dashboardPage

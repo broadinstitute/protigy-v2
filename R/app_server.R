@@ -11,7 +11,7 @@ app_server <- function(input, output, session) {
   #   $GCTs = named list of parsed and processed GCT objects
   #   $parameters = named list of input parameters from setup
   # names always correspond to GCT labels (typed by user)
-  sidebar_output <- setupSidebarServer()
+  sidebar_output <- setupSidebarServer(parent = session)
   GCTs_and_params <- sidebar_output$GCTs_and_params
   globals <- sidebar_output$globals
   
