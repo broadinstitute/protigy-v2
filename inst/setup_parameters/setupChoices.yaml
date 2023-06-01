@@ -42,11 +42,9 @@ max_missing:
     step: 1
   
 data_filter:
-  intensity_data_yes:
-    - 'StdDev'
-    - 'None'
-  intensity_data_no:
-    - 'Reproducibility'
-    - 'StdDev'
-    - 'None'
+  - 'StdDev'
+  - 'None'
 
+data_filter_sd_pct:
+  min: 10
+  max: 90

@@ -200,15 +200,6 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
           parameters$data_normalization,
           default_parameters$data_normalization))
       
-      # update data filter
-      updateSelectInput(
-        inputId = paste0(label, '_data_filter'),
-        choices = parameter_choices$data_filter[[ind]],
-        selected = ifelse(
-          parameters$data_filter %in% parameter_choices$data_filter[[ind]],
-          parameters$data_filter,
-          default_parameters$data_filter))
-      
       # update max missing
       updateNumericInput(
         inputId = paste0(label, '_max_missing'),
@@ -317,11 +308,11 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
       GCTs <- GCTs_internal_reactive()
       
       # call processGCTs function in a tryCatch
-      GCTs_processed <- processGCT(GCTs = GCTs, parameters = parameters)
+      processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
       
-      if (!is.null(GCTs_processed)) {
+      if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
-        GCTs_and_params(list(GCTs = GCTs_processed, parameters = parameters)) 
+        GCTs_and_params(processing_output) 
         
         # increment gctsGO reactiveVal to show that processing is done
         gctsGO(gctsGO() + 1)
@@ -384,17 +375,21 @@ setupSidebarServer <- function(id = "setupSidebar") { moduleServer(
         assignment_labels <- current_label # just the current label
       }
       
-      # assign outputs based on current user selections
+      # get the current parameters
       new_parameters <- parameters_internal_reactive()
+      
+      # get the list of all parameters names to update
+      parameter_names <- c(names(default_parameters),
+                           'annotation_column',
+                           'group_normalization_column')
+      
+      # assign new user selections
+      # NOTE: there are fields in `new_parameters` that aren't updated here, 
+      # which means you can't easily forgo the for loop for an apply equivalent
       for (label in assignment_labels) {
-        new_parameters[[label]]$log_transformation <- input[[paste0(current_label, '_log_transformation')]]
-        new_parameters[[label]]$data_normalization <- input[[paste0(current_label, '_data_normalization')]]
-        new_parameters[[label]]$data_filter <- input[[paste0(current_label, '_data_filter')]]
-        new_parameters[[label]]$max_missing <- input[[paste0(current_label, '_max_missing')]]
-        new_parameters[[label]]$intensity_data <- input[[paste0(current_label, '_intensity_data')]]
-        new_parameters[[label]]$group_normalization <- input[[paste0(current_label, '_group_normalization')]]
-        new_parameters[[label]]$annotation_column <- input[[paste0(current_label, '_annotation_column')]]
-        new_parameters[[label]]$group_normalization_column <- input[[paste0(current_label, '_group_normalization_column')]]
+        for (param in parameter_names) {
+          new_parameters[[label]][[param]] <- input[[paste0(current_label, '_', param)]]
+        }
       }
       
       # assign reactiveVal

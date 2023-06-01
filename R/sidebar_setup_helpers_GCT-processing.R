@@ -6,7 +6,7 @@
 # function to parse, normalize, filter, etc. GCT file(s)
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: named list of processed GCTs, updated parameters
-processGCT <- function(GCTs, parameters) {
+processGCTs <- function(GCTs, parameters) {
   
   message("\nProcessing GCTs...")
   
@@ -23,54 +23,93 @@ processGCT <- function(GCTs, parameters) {
         text.error = paste0("<b>Error in ", ome, ":</b>"),
         append.error = TRUE,
         return.error = NULL,
-        
         expr = {
-          ## validate GCT
-          gct <- validateGCT(gct)
           
-          ## extract data and parameters
-          cdesc <- gct@cdesc
-          rdesc <- gct@rdesc
-          data <- gct@mat
-          params <- parameters[[ome]]
-          
-          ## log transformation
-          output_list <- perform_log_transformation(data, params$log_transformation)
-          data.log.trans <- output_list$data.log.trans
-          params$log_transformation <- output_list$updated_method
-          
-          ## data normalization
-          output_list <- perform_data_normalization(
-            data = data.log.trans, 
-            method = params$data_normalization,
-            perform.group.normalization = params$group_normalization,
-            group.normalization.column = params$group_normalization_column,
-            cdesc = cdesc)
-          data.norm <- output_list$data.norm
-          params$data_normalization <- output_list$updated_method
-          
-          ## missing value filter
-          data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
-          
-          ## data filter
-          data.filtered <- perform_data_filtering(data.missing.filtered, params$data_filter)
-
-          ## re-compine GCT and return
-          GCT(cdesc = cdesc, 
-              rdesc = rdesc,
-              mat = data.filtered)
+          # also wrap everything in a withProgress
+          withProgress(
+            min = 0,
+            max = 6, # number of preprocessing steps
+            message = paste0("Processing ", ome, ":"),
+            expr = {
+              ## validate GCT
+              gct <- validateGCT(gct)
+              
+              ## extract data and parameters
+              cdesc <- gct@cdesc
+              rdesc <- gct@rdesc
+              data <- gct@mat
+              params <- parameters[[ome]]
+              
+              incProgress(1, detail = "log transformation")
+              
+              ## log transformation
+              output_list <- perform_log_transformation(data, params$log_transformation)
+              data.log.trans <- output_list$data.log.trans
+              params$log_transformation <- output_list$updated_method
+              
+              incProgress(1, detail = "normalization")
+              
+              ## data normalization
+              output_list <- perform_data_normalization(
+                data = data.log.trans, 
+                method = params$data_normalization,
+                perform.group.normalization = params$group_normalization,
+                group.normalization.column = params$group_normalization_column,
+                cdesc = cdesc)
+              data.norm <- output_list$data.norm
+              params$data_normalization <- output_list$updated_method
+              
+              incProgress(1, detail = "missing value filter")
+              
+              ## missing value filter
+              data.missing.filtered <- perform_missing_filter(data.norm, params$max_missing)
+              
+              incProgress(1, detail = "standard deviation filter")
+              
+              ## data filter
+              data.filtered <- perform_data_filtering(
+                data = data.missing.filtered, 
+                method = params$data_filter,
+                group.column = params$annotation_column,
+                cdesc = cdesc,
+                sd.perc = params$data_filter_sd_pct)
+              
+              incProgress(1, detail = "compiling results")
+    
+              ## re-compine GCT and return
+              processed_GCT <- GCT(cdesc = cdesc, 
+                                   rdesc = rdesc,
+                                   mat = data.filtered)
+              
+              return(list(processed_GCT = processed_GCT, params = params))
+            }
+          )
         }
       )
     })
   
   # have the whole output be NULL if there was an error
   if (any(sapply(processing_out, is.null))) {
-    processing_out <- NULL
+    output <- NULL
+    
+  # otherwise, pull out the GCTs and updated parameters separately
+  } else {
+    GCTs_processed <- sapply(processing_out, 
+                             function(ome) ome$processed_GCT,
+                             simplify = FALSE)
+    parameters_updated <- sapply(processing_out,
+                                 function(ome) ome$params,
+                                 simplify = FALSE)
+    
+    output <- list(
+      GCTs = GCTs_processed,
+      parameters = parameters_updated
+    )
   }
   
-  # return processed GCT files
   message("\nDone with GCT processing!")
-  return(processing_out)
+  
+  return(output)
 }
 
 # perform log transformation
@@ -165,16 +204,29 @@ perform_missing_filter <- function(data, max_missing) {
 }
 
 # perform data filtering
-perform_data_filtering <- function(data, method) {
+perform_data_filtering <- function(data, method, group.column, cdesc, sd.perc) {
   if (method == "None") {
     data.filtered <- data
-  } else if (method == "Reproducibility") {
-    #data.filtered <- my.reproducibility.filter(data.norm, groups.vector)
-    warning("DATA FILTER NOT COMPLETED")
-    data.filtered <- data
+    
   } else if (method == "StdDev") {
-    warning("DATA FILTER NOT COMPLETED")
-    data.filtered <- data
+    # turn data into the expected format
+    data_with_id <- data.frame(data, id = rownames(data))
+    
+    # get the groups vector
+    group.vec <- cdesc[[group.column]]
+    names(group.vec) <- rownames(cdesc)
+    
+    # filter data
+    filtering_out <- sd.filter(
+      tab = data_with_id, 
+      grp.vec = group.vec, 
+      id.col = 'id',
+      sd.perc = sd.perc)
+    
+    # get the output
+    tab <- filtering_out$table
+    data.filtered <- as.matrix(tab[, setdiff(names(tab), 'id')])
+    
   } else {
     stop("Invalid data filter selected")
   }
@@ -188,27 +240,32 @@ validateGCT <- function(gct) {
   cdesc <- gct@cdesc
   rdesc <- gct@rdesc
 
-  # check that rid matches rdesc matches row names
+  # check that rdesc matches row names
   if (!setequal(rownames(mat), rownames(rdesc))) {
     stop("GCT data row names not match `rdesc` row names.")
   }
   
-  # check that cid matches cdesc matches column names
+  # check that cdesc matches column names
   if (!setequal(colnames(mat), rownames(cdesc))) {
     stop("GCT data column names does not match `cdesc` row names.")
   }
   
   # check for infinities
   if (any(is.infinite(mat))) {
-    warning("Data contains infinities, are you sure you want to continue?")
+    warning("Data contains infinite entries. Replacing these entries with NA.")
+    mat[is.infinite(mat)] <- NA
+  }
+  
+  # check for NaN's
+  if (any(is.nan(mat))) {
+    warning("Data contains NaN (Not a Number) entries. Replacing these entries with NA.")
+    mat[is.nan(mat)] <- NA
   }
   
   # make sure cdesc/rdesc order matches data column/row names
   # warning here if rows/columns are misaligned?
   cdesc <- cdesc[colnames(mat), , drop = FALSE]
   rdesc <- rdesc[rownames(mat), , drop = FALSE]
-  
-  cat("GCT looks good!\n")
   
   return(GCT(mat = mat, rdesc = rdesc, cdesc = cdesc))
 }

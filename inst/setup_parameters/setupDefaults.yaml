@@ -6,3 +6,5 @@ data_filter: None
 max_missing: 100
 intensity_data: "No"
 group_normalization: False
+data_filter_repro_alpha: 0.001
+data_filter_sd_pct: 10

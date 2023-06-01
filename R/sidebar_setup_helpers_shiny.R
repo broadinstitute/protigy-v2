@@ -23,6 +23,8 @@ labelSetupUI <- function(ns, gctFileNames) {
 }
 
 # function containing setup elements for a single GCT file
+# NOTE: make sure that the same naming convention is used as in in the 
+# setupDefaults.yaml!
 gctSetupUI <- function(ns, 
                        label, 
                        parameter_choices, 
@@ -36,6 +38,7 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
+  
   tagList(
     h4('Setup for ',
        strong(span(label, style = "color:#a4dc84")),
@@ -53,7 +56,7 @@ gctSetupUI <- function(ns,
             parameters[[label]]$annotation_column)),
         classes = "small-input"),
     
-    ## intentisy data input
+    ## intensity data input
     add_classes(
       selectInput(
         ns(paste0(label, '_intensity_data')),
@@ -86,7 +89,7 @@ gctSetupUI <- function(ns,
       add_classes(
         checkboxInput(
           ns(paste0(label, '_group_normalization')),
-          label = "Perform group-wise normalization",
+          label = "Group-wise normalization",
           value = parameters[[label]]$group_normalization),
         classes = "small-input"),
       ns = ns
@@ -110,7 +113,7 @@ gctSetupUI <- function(ns,
     ),
     
     ## max missing value input
-    add_classes(
+    tags$div(add_classes(
       numericInput(
         ns(paste0(label, '_max_missing')), 
         'Max. % missing values',
@@ -118,16 +121,30 @@ gctSetupUI <- function(ns,
         max = parameter_choices$max_missing$intensity_data_no$max,
         step = parameter_choices$max_missing$intensity_data_no$step,
         value = parameters[[label]]$max_missing),
-      classes = "small-input"),
+      classes = "small-input"), style = "padding-bottom: 5px"),
     
     ## data filter input 
     add_classes(
       selectInput(
         ns(paste0(label, '_data_filter')),
         label = 'Filter data',
-        choices = parameter_choices$data_filter$intensity_data_no,
+        choices = parameter_choices$data_filter,
         selected = parameters[[label]]$data_filter),
       classes = "small-input"),
+    
+    ## percentile for standard deviation filter
+    conditionalPanel(
+      condition = paste0("input['", label, "_data_filter'] == 'StdDev'"),
+      add_classes(
+        numericInput(
+          ns(paste0(label, '_data_filter_sd_pct')),
+          label = "Percentile for StdDev",
+          min = parameter_choices$data_filter_sd_pct$min,
+          max = parameter_choices$data_filter_sd_pct$max,
+          value = parameters[[label]]$data_filter_sd_pct),
+        classes = "small-input"),
+      ns = ns
+    ),
     
     ## apply to all checkbox
     if (max_place > 1) {
