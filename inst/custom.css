@@ -76,3 +76,8 @@ section.sidebar {
 .small-input .control-label {
   font-weight: 400;
 }
+
+/* style for primary action button */
+.btn-primary {
+    color: white;
+}
