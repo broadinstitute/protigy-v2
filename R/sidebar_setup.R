@@ -90,6 +90,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (out) labelsGO(labelsGO() + 1)
     })
     
+    # move the current tab to the analysis help tab
+    observeEvent(labelsGO(), {
+      updateTabsetPanel(session = parent, inputId = "navbar-tabs", selected = "Help-Analysis")
+    }, ignoreInit = TRUE)
+    
     
     ### STEP 2: INPUT GCT PARAMETERS ###
     
