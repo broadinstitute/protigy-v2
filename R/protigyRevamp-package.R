@@ -8,6 +8,7 @@
 #' @import ggplot2
 #' @import dplyr
 #' @import ComplexHeatmap
+#' @import bslib
 #' @importFrom grid gpar
 #' @importFrom cmapR parse_gctx write_gct meta mat merge_gct subset_gct GCT
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly

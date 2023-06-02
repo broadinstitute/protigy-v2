@@ -20,8 +20,8 @@ app_UI <- function(request) {dashboardPage(
       title = '',
       navbarMenu(
         "Help",
-        tabPanel("General", helpGeneralTabUI()),
-        tabPanel("Analysis", helpAnalysisTabUI()),
+        tabPanel("General", helpGeneralTabUI(), value = "Help-General"),
+        tabPanel("Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
         icon = icon("question")
       ),
       tabPanel("Customize", icon = icon("wand-magic-sparkles")),

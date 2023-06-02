@@ -45,7 +45,13 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
                       "Group by",
                       choices = names(GCTs()[[ome]]@cdesc),
                       selected = default_annotations()[[ome]]),
-          plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot")))
+          card(
+            full_screen = TRUE,
+            card_header("Quantified Features"),
+            card_body(
+              plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot")))
+            )
+          )
         )
       })
       
