@@ -5,6 +5,7 @@
 #' @export
 #' @import shiny
 #' @import shinydashboard
+#' @import shinydashboardPlus
 #' @import ggplot2
 #' @import dplyr
 #' @import ComplexHeatmap

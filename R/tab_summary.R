@@ -46,8 +46,9 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
                       choices = names(GCTs()[[ome]]@cdesc),
                       selected = default_annotations()[[ome]]),
           card(
-            full_screen = TRUE,
-            card_header("Quantified Features"),
+            card_header(
+              "Quantified Features"
+              ),
             card_body(
               plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot")))
             )
@@ -55,11 +56,9 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
         )
       })
       
-      do.call(tabBox, c(rev(tabs), list(id = ns("summary_plots"),
-                                        title = "Quantified Features",
-                                        width = 12,
-                                        selected = isolate(default_ome()),
-                                        side = "right")))
+      do.call(tabBox, c(tabs, list(id = ns("summary_plots"),
+                                   width = 12,
+                                   selected = isolate(default_ome()))))
     })
     
     # update selected tab based on default -ome
