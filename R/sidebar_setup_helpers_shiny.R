@@ -172,14 +172,11 @@ advancedSettingsUI <- function(ns, parameters) {
   labels <- names(parameters)
   
   tagList(
-    h4("Advanced settings"),
     if (length(labels) > 1) {
       fluidRow(column(12, selectInput(ns('default_ome'),
                                       "Default -ome",
                                       choices = labels)))
     },
-    fluidRow(column(12, actionButton(ns('selectGroupsButton'), 'Select groups'))),
-    fluidRow(column(12, actionButton(ns('customizeColorsButton'), 'Customize colors'))),
     hr()
   )
 }

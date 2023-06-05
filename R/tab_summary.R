@@ -41,18 +41,56 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
       tabs <- lapply(all_omes(), function(ome){
         tabPanel(
           title = ome,
-          selectInput(ns(paste0(ome, "_summary_quant_features_annotation")),
-                      "Group by",
-                      choices = names(GCTs()[[ome]]@cdesc),
-                      selected = default_annotations()[[ome]]),
-          card(
+          
+          fluidRow(
+            column(
+              6,
+              # Data summary card
+              card(
+                class = "my-custom-card",
+                card_header(
+                  "Data"
+                ),
+                card_body( tagList(
+                ))
+              )
+            ),
+            column(
+              6,
+              # Data workflow card
+              card(
+                class = "my-custom-card",
+                card_header(
+                  "Workflow"
+                ),
+                card_body( 
+                  tableOutput(
+                    ns(paste0(ome, "_summary_workflow"))
+                  )
+                )
+              )
+            )
+          ),
+          
+          br(),
+          
+          # quantified features card
+          fluidRow(column(12, card(
+            class = "my-custom-card",
             card_header(
               "Quantified Features"
               ),
-            card_body(
+            card_body( tagList(
+              add_classes(selectInput(
+                ns(paste0(ome, "_summary_quant_features_annotation")),
+                "Group by",
+                choices = names(GCTs()[[ome]]@cdesc),
+                selected = default_annotations()[[ome]]),
+                classes = "small-input"),
+              
               plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot")))
-            )
-          )
+            ))
+          )))
         )
       })
       
@@ -64,6 +102,56 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals) { modu
     # update selected tab based on default -ome
     observe({
       updateTabsetPanel(inputId = "summary_plots", selected = default_ome())
+    })
+    
+    # workflow data tables list
+    summary_workflows_list <- reactive({
+      validate(need(parameters(), "missing parameters"),
+               need(all_omes(), "missing omes"))
+
+      params_to_display <- list(
+        "File name" = "gct_file_name",
+        "Annotation column" = "annotation_column",
+        "Intensity data" = "intensity_data",
+        "Log transformation" = "log_transformation",
+        "Data normalization" = "data_normalization",
+        "Normalized by group" = "group_normalization",
+        "Data filter" = "data_filter",
+        "Max missing %" = "max_missing"
+      )
+      
+      sapply(all_omes(), function(ome) {
+        params <- parameters()[[ome]]
+        
+        # include group normalization column
+        if (params$group_normalization) {
+          params_to_display <- append(
+            params_to_display,
+            list("Group normalization col." = "group_normalization_column"),
+            after = which(params_to_display == "group_normalization"))
+        }
+        
+        # include filtering percentile
+        if (params$data_filter == "StdDev") {
+          params_to_display <- append(
+            params_to_display,
+            list("Std. Dev. filter percentile" = "data_filter_sd_pct"),
+            after = which(params_to_display == "data_filter"))
+        }
+        
+        df <- t(as.data.frame(params))
+        df <- df[as.character(params_to_display), , drop = FALSE]
+        rownames(df) <- names(params_to_display)
+        df
+      }, simplify = FALSE)
+    })
+    
+    # render workflow for each -ome
+    observeEvent(input$summary_plots, {
+      current_ome <- input$summary_plots
+      output[[paste0(current_ome, "_summary_workflow")]] <- renderTable({
+        summary_workflows_list()[[current_ome]]
+      }, rownames = TRUE, colnames = FALSE)
     })
     
     # summary quant features plots annotations

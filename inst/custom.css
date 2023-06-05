@@ -79,5 +79,22 @@ section.sidebar {
 
 /* style for primary action button */
 .btn-primary {
-    color: white;
+  color: white;
+}
+
+
+/* custom card styling */
+.my-custom-card {
+  border: 1px solid gray;
+  border-radius: 5px;
+}
+
+.my-custom-card .card-header {
+  padding: 5px;
+  background-color: gainsboro;
+  border-bottom: 1px solid grey;
+}
+
+.my-custom-card .card-body {
+  padding: 5px;
 }

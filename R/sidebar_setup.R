@@ -351,7 +351,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     observeEvent(gctsGO(), {
       labels = names(GCTs_and_params()$parameters)
       output$sideBarMain <- renderUI({
-        advancedSettingsUI(ns = ns, parameters = GCTs_and_params()$parameters)})
+        tagList(
+          advancedSettingsUI(ns = ns, parameters = GCTs_and_params()$parameters),
+        )})
       output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
       output$rightButton <- NULL
     }, ignoreInit = TRUE)
