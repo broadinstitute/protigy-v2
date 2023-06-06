@@ -1,16 +1,16 @@
-### Intensity data
+#### Intensity data
 
 Check the box if you are using raw or log-transformed intensity data. Only the relevant normalization methods and statistical tests for intensity data will now show under 'Data normalization' and 'Select test'.
 
-### Log-transformation
+#### Log-transformation
 
 Apply log transformation to the data.
 
-### Normalize per group
+#### Normalize per group
 
 If enabled the normalization will be performed within a particular group (Median, Median-MAD, Quantile, VSN). For Median and Median-MAD normalization, the group-level median of sample medians is added to each normalized data value.
 
-### Data normalization
+#### Data normalization
 
 You can apply different normalization methods to the data prior to testing. The methods are applied for each sample (column) separately, except for 'Quantile' and 'VSN' normalization which take the entire matrix into account.
 
@@ -24,7 +24,7 @@ You can apply different normalization methods to the data prior to testing. The 
 -   **VSN**: Variance stabilizing normalization. Intended to be used with **raw intensity values**.
 -   **none**: The data will be taken as is. Use this option if the data has already been normalized.
 
-### Filter data
+#### Filter data
 
 **You can filter the data by p-value (non-adjusted or adjusted) and change the p-value cutoff once running the analysis (on the next screen).**
 
@@ -37,7 +37,7 @@ Remove features that were not reproducibly quantified across replicate measureme
 **StdDev:**\
 Remove features with low standard deviation across all samples. Only useful if applied to sample cohorts that were quantified against a common reference. The percentile ***P*** you specify in the slider refers to the ***P*** percent of features having the **lowest standard deviation** across sample columns which will be **excluded prior to analyis**. Using this type of filter is useful to explore result of unsupervised clustering of the data without running a statistical test.
 
-### Select test
+#### Select test
 
 You can choose between a one-sample, two-sample moderate T-tests, moderated F-test or no testing.
 

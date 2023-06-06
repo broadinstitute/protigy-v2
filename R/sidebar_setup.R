@@ -42,9 +42,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # initialize main outputs from this module
     GCTs_and_params <- reactiveVal() # GCT object and corresponding parameters
     globals <- reactiveVal() # globals values for plots, displays, etc.
+    GCTs_original <- reactiveVal() # the original GCTS (not processed)
     
     # initialize INTERNAL reactive values....only used in this module
-    GCTs_internal_reactive <- reactiveVal()
     parameters_internal_reactive <- reactiveVal()
     
     # initialize reactiveValues with back/next logic for when user navigates
@@ -68,7 +68,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ignoreInit = TRUE,
       handlerExpr = {
         parameters_internal_reactive(NULL) # reset internal parameters
-        GCTs_internal_reactive(NULL) # reset internal GCTs
+        GCTs_original(NULL) # reset internal GCTs
         labelAssignment()
       })
     
@@ -120,9 +120,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
     }, ignoreInit = TRUE)
     
-    # parse the GCTs (internally)
+    # parse the GCTs for setup
     observeEvent(labelsGO(), {
       parameters <- parameters_internal_reactive()
+      parsed_file_paths <- sapply(GCTs_original(), function(gct) gct@src)
       GCTs <- my_shinyalert_tryCatch({
         withProgress(
           min = 0, 
@@ -130,16 +131,26 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           message = "Parsing GCTs...", 
           expr = {
             lapply(parameters, function(p) {
-              gct <- parse_gctx(p$gct_file_path)
-              incProgress(amount = 1)
-              return(gct)
+              # check if the GCT has already been parsed
+              if (p$gct_file_path %in% parsed_file_paths) {
+                parsed_label = names(which(parsed_file_paths == p$gct_file_path))
+                stopifnot(length(parsed_label) == 1)
+                incProgress(amount = 1)
+                return(GCTs_original()[[parsed_label]])
+                
+              # otherwise, parse the GCT
+              } else {
+                gct <- parse_gctx(p$gct_file_path)
+                incProgress(amount = 1)
+                return(gct)
+              }
             })
           })
       }, return.error = NULL)
       
       if (!is.null(GCTs)) {
         # update reactiveVal
-        GCTs_internal_reactive(GCTs) 
+        GCTs_original(GCTs) 
         
         # indicates if place or something about GCT files changed
         backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
@@ -161,13 +172,17 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_internal_reactive())})
+                                                   GCTs = GCTs_original())})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
-          output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back")})
+          output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), 
+                                                      "Back",
+                                                      icon = icon("chevron-left"))})
         } else {
-          output$leftButton <- renderUI({actionButton(ns("backButton"), "Back")})
+          output$leftButton <- renderUI({actionButton(ns("backButton"), 
+                                                      "Back",
+                                                      icon = icon("chevron-left"))})
         }
         
         # right button (next or submit gct for processing)
@@ -177,7 +192,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                          "Submit",
                          class = "btn btn-primary")})
         } else {
-          output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
+          output$rightButton <- renderUI({actionButton_icon_right(
+            ns("nextButton"), "Next", icon = icon("chevron-right"))})
         }
     })
     
@@ -217,7 +233,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # reset applyToAll to FALSE if it is not a valid option
     groups_in_all_omes <- reactive({
-      base::Reduce(base::intersect, lapply(GCTs_internal_reactive(), function(gct) names(gct@cdesc)))
+      base::Reduce(base::intersect, lapply(GCTs_original(), function(gct) names(gct@cdesc)))
     })
     observe({
       req(parameters_internal_reactive(), groups_in_all_omes())
@@ -254,17 +270,20 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                      "Submit", 
                                                      class = "btn btn-primary")})
       } else {
-        output$rightButton <- renderUI({actionButton(ns("nextButton"), "Next")})
+        output$rightButton <- renderUI({actionButton_icon_right(
+          ns("nextButton"), "Next", icon = icon("chevron-right"))})
       }
       
       # change back button to "back to labels"
       if (input$applyToAll | backNextLogic$place == 1) {
-        output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back")})
+        output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), 
+                                                    "Back",
+                                                    icon = icon("chevron-left"))})
       } else {
-        output$leftButton <- renderUI({actionButton(ns("backButton"), "Back")})
+        output$leftButton <- renderUI({actionButton(ns("backButton"), 
+                                                    "Back",
+                                                    icon = icon("chevron-left"))})
       }
-      
-      actionButton(ns("backToLabelsButton"), "Back")
     }) 
     
     # logic for when next button is clicked
@@ -310,7 +329,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- parameters_internal_reactive()
-      GCTs <- GCTs_internal_reactive()
+      GCTs <- GCTs_original()
       
       # call processGCTs function in a tryCatch
       processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
@@ -354,7 +373,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         tagList(
           advancedSettingsUI(ns = ns, parameters = GCTs_and_params()$parameters),
         )})
-      output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), "Back to setup")})
+      output$leftButton <- renderUI({actionButton(ns("backToLabelsButton"), 
+                                                  "Back to setup",
+                                                  icon = icon("chevron-left"))})
       output$rightButton <- NULL
     }, ignoreInit = TRUE)
     
@@ -426,7 +447,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # return GCTs and parameters together in one list
     return(list(GCTs_and_params = GCTs_and_params,
-                globals = globals))
+                globals = globals,
+                GCTs_original = GCTs_original))
     
   }) # end moduleServer
 } # end setupSidebarServer

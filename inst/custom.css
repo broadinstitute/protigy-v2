@@ -8,25 +8,6 @@
   content: "\2699";
 }
 
-/* this is all styling for tabBoxes*/
-.nav-tabs {
-  background-color: #3c8cbc;
-}
-.nav-tabs-custom .nav-tabs li.active:hover a, .nav-tabs-custom .nav-tabs li.active a {
-  background-color: white;
-  border-color: transparent;
-}
-.nav-tabs-custom .nav-tabs li.active {
-    border-top-color: #3c8cbc;
-}
-.nav-tabs-custom .nav-tabs li.header {
-    color: white; 
- }
-.nav-tabs-custom .nav-tabs li a {
-    color: white;
-    border-radius: 0;
-}
-
 /* minimize padding between elements in sidebar*/
 section.sidebar .shiny-input-container {
   padding: 0px 10px 0px 10px;
@@ -98,3 +79,18 @@ section.sidebar {
 .my-custom-card .card-body {
   padding: 5px;
 }
+
+/* boxes without header */
+.box-no-header > .box > .box-header {
+  display: none;
+}
+
+/* boxes that have tabs at the top */
+.box-with-tabs > .box > .box-body > .tabbable > .nav-tabs {
+  margin-bottom: 5px
+}
+.box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li > a {
+  font-weight: 800;
+}
+
+

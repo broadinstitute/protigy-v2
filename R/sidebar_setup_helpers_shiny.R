@@ -171,14 +171,14 @@ gctSetupUI <- function(ns,
 advancedSettingsUI <- function(ns, parameters) {
   labels <- names(parameters)
   
-  tagList(
-    if (length(labels) > 1) {
+  if (length(labels) > 1) {
+    tagList(
       fluidRow(column(12, selectInput(ns('default_ome'),
                                       "Default -ome",
-                                      choices = labels)))
-    },
-    hr()
-  )
+                                      choices = labels))),
+      hr()
+    )
+  }
 }
 
 
@@ -206,4 +206,10 @@ validate_labels <- function(all_labels) {
   }
   
   return(TRUE)
+}
+
+actionButton_icon_right <- function(inputId, label, icon, width = NULL) {
+  button <- shiny::actionButton(inputId, label, icon, width)
+  button$children[[1]] <- rev(button$children[[1]])
+  return(button)
 }
