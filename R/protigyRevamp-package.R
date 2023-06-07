@@ -17,7 +17,7 @@
 #' @importFrom shinyBS tipify
 #' @importFrom WriteXLS WriteXLS
 #' @importFrom RColorBrewer brewer.pal
-#' @importFrom yaml read_yaml
+#' @importFrom yaml read_yaml write_yaml
 #' @importFrom shinyjqui orderInput updateOrderInput
 #' @importFrom grDevices colorRampPalette dev.off pdf
 #' @importFrom methods new
