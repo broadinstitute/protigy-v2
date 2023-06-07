@@ -33,7 +33,7 @@ app_server <- function(input, output, session) {
     )
 
   ## export tab
-  exportTabServer(all_plots = all_plots)
+  exportTabServer(all_plots = all_plots, GCTs_and_params = GCTs_and_params)
 
 }
 

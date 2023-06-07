@@ -28,29 +28,34 @@ exportTabUI <- function(id = "exportTab") {
 }
 
 # server for the summary tab
-exportTabServer <- function(id = "exportTab", all_plots) { moduleServer( 
-  id,
+exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) { 
   
   ## module function
-  function (input, output, session) {
+  moduleServer(id, function (input, output, session) {
     
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
-    all_plot_types <- reactive({setdiff(names(all_plots()), "omes")})
-    
-    observe({
-      # update omes for export
-      updateCheckboxGroupInput(inputId = "omesForExport",
-                               choices = all_plots$omes(),
-                               selected = all_plots$omes())
+    # get parameters
+    parameters <- reactive({
+      validate(need(GCTs_and_params(), "GCTs not yet processed"))
+      GCTs_and_params()$parameters
     })
-      
+    
+    # update omes for export
     observe({
-      # update plots for export
-      updateCheckboxGroupInput(inputId = "plotsForExport",
-                               choices = names(all_plots$plots),
-                               selected = names(all_plots$plots))
+      updateCheckboxGroupInput(
+        inputId = "omesForExport",
+        choices = all_plots$omes(),
+        selected = all_plots$omes())
+    })
+     
+    # update plots for export 
+    observe({
+      updateCheckboxGroupInput(
+        inputId = "plotsForExport",
+        choices = names(all_plots$plots),
+        selected = names(all_plots$plots))
     })
     
     
@@ -80,6 +85,12 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
         # make a folder for each -ome
         lapply(selected_omes, function(ome) dir.create(file.path(plots_dir, ome)))
         
+        # save parameters from each -ome
+        lapply(selected_omes, function(ome)
+          yaml::write_yaml(
+            parameters()[[ome]],
+            file.path(plots_dir, ome, paste0(ome, "_parameters.yaml"))))
+        
         # loop through selected plots
         lapply(selected_plots, function(tab_name) {
           plots_all_omes = plots[[tab_name]]()
@@ -87,6 +98,10 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
           # loop through selected omes
           lapply(selected_omes, function(ome) {
             plots_this_ome <- plots_all_omes[[ome]]
+            
+            # make a folder for plots in this tab
+            plots_in_tab_path <- file.path(plots_dir, ome, tab_name)
+            dir.create(plots_in_tab_path)
             
             # save each plot for this ome
             for(i in seq_along(plots_this_ome)) {
@@ -99,7 +114,7 @@ exportTabServer <- function(id = "exportTab", all_plots) { moduleServer(
                   filename = p_name, 
                   plot = p, 
                   device = 'pdf',
-                  path = file.path(plots_dir, ome)
+                  path = plots_in_tab_path
                 )
               } else {
                 warning(paste("Invalid plot...skipping", p_name))
