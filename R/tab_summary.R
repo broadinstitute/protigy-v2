@@ -199,11 +199,11 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     # missing values plots list
     summary_missing_value_distribution_list <- reactive({
       validate(
-        need(GCTs(), "GCTs not yet processed") %then%
+        need(GCTs_original(), "GCTs not avaliable") %then%
           need(all_omes(), "Omes not avaliable") %then%
           need(parameters(), "Parameters not avaliable"))
       
-      all_gcts <- GCTs()
+      all_gcts <- GCTs_original()
       params <- parameters()
       
       sapply(all_omes(), function(ome) {
