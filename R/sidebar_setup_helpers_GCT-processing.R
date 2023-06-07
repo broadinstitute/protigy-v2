@@ -40,6 +40,14 @@ processGCTs <- function(GCTs, parameters) {
               data <- gct@mat
               params <- parameters[[ome]]
               
+              ## remove unnecesary elements from parameters
+              if (!params$group_normalization) {
+                params$group_normalization_column <- NULL
+              }
+              if (params$data_filter != "StdDev") {
+                params$data_filter_sd_pct <- NULL
+              }
+              
               incProgress(1, detail = "log transformation")
               
               ## log transformation

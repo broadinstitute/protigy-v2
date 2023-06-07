@@ -13,7 +13,7 @@ labelSetupUI <- function(ns, gctFileNames) {
   tagList(
     h4('Assign labels'),
     lapply(gctFileNames, function(file) {
-      add_classes(
+      add_css_attributes(
         textInput(inputId = ns(paste0('Label_', file)),
                   label = file,
                   placeholder = "Proteome or Prot"),
@@ -45,7 +45,7 @@ gctSetupUI <- function(ns,
        paste0(' (', current_place, '/', max_place, ')')), 
     
     ## groups column selection
-    add_classes(
+    add_css_attributes(
         selectInput(
           ns(paste0(label, '_annotation_column')),
           "Analysis annotation column",
@@ -57,7 +57,7 @@ gctSetupUI <- function(ns,
         classes = "small-input"),
     
     ## intensity data input
-    add_classes(
+    add_css_attributes(
       selectInput(
         ns(paste0(label, '_intensity_data')),
         'Intensity data',
@@ -66,7 +66,7 @@ gctSetupUI <- function(ns,
       classes = "small-input"),
     
     ## log transformation input
-    add_classes(
+    add_css_attributes(
       selectInput(
         ns(paste0(label, '_log_transformation')),
         label = 'Log-transformation',
@@ -75,7 +75,7 @@ gctSetupUI <- function(ns,
       classes = "small-input"),
     
     ## data normalization input
-    add_classes(
+    add_css_attributes(
       selectInput(
         ns(paste0(label, '_data_normalization')),
         label = 'Data normalization',
@@ -86,7 +86,7 @@ gctSetupUI <- function(ns,
     ## group-wise normalization
     conditionalPanel(
       condition = paste0("input['", label, "_data_normalization'] != 'None'"),
-      add_classes(
+      add_css_attributes(
         checkboxInput(
           ns(paste0(label, '_group_normalization')),
           label = "Group-wise normalization",
@@ -99,7 +99,7 @@ gctSetupUI <- function(ns,
     conditionalPanel(
       condition = paste0("(input['", label, "_data_normalization'] != 'None')",
                          " && (input['", label, "_group_normalization'])"),
-      add_classes(
+      add_css_attributes(
         selectInput(
           ns(paste0(label, '_group_normalization_column')),
           label = "Column for group normalization",
@@ -113,7 +113,7 @@ gctSetupUI <- function(ns,
     ),
     
     ## max missing value input
-    tags$div(add_classes(
+    add_css_attributes(
       numericInput(
         ns(paste0(label, '_max_missing')), 
         'Max. % missing values',
@@ -121,10 +121,11 @@ gctSetupUI <- function(ns,
         max = parameter_choices$max_missing$intensity_data_no$max,
         step = parameter_choices$max_missing$intensity_data_no$step,
         value = parameters[[label]]$max_missing),
-      classes = "small-input"), style = "padding-bottom: 5px"),
+      classes = "small-input",
+      styles = "padding-bottom: 5px"),
     
     ## data filter input 
-    add_classes(
+    add_css_attributes(
       selectInput(
         ns(paste0(label, '_data_filter')),
         label = 'Filter data',
@@ -135,7 +136,7 @@ gctSetupUI <- function(ns,
     ## percentile for standard deviation filter
     conditionalPanel(
       condition = paste0("input['", label, "_data_filter'] == 'StdDev'"),
-      add_classes(
+      add_css_attributes(
         numericInput(
           ns(paste0(label, '_data_filter_sd_pct')),
           label = "Percentile for StdDev",
@@ -157,7 +158,7 @@ gctSetupUI <- function(ns,
                            "&& (!input['", label, "_group_normalization'] || ",
                            "['", paste(groups_choices_all_omes, collapse = "', '"), 
                            "'].includes(input['", label, "_group_normalization_column']))"),
-        add_classes(
+        add_css_attributes(
           checkboxInput(ns('applyToAll'), 'Apply settings to all -omes'),
           classes = "small-input"),
         ns = ns

@@ -112,10 +112,25 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       new_parameters <- list()
       apply(input$gctFiles, 1, function(file) {
         file <- as.list(file)
-        label <- input[[paste0('Label_', file$name)]] # same inputId notation as in labelSetupUI()
-        new_parameters[[label]] <<- c(gct_file_path = file$datapath,
-                                      gct_file_name = file$name,
-                                      default_parameters)
+        
+        # get the label using the same inputId notation as in labelSetupUI()
+        label <- input[[paste0('Label_', file$name)]] 
+        
+        # figure out which files were already parsed and have saved parameters
+        already_parsed_files <- sapply(parameters_internal_reactive(), 
+                                       function(l) l$gct_file_path)
+        
+        # use the old parameters if they exist
+        if (file$datapath %in% already_parsed_files) {
+          idx <- which(already_parsed_files == file$datapath)
+          new_parameters[[label]] <<- parameters_internal_reactive()[[idx]]
+          
+        # otherwise use the defaults
+        } else {
+          new_parameters[[label]] <<- c(gct_file_path = file$datapath,
+                                        gct_file_name = file$name,
+                                        default_parameters)
+        }
       })
       parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
     }, ignoreInit = TRUE)
