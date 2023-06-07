@@ -117,3 +117,9 @@ add_classes <- function(el, classes) {
   el$attribs$class <- paste(el$attribs$class, classes)
   el
 }
+
+# add css styling to shiny element
+add_style <- function(el, style) {
+  el$attribs$style <- paste(el$attribs$style, style)
+  el
+}

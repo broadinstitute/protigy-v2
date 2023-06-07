@@ -7,7 +7,6 @@ summaryTabUI <- function(id = "summaryTab") {
   
   tagList(
     fluidRow(uiOutput(ns("summary_plots_tabs")))
-    
   ) # end tagList
 }
 
@@ -69,25 +68,38 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           fluidRow(shinydashboardPlus::box(
             plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot"))),
             sidebar = boxSidebar(
-              tags$div(
-                add_classes(selectInput(
-                  ns(paste0(ome, "_summary_quant_features_annotation")),
-                  "Group by",
-                  choices = names(GCTs()[[ome]]@cdesc),
-                  selected = default_annotations()[[ome]]),
+              add_style(
+                add_classes(
+                  selectInput(
+                    ns(paste0(ome, "_summary_quant_features_annotation")),
+                    "Group by",
+                    choices = names(GCTs()[[ome]]@cdesc),
+                    selected = default_annotations()[[ome]]),
                   classes = "small-input"),
                 style = "margin-right: 10px"
               ),
-              id = "quant-feat-sidebar",
-              width = 25
+              id = ns(paste0(ome, "_quant_features_sidebar")),
+              width = 25,
+              icon = icon("gears", class = "fa-2xl")
             ),
             status = "primary",
             width = 12,
             title = "Quantified Features",
             headerBorder = TRUE,
             solidHeader = TRUE
-          )
-        ))
+          )),
+          
+          # Missing values distribution box
+          fluidRow(shinydashboardPlus::box(
+            plotlyOutput(ns(paste0(ome, "_summary_missing_value_distribution_plot"))),
+            status = "primary",
+            width = 12,
+            title = "Missing Values",
+            headerBorder = TRUE,
+            solidHeader = TRUE
+          ))
+          
+        ) # end tabPanel
       })
       
       # combine all tabs into tabSetPanel
@@ -141,6 +153,9 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       }, rownames = TRUE, colnames = TRUE)
     })
     
+    
+    ## SUMMARY QUANTIFIED FEATURES PLOT ##
+    
     # summary quant features plots annotations
     summary_quant_features_annotations <- reactive({
       req(default_annotations())
@@ -159,17 +174,17 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       validate(
         need(GCTs(), "GCTs not yet processed") %then%
         need(all_omes(), "Omes not avaliable") %then%
-        need(default_annotations(), "Default annotation not avaliable"))
+        need(summary_quant_features_annotations(), "Annotation not avaliable"))
       
       all_gcts <- GCTs()
       all_annotations <- summary_quant_features_annotations()
 
       sapply(all_omes(), function(ome) {
-        summary.quant.features(all_gcts[[ome]], all_annotations[[ome]])
+        summary.quant.features(all_gcts[[ome]], all_annotations[[ome]], ome)
       }, simplify = FALSE)
     })
     
-    # render plot for each -ome
+    # render summary plot for each -ome
     observeEvent(input$summary_plots, {
       current_ome <- input$summary_plots
       output[[paste0(current_ome, "_summary_quant_features_plot")]] <- renderPlotly({
@@ -178,17 +193,51 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       })
     })
     
-    ## COMPILE PLOTS FOR EXPORT
+    
+    ## MISSING VALUES PLOT ##
+    
+    # missing values plots list
+    summary_missing_value_distribution_list <- reactive({
+      validate(
+        need(GCTs(), "GCTs not yet processed") %then%
+          need(all_omes(), "Omes not avaliable") %then%
+          need(parameters(), "Parameters not avaliable"))
+      
+      all_gcts <- GCTs()
+      params <- parameters()
+      
+      sapply(all_omes(), function(ome) {
+        summary_missing_value_distribution(
+          gct = all_gcts[[ome]],
+          missing_val_cutoff = params[[ome]]$max_missing,
+          ome = ome
+        )
+      }, simplify = FALSE)
+    })
+    
+    # render missing values plot for each -ome
+    observeEvent(input$summary_plots, {
+      current_ome <- input$summary_plots
+      output[[paste0(current_ome, "_summary_missing_value_distribution_plot")]] <- renderPlotly({
+        req(summary_missing_value_distribution_list()[[current_ome]])
+        ggplotly(summary_missing_value_distribution_list()[[current_ome]])
+      })
+    })
+    
+    
+    ## COMPILE PLOTS FOR EXPORT ##
+    
     all_summary_plots <- reactive({
       # gather all of the lists of plots
       quant_features_plots = summary_quant_features_plots_list()
+      missing_val_dist_plots <- summary_missing_value_distribution_list()
       
       # make a list with all plots for each ome
       # the names for this list are the omes
       sapply(all_omes(), function(ome) {
         list(
-          quant_features_plot = quant_features_plots[[ome]] + 
-            ggtitle(paste("Quantified features:", ome))
+          quant_features_plot = quant_features_plots[[ome]],
+          missing_values_distribution_plot = missing_val_dist_plots[[ome]]
         )
       }, simplify = FALSE)
 
@@ -199,7 +248,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
 }
 
 # plots
-summary.quant.features <- function (gct, col_of_interest) {
+summary.quant.features <- function (gct, col_of_interest, ome) {
   # get number of non-missing per sample
   sample_id <- colnames(gct@mat)
   non.missing <- as.data.frame(apply(gct@mat, 2, function(x) sum(!is.na(x))))
@@ -212,11 +261,34 @@ summary.quant.features <- function (gct, col_of_interest) {
   p <- ggplot(data = non.missing, aes(x = SampleID, y = numFeatures, fill = group)) +
     geom_bar(stat = 'identity') +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    xlab("# Quantified Features") +
-    ylab("Sample columns") + 
-    labs(fill = col_of_interest)
+    ylab("# Quantified Features") +
+    xlab("Sample columns") + 
+    labs(fill = col_of_interest)  + 
+    ggtitle(paste("Quantified features:", ome))
   
   return(p)
+}
+
+summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
+  # make a data frame of the percept missing values
+  missing_val_perc <- apply(gct@mat, 1, function(x) sum(is.na(x)) / length(x) * 100)
+  missing_val_df <- data.frame(missing = missing_val_perc)
+  
+  color_key <- c("red")
+  names(color_key) <- paste0(missing_val_cutoff, "%")
+  
+  # generate plot
+  ggplot(missing_val_df, aes(x = missing)) +
+    stat_bin(aes(y = cumsum(after_stat(density))/sum(after_stat(density))*100), 
+             fill = "grey70", color = "black", alpha = 0.8, bins = 30) +
+    geom_vline(
+      aes(xintercept = missing_val_cutoff, 
+          color = names(color_key)), 
+      size = 1.5, 
+      show.legend = TRUE) +
+    scale_color_manual(name = "Missing val. cutoff", values = color_key) +
+    xlab("% Missing Allowed") + ylab("% Features Kept") +
+    ggtitle(paste("Missing Value Distribution:", ome))
 }
 
 
