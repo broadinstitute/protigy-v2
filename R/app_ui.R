@@ -8,7 +8,7 @@
 app_UI <- function(request) {dashboardPage(
   dashboardHeader(title = 'New Protigy?'),
   
-  dashboardSidebar(
+  shinydashboard::dashboardSidebar(
     setupSidebarUI()
   ),
   
@@ -26,6 +26,7 @@ app_UI <- function(request) {dashboardPage(
       ),
       tabPanel("Customize", icon = icon("wand-magic-sparkles")),
       tabPanel("Summary", summaryTabUI()),
+      tabPanel("Statistics"),
       navbarMenu(
         "Clustering",
         tabPanel("Static Heatmap"),
@@ -33,7 +34,8 @@ app_UI <- function(request) {dashboardPage(
       navbarMenu(
         "Volcanos",
         tabPanel("1"),
-        tabPanel("2")),
+        tabPanel("2"),
+        icon = icon("volcano")),
       navbarMenu(
         "Scatterplots",
         tabPanel("1"),

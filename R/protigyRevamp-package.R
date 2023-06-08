@@ -4,12 +4,12 @@
 ## usethis namespace: start
 #' @export
 #' @import shiny
-#' @import shinydashboardPlus
 #' @import ggplot2
 #' @import dplyr
 #' @import ComplexHeatmap
 #' @import bslib
-#' @importFrom shinydashboard dashboardBody
+#' @importFrom shinydashboard dashboardBody dashboardSidebar
+#' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar
 #' @importFrom grid gpar
 #' @importFrom cmapR parse_gctx write_gct meta mat merge_gct subset_gct GCT
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly

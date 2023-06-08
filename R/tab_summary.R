@@ -79,7 +79,8 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
               ),
               id = ns(paste0(ome, "_quant_features_sidebar")),
               width = 25,
-              icon = icon("gears", class = "fa-2xl")
+              icon = icon("gears", class = "fa-2xl"),
+              background = "rgba(51, 58, 64, 0.9)"
             ),
             status = "primary",
             width = 12,
