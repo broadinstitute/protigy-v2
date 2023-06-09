@@ -9,7 +9,7 @@ summaryTabUI <- function(id = "summaryTab") {
   ns <- NS(id) # namespace function
   
   tagList(
-    fluidRow(uiOutput(ns("summary_plots_tabs")))
+    fluidRow(uiOutput(ns("ome_tabset_box")))
   ) # end tagList
 }
 
@@ -41,8 +41,9 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     default_ome <- reactive(globals$default_ome)
     
     
-    # summary plots tabs
-    output$summary_plots_tabs <- renderUI({
+    ## OME TABS ##
+    
+    output$ome_tabset_box <- renderUI({
       req(all_omes(), default_ome(), default_annotations(), GCTs())
 
       tabs <- lapply(all_omes(), function(ome){
@@ -50,7 +51,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           title = ome,
           
           fluidRow(
-            # Data summary box
+            # Dataset information box
             shinydashboardPlus::box(
               tableOutput(ns(paste0(ome, "_dataset_table"))),
               title = "Dataset Information",
@@ -60,7 +61,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
               headerBorder = TRUE
             ),
             
-            # Data workflow card
+            # Data workflow box
             shinydashboardPlus::box(
               tableOutput(ns(paste0(ome, "_workflow_table"))),
               title = "Workflow Parameters",
@@ -75,15 +76,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           fluidRow(shinydashboardPlus::box(
             plotlyOutput(ns(paste0(ome, "_quant_features_plot"))),
             sidebar = boxSidebar(
-              add_css_attributes(
-                selectInput(
-                  ns(paste0(ome, "_quant_features_annotation")),
-                  "Group by",
-                  choices = names(GCTs()[[ome]]@cdesc),
-                  selected = default_annotations()[[ome]]),
-                classes = "small-input",
-                styles = "margin-right: 10px"
-              ),
+              uiOutput(ns(paste0(ome, "_quant_features_sidebar_contents"))),
               id = ns(paste0(ome, "_quant_features_sidebar")),
               width = 25,
               icon = icon("gears", class = "fa-2xl"),
@@ -110,7 +103,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       })
       
       # combine all tabs into tabSetPanel
-      tab_set_panel <- do.call(tabsetPanel, c(tabs, list(id = ns("summary_plots"),
+      tab_set_panel <- do.call(tabsetPanel, c(tabs, list(id = ns("ome_tabs"),
                                    selected = isolate(default_ome()))))
       
       # put everything in a box and return
@@ -125,7 +118,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     
     # update selected tab based on default -ome
     observe({
-      updateTabsetPanel(inputId = "summary_plots", selected = default_ome())
+      updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
     
     
@@ -204,8 +197,25 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     observeEvent(all_omes(), {
       lapply(all_omes(), function(ome) {
         output[[paste0(ome, "_quant_features_plot")]] <- renderPlotly(
-          ggplotly(summary_quant_features_reactive(ome))
+          ggplotly(summary_quant_features_reactive(ome), tooltip = "text")
         )
+      })
+    })
+    
+    # sidebar contents
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_quant_features_sidebar_contents")]] <- renderUI({
+          add_css_attributes(
+            selectInput(
+              ns(paste0(ome, "_quant_features_annotation")),
+              "Group by",
+              choices = names(GCTs()[[ome]]@cdesc),
+              selected = default_annotations()[[ome]]),
+            classes = "small-input",
+            styles = "margin-right: 10px"
+          )
+        })
       })
     })
     

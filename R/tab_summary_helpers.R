@@ -17,8 +17,12 @@ summary_quant_features <- function (gct, col_of_interest, ome) {
   
   non.missing$SampleID <- with(non.missing, reorder(SampleID, as.integer(group)))
   
-  ggplot(data = non.missing, aes(x = SampleID, y = numFeatures, fill = group)) +
+  ggplot(data = non.missing, 
+         aes(x = SampleID, y = numFeatures, fill = group, 
+             text = paste0("Sample ID: ", SampleID, 
+                           "\nNum. Features: ", numFeatures))) +
     geom_bar(stat = 'identity') +
+    theme_bw() +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     ylab("# Quantified Features") +
     xlab("Sample columns") + 
@@ -65,7 +69,7 @@ summary_missing_value_distribution_to_ggplotly <- function(gg) {
                     round(ggply$x$data[[1]]$y * num_total_features))) %>%
     plotly::style(
       traces = 2,
-      text = paste0("Missing value cutoff:", ggply$x$data[[2]]$x, "%")) %>%
+      text = paste0("Missing value cutoff: ", ggply$x$data[[2]]$x, "%")) %>%
     plotly::style(
       traces = 3,
       text = paste0("Missing: ", 

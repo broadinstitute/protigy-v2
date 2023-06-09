@@ -86,10 +86,12 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
         lapply(selected_omes, function(ome) dir.create(file.path(plots_dir, ome)))
         
         # save parameters from each -ome
-        lapply(selected_omes, function(ome)
+        lapply(selected_omes, function(ome) {
+          params <- parameters()[[ome]]
           yaml::write_yaml(
-            parameters()[[ome]],
-            file.path(plots_dir, ome, paste0(ome, "_parameters.yaml"))))
+            params[setdiff(names(params), "gct_file_path")],
+            file.path(plots_dir, ome, paste0(ome, "_parameters.yaml")))
+        })
         
         # loop through selected plots
         lapply(selected_plots, function(tab_name) {
