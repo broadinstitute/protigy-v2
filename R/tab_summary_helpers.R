@@ -17,7 +17,8 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
   
   # reorder based on sampleID
   non.missing$SampleID <- with(non.missing, reorder(SampleID, as.integer(group)))
-  
+
+  # get color definition
   if (is.null(custom_color_map)) {
     color_definition <- NULL
   } else if (custom_color_map$is_discrete) {
@@ -25,11 +26,17 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
     names(colors) <- custom_color_map$vals
     color_definition <- scale_fill_manual(values = colors)
   } else {
-    warning("Haven't done the continuous case yet!")
-    color_definition <- NULL
+    non.missing$group <- as.numeric(non.missing$group)
+    color_definition <- scale_fill_gradient2(
+      low = custom_color_map$colors[which(custom_color_map$vals == "low")],
+      mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
+      high = custom_color_map$colors[which(custom_color_map$vals == "high")],
+      midpoint = mean(min(non.missing$group), max(non.missing$group)),
+      na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
+    )
   }
   
-  
+  # make plot
   ggplot(data = non.missing, 
          aes(x = SampleID, y = numFeatures, fill = group, 
              text = paste0("Sample ID: ", SampleID, 

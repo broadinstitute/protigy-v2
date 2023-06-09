@@ -181,24 +181,24 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       
       # get annotation column
       if (paste0(ome, "_quant_features_annotation") %in% names(input)) {
-        col <- input[[paste0(ome, "_quant_features_annotation")]]
+        annot_column <- input[[paste0(ome, "_quant_features_annotation")]]
       } else {
-        col <- default_annotations()[[ome]]
+        annot_column <- default_annotations()[[ome]]
       }
       
       print(paste("Generating plot for", ome))
       
       # get custom colors
       colors <- globals$colors[[ome]]
-      if (col %in% names(colors)) {
-        annot_color_map <- colors[[col]]
+      if (annot_column %in% names(colors)) {
+        annot_color_map <- colors[[annot_column]]
       } else {
         annot_color_map <- NULL
       }
       
       # generate plot
       summary_quant_features(gct = GCTs()[[ome]], 
-                             col_of_interest = col,
+                             col_of_interest = annot_column,
                              ome = ome,
                              custom_color_map = annot_color_map)
     }
