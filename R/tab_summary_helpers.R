@@ -7,7 +7,7 @@
 
 ## PLOTS
 
-summary_quant_features <- function (gct, col_of_interest, ome) {
+summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map = NULL) {
   # get number of non-missing per sample
   sample_id <- colnames(gct@mat)
   non.missing <- as.data.frame(apply(gct@mat, 2, function(x) sum(!is.na(x))))
@@ -15,7 +15,20 @@ summary_quant_features <- function (gct, col_of_interest, ome) {
   non.missing$SampleID <- as.factor(as.character(rownames(non.missing)))
   non.missing$group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
   
+  # reorder based on sampleID
   non.missing$SampleID <- with(non.missing, reorder(SampleID, as.integer(group)))
+  
+  if (is.null(custom_color_map)) {
+    color_definition <- NULL
+  } else if (custom_color_map$is_discrete) {
+    colors <- as.list(custom_color_map$colors)
+    names(colors) <- custom_color_map$vals
+    color_definition <- scale_fill_manual(values = colors)
+  } else {
+    warning("Haven't done the continuous case yet!")
+    color_definition <- NULL
+  }
+  
   
   ggplot(data = non.missing, 
          aes(x = SampleID, y = numFeatures, fill = group, 
@@ -23,6 +36,7 @@ summary_quant_features <- function (gct, col_of_interest, ome) {
                            "\nNum. Features: ", numFeatures))) +
     geom_bar(stat = 'identity') +
     theme_bw() +
+    color_definition + 
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     ylab("# Quantified Features") +
     xlab("Sample columns") + 

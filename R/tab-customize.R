@@ -1,21 +1,11 @@
 ################################################################################
-# Module: TEMPLATE
-################################################################################
-
-## Steps for adding a new module
-# 0. Cmd/Ctr + F the word "template" and replace all with the module's name
-# 1. add core UI and server logic here
-# 2. add helper functions in the corresponding helper script
-# 3. add necessary imports in protigyRevamp-package.R
-# 4. call your UI function in app_UI (located in app_ui.R)
-# 5. call your server function in app_server (located in app_server.R)
-
-################################################################################
+# Module: CUSTOMIZE
+#
 # Shiny funcions (UI and server)
 ################################################################################
 
 # UI for the summary tab
-templateTabUI <- function(id = "templateTab") {
+customizeTabUI <- function(id = "customizeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
   
   tagList(
@@ -26,10 +16,7 @@ templateTabUI <- function(id = "templateTab") {
 }
 
 # server for the summary tab
-templateTabServer <- function(id = "templateTab", 
-                              GCTs_and_params, 
-                              globals, 
-                              GCTs_original) { 
+customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) { 
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -51,20 +38,21 @@ templateTabServer <- function(id = "templateTab",
       GCTs_and_params()$parameters
     })
     
-    # named list of default annotations for each ome
-    default_annotations <- reactive({
-      req(parameters())
-      sapply(parameters(), function(p) p$annotation_column, simplify = FALSE)
-    })
-    
     # gather relevant variables from globals
     all_omes <- reactive(globals$omes)
-    default_ome <- reactive(globals$default_ome)
     
     
     ## MODULE SERVER LOGIC ##
     
-    # TODO: add server logic here
+    custom_colors <- reactive({
+      req(all_omes(), GCTs())
+      
+      sapply(all_omes(), 
+             function(ome) set_annot_colors(GCTs()[[ome]]@cdesc),
+             simplify = FALSE)
+    })
+    
+    return(custom_colors)
     
   })
 }

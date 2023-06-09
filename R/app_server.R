@@ -20,7 +20,13 @@ app_server <- function(input, output, session) {
   GCTs_original <- sidebar_output$GCTs_original
   
   
-  ## module server function calls
+  ## Customize module
+  custom_colors <- customizeTabServer(GCTs_and_params = GCTs_and_params,
+                                      globals = globals)
+  observeEvent(custom_colors(), globals$colors <- custom_colors())
+  
+  
+  ## Summary module
   all_summary_plots <- summaryTabServer(
     GCTs_and_params = GCTs_and_params,
     globals = globals,

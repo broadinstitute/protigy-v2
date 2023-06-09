@@ -176,7 +176,8 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     # only to be called in a reactive setting
     summary_quant_features_reactive <- function(ome) {
       req(GCTs(), ome %in% names(GCTs()), 
-          default_annotations(), ome %in% names(default_annotations()))
+          default_annotations(), ome %in% names(default_annotations()),
+          globals$colors, ome %in% names(globals$colors))
       
       # get annotation column
       if (paste0(ome, "_quant_features_annotation") %in% names(input)) {
@@ -187,10 +188,19 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       
       print(paste("Generating plot for", ome))
       
+      # get custom colors
+      colors <- globals$colors[[ome]]
+      if (col %in% names(colors)) {
+        annot_color_map <- colors[[col]]
+      } else {
+        annot_color_map <- NULL
+      }
+      
       # generate plot
       summary_quant_features(gct = GCTs()[[ome]], 
                              col_of_interest = col,
-                             ome = ome)
+                             ome = ome,
+                             custom_color_map = annot_color_map)
     }
     
     # render summary plot for each -ome

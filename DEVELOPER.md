@@ -30,7 +30,9 @@
 
     Do NOT use `ns()` when:
 
+    -   You are referencing elements from `input` or `output` in the server function (e.g. `input$myText` or `output$myPlot`)
     -   You are updating a UI element in the server *outside* of a `renderUI()` block. For example: `updateTextInput("myText")`.
+    -   
 
 4.  **Custom CSS**: If you need to customize the user interface, I recommend getting comfortable using "inspect element". This lets you see all the possible fields you can edit and what class(es) each element belongs to. Then [add your custom CSS](https://unleash-shiny.rinterface.com/beautify-css.html#beautify-css).
 
