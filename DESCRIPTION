@@ -37,8 +37,7 @@ Imports:
     vsn,
     preprocessCore,
     mixtools,
-    mclust,
-    bslib
+    mclust
 Depends:
     shiny
 Suggests: 

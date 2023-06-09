@@ -7,7 +7,6 @@
 #' @import ggplot2
 #' @import dplyr
 #' @import ComplexHeatmap
-#' @import bslib
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar
 #' @importFrom grid gpar
