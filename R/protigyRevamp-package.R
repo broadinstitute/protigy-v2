@@ -12,7 +12,7 @@
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar
 #' @importFrom grid gpar
 #' @importFrom cmapR parse_gctx write_gct meta mat merge_gct subset_gct GCT
-#' @importFrom plotly ggplotly plotlyOutput renderPlotly
+#' @importFrom plotly ggplotly plotlyOutput renderPlotly style
 #' @importFrom circlize colorRamp2
 #' @importFrom shinyBS tipify
 #' @importFrom WriteXLS WriteXLS

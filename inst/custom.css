@@ -72,12 +72,19 @@ section.sidebar {
 .box-with-tabs > .box > .box-body > .tabbable > .nav-tabs {
   margin: -10px -10px 5px -10px;
   padding: 10px 10px 0px 10px;
-  background-color: gainsboro;
+  background-color: rgb(91, 98, 104);
+  border-radius: 3px 3px 0px 0px;
 }
 
 .box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li > a {
   font-weight: 800;
+  color: white;
+}
+
+.box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li > a:hover {
   color: #555;
 }
 
-
+.box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li.active > a {
+  color: #555;
+}

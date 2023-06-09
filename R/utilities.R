@@ -114,9 +114,8 @@ smart_trim <- function(labels, trim_length=10, default_trim=c("beginning", "end"
 
 # add css classes or styling to a shiny element
 add_css_attributes <- function (el, classes = NULL, styles = NULL) {
-  if (!is.null(classes)) el$attribs$class <- paste(el$attribs$class, classes)
-  if (!is.null(styles)) el$attribs$style <- paste(el$attribs$style, 
-                                                  paste(styles, collapse = "; "))
+  el$attribs$class <- paste(el$attribs$class, classes)
+  el$attribs$style <- paste(el$attribs$style, paste(styles, collapse = "; "))
   el
 }
 

@@ -35,17 +35,44 @@ summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
   names(color_key) <- paste0(missing_val_cutoff, "%")
   
   # generate plot
-  ggplot(missing_val_df, aes(x = missing)) +
-    stat_bin(aes(y = cumsum(after_stat(density))/sum(after_stat(density))*100), 
-             fill = "grey70", color = "black", alpha = 0.8, bins = 30) +
+  gg <- ggplot(missing_val_df, text = "HELLO") +
+    stat_ecdf(aes(missing), geom = "step", pad = FALSE, linewidth = 0.5) + 
     geom_vline(
       aes(xintercept = missing_val_cutoff, 
           color = names(color_key)), 
-      size = 1.5, 
       show.legend = TRUE) +
-    scale_color_manual(name = "Missing val. cutoff", values = color_key) +
-    xlab("% Missing Allowed") + ylab("% Features Kept") +
-    ggtitle(paste("Missing Value Distribution:", ome))
+    geom_segment(aes(x = max(missing), y = 1, xend = 100, yend = 1), 
+                 linewidth = 0.5) +
+    scale_color_manual(name = "Missing value cutoff", values = color_key) +
+    scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+    scale_x_continuous(labels = function(x) paste0(x, "%")) +
+    xlab("Percent Missing Allowed") + ylab("Percent Features Retained") +
+    ggtitle(paste("Missing Value Distribution:", ome)) +
+    theme_bw()
+}
+
+summary_missing_value_distribution_to_ggplotly <- function(gg) {
+  ggply <- ggplotly(gg)
+  
+  # Add custom text
+  num_total_features <- dim(gg$data)[1]
+  ggply %>% 
+    plotly::style(
+      traces = 1,
+      text = paste0("Missing: ", round(ggply$x$data[[1]]$x, 2), "%",
+                    "</br></br>", 
+                    "Features retained: ", 
+                    round(ggply$x$data[[1]]$y * num_total_features))) %>%
+    plotly::style(
+      traces = 2,
+      text = paste0("Missing value cutoff:", ggply$x$data[[2]]$x, "%")) %>%
+    plotly::style(
+      traces = 3,
+      text = paste0("Missing: ", 
+                    round(ggply$x$data[[3]]$x, 2), "%",
+                    "</br></br>",
+                    "Features retained: ",
+                    round(ggply$x$data[[3]]$y * num_total_features)))
 }
 
 

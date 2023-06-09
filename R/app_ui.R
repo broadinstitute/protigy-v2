@@ -1,5 +1,6 @@
 ################################################################################
 # UI
+#
 # This function contains the entire app's UI setup. It mainly consists of the 
 # dashboardPage and navbar. All module-specific UI content should be called 
 # using UI module functions.
@@ -34,8 +35,7 @@ app_UI <- function(request) {dashboardPage(
       navbarMenu(
         "Volcanos",
         tabPanel("1"),
-        tabPanel("2"),
-        icon = icon("volcano")),
+        tabPanel("2")),
       navbarMenu(
         "Scatterplots",
         tabPanel("1"),

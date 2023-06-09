@@ -7,5 +7,5 @@
 launchApp()
 }
 \description{
-Runs the app stored in the inst/shiny directory.
+Runs the app by calling \code{app_UI}, \code{app_server}, \code{app_onStart}.
 }

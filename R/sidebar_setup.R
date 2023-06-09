@@ -46,6 +46,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # initialize INTERNAL reactive values....only used in this module
     parameters_internal_reactive <- reactiveVal()
+    GCTs_unprocessed_internal_reactive <- reactiveVal()
     
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
@@ -68,7 +69,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ignoreInit = TRUE,
       handlerExpr = {
         parameters_internal_reactive(NULL) # reset internal parameters
-        GCTs_original(NULL) # reset internal GCTs
+        GCTs_unprocessed_internal_reactive(NULL) # reset internal GCTs
         labelAssignment()
       })
     
@@ -92,7 +93,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # move the current tab to the analysis help tab
     observeEvent(labelsGO(), {
-      updateTabsetPanel(session = parent, inputId = "navbar-tabs", selected = "Help-Analysis")
+      updateTabsetPanel(session = parent, 
+                        inputId = "navbar-tabs", 
+                        selected = "Help-Analysis")
     }, ignoreInit = TRUE)
     
     
@@ -138,7 +141,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # parse the GCTs for setup
     observeEvent(labelsGO(), {
       parameters <- parameters_internal_reactive()
-      parsed_file_paths <- sapply(GCTs_original(), function(gct) gct@src)
+      parsed_file_paths <- sapply(GCTs_unprocessed_internal_reactive(), function(gct) gct@src)
       GCTs <- my_shinyalert_tryCatch({
         withProgress(
           min = 0, 
@@ -151,7 +154,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 parsed_label = names(which(parsed_file_paths == p$gct_file_path))
                 stopifnot(length(parsed_label) == 1)
                 incProgress(amount = 1)
-                return(GCTs_original()[[parsed_label]])
+                return(GCTs_unprocessed_internal_reactive()[[parsed_label]])
                 
               # otherwise, parse the GCT
               } else {
@@ -165,7 +168,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       
       if (!is.null(GCTs)) {
         # update reactiveVal
-        GCTs_original(GCTs) 
+        GCTs_unprocessed_internal_reactive(GCTs) 
         
         # indicates if place or something about GCT files changed
         backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
@@ -187,7 +190,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_original())})
+                                                   GCTs = GCTs_unprocessed_internal_reactive())})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -248,7 +251,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # reset applyToAll to FALSE if it is not a valid option
     groups_in_all_omes <- reactive({
-      base::Reduce(base::intersect, lapply(GCTs_original(), function(gct) names(gct@cdesc)))
+      base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@cdesc)))
     })
     observe({
       req(parameters_internal_reactive(), groups_in_all_omes())
@@ -344,7 +347,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- parameters_internal_reactive()
-      GCTs <- GCTs_original()
+      GCTs <- GCTs_unprocessed_internal_reactive()
       
       # call processGCTs function in a tryCatch
       processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
@@ -352,6 +355,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
         GCTs_and_params(processing_output) 
+        
+        # save the original GCTs for output
+        GCTs_original(GCTs)
         
         # increment gctsGO reactiveVal to show that processing is done
         gctsGO(gctsGO() + 1)

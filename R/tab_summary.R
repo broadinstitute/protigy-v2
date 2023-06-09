@@ -1,4 +1,7 @@
-
+################################################################################
+# Module: SUMMARY
+# Main shiny functions (server and UI)
+################################################################################
 
 
 # UI for the summary tab
@@ -28,11 +31,15 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
     })
+    default_annotations <- reactive({
+      req(parameters())
+      sapply(parameters(), function(p) p$annotation_column, simplify = FALSE)
+    })
     
     # gather relevant variables from globals
     all_omes <- reactive(globals()$omes)
     default_ome <- reactive(globals()$default_ome)
-    default_annotations <- reactive(globals()$default_annotations)
+    
     
     # summary plots tabs
     output$summary_plots_tabs <- renderUI({
@@ -80,7 +87,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
               id = ns(paste0(ome, "_quant_features_sidebar")),
               width = 25,
               icon = icon("gears", class = "fa-2xl"),
-              background = "rgba(51, 58, 64, 0.9)"
+              background = "rgba(91, 98, 104, 0.9)"
             ),
             status = "primary",
             width = 12,
@@ -227,8 +234,10 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       current_ome <- input$summary_plots
       output[[paste0(current_ome, "_summary_missing_value_distribution_plot")]] <- renderPlotly({
         req(summary_missing_value_distribution_list()[[current_ome]])
-        ggplotly(summary_missing_value_distribution_list()[[current_ome]],
-                 tooltip = c())
+        
+        # turn ggplot into ggplotly
+        gg <- summary_missing_value_distribution_list()[[current_ome]]
+        summary_missing_value_distribution_to_ggplotly(gg)
       })
     })
     
