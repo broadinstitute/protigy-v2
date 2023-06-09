@@ -37,8 +37,8 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     })
     
     # gather relevant variables from globals
-    all_omes <- reactive(globals()$omes)
-    default_ome <- reactive(globals()$default_ome)
+    all_omes <- reactive(globals$omes)
+    default_ome <- reactive(globals$default_ome)
     
     
     # summary plots tabs
@@ -52,7 +52,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           fluidRow(
             # Data summary box
             shinydashboardPlus::box(
-              tableOutput(ns(paste0(ome, "_summary_dataset"))),
+              tableOutput(ns(paste0(ome, "_dataset_table"))),
               title = "Dataset Information",
               status = "primary",
               solidHeader = TRUE,
@@ -62,7 +62,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
             
             # Data workflow card
             shinydashboardPlus::box(
-              tableOutput(ns(paste0(ome, "_summary_workflow"))),
+              tableOutput(ns(paste0(ome, "_workflow_table"))),
               title = "Workflow Parameters",
               status = "primary",
               solidHeader = TRUE,
@@ -73,11 +73,11 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           
           # Quantified features box
           fluidRow(shinydashboardPlus::box(
-            plotlyOutput(ns(paste0(ome, "_summary_quant_features_plot"))),
+            plotlyOutput(ns(paste0(ome, "_quant_features_plot"))),
             sidebar = boxSidebar(
               add_css_attributes(
                 selectInput(
-                  ns(paste0(ome, "_summary_quant_features_annotation")),
+                  ns(paste0(ome, "_quant_features_annotation")),
                   "Group by",
                   choices = names(GCTs()[[ome]]@cdesc),
                   selected = default_annotations()[[ome]]),
@@ -98,7 +98,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
           
           # Missing values distribution box
           fluidRow(shinydashboardPlus::box(
-            plotlyOutput(ns(paste0(ome, "_summary_missing_value_distribution_plot"))),
+            plotlyOutput(ns(paste0(ome, "_missing_value_distribution_plot"))),
             status = "primary",
             width = 12,
             title = "Missing Values",
@@ -131,130 +131,119 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     
     ## SUMMARY WORKFLOW ##
     
-    # workflow data tables list
-    summary_workflows_list <- reactive({
-      req(parameters(), all_omes())
-      generate_summary_workflows_list(parameters = parameters(), 
-                                      all_omes = all_omes())
+    # function to compile summary workflow for a given ome
+    # only call this in a reactive setting
+    summary_workflow_reactive <- function(ome) {
+      req(parameters(), ome %in% names(parameters())) 
+      summary_workflow(params = parameters()[[ome]])
+    }
+    
+    # render workflow info for each ome
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_workflow_table")]] <- renderTable(
+          summary_workflow_reactive(ome),
+          rownames = TRUE, 
+          colnames = FALSE
+        )
+      })
     })
     
-    # render workflow for each -ome
-    observeEvent(input$summary_plots, {
-      current_ome <- input$summary_plots
-      output[[paste0(current_ome, "_summary_workflow")]] <- renderTable({
-        summary_workflows_list()[[current_ome]]
-      }, rownames = TRUE, colnames = FALSE)
-    })
     
+    ## SUMMARY DATASET INFO ##
     
-    ## SUMMARY DATASET ##
+    # function to compile summary dataset for a given ome
+    # only call this in a reactive setting
+    summary_dataset_reactive <- function(ome) {
+        req(parameters(), GCTs_original(), GCTs(), 
+            ome %in% names(GCTs_original()),
+            ome %in% names(GCTs()),
+            ome %in% names(parameters())) 
+        
+        summary_dataset(params = parameters()[[ome]], 
+                        gct_original = GCTs_original()[[ome]],
+                        gct_processed = GCTs()[[ome]])
+    }
     
-    # dataset description list
-    summary_dataset_list <- reactive({
-      req(parameters(), all_omes(), GCTs_original(), GCTs()) 
-      
-      generate_summary_dataset_list(parameters = parameters(),
-                                    all_omes = all_omes(),
-                                    GCTs_original = GCTs_original(),
-                                    GCTs_processed = GCTs())
-    })
-    
-    # render dataset description for each -ome
-    observeEvent(input$summary_plots, {
-      current_ome <- input$summary_plots
-      output[[paste0(current_ome, "_summary_dataset")]] <- renderTable({
-        summary_dataset_list()[[current_ome]]
-      }, rownames = TRUE, colnames = TRUE)
+    # render dataset info for each ome
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_dataset_table")]] <- renderTable(
+          summary_dataset_reactive(ome),
+          rownames = TRUE, 
+          colnames = TRUE
+        )
+      })
     })
     
     
     ## SUMMARY QUANTIFIED FEATURES PLOT ##
     
-    # summary quant features plots annotations
-    summary_quant_features_annotations <- reactive({
-      req(default_annotations())
+    # quantified features plot function
+    # only to be called in a reactive setting
+    summary_quant_features_reactive <- function(ome) {
+      req(GCTs(), ome %in% names(GCTs()), 
+          default_annotations(), ome %in% names(default_annotations()))
       
-      sapply(all_omes(), function(ome) {
-        if (paste0(ome, "_summary_quant_features_annotation") %in% names(input)) {
-          input[[paste0(ome, "_summary_quant_features_annotation")]]
-        } else {
-          default_annotations()[[ome]]
-        }
-      }, simplify = FALSE)
-    })
-    
-    # summary plots list
-    summary_quant_features_plots_list <- reactive({
-      validate(
-        need(GCTs(), "GCTs not yet processed") %then%
-        need(all_omes(), "Omes not avaliable") %then%
-        need(summary_quant_features_annotations(), "Annotation not avaliable"))
+      # get annotation column
+      if (paste0(ome, "_quant_features_annotation") %in% names(input)) {
+        col <- input[[paste0(ome, "_quant_features_annotation")]]
+      } else {
+        col <- default_annotations()[[ome]]
+      }
       
-      all_gcts <- GCTs()
-      all_annotations <- summary_quant_features_annotations()
-
-      sapply(all_omes(), function(ome) {
-        summary.quant.features(all_gcts[[ome]], all_annotations[[ome]], ome)
-      }, simplify = FALSE)
-    })
+      print(paste("Generating plot for", ome))
+      
+      # generate plot
+      summary_quant_features(gct = GCTs()[[ome]], 
+                             col_of_interest = col,
+                             ome = ome)
+    }
     
     # render summary plot for each -ome
-    observeEvent(input$summary_plots, {
-      current_ome <- input$summary_plots
-      output[[paste0(current_ome, "_summary_quant_features_plot")]] <- renderPlotly({
-        req(summary_quant_features_plots_list()[[current_ome]])
-        ggplotly(summary_quant_features_plots_list()[[current_ome]])
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_quant_features_plot")]] <- renderPlotly(
+          ggplotly(summary_quant_features_reactive(ome))
+        )
       })
     })
     
     
     ## MISSING VALUES PLOT ##
     
-    # missing values plots list
-    summary_missing_value_distribution_list <- reactive({
-      validate(
-        need(GCTs_original(), "GCTs not avaliable") %then%
-          need(all_omes(), "Omes not avaliable") %then%
-          need(parameters(), "Parameters not avaliable"))
+    # generate missing values plot for a given ome, use in reactive setting
+    summary_missing_value_distribution_reactive <- function(ome) {
+      req(GCTs_original(), ome %in% names(GCTs_original()),
+          parameters(), ome %in% names(parameters()))
       
-      all_gcts <- GCTs_original()
-      params <- parameters()
-      
-      sapply(all_omes(), function(ome) {
-        summary_missing_value_distribution(
-          gct = all_gcts[[ome]],
-          missing_val_cutoff = params[[ome]]$max_missing,
-          ome = ome
-        )
-      }, simplify = FALSE)
-    })
+      summary_missing_value_distribution(
+        gct = GCTs_original()[[ome]],
+        missing_val_cutoff = parameters()[[ome]]$max_missing,
+        ome = ome
+      )
+    }
     
     # render missing values plot for each -ome
-    observeEvent(input$summary_plots, {
-      current_ome <- input$summary_plots
-      output[[paste0(current_ome, "_summary_missing_value_distribution_plot")]] <- renderPlotly({
-        req(summary_missing_value_distribution_list()[[current_ome]])
-        
-        # turn ggplot into ggplotly
-        gg <- summary_missing_value_distribution_list()[[current_ome]]
-        summary_missing_value_distribution_to_ggplotly(gg)
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_missing_value_distribution_plot")]] <- renderPlotly({
+          gg <- summary_missing_value_distribution_reactive(ome)
+          summary_missing_value_distribution_to_ggplotly(gg)
+        })
       })
     })
     
     
     ## COMPILE PLOTS FOR EXPORT ##
     
-    all_summary_plots <- reactive({
-      # gather all of the lists of plots
-      quant_features_plots = summary_quant_features_plots_list()
-      missing_val_dist_plots <- summary_missing_value_distribution_list()
-      
+    all_summary_plots <- eventReactive(all_omes(), {
       # make a list with all plots for each ome
       # the names for this list are the omes
       sapply(all_omes(), function(ome) {
         list(
-          quant_features_plot = quant_features_plots[[ome]],
-          missing_values_distribution_plot = missing_val_dist_plots[[ome]]
+          quant_features_plot = summary_quant_features_reactive(ome),
+          missing_values_distribution_plot = summary_missing_value_distribution_reactive(ome)
         )
       }, simplify = FALSE)
 

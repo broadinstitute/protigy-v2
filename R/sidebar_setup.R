@@ -41,7 +41,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # initialize main outputs from this module
     GCTs_and_params <- reactiveVal() # GCT object and corresponding parameters
-    globals <- reactiveVal() # globals values for plots, displays, etc.
+    globals <- reactiveValues() # global values for plots, displays, etc.
     GCTs_original <- reactiveVal() # the original GCTS (not processed)
     
     # initialize INTERNAL reactive values....only used in this module
@@ -369,14 +369,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       parameters <- GCTs_and_params()$parameters
       all_omes <- names(parameters)
       
-      new_globals <- list()
-      new_globals$omes <- all_omes
-      new_globals$default_ome <- all_omes[1]
-      new_globals$default_annotations <- list()
-      for (ome in all_omes) {
-        new_globals$default_annotations[[ome]] <- parameters[[ome]]$annotation_column
-      }
-      globals(new_globals)
+      globals$omes <- all_omes
+      globals$default_ome <- all_omes[1]
+      globals$default_annotations <- sapply(
+        all_omes, 
+        function(ome) parameters[[ome]]$annotation_column,
+        simplify = FALSE
+      )
     })
     
     # move the current tab to the summary tab
@@ -401,11 +400,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     }, ignoreInit = TRUE)
     
     # add default -ome to globals
-    observeEvent(input$default_ome, {
-      current_globals <- globals()
-      current_globals$default_ome <- input$default_ome
-      globals(current_globals)
-    }, ignoreInit = TRUE)
+    observeEvent(
+      input$default_ome, 
+      globals$default_ome <- input$default_ome,
+      ignoreInit = TRUE)
     
 
     
