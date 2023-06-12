@@ -44,7 +44,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
     ## OME TABS ##
     
     output$ome_tabset_box <- renderUI({
-      req(all_omes(), default_ome(), default_annotations(), GCTs())
+      req(all_omes(), default_ome())
 
       tabs <- lapply(all_omes(), function(ome){
         tabPanel(
@@ -96,7 +96,11 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
             width = 12,
             title = "Missing Values",
             headerBorder = TRUE,
-            solidHeader = TRUE
+            solidHeader = TRUE,
+            dropdownMenu = boxDropdown(
+              icon = icon("question", class = "fa-xl"),
+              uiOutput(ns(paste0(ome, "_missing_value_distribution_help")))
+            )
           ))
           
         ) # end tabPanel
@@ -183,7 +187,7 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
       if (paste0(ome, "_quant_features_annotation") %in% names(input)) {
         annot_column <- input[[paste0(ome, "_quant_features_annotation")]]
       } else {
-        annot_column <- default_annotations()[[ome]]
+        annot_column <- isolate(default_annotations()[[ome]])
       }
       
       print(paste("Generating plot for", ome))
@@ -253,6 +257,17 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
         })
       })
     })
+    
+    # render help text
+    observeEvent(all_omes(), {
+      lapply(all_omes(), function(ome) {
+        output[[paste0(ome, "_missing_value_distribution_help")]] <- renderUI(
+          p("This is a description of the plot.", 
+            style = "color: black; margin-left: 5px")
+        )
+      })
+    })
+    
     
     
     ## COMPILE PLOTS FOR EXPORT ##

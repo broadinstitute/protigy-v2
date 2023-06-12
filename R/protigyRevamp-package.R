@@ -8,7 +8,7 @@
 #' @import dplyr
 #' @import ComplexHeatmap
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
-#' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar
+#' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
 #' @importFrom cmapR parse_gctx write_gct meta mat merge_gct subset_gct GCT
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly style
