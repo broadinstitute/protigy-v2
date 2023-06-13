@@ -38,8 +38,8 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       GCTs_and_params()$parameters
     })
     
-    # gather relevant variables from globals
-    all_omes <- reactive(globals$omes)
+    # all omes present
+    all_omes <- reactive(names(GCTs()))
     
     
     ## MODULE SERVER LOGIC ##

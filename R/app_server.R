@@ -32,11 +32,19 @@ app_server <- function(input, output, session) {
     globals = globals,
     GCTs_original = GCTs_original)
   
+  ## TEMPLATE module
+  all_template_plots <- templatePlotsTabServer(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
   ## gather all plots
   all_plots <- list(
       omes = reactive(names(GCTs_and_params()$GCTs)),
       plots = list(
-        summary_plots = all_summary_plots
+        summary_plots = all_summary_plots,
+        template_plots = all_template_plots
       )
     )
 

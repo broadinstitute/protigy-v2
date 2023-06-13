@@ -3,7 +3,8 @@
 ################################################################################
 
 ## Steps for adding a new module
-# 0. Cmd/Ctr + F the word "template" and replace all with the module's name
+# 0a. Create a copy of the script and rename it with your new module's name
+# 0b. Cmd/Ctr + F the word "template" and replace all with the module's name
 # 1. add core UI and server logic here
 # 2. add helper functions in the corresponding helper script
 # 3. add necessary imports in protigyRevamp-package.R
@@ -60,6 +61,7 @@ templateTabServer <- function(id = "templateTab",
     # gather relevant variables from globals
     all_omes <- reactive(globals$omes)
     default_ome <- reactive(globals$default_ome)
+    custom_colors <- reactive(globals$colors)
     
     
     ## MODULE SERVER LOGIC ##

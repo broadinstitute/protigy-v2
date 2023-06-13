@@ -19,6 +19,7 @@ app_UI <- function(request) {dashboardPage(
   
     navbarPage(
       title = '',
+      id = "navbar-tabs",
       navbarMenu(
         "Help",
         tabPanel("General", helpGeneralTabUI(), value = "Help-General"),
@@ -57,7 +58,9 @@ app_UI <- function(request) {dashboardPage(
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
       tabPanel("Export", exportTabUI(), icon = icon("download")),
-      id = "navbar-tabs"
+      
+      tabPanel("TEMPLATE", templatePlotsTabUI())
+      
       ) #end navbarPage
   ) # end dashboardBody
 ) # end dashboardPage

@@ -88,3 +88,8 @@ section.sidebar {
 .box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li.active > a {
   color: #555;
 }
+
+/* for some reason dropdown-menu text defaults to white....so it's impossible to read */
+.dropdown-menu {
+  color: black;
+}

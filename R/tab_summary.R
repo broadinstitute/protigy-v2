@@ -4,113 +4,84 @@
 ################################################################################
 
 
-# UI for the summary tab
+# UI for the templatePlots tab
+# contains the structure for the big tabbed box with omes
 summaryTabUI <- function(id = "summaryTab") {
-  ns <- NS(id) # namespace function
+  ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
   
   tagList(
+    
+    # display omes tabs
     fluidRow(uiOutput(ns("ome_tabset_box")))
+    
   ) # end tagList
 }
 
 # server for the summary tab
-summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_original) { 
+# contains the structure for the big tabbed box with omes
+summaryTabServer <- function(id = "summaryTab",
+                             GCTs_and_params, 
+                             globals, 
+                             GCTs_original) { 
   
   ## module function
   moduleServer(id, function (input, output, session) {
     
+    ## GATHERING INPUTS ##
+    
     # get namespace
     ns <- session$ns
     
-    # gather GCTs and parameters
+    # GCTs to use for analysis/visualization
     GCTs <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$GCTs
     })
+    
+    # parameters used to process GCTs
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
     })
+    
+    # named list of default annotation columns for each ome
     default_annotations <- reactive({
       req(parameters())
       sapply(parameters(), function(p) p$annotation_column, simplify = FALSE)
     })
     
+    all_omes <- reactive(names(GCTs()))
+    
     # gather relevant variables from globals
-    all_omes <- reactive(globals$omes)
     default_ome <- reactive(globals$default_ome)
+    custom_colors <- reactive(globals$colors)
     
     
     ## OME TABS ##
     
+    # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
       req(all_omes(), default_ome())
-
+      
+      # generate a tab for each -ome
       tabs <- lapply(all_omes(), function(ome){
         tabPanel(
           title = ome,
           
-          fluidRow(
-            # Dataset information box
-            shinydashboardPlus::box(
-              tableOutput(ns(paste0(ome, "_dataset_table"))),
-              title = "Dataset Information",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            ),
-            
-            # Data workflow box
-            shinydashboardPlus::box(
-              tableOutput(ns(paste0(ome, "_workflow_table"))),
-              title = "Workflow Parameters",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            ),
-          ),
-          
-          # Quantified features box
-          fluidRow(shinydashboardPlus::box(
-            plotlyOutput(ns(paste0(ome, "_quant_features_plot"))),
-            sidebar = boxSidebar(
-              uiOutput(ns(paste0(ome, "_quant_features_sidebar_contents"))),
-              id = ns(paste0(ome, "_quant_features_sidebar")),
-              width = 25,
-              icon = icon("gears", class = "fa-2xl"),
-              background = "rgba(91, 98, 104, 0.9)"
-            ),
-            status = "primary",
-            width = 12,
-            title = "Quantified Features",
-            headerBorder = TRUE,
-            solidHeader = TRUE
-          )),
-          
-          # Missing values distribution box
-          fluidRow(shinydashboardPlus::box(
-            plotlyOutput(ns(paste0(ome, "_missing_value_distribution_plot"))),
-            status = "primary",
-            width = 12,
-            title = "Missing Values",
-            headerBorder = TRUE,
-            solidHeader = TRUE,
-            dropdownMenu = boxDropdown(
-              icon = icon("question", class = "fa-xl"),
-              uiOutput(ns(paste0(ome, "_missing_value_distribution_help")))
-            )
-          ))
+          # call the UI function for each individual ome
+          summaryOmeUI(id = ns(ome))
           
         ) # end tabPanel
-      })
+      }) # end lapply
       
       # combine all tabs into tabSetPanel
-      tab_set_panel <- do.call(tabsetPanel, c(tabs, list(id = ns("ome_tabs"),
-                                   selected = isolate(default_ome()))))
+      tab_set_panel <- do.call(
+        tabsetPanel, 
+        c(tabs, list(id = ns("ome_tabs"), selected = isolate(default_ome())))
+      )
       
-      # put everything in a box and return
+      # put everything in a big box with ome tabs and return
+      # add necessary CSS classes
       add_css_attributes(
         shinydashboardPlus::box(
           tab_set_panel,
@@ -118,173 +89,239 @@ summaryTabServer <- function(id = "summaryTab", GCTs_and_params, globals, GCTs_o
         ), 
         classes = c("box-no-header", "box-with-tabs")
       )
-    })
+    }) # end renderUI
     
     # update selected tab based on default -ome
     observe({
       updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
     
-    
-    ## SUMMARY WORKFLOW ##
-    
-    # function to compile summary workflow for a given ome
-    # only call this in a reactive setting
-    summary_workflow_reactive <- function(ome) {
-      req(parameters(), ome %in% names(parameters())) 
-      summary_workflow(params = parameters()[[ome]])
-    }
-    
-    # render workflow info for each ome
+    # call the server function for each individual ome
+    all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_workflow_table")]] <- renderTable(
-          summary_workflow_reactive(ome),
-          rownames = TRUE, 
-          colnames = FALSE
+      output_plots <- sapply(all_omes(), function(ome) {
+        summaryOmeServer(
+          id = ome,
+          ome = ome,
+          GCT_processed = reactive(GCTs()[[ome]]),
+          parameters = reactive(parameters()[[ome]]),
+          GCT_original = reactive(GCTs_original()[[ome]]),
+          default_annotation_column = reactive(default_annotations()[[ome]]),
+          color_map = reactive(custom_colors())
         )
-      })
+      }, simplify = FALSE)
+      
+      all_plots(output_plots) # set reactive value with outputs
     })
     
+    return(all_plots)
+  })
+}
+
+
+
+# UI for an individual ome
+summaryOmeUI <- function (id) {
+  
+  ns <- NS(id)
+  
+  tagList(
     
-    ## SUMMARY DATASET INFO ##
+    fluidRow(
+      # Dataset information box
+      shinydashboardPlus::box(
+        tableOutput(ns("dataset_table")),
+        title = "Dataset Information",
+        status = "primary",
+        solidHeader = TRUE,
+        width = 6,
+        headerBorder = TRUE
+      ),
+      
+      # Data workflow box
+      shinydashboardPlus::box(
+        tableOutput(ns("workflow_table")),
+        title = "Workflow Parameters",
+        status = "primary",
+        solidHeader = TRUE,
+        width = 6,
+        headerBorder = TRUE
+      ),
+    ), # end fluidRow
     
-    # function to compile summary dataset for a given ome
-    # only call this in a reactive setting
-    summary_dataset_reactive <- function(ome) {
-        req(parameters(), GCTs_original(), GCTs(), 
-            ome %in% names(GCTs_original()),
-            ome %in% names(GCTs()),
-            ome %in% names(parameters())) 
-        
-        summary_dataset(params = parameters()[[ome]], 
-                        gct_original = GCTs_original()[[ome]],
-                        gct_processed = GCTs()[[ome]])
-    }
+    # Quantified features box
+    fluidRow(shinydashboardPlus::box(
+      plotlyOutput(ns("quant_features_plot")),
+      sidebar = boxSidebar(
+        uiOutput(ns("quant_features_sidebar_contents")),
+        id = ns("quant_features_sidebar"),
+        width = 25,
+        icon = icon("gears", class = "fa-2xl"),
+        background = "rgba(91, 98, 104, 0.9)"
+      ),
+      status = "primary",
+      width = 12,
+      title = "Quantified Features",
+      headerBorder = TRUE,
+      solidHeader = TRUE
+    )),
     
-    # render dataset info for each ome
-    observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_dataset_table")]] <- renderTable(
-          summary_dataset_reactive(ome),
-          rownames = TRUE, 
-          colnames = TRUE
-        )
-      })
+    # Missing values distribution box
+    fluidRow(shinydashboardPlus::box(
+      plotlyOutput(ns("missing_value_distribution_plot")),
+      status = "primary",
+      width = 12,
+      title = "Missing Values",
+      headerBorder = TRUE,
+      solidHeader = TRUE,
+      dropdownMenu = boxDropdown(
+        icon = icon("question", class = "fa-xl"),
+        uiOutput(ns("missing_value_distribution_help"))
+      )
+    ))
+  )
+}
+
+
+# server for an individual ome
+summaryOmeServer <- function(id, ome,
+                             GCT_processed,
+                             parameters,
+                             GCT_original,
+                             default_annotation_column,
+                             color_map) {
+  
+  ## module function
+  moduleServer(id, function (input, output, session) {
+    
+    # get namespace, use in renderUI-like functions
+    ns <- session$ns
+    
+    ## DATASET INFO ##
+    
+    # reactive function for dataset info table
+    dataset_info_reactive <- reactive({
+      req(parameters(), GCT_original(), GCT_processed()) 
+      
+      summary_dataset(params = parameters(), 
+                      gct_original = GCT_original(),
+                      gct_processed = GCT_processed())
     })
     
+    # render dataset info
+    output$dataset_table <- renderTable(
+      dataset_info_reactive(),
+      rownames = TRUE, 
+      colnames = TRUE
+    )
     
-    ## SUMMARY QUANTIFIED FEATURES PLOT ##
     
-    # quantified features plot function
-    # only to be called in a reactive setting
-    summary_quant_features_reactive <- function(ome) {
-      req(GCTs(), ome %in% names(GCTs()), 
-          default_annotations(), ome %in% names(default_annotations()),
-          globals$colors, ome %in% names(globals$colors))
+    ## WORKFLOW INFO ##
+    
+    # reactive to compile summary workflow information
+    workflow_info_reactive <- reactive({
+      req(parameters()) 
+      summary_workflow(params = parameters())
+    })
+    
+    # render workflow info
+    output$workflow_table <- renderTable(
+      workflow_info_reactive(),
+      rownames = TRUE, 
+      colnames = FALSE
+    )
+    
+    
+    ## QUANTIFIED FEATURES PLOT ##
+    
+    # reactive for quantified features plot
+    quant_features_plot_reactive <- reactive({
+      req(GCT_processed(), default_annotation_column(), color_map())
       
       # get annotation column
-      if (paste0(ome, "_quant_features_annotation") %in% names(input)) {
-        annot_column <- input[[paste0(ome, "_quant_features_annotation")]]
+      if ("quant_features_annotation" %in% names(input)) {
+        annot_column <- input$quant_features_annotation
       } else {
-        annot_column <- isolate(default_annotations()[[ome]])
+        annot_column <- isolate(default_annotation_column())
       }
       
       print(paste("Generating plot for", ome))
       
       # get custom colors
-      colors <- globals$colors[[ome]]
-      if (annot_column %in% names(colors)) {
-        annot_color_map <- colors[[annot_column]]
+      custom_colors <- color_map()
+      if (annot_column %in% names(custom_colors)) {
+        annot_color_map <- custom_colors[[annot_column]]
       } else {
         annot_color_map <- NULL
       }
       
       # generate plot
-      summary_quant_features(gct = GCTs()[[ome]], 
+      summary_quant_features(gct = GCT_processed(), 
                              col_of_interest = annot_column,
                              ome = ome,
                              custom_color_map = annot_color_map)
-    }
-    
-    # render summary plot for each -ome
-    observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_quant_features_plot")]] <- renderPlotly(
-          ggplotly(summary_quant_features_reactive(ome), tooltip = "text")
-        )
-      })
     })
     
+    # render summary plot
+    output$quant_features_plot <- renderPlotly(
+      ggplotly(quant_features_plot_reactive(), tooltip = "text")
+    )
+    
     # sidebar contents
-    observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_quant_features_sidebar_contents")]] <- renderUI({
-          add_css_attributes(
-            selectInput(
-              ns(paste0(ome, "_quant_features_annotation")),
-              "Group by",
-              choices = names(GCTs()[[ome]]@cdesc),
-              selected = default_annotations()[[ome]]),
-            classes = "small-input",
-            styles = "margin-right: 10px"
-          )
-        })
-      })
+    output$quant_features_sidebar_contents <- renderUI({
+      add_css_attributes(
+        selectInput(
+          ns("quant_features_annotation"),
+          "Group by",
+          choices = names(GCT_processed()@cdesc),
+          selected = default_annotation_column()),
+        classes = "small-input",
+        styles = "margin-right: 10px"
+      )
     })
     
     
     ## MISSING VALUES PLOT ##
     
-    # generate missing values plot for a given ome, use in reactive setting
-    summary_missing_value_distribution_reactive <- function(ome) {
-      req(GCTs_original(), ome %in% names(GCTs_original()),
-          parameters(), ome %in% names(parameters()))
-      
+    # generate missing values plot
+    missing_value_distribution_reactive <- reactive({
+      req(GCT_original(), parameters())
+
       summary_missing_value_distribution(
-        gct = GCTs_original()[[ome]],
-        missing_val_cutoff = parameters()[[ome]]$max_missing,
+        gct = GCT_original(),
+        missing_val_cutoff = parameters()$max_missing,
         ome = ome
       )
-    }
+    })
     
-    # render missing values plot for each -ome
-    observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_missing_value_distribution_plot")]] <- renderPlotly({
-          gg <- summary_missing_value_distribution_reactive(ome)
-          summary_missing_value_distribution_to_ggplotly(gg)
-        })
-      })
+    # render missing values plot
+    output$missing_value_distribution_plot <- renderPlotly({
+      gg <- missing_value_distribution_reactive()
+      summary_missing_value_distribution_to_ggplotly(gg)
     })
     
     # render help text
-    observeEvent(all_omes(), {
-      lapply(all_omes(), function(ome) {
-        output[[paste0(ome, "_missing_value_distribution_help")]] <- renderUI(
-          p("This is a description of the plot.", 
-            style = "color: black; margin-left: 5px")
-        )
-      })
-    })
-    
+    output$missing_value_distribution_help <- renderUI(
+      p("This is a description of the plot.", 
+        style = "margin-left: 5px")
+    )
     
     
     ## COMPILE PLOTS FOR EXPORT ##
     
-    all_summary_plots <- eventReactive(all_omes(), {
-      # make a list with all plots for each ome
-      # the names for this list are the omes
-      sapply(all_omes(), function(ome) {
-        list(
-          quant_features_plot = summary_quant_features_reactive(ome),
-          missing_values_distribution_plot = summary_missing_value_distribution_reactive(ome)
-        )
-      }, simplify = FALSE)
-
-    })
-    
-    return(all_summary_plots)
+    return(list(
+      quant_features_plot = quant_features_plot_reactive(),
+      missing_value_distribution = missing_value_distribution_reactive()
+    ))
   })
 }
+
+
+
+
+
+
+
+
+
 
