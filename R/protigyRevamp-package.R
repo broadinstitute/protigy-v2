@@ -7,6 +7,7 @@
 #' @import ggplot2
 #' @import dplyr
 #' @import ComplexHeatmap
+#' @import markdown
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
@@ -22,5 +23,6 @@
 #' @importFrom methods new
 #' @importFrom stats density mad median quantile sd aggregate coef qnorm qt
 #' @importFrom zip zip
+#' @importFrom utils tail
 ## usethis namespace: end
 NULL

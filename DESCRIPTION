@@ -18,7 +18,6 @@ Imports:
     ComplexHeatmap,
     dplyr,
     ggplot2,
-    pkgload,
     plotly,
     RColorBrewer,
     shinyalert,
@@ -37,7 +36,9 @@ Imports:
     vsn,
     preprocessCore,
     mixtools,
-    mclust
+    mclust,
+    markdown,
+    utils
 Depends:
     shiny
 Suggests: 

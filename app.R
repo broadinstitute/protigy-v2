@@ -1,4 +1,5 @@
-################################################################################
+# Launch the ShinyApp (Do not remove this comment)
+#
 # This file exists purely for deployment purposes
 # To deploy:
 # 1. run: `options(repos = c(BiocManager::repositories()))`

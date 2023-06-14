@@ -30,7 +30,14 @@ app_server <- function(input, output, session) {
   all_summary_plots <- summaryTabServer(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
-    GCTs_original = GCTs_original)
+    GCTs_original = GCTs_original
+  )
+  
+  ## Multi-ome Heatmap module
+  multiomeHeatmapTabServer(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals
+  )
   
   ## TEMPLATE module
   all_template_plots <- templatePlotsTabServer(

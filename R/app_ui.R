@@ -54,7 +54,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("2")),
       navbarMenu(
         "Multi-ome",
-        tabPanel('Heatmap'),
+        tabPanel('Heatmap', multiomeHeatmapTabUI()),
         tabPanel('Pair-wise correlation'),
         tabPanel('More ideas?')),
       tabPanel("Export", exportTabUI(), icon = icon("download")),
