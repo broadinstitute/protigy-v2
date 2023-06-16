@@ -20,7 +20,7 @@ multiomeHeatmapTabUI <- function(id = 'multiomeHeatmapTab', GENEMAX = 20) {
     headerBorder = TRUE,
     solidHeader = TRUE,
     sidebar = boxSidebar(
-      uiOutput(ns("sidebar_content")),
+      setup_multiomeHeatmapTabUI(id = ns("setup")),
       id = "heatmap_sidebar",
       background = "rgba(91, 98, 104, 0.9)",
       startOpen = TRUE,
@@ -53,23 +53,10 @@ multiomeHeatmapTabServer <- function(id = 'multiomeHeatmapTab',
     all_omes <- reactive(names(GCTs()))
     
     
-    ## Merge GCTs ##
-    
-    # merge the GCTs, get mat, rdesc, and sample annotations
-    merged_gcts_list <- reactive(preprocess_gct_files(GCTs()))
-    merged_mat <- reactive(merged_gcts_list()$merged_mat)
-    merged_rdesc <- reactive(merged_gcts_list()$merged_rdesc)
-    sample_anno <- reactive(merged_gcts_list()$merged_cdesc)
-    
-    
     ## Setup ##
+    gcts_merged <- setupmultiomeHeatmapTabServer(id = "setup", GCTs = GCTs)
     
-    output$sidebar_content <- renderUI({
-      setup_multiomeHeatmapTabUI(id = ns("setup"))
-    })
-    
-    setupmultiomeHeatmapTabServer(id = "setup",
-                                  GCTs = GCTs)
+    observe(print(gcts_merged()))
     
     
 
