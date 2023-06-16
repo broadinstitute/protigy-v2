@@ -107,7 +107,7 @@ summaryTabServer <- function(id = "summaryTab",
           parameters = reactive(parameters()[[ome]]),
           GCT_original = reactive(GCTs_original()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors())
+          color_map = reactive(custom_colors()[[ome]])
         )
       }, simplify = FALSE)
       
@@ -235,32 +235,33 @@ summaryOmeServer <- function(id, ome,
     ## QUANTIFIED FEATURES PLOT ##
     
     # reactive for quantified features plot
-    quant_features_plot_reactive <- reactive({
-      req(GCT_processed(), default_annotation_column(), color_map())
-      
-      # get annotation column
-      if ("quant_features_annotation" %in% names(input)) {
-        annot_column <- input$quant_features_annotation
-      } else {
-        annot_column <- isolate(default_annotation_column())
+    quant_features_plot_reactive <- eventReactive(
+      eventExpr = c(input$quant_features_annotation, color_map()), 
+      valueExpr = {
+        req(GCT_processed(), default_annotation_column(), color_map())
+        
+        # get annotation column
+        if (!is.null(input$quant_features_annotation)) {
+          annot_column <- input$quant_features_annotation
+        } else {
+          annot_column <- default_annotation_column()
+        }
+        
+        # get custom colors
+        custom_colors <- color_map()
+        if (annot_column %in% names(custom_colors)) {
+          annot_color_map <- custom_colors[[annot_column]]
+        } else {
+          annot_color_map <- NULL
+        }
+        
+        # generate plot
+        summary_quant_features(gct = GCT_processed(), 
+                               col_of_interest = annot_column,
+                               ome = ome,
+                               custom_color_map = annot_color_map)
       }
-      
-      print(paste("Generating plot for", ome))
-      
-      # get custom colors
-      custom_colors <- color_map()
-      if (annot_column %in% names(custom_colors)) {
-        annot_color_map <- custom_colors[[annot_column]]
-      } else {
-        annot_color_map <- NULL
-      }
-      
-      # generate plot
-      summary_quant_features(gct = GCT_processed(), 
-                             col_of_interest = annot_column,
-                             ome = ome,
-                             custom_color_map = annot_color_map)
-    })
+    )
     
     # render summary plot
     output$quant_features_plot <- renderPlotly(

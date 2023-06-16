@@ -12,7 +12,7 @@
 # 5. call your server function in app_server (located in app_server.R)
 
 ################################################################################
-# Shiny funcions (UI and server)
+# Shiny functions (UI and server)
 ################################################################################
 
 # UI for the summary tab
@@ -58,8 +58,10 @@ templateTabServer <- function(id = "templateTab",
       sapply(parameters(), function(p) p$annotation_column, simplify = FALSE)
     })
     
+    # vector of all omes
+    all_omes <- reactive(names(GCTs()))
+    
     # gather relevant variables from globals
-    all_omes <- reactive(globals$omes)
     default_ome <- reactive(globals$default_ome)
     custom_colors <- reactive(globals$colors)
     

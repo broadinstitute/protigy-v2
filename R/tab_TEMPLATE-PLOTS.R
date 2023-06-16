@@ -1,9 +1,9 @@
 ################################################################################
 # Module: TEMPLATE-PLOTS
 #
-# This is a template for how to add a module that generates plots with tabs for 
+# This is a template for how to add a module that contains identical tabs for  
 # each ome. This template has built-in functionality for handing omes, 
-# displaying plots in boxes, and exporting plots.
+# displaying plots/tables/etc in boxes, and exporting outputs.
 ################################################################################
 # This template comtains two pairs of server/UI module functions:
 #
@@ -152,7 +152,7 @@ templatePlotsTabServer <- function(id = "templatePlotsTab",
           parameters = reactive(parameters()[[ome]]),
           GCT_original = reactive(GCTs_original()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors())
+          color_map = reactive(custom_colors()[[ome]])
         )
       }, simplify = FALSE)
       
