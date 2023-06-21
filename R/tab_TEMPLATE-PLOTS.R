@@ -285,7 +285,7 @@ templatePlotsOmeServer <- function(id,
     # List names are used in the exported plot file name
     return(
       list(
-        example_plot = example_plot_reactive()
+        example_plot = example_plot_reactive
       )
     )
   })

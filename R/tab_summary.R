@@ -61,7 +61,7 @@ summaryTabServer <- function(id = "summaryTab",
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
-      req(all_omes(), default_ome())
+      req(all_omes())
       
       # generate a tab for each -ome
       tabs <- lapply(all_omes(), function(ome){
@@ -77,7 +77,7 @@ summaryTabServer <- function(id = "summaryTab",
       # combine all tabs into tabSetPanel
       tab_set_panel <- do.call(
         tabsetPanel, 
-        c(tabs, list(id = ns("ome_tabs"), selected = isolate(default_ome())))
+        c(tabs, list(id = ns("ome_tabs")))
       )
       
       # put everything in a big box with ome tabs and return
@@ -311,8 +311,8 @@ summaryOmeServer <- function(id, ome,
     ## COMPILE PLOTS FOR EXPORT ##
     
     return(list(
-      quant_features_plot = quant_features_plot_reactive(),
-      missing_value_distribution = missing_value_distribution_reactive()
+      quant_features_plot = quant_features_plot_reactive,
+      missing_value_distribution = missing_value_distribution_reactive
     ))
   })
 }

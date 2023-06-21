@@ -93,3 +93,16 @@ section.sidebar {
 .dropdown-menu {
   color: black;
 }
+
+/* inline shiny inputs */
+#inline label{ 
+  display: table-cell; 
+  text-align: left; 
+  vertical-align: middle;
+  padding-right: 5px;
+}
+
+#inline .form-group { 
+  display: table-row;
+}
+

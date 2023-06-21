@@ -27,67 +27,64 @@ setupmultiomeHeatmapTabServer <- function (id, GCTs) {
         
         all_GCTs <- GCTs()
         
-        tags$div(
-          tagList(
-            lapply(all_omes(), function(ome) {renderUI({
+        tagList(
+          lapply(all_omes(), function(ome) {renderUI({
+            
+            # taglist of UI elements for each file's setup
+            tagList(
+              h4("Setup for ", strong(ome)),
               
-              # taglist of UI elements for each file's setup
-              tagList(
-                h4("Setup for ", strong(ome)),
+              tipify(
+                add_css_attributes(
+                  selectInput(ns(paste0("setup_data_type_", ome)), 
+                              label = "Data processing type:",
+                              choices = c("SpectrumMill", "Other"),
+                              selected = "SpectrumMill"),
+                  classes = "small-input"),
+                title = paste('"SpectrumMill" input assumes gene symbol column name is "geneSymbol"', 
+                              'and that the GCT row IDs are formatted as "AccessionNumber_VMSiteInfo" or "EnsembleID_VMSiteInfo",',
+                              'If this is not true, select "Other" to provide custom inputs.'),
+                placement = "left"
+              ),
+              
+              conditionalPanel(
+                condition = paste0("input['setup_data_type_", ome, "'] == 'Other'"),
+                ns = ns,
                 
-                tipify(
-                  add_css_attributes(
-                    selectInput(ns(paste0("setup_data_type_", ome)), 
-                                label = "Data processing type:",
-                                choices = c("SpectrumMill", "Other"),
-                                selected = "SpectrumMill"),
+                add_css_attributes(
+                  selectInput(ns(paste0("setup_geneSymbol_column_", ome)), 
+                              label = "Gene symbol column name:",
+                              choices = names(all_GCTs[[ome]]@rdesc),
+                              selected = NULL), 
                     classes = "small-input"),
-                  title = paste('"SpectrumMill" input assumes gene symbol column name is "geneSymbol"', 
-                                'and that the GCT row IDs are formatted as "AccessionNumber_VMSiteInfo" or "EnsembleID_VMSiteInfo",',
-                                'If this is not true, select "Other" to provide custom inputs.'),
-                  placement = "left"
-                ),
+                
+                checkboxInput(ns(paste0("setup_is_VM_", ome)),
+                              "Ome contains variable modification data"),
                 
                 conditionalPanel(
-                  condition = paste0("input['setup_data_type_", ome, "'] == 'Other'"),
+                  condition = paste0("input['setup_is_VM_", ome, "']"),
                   ns = ns,
-                  
-                  add_css_attributes(
-                    selectInput(ns(paste0("setup_geneSymbol_column_", ome)), 
-                                label = "Gene symbol column name:",
-                                choices = names(all_GCTs[[ome]]@rdesc),
-                                selected = NULL), 
+                  tipify(
+                    add_css_attributes(
+                      selectInput(ns(paste0("setup_VM_column_", ome)),
+                                  label = "Variable modification site column name:",
+                                  choices = names(all_GCTs[[ome]]@rdesc),
+                                  selected = NULL), 
                       classes = "small-input"),
-                  
-                  checkboxInput(ns(paste0("setup_is_VM_", ome)),
-                                "Ome contains variable modification data"),
-                  
-                  conditionalPanel(
-                    condition = paste0("input['setup_is_VM_", ome, "']"),
-                    ns = ns,
-                    tipify(
-                      add_css_attributes(
-                        selectInput(ns(paste0("setup_VM_column_", ome)),
-                                    label = "Variable modification site column name:",
-                                    choices = names(all_GCTs[[ome]]@rdesc),
-                                    selected = NULL), 
-                        classes = "small-input"),
-                      title = paste("Entries in this column should contain variable modification site/location.",
-                                    "They will be used as labels in the heatmap."),
-                      placement = "left"))
-                ), # end conditionalPanel
-                
-                if (ome != tail(all_omes(), 1)) hr()
-              ) # end tagList
-            }) # end renderUI
-            }), # end lapply
-            
-            # action button to submit parameters
-            actionButton(ns("submit"), "Submit", class = "btn btn-primary")
-            
-          ), # end tagList
-          style = "margin-right: 10px"
-        ) # end div
+                    title = paste("Entries in this column should contain variable modification site/location.",
+                                  "They will be used as labels in the heatmap."),
+                    placement = "left"))
+              ), # end conditionalPanel
+              
+              if (ome != tail(all_omes(), 1)) hr()
+            ) # end tagList
+          }) # end renderUI
+          }), # end lapply
+          
+          # action button to submit parameters
+          actionButton(ns("submit"), "Submit", class = "btn btn-primary")
+          
+        ) # end tagList
       }) # end renderUI
       
       

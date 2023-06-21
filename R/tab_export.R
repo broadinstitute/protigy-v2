@@ -95,7 +95,7 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
         
         # loop through selected plots
         lapply(selected_plots, function(tab_name) {
-          plots_all_omes = plots[[tab_name]]()
+          plots_all_omes <- plots[[tab_name]]()
           
           # loop through selected omes
           lapply(selected_omes, function(ome) {
@@ -107,11 +107,11 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
             
             # save each plot for this ome
             for(i in seq_along(plots_this_ome)) {
-              p = plots_this_ome[[i]]
-              p_name = paste0(names(plots_this_ome)[[i]], '.pdf')
+              p = plots_this_ome[[i]]()
               
               # save ggplot
               if (is.ggplot(p)) {
+                p_name = paste0(names(plots_this_ome)[[i]], '.pdf')
                 ggsave(
                   filename = p_name, 
                   plot = p, 

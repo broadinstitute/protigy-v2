@@ -99,7 +99,7 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
 
 ## make complex heatmap
 ## calls global variables merged_rdesc, merged_mat, sample_anno
-myComplexHeatmap <- function(params) {
+myComplexHeatmap <- function(params, GENEMAX, merged_rdesc, merged_mat, sample_anno) {
   
   # extract parameters
   genes.char <- params$genes.char
@@ -111,9 +111,10 @@ myComplexHeatmap <- function(params) {
   show.sample.label <- params$show.sample.label
   custom_anno_colors <- params$custom_anno_colors
   ome.order <- params$ome.order
+  max.levels <- params$max.levels
   
   # extract genes
-  genes.all <- extractGenes(genes.char, select(merged_rdesc, geneSymbol))
+  genes.all <- extractGenes(genes.char, select(merged_rdesc, geneSymbol), GENEMAX)
   genes.vec <- genes.all$genes.vec
   
   # extract rows for that gene
@@ -171,6 +172,15 @@ myComplexHeatmap <- function(params) {
   rownames(anno.fig) <- anno.fig$Sample.ID
   anno.fig <- anno.fig[, -(1), drop = FALSE]
   
+  # filter for only annotations that are numeric or less than max.levels 
+  is_valid_anno <- function(col) {
+    valid_categorical <- length(setdiff(unique(col), NA)) <= max.levels
+    valid_numeric <- all(suppressWarnings(!is.na(as.numeric(as.character(setdiff(col, NA))))))
+    return(valid_categorical | valid_numeric)
+  }
+  anno.fig <- anno.fig %>% select(where(is_valid_anno))
+  
+  
   if (dim(anno.fig)[2] == 0) {
     HM.anno <- NULL
     column.to.sort <- NULL
@@ -183,6 +193,7 @@ myComplexHeatmap <- function(params) {
     anno.fig[, numeric_cols] <- sapply(anno.fig[, numeric_cols], as.numeric)
     
     # make custom color palette
+    browser()
     set.seed(1)
     anno.fig.color <- lapply(anno.fig, myColorPalette)
     for (anno in names(custom_anno_colors)) {
@@ -239,7 +250,7 @@ myComplexHeatmap <- function(params) {
 }
 
 ## function to extract gene names from a string input
-extractGenes <- function(genes.char, table){
+extractGenes <- function(genes.char, table, GENEMAX){
   
   if(is.null(genes.char))
     return(NULL)
@@ -295,11 +306,6 @@ getHMTable <- function(genes.Table, row.anno, params) {
   return (genes.Table)
 }
 
-# helper function for some of my "validate()" statements
-`%then%` <- function(a, b) {
-  if (is.null(a)) b else a
-}
-
 ## function to dynamically determine the height (in px) of the heatmap
 ## depending on the number of genes
 dynamicHeightHM <- function(n.entries){
@@ -307,6 +313,34 @@ dynamicHeightHM <- function(n.entries){
   height <- height * 48             ## inch  to pixel
   
   return(height)
+}
+
+## function to convert global custom colors to the complexHeatmap structure
+multiome_heatmap_custom_colors <- function(global_colors, sample_anno) {
+  sapply(global_colors, simplify = FALSE, function(ome_colors){
+    mapply(
+      ome_colors, names(ome_colors),
+      SIMPLIFY = FALSE, USE.NAMES = TRUE,
+      FUN = function(annot_colors, annot_name) {
+        if (annot_colors$is_discrete) {
+          colors_vector <- annot_colors$colors
+          names(colors_vector) <- annot_colors$val
+          return(colors_vector)
+          
+        } else {
+          annot_values <- as.numeric(sample_anno[[annot_name]])
+          color_function <- circlize::colorRamp2(
+            c(min(annot_values), 
+              mean(annot_values), 
+              max(annot_values)),
+            c(annot_colors$colors[which(annot_colors$vals == "low")], 
+              annot_colors$colors[which(annot_colors$vals == "mid")], 
+              annot_colors$colors[which(annot_colors$vals == "high")])
+          )
+          return(color_function)
+        }
+    })
+  })
 }
 
 ## function to make prettier color palettes
