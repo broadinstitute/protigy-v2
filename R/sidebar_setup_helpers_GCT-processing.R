@@ -97,23 +97,25 @@ processGCTs <- function(GCTs, parameters) {
     })
   
   # have the whole output be NULL if there was an error
-  if (any(sapply(processing_out, is.null))) {
-    output <- NULL
+  if (any(sapply(processing_out, is.null))) return(NULL)
     
-  # otherwise, pull out the GCTs and updated parameters separately
-  } else {
-    GCTs_processed <- sapply(processing_out, 
-                             function(ome) ome$processed_GCT,
-                             simplify = FALSE)
-    parameters_updated <- sapply(processing_out,
-                                 function(ome) ome$params,
-                                 simplify = FALSE)
-    
-    output <- list(
-      GCTs = GCTs_processed,
-      parameters = parameters_updated
-    )
-  }
+  # otherwise, continue
+  # pull out the GCTs and updated parameters separately
+  GCTs_processed <- sapply(processing_out, 
+                           function(ome) ome$processed_GCT,
+                           simplify = FALSE)
+  parameters_updated <- sapply(processing_out,
+                               function(ome) ome$params,
+                               simplify = FALSE)
+  
+  
+  GCTs_merged <- merge_processed_gcts(GCTs_processed)
+  
+  output <- list(
+    GCTs = GCTs_processed,
+    parameters = parameters_updated,
+    GCTs_merged = GCTs_merged
+  )
   
   message("\nDone with GCT processing!")
   
@@ -277,3 +279,84 @@ validateGCT <- function(gct) {
   
   return(GCT(mat = mat, rdesc = rdesc, cdesc = cdesc))
 }
+
+# merge processed GCTs
+merge_processed_gcts <- function(GCTs_processed) {
+  withProgress(message = "Merging GCTs", expr = {
+  
+    # add a protigy.ome column to each gct's rdesc
+    GCTs_processed <- mapply(
+      GCTs_processed, names(GCTs_processed),
+      SIMPLIFY = FALSE, USE.NAMES = TRUE, 
+      FUN = function(gct, ome) {
+        # check if `protigy.ome` is a column in the current gct
+        if ("protigy.ome" %in% names(gct@rdesc) & any(gct@rdesc$protigy.ome != ome)) {
+          warning("`protigy.ome` column already exists and will be overwritten in ", ome)
+        }
+        gct@rdesc$protigy.ome <- rep(ome, dim(gct@rdesc)[1])
+        return(gct)
+      })
+    
+    incProgress()
+    
+    # merge GCTs first using cmapR::merge_gct
+    GCTs_merged <- Reduce(
+      function(gct1, gct2) {
+        merged <- cmapR::merge_gct(gct1, gct2, dim='row')
+        incProgress()
+        return(merged)
+      },
+      GCTs_processed)
+    rownames(GCTs_merged@cdesc) <- GCTs_merged@cid
+    rownames(GCTs_merged@rdesc) <- GCTs_merged@rid
+    
+    
+    # figure out which columns conflict with other omes
+    conflict_columns <- c()
+    for (i in seq_along(GCTs_processed)) {
+      ome <- names(GCTs_processed)[1]
+      gct <- GCTs_processed[[i]]
+      
+      # subset to only samples in ome
+      samples_in_ome <- gct@cid
+      merged_cdesc_subset <- GCTs_merged@cdesc[samples_in_ome, ]
+      
+      conflict_columns_ome <- names(which(
+        sapply(names(gct@cdesc), function(col) {
+          any(gct@cdesc[[col]] != merged_cdesc_subset[[col]])
+        })
+      ))
+      
+      conflict_columns <- unique(c(conflict_columns, conflict_columns_ome))
+    }
+    
+    incProgress()
+    
+    
+    # remove conflicting columns and re-name by ome
+    for (col in conflict_columns) {
+      # get the omes that contain this conflict column
+      omes_with_col <- names(which(
+        sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
+      ))
+      
+      # make a new columnn in GCTs_merged for each conflict
+      for (ome in omes_with_col) {
+        warning("This column could already exist")
+        GCTs_merged@cdesc[[paste0(col, '.', ome)]] <- GCTs_processed[[ome]]@cdesc[[col]]
+      }
+      
+      # remove the original column
+      GCTs_merged@cdesc[[col]] <- NULL
+      
+      # TODO: reorder the columns
+      warning("column order gets messed up")
+    }
+    
+    setProgress(1)
+  
+  })
+  
+  return(GCTs_merged)
+}
+

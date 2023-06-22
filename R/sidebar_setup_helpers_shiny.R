@@ -199,6 +199,9 @@ validate_labels <- function(all_labels) {
     if (make.names(label) != label) {
       stop(paste("Invalid label for", filename))
     }
+    if (label == "multi_ome") {
+      stop("Invalid label for ", filename, ", 'multi-ome' is a reserved word.")
+    }
   }
   
   # check that labels aren't repeated

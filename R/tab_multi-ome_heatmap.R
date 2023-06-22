@@ -54,16 +54,17 @@ multiomeHeatmapTabServer <- function(
     # GCTs to use for analysis/visualization
     GCTs <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
-      GCTs_and_params()$GCTs
+      
+      # for this module, want to overwrite gct's cdesc with the merged version
+      sapply(
+        GCTs_and_params()$GCTs,
+        simplify = FALSE,
+        FUN = function(gct) {
+          gct@cdesc <- GCTs_and_params()$GCTs_merged@cdesc
+          return(gct)
+        }
+      )
     })
-    
-    # gather relevant variables from globals
-    custom_colors <- reactive({
-      req(globals$colors, sample_anno())
-      multiome_heatmap_custom_colors(globals$colors, sample_anno())
-    })
-    
-    observe(print(custom_colors()))
     
     # vector of all omes
     all_omes <- reactive(names(GCTs()))
@@ -85,6 +86,12 @@ multiomeHeatmapTabServer <- function(
     merged_mat <- reactive({
       validate(need(gcts_merged(), "GCTs not processed for multi-ome heatmap"))
       gcts_merged()@mat
+    })
+    
+    # gather colors from globals, edit to match ComplexHeatmap structure
+    custom_colors <- reactive({
+      req(globals$colors$multi_ome, sample_anno())
+      multiome_heatmap_custom_colors(globals$colors$multi_ome, sample_anno())
     })
     
     
@@ -125,6 +132,7 @@ multiomeHeatmapTabServer <- function(
                        merged_rdesc = merged_rdesc(),
                        merged_mat = merged_mat(),
                        sample_anno = sample_anno(),
+                       custom_colors = custom_colors(),
                        GENEMAX = GENEMAX)
     })
     

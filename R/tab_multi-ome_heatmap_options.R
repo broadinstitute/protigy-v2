@@ -122,7 +122,6 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno) {
                                   max.val = as.numeric(input$max.val),
                                   sort.after = input$sort.after,
                                   show.sample.label = input$show.sample.label,
-                                  custom_anno_colors = get0('custom_anno_colors'),
                                   ome.order = input$ome.order,
                                   max.levels = input$max.levels)})
       

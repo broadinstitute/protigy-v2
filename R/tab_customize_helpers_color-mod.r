@@ -80,8 +80,9 @@ set_annot_colors <- function( annot_table,
                  unlist(sapply(na_annot_vals, # for each possible type of na_annot_vals
                                function(na_vals) { grepl(na_vals, annot_vals, ignore.case=TRUE) }))) # check if it appears in our annotation-values
       
+      all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$" # regex to match all possible numeric strings, including scientific notation
       if ( (length(annot_vals)-n_na) > nfactor_cutoff && # if we have more than nfactor_cutoff unique (non-na) annotation-values
-           sum(!grepl("^[-.0-9]+$", annot_vals), na.rm=TRUE) <= n_na ) # AND have all numeric data
+           sum(!grepl(all_numbers_regex, annot_vals), na.rm=TRUE) <= n_na ) # AND have all numeric data
         return(TRUE) # assume continuous
       return(FALSE) # otherwise, assume discrete
     }

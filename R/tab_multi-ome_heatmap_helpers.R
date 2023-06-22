@@ -99,7 +99,8 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
 
 ## make complex heatmap
 ## calls global variables merged_rdesc, merged_mat, sample_anno
-myComplexHeatmap <- function(params, GENEMAX, merged_rdesc, merged_mat, sample_anno) {
+myComplexHeatmap <- function(
+    params, GENEMAX, merged_rdesc, merged_mat, sample_anno, custom_colors) {
   
   # extract parameters
   genes.char <- params$genes.char
@@ -109,7 +110,6 @@ myComplexHeatmap <- function(params, GENEMAX, merged_rdesc, merged_mat, sample_a
   max.val <- params$max.val
   sort.after <- params$sort.after
   show.sample.label <- params$show.sample.label
-  custom_anno_colors <- params$custom_anno_colors
   ome.order <- params$ome.order
   max.levels <- params$max.levels
   
@@ -171,15 +171,17 @@ myComplexHeatmap <- function(params, GENEMAX, merged_rdesc, merged_mat, sample_a
   anno.fig <- sample_anno[order(sample_anno$Sample.ID), , drop = FALSE]
   rownames(anno.fig) <- anno.fig$Sample.ID
   anno.fig <- anno.fig[, -(1), drop = FALSE]
+
   
-  # filter for only annotations that are numeric or less than max.levels 
-  is_valid_anno <- function(col) {
-    valid_categorical <- length(setdiff(unique(col), NA)) <= max.levels
-    valid_numeric <- all(suppressWarnings(!is.na(as.numeric(as.character(setdiff(col, NA))))))
-    return(valid_categorical | valid_numeric)
-  }
-  anno.fig <- anno.fig %>% select(where(is_valid_anno))
+  # get custom color palette
+  anno.fig.color <- custom_colors[names(anno.fig)]
   
+  # filter for only annotations that are continuous or less than max.levels 
+  anno.keep <- names(which(sapply(anno.fig.color, function(anno_colors) {
+    is.function(anno_colors) | length(anno_colors) <= max.levels
+  })))
+  anno.fig.color <- anno.fig.color[anno.keep]
+  anno.fig <- anno.fig[, anno.keep, drop = FALSE]
   
   if (dim(anno.fig)[2] == 0) {
     HM.anno <- NULL
@@ -187,18 +189,10 @@ myComplexHeatmap <- function(params, GENEMAX, merged_rdesc, merged_mat, sample_a
     final.Table <- genes.Table
     
   } else {
-    # convert numeric columns in anno.fig to numeric type
-    numeric_cols <- sapply(anno.fig, function(col) 
-      all(suppressWarnings(!is.na(as.numeric(as.character(col[!is.na(col)]))))))
-    anno.fig[, numeric_cols] <- sapply(anno.fig[, numeric_cols], as.numeric)
-    
-    # make custom color palette
-    browser()
-    set.seed(1)
-    anno.fig.color <- lapply(anno.fig, myColorPalette)
-    for (anno in names(custom_anno_colors)) {
-      anno.fig.color[[anno]] <- custom_anno_colors[[anno]]
-    }
+    # # convert numeric columns in anno.fig to numeric type
+    # numeric_cols <- sapply(anno.fig, function(col) 
+    #   all(suppressWarnings(!is.na(as.numeric(as.character(col[!is.na(col)]))))))
+    # anno.fig[, numeric_cols] <- sapply(anno.fig[, numeric_cols], as.numeric)
     
     # combine annotation table with genes.Table for final output
     anno.fig.new <- data.frame(matrix(ncol=ncol(genes.Table),
@@ -315,86 +309,31 @@ dynamicHeightHM <- function(n.entries){
   return(height)
 }
 
-## function to convert global custom colors to the complexHeatmap structure
-multiome_heatmap_custom_colors <- function(global_colors, sample_anno) {
-  sapply(global_colors, simplify = FALSE, function(ome_colors){
-    mapply(
-      ome_colors, names(ome_colors),
-      SIMPLIFY = FALSE, USE.NAMES = TRUE,
-      FUN = function(annot_colors, annot_name) {
-        if (annot_colors$is_discrete) {
-          colors_vector <- annot_colors$colors
-          names(colors_vector) <- annot_colors$val
-          return(colors_vector)
-          
-        } else {
-          annot_values <- as.numeric(sample_anno[[annot_name]])
-          color_function <- circlize::colorRamp2(
-            c(min(annot_values), 
-              mean(annot_values), 
-              max(annot_values)),
-            c(annot_colors$colors[which(annot_colors$vals == "low")], 
-              annot_colors$colors[which(annot_colors$vals == "mid")], 
-              annot_colors$colors[which(annot_colors$vals == "high")])
-          )
-          return(color_function)
-        }
+## function to convert global custom colors to the ComplexHeatmap structure
+multiome_heatmap_custom_colors <- function(custom_colors, sample_anno) {
+  mapply(
+    custom_colors, names(custom_colors),
+    SIMPLIFY = FALSE, USE.NAMES = TRUE,
+    FUN = function(annot_colors, annot_name) {
+      
+      # discrete colors
+      if (annot_colors$is_discrete) {
+        colors_vector <- annot_colors$colors
+        names(colors_vector) <- annot_colors$val
+        return(colors_vector)
+        
+      # continuous colors
+      } else {
+        annot_values <- as.numeric(sample_anno[[annot_name]])
+        color_function <- circlize::colorRamp2(
+          c(min(annot_values),
+            mean(annot_values),
+            max(annot_values)),
+          c(annot_colors$colors[which(annot_colors$vals == "low")],
+            annot_colors$colors[which(annot_colors$vals == "mid")],
+            annot_colors$colors[which(annot_colors$vals == "high")])
+        )
+        return(color_function)
+      }
     })
-  })
-}
-
-## function to make prettier color palettes
-myColorPalette <- function(anno) {
-  
-  anno.unique <- setdiff(unique(anno), NA)
-  
-  if (length(anno.unique) == 0) {
-    return(c('NA' = 'grey'))
-  }
-  
-  else if (length(anno.unique) <= 2) {
-    # check if its a binary 0/1 +/- type of annotation
-    if (length(setdiff(as.character(anno.unique), c('0', '1'))) == 0) {
-      col <- c('0'='grey90', '1'='black')
-      col <- col[as.character(anno.unique)]
-      
-    } else if (length(setdiff(anno.unique, c('Positive', 'Negative'))) == 0) {
-      col <- c('Positive'='grey90', 'Negative'='black')
-      col <- col[anno.unique]
-    }
-    
-    else {
-      # generate a color pair from RColorBrewer
-      i <- sample(c(1, 3, 5, 7, 9, 11), 1)
-      col <- brewer.pal(12, "Paired")[i:(i+length(anno.unique) - 1)]
-      names(col) <- anno.unique
-    }
-    
-    # check if its a numeric type
-  } else if (all(is.numeric(anno.unique))) {
-    
-    # check if there's less than 5 values, this probably means the annotation is
-    # not supposed to be a continuous annotation
-    if (length(anno.unique) <= 5) {
-      col <- sample(brewer.pal(12, "Set3")[c(1:8,10:12)], length(anno.unique))
-      names(col) <- anno.unique
-      
-      # otherwise, make a continuous color palette
-    } else {
-      palette_name <- sample(c("Purples", "Oranges", "Greens", "Blues", "Reds"), 1)
-      min_anno <- min(anno.unique)
-      max_anno <- max(anno.unique)
-      
-      col <- colorRamp2(c(min_anno, mean(min_anno, max_anno), max_anno),
-                        brewer.pal(3, palette_name))
-    }
-    
-    # otherwise, this is a categorical annotation with > 2 levels
-    # picks colors from RColorBrewer's Set2 palette
-  } else {
-    col <- colorRampPalette(brewer.pal(7, "Set2"))(length(anno.unique))
-    names(col) <- anno.unique
-  }
-  
-  return(col)
 }
