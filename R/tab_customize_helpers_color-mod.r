@@ -1,4 +1,4 @@
-# Code writted by C. Williams
+# Code written by C. Williams
 # Copied from R-utilities
 # Stephanie Vartany changed `require` to `@import` statements
 

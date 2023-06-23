@@ -86,7 +86,7 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
         lapply(selected_omes, function(ome) dir.create(file.path(plots_dir, ome)))
         
         # save parameters from each -ome
-        lapply(selected_omes, function(ome) {
+        lapply(setdiff(selected_omes, "multi_ome"), function(ome) {
           params <- parameters()[[ome]]
           yaml::write_yaml(
             params[setdiff(names(params), "gct_file_path")],
@@ -95,10 +95,15 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
         
         # loop through selected plots
         lapply(selected_plots, function(tab_name) {
-          plots_all_omes <- plots[[tab_name]]()
+          
+          if (is.reactive(plots[[tab_name]])) {
+            plots_all_omes <- plots[[tab_name]]()
+          } else {
+            plots_all_omes <- plots[[tab_name]]
+          }
           
           # loop through selected omes
-          lapply(selected_omes, function(ome) {
+          lapply(intersect(selected_omes, names(plots_all_omes)), function(ome) {
             plots_this_ome <- plots_all_omes[[ome]]
             
             # make a folder for plots in this tab
@@ -107,20 +112,23 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
             
             # save each plot for this ome
             for(i in seq_along(plots_this_ome)) {
-              p = plots_this_ome[[i]]()
               
-              # save ggplot
-              if (is.ggplot(p)) {
-                p_name = paste0(names(plots_this_ome)[[i]], '.pdf')
-                ggsave(
-                  filename = p_name, 
-                  plot = p, 
-                  device = 'pdf',
-                  path = plots_in_tab_path
-                )
-              } else {
-                warning(paste("Invalid plot...skipping", p_name))
+              p <- plots_this_ome[[i]]
+              p_name <- names(plots_this_ome)[i]
+              if (is.reactive(p)) {
+                p <- p()
               }
+              
+              tryCatch({
+                # if its a function, enter the directory path to save file
+                if (is.function(p)) {
+                  p(plots_in_tab_path)
+                } else {
+                  warning(paste("Invalid plot...skipping", p_name))
+                }
+              }, error = function(c) {
+                warning("Export failed for ", p_name, ".")
+              })
               
             }
           })

@@ -127,7 +127,6 @@ multiomeHeatmapTabServer <- function(
         need(HM.params()$genes.char, "Input genes to see results") %then%
         need(HM.params()$min.val < HM.params()$max.val, "Input valid min and max")
       )
-      
       myComplexHeatmap(params = HM.params(),
                        merged_rdesc = merged_rdesc(),
                        merged_mat = merged_mat(),
@@ -137,8 +136,8 @@ multiomeHeatmapTabServer <- function(
     })
     
     HM <- reactive({
-      validate(need(HM.out(), "Heatmap not avaliable"))
-      draw(HM.out()$HM, annotation_legend_side = 'bottom')
+      validate(need(HM.out()$HM, "Heatmap not avaliable"))
+      draw_multiome_HM(HM.out()$HM)
     })
     HM.Table <- reactive(HM.out()$Table)
     
@@ -153,8 +152,20 @@ multiomeHeatmapTabServer <- function(
       HM(), 
       height = plot_height
     )
-
     
+    
+    ## function for exporting
+    multiome_heatmap_export_function <- function(dir_path) {
+      pdf(file = file.path(dir_path, "multiome-heatmap.pdf"),
+          width = 1400/72,
+          height = (plot_height() + 48)/72)
+      draw_multiome_HM(HM.out()$HM)
+      dev.off()
+    }
+
+    return(list(multi_ome = list(
+      multiome_heatmap = multiome_heatmap_export_function
+    )))
 
   }) # end moduleServer
 }

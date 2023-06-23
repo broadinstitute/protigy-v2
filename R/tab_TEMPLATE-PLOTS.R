@@ -280,12 +280,26 @@ templatePlotsOmeServer <- function(id,
       )
     })
     
+    ## COMPILE EXPORTS ##
+    
+    # TODO: make a function to save desired exports, input is the output directory path
+    
+    # Example of export function
+    example_plot_export_function <- function(dir_name) {
+      ggsave(
+        filename = paste0("example_plot_", ome, ".pdf"), 
+        plot = example_plot_reactive(), 
+        device = 'pdf',
+        path = dir_name
+      )
+    }
+    
     
     # TODO: return a named list of reactive plots, see example
     # List names are used in the exported plot file name
     return(
       list(
-        example_plot = example_plot_reactive
+        example_plot = example_plot_export_function
       )
     )
   })

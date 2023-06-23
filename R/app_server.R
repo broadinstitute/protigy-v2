@@ -34,7 +34,7 @@ app_server <- function(input, output, session) {
   )
   
   ## Multi-ome Heatmap module
-  multiomeHeatmapTabServer(
+  all_multiomeHeatmap_exports <- multiomeHeatmapTabServer(
     GCTs_and_params = GCTs_and_params,
     globals = globals
   )
@@ -48,10 +48,11 @@ app_server <- function(input, output, session) {
   
   ## gather all plots
   all_plots <- list(
-      omes = reactive(names(GCTs_and_params()$GCTs)),
+      omes = reactive(c(names(GCTs_and_params()$GCTs), 'multi_ome')),
       plots = list(
         summary_plots = all_summary_plots,
-        template_plots = all_template_plots
+        template_plots = all_template_plots,
+        multiomeHeatmap_exports = all_multiomeHeatmap_exports
       )
     )
 

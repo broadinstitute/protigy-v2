@@ -170,7 +170,7 @@ myComplexHeatmap <- function(
   ## make heatmap for annotations
   anno.fig <- sample_anno[order(sample_anno$Sample.ID), , drop = FALSE]
   rownames(anno.fig) <- anno.fig$Sample.ID
-  anno.fig <- anno.fig[, -(1), drop = FALSE]
+  anno.fig <- anno.fig[, -(which(names(anno.fig) == "Sample.ID")), drop = FALSE]
 
   
   # get custom color palette
@@ -237,8 +237,9 @@ myComplexHeatmap <- function(
                 column_names_rot = 45,
                 column_names_gp = gpar(fontsize = 10),
                 column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
-                heatmap_legend_param = list(title_position = "lefttop-rot",
-                                            legend_height = unit(3.3, "cm")))
+                heatmap_legend_param = list(direction='horizontal',
+                                            max_width = 350,
+                                            legend_width = unit(4, 'cm')))
   
   return(list(HM=HM, Table=final.Table))
 }
@@ -337,3 +338,11 @@ multiome_heatmap_custom_colors <- function(custom_colors, sample_anno) {
       }
     })
 }
+
+draw_multiome_HM <- function(HM) {
+  draw(HM, 
+       annotation_legend_side = 'bottom', 
+       show_heatmap_legend = T, 
+       heatmap_legend_side='bottom')
+}
+

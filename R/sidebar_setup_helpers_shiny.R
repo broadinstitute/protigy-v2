@@ -200,7 +200,7 @@ validate_labels <- function(all_labels) {
       stop(paste("Invalid label for", filename))
     }
     if (label == "multi_ome") {
-      stop("Invalid label for ", filename, ", 'multi-ome' is a reserved word.")
+      stop("Invalid label for ", filename, ", 'multi_ome' is a reserved word.")
     }
   }
   
