@@ -27,7 +27,7 @@ app_server <- function(input, output, session) {
   
   
   ## Summary module
-  all_summary_plots <- summaryTabServer(
+  all_summary_exports <- summaryTabServer(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original
@@ -40,24 +40,24 @@ app_server <- function(input, output, session) {
   )
   
   ## TEMPLATE module
-  all_template_plots <- templatePlotsTabServer(
+  all_template_exports <- templateSingleOme_Tab_Server(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original
   )
   
-  ## gather all plots
-  all_plots <- list(
+  ## gather all exports
+  all_exports <- list(
       omes = reactive(c(names(GCTs_and_params()$GCTs), 'multi_ome')),
-      plots = list(
-        summary_plots = all_summary_plots,
-        template_plots = all_template_plots,
+      exports = list(
+        summary_exports = all_summary_exports,
+        template_exports = all_template_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports
       )
     )
 
   ## export tab
-  exportTabServer(all_plots = all_plots, GCTs_and_params = GCTs_and_params)
+  exportTabServer(all_exports = all_exports, GCTs_and_params = GCTs_and_params)
 
 }
 

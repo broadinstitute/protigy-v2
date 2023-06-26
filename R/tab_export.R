@@ -20,15 +20,15 @@ exportTabUI <- function(id = "exportTab") {
   tagList(
     
     checkboxGroupInput(ns("omesForExport"),"Omes for export:"),
-    checkboxGroupInput(ns("plotsForExport"),"Plots for export:"),
+    checkboxGroupInput(ns("tabsForExport"),"Tabs for export:"),
     
-    downloadButton(ns("downloadPlots"), label = "Download Plots")
+    downloadButton(ns("download"), label = "Download")
     
   ) # end tagList
 }
 
 # server for the summary tab
-exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) { 
+exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) { 
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -46,88 +46,94 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
     observe({
       updateCheckboxGroupInput(
         inputId = "omesForExport",
-        choices = all_plots$omes(),
-        selected = all_plots$omes())
+        choices = all_exports$omes(),
+        selected = all_exports$omes())
     })
      
-    # update plots for export 
+    # update tabs for export 
     observe({
       updateCheckboxGroupInput(
-        inputId = "plotsForExport",
-        choices = names(all_plots$plots),
-        selected = names(all_plots$plots))
+        inputId = "tabsForExport",
+        choices = names(all_exports$exports),
+        selected = names(all_exports$exports))
     })
     
     
-    output$downloadPlots <- downloadHandler(
-      filename = "my_plots.zip",
+    output$download <- downloadHandler(
+      filename = "protigy_exports.zip",
       content = function(file) {
         
-        # show a notification that plots are downloading
+        # show a notification that exports are downloading
         id <- showNotification(
-          "Compiling plots...", 
+          "Compiling exports...", 
           duration = NULL, 
           closeButton = FALSE
         )
         on.exit(removeNotification(id), add = TRUE)
         
-        # directory name where all plots will be saved
-        dir_name <- "Plots"
-        zip_dir <- tempfile("plots")
-        plots_dir <- file.path(zip_dir, dir_name)
-        dir.create(plots_dir, recursive = T)
+        # directory name where all exports will be saved
+        dir_name <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(file))
+        zip_dir <- tempdir(check = T)
+        exports_dir <- file.path(zip_dir, dir_name)
+        dir.create(exports_dir, recursive = T)
         
         # gather inputs
-        plots <- all_plots$plots
+        exports <- all_exports$exports
         selected_omes <- input$omesForExport
-        selected_plots <- input$plotsForExport
+        selected_tabs <- input$tabsForExport
         
         # make a folder for each -ome
-        lapply(selected_omes, function(ome) dir.create(file.path(plots_dir, ome)))
+        lapply(selected_omes, function(ome) dir.create(file.path(exports_dir, ome)))
         
         # save parameters from each -ome
         lapply(setdiff(selected_omes, "multi_ome"), function(ome) {
           params <- parameters()[[ome]]
           yaml::write_yaml(
             params[setdiff(names(params), "gct_file_path")],
-            file.path(plots_dir, ome, paste0(ome, "_parameters.yaml")))
+            file.path(exports_dir, ome, paste0(ome, "_parameters.yaml")))
         })
         
-        # loop through selected plots
-        lapply(selected_plots, function(tab_name) {
+        success_exports <- c()
+        error_exports <- c()
+        
+        # loop through selected tabs
+        lapply(selected_tabs, function(tab_name) {
           
-          if (is.reactive(plots[[tab_name]])) {
-            plots_all_omes <- plots[[tab_name]]()
+          if (is.reactive(exports[[tab_name]])) {
+            exports_all_omes <- exports[[tab_name]]()
           } else {
-            plots_all_omes <- plots[[tab_name]]
+            exports_all_omes <- exports[[tab_name]]
           }
           
           # loop through selected omes
-          lapply(intersect(selected_omes, names(plots_all_omes)), function(ome) {
-            plots_this_ome <- plots_all_omes[[ome]]
+          lapply(intersect(selected_omes, names(exports_all_omes)), function(ome) {
+            exports_this_ome <- exports_all_omes[[ome]]
             
-            # make a folder for plots in this tab
-            plots_in_tab_path <- file.path(plots_dir, ome, tab_name)
-            dir.create(plots_in_tab_path)
+            # make a folder for exports in this tab
+            exports_in_tab_path <- file.path(exports_dir, ome, tab_name)
+            dir.create(exports_in_tab_path)
             
             # save each plot for this ome
-            for(i in seq_along(plots_this_ome)) {
+            for(i in seq_along(exports_this_ome)) {
               
-              p <- plots_this_ome[[i]]
-              p_name <- names(plots_this_ome)[i]
+              p <- exports_this_ome[[i]]
+              p_name <- names(exports_this_ome)[i]
               if (is.reactive(p)) {
                 p <- p()
               }
               
               tryCatch({
-                # if its a function, enter the directory path to save file
-                if (is.function(p)) {
-                  p(plots_in_tab_path)
-                } else {
-                  warning(paste("Invalid plot...skipping", p_name))
-                }
+                # save the plot using the p() function
+                p(exports_in_tab_path)
+                
+                # add to successful exports list
+                success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+                
               }, error = function(c) {
                 warning("Export failed for ", p_name, ".")
+                
+                # add to errored exports list
+                error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
               })
               
             }
@@ -135,17 +141,27 @@ exportTabServer <- function(id = "exportTab", all_plots, GCTs_and_params) {
         })
         
         # zip the outputs
-        zip::zip(file, file.path(dir_name, list.files(plots_dir)), 
+        zip::zip(file, file.path(dir_name, list.files(exports_dir)), 
                  recurse = TRUE, root = zip_dir)
+        
+        # shinyalert the exports that succeeded and errored
+        shinyalert::shinyalert(
+          html = TRUE,
+          type = "info",
+          text = HTML(paste0(
+            "<div style='text-align: left'>",
+            strong("Successfully saved:"), br(),
+            "<ul><li>",
+            paste(success_exports, collapse = "</li><li>"),
+            "</li></ul>",
+            strong("Could not save:"), br(),
+            "<ul><li>",
+            paste(error_exports, collapse = "</li><li>"),
+            "</li></ul></div>"
+          ))
+        )
       }
     )
     
   })
 }
-
-
-################################################################################
-# Helper functions
-################################################################################
-
-# add your helper functions here

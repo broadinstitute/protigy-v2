@@ -156,6 +156,9 @@ multiomeHeatmapTabServer <- function(
     
     ## function for exporting
     multiome_heatmap_export_function <- function(dir_path) {
+      req(HM.out()$HM)
+      
+      
       pdf(file = file.path(dir_path, "multiome-heatmap.pdf"),
           width = 1400/72,
           height = (plot_height() + 48)/72)

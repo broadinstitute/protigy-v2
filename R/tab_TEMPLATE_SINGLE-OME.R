@@ -1,5 +1,5 @@
 ################################################################################
-# Module: TEMPLATE-PLOTS
+# Module: TEMPLATE_SINGLE-OME
 #
 # This is a template for how to add a module that contains identical tabs for  
 # each ome. This template has built-in functionality for handing omes, 
@@ -7,11 +7,11 @@
 ################################################################################
 # This template comtains two pairs of server/UI module functions:
 #
-# templatePlotsTabUI & templatePlotsTabServer handle the overall skeleton
+# templateSingleOme_Tab_UI & templateSingleOme_Tab_Server handle the overall skeleton
 # for having tabs with multiple -omes. Much of this code shouldn't need to be 
 # changed if you are making a new module that matches this ome tab structure.
 #
-# templatePlotsOmeUI & templatePlotsOmeServer contain the code for the content
+# templateSingleOme_Ome_UI & templateSingleOme_Ome_Server contain the code for the content
 # of a single ome tab. Generally speaking, you should be able to write code in 
 # here just like any regular shiny module server/ui without worrying about how 
 # all of the omes come together.
@@ -19,25 +19,25 @@
 
 ## Steps for adding a new module
 # 0a. Create a copy of the script and rename it with your new module's name
-# 0b. Cmd/Ctrl + F "templatePlots" and replace all with your new module's name
+# 0b. Cmd/Ctrl + F "templateSingleOme" and replace all with your new module's name
 # 1. Cmd/Ctrl + F "TODO:" to find to-do comments. These comments point to where
 #    to edit function inputs, plots, etc.
 # 2. Add helper functions in helper script(s) called 
 #    "tab_[MODULE-NAME]_helpers_[DESCRIPTOR].R"
 # 3. add necessary imports in protigyRevamp-package.R or above a function 
 #    definition using roxygen tags
-# 4. call your tab's UI function (`templatePlotsTabUI()`) in app_UI 
+# 4. call your tab's UI function (`templateSingleOme_Tab_UI()`) in app_UI 
 #    (located in app_ui.R)
-# 5. call your tab's server function (`templatePlotsTabServer()`) in app_server 
+# 5. call your tab's server function (`templateSingleOme_Tab_Server()`) in app_server 
 #    (located in app_server.R)
 
 ################################################################################
 # Shiny functions (UI and server)
 ################################################################################
 
-# UI for the templatePlots tab
+# UI for the templateSingleOme tab
 # contains the structure for the big tabbed box with omes
-templatePlotsTabUI <- function(id = "templatePlotsTab") {
+templateSingleOme_Tab_UI <- function(id = "templateSingleOmeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
   
   tagList(
@@ -48,9 +48,9 @@ templatePlotsTabUI <- function(id = "templatePlotsTab") {
   ) # end tagList
 }
 
-# server for the templatePlots tab
+# server for the templateSingleOme tab
 # contains the structure for the big tabbed box with omes
-templatePlotsTabServer <- function(id = "templatePlotsTab",
+templateSingleOme_Tab_Server <- function(id = "templateSingleOmeTab",
                                    GCTs_and_params, 
                                    globals, 
                                    GCTs_original) { 
@@ -113,7 +113,7 @@ templatePlotsTabServer <- function(id = "templatePlotsTab",
           title = ome,
           
           # call the UI function for each individual ome
-          templatePlotsOmeUI(id = ns(ome), ome = ome)
+          templateSingleOme_Ome_UI(id = ns(ome), ome = ome)
           
         ) # end tabPanel
       }) # end lapply
@@ -144,7 +144,7 @@ templatePlotsTabServer <- function(id = "templatePlotsTab",
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
       output_plots <- sapply(all_omes(), function(ome) {
-        templatePlotsOmeServer(
+        templateSingleOme_Ome_Server(
           # TODO: edit inputs to the ome server function, the last 4 may be unnecessary
           id = ome,
           ome = ome,
@@ -166,7 +166,7 @@ templatePlotsTabServer <- function(id = "templatePlotsTab",
 
 
 # UI for an individual ome
-templatePlotsOmeUI <- function (id, ome) {
+templateSingleOme_Ome_UI <- function (id, ome) {
                 
   ns <- NS(id)
   
@@ -210,7 +210,7 @@ templatePlotsOmeUI <- function (id, ome) {
 
 
 # server for an individual ome
-templatePlotsOmeServer <- function(id,
+templateSingleOme_Ome_Server <- function(id,
                                    ome,
                                    GCT_processed,
                                    parameters,
@@ -282,21 +282,23 @@ templatePlotsOmeServer <- function(id,
     
     ## COMPILE EXPORTS ##
     
-    # TODO: make a function to save desired exports, input is the output directory path
+    # TODO: make a function to save desired exports
+    # input to the functionis the output directory path
+    # the function should save your plot/table/etc. in this directory
+    # you should call the reactive object for the export here
     
     # Example of export function
     example_plot_export_function <- function(dir_name) {
       ggsave(
         filename = paste0("example_plot_", ome, ".pdf"), 
-        plot = example_plot_reactive(), 
+        plot = example_plot_reactive(), # call the reactive object
         device = 'pdf',
-        path = dir_name
+        path = dir_name # save in the desired output directory
       )
     }
     
     
-    # TODO: return a named list of reactive plots, see example
-    # List names are used in the exported plot file name
+    # TODO: return a named list of custom export functions, example included
     return(
       list(
         example_plot = example_plot_export_function

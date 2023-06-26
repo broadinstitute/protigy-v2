@@ -59,7 +59,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel('More ideas?')),
       tabPanel("Export", exportTabUI(), icon = icon("download")),
       
-      tabPanel("TEMPLATE", templatePlotsTabUI())
+      tabPanel("TEMPLATE", templateSingleOme_Tab_UI())
       
       ) #end navbarPage
   ) # end dashboardBody
