@@ -30,6 +30,7 @@
 #    (located in app_ui.R)
 # 5. call your tab's server function (`templateSingleOme_Tab_Server()`) in app_server 
 #    (located in app_server.R)
+# 6. Add the outputs (i.e. exports) from your module to `all_exports` in app_server
 
 ################################################################################
 # Shiny functions (UI and server)
@@ -85,6 +86,12 @@ templateSingleOme_Tab_Server <- function(id = "templateSingleOmeTab",
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
+    })
+    
+    # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
+    GCTs_merged <- reactive({
+      validate(need(GCTs_and_params(), "GCTs not yet processed"))
+      GCTs_and_params()$GCTs_merged
     })
     
     # named list of default annotation columns for each ome

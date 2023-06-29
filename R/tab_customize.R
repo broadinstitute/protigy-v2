@@ -51,8 +51,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     ## MODULE SERVER LOGIC ##
     
     custom_colors <- reactive({
-      req(all_omes(), GCTs(), GCTs_merged())
-      
+      req(GCTs(), GCTs_merged())
       make_custom_colors(GCTs(), GCTs_merged())
     })
     

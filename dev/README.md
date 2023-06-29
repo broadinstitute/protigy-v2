@@ -3,14 +3,24 @@
 ### Useful resources
 
 -   [Basics for R shiny modules](https://shiny.posit.co/r/articles/improve/modules/)
+
 -   [More info on Shiny modules](https://mastering-shiny.org/scaling-modules.html)
+
 -   [Basics for shiny code in an R package](https://mastering-shiny.org/scaling-packaging.html)
+
 -   [Basics for testing your app](https://mastering-shiny.org/scaling-testing.html)
+
 -   R package code structure for [R scripts](https://r-pkgs.org/code.html) and [other components](https://r-pkgs.org/misc.html)
+
 -   [Advanced deployment](https://engineering-shiny.org/deploy.html)
+
 -   [Handling package dependencies](https://r-pkgs.org/dependencies-in-practice.html)
+
 -   [Custom CSS for shiny](https://unleash-shiny.rinterface.com/beautify-css.html#beautify-css)
+
 -   [Testing your app](https://mastering-shiny.org/scaling-testing.html)
+
+------------------------------------------------------------------------
 
 ### Tips, Tricks, and Gotcha's
 
@@ -35,6 +45,12 @@
 
 4.  **Custom CSS**: If you need to customize the user interface, I recommend getting comfortable using "inspect element". This lets you see all the possible fields you can edit and what class(es) each element belongs to. Then [add your custom CSS](https://unleash-shiny.rinterface.com/beautify-css.html#beautify-css).
 
+5.  **Using the `.data$` syntax**: Usually, you can reference a data frame's column as a variable in `dplyr` or `ggplot2` functions. However, if you do this in an R package, running `devtools::check()` will give you a note saying that you have undefined global variables (it's reading those column names as global variables). To avoid this problem, reference columns using the `.data$` syntax (read more [here](https://cran.r-project.org/web/packages/dplyr/vignettes/programming.html)).
+
+    -   For example, `ggplot(iris, aes(Sepal.Length, Sepal.Width))` becomes `ggplot(iris, aes(.data$Sepal.Length, .data$Sepal.Width))`
+
+------------------------------------------------------------------------
+
 ### Managing package dependencies
 
 Dependencies need to be listed in 2 places:
@@ -48,10 +64,10 @@ Dependencies need to be listed in 2 places:
     -   Alternatively, you could put the `@import` or `@importFrom` statement just before your function definition. This would load the dependency only when that function is called. This is best for helper functions that require specific packages (e.g. some normalization and filtering functions).
     -   **IMPORTANT:** If you edit any `@import` or `@importFrom` commands, you need to update your package's `NAMESPACE`! To do this, run `devtools::document()`.
 
+------------------------------------------------------------------------
+
 ### Testing
 
 1.  To begin a test, open the script you want to write tests for and run `usethis::use_test()`. This will create a corresponding test file in `tests/testthat`.
 2.  Add tests using the `testthat` format (a dummy example should be auto-generated so you can see the format). Common tests will utilize `expect_equal()` or `expect_snapshot()`. Read more [here](https://mastering-shiny.org/scaling-testing.html).
 3.  Check out the ways to run a test [here](https://devtools.r-lib.org/reference/test.html). My preference is using `devtools::test_active_file()`.
-
-### Module Requirements
