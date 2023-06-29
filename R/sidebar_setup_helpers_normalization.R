@@ -9,6 +9,7 @@
 # 1. removing the id.col parameter and any related code....the main input is now
 #    a single data matrix
 # 2. Using roxygen import tags for dependencies instead of p_load()
+# 3. Change instances of `class(x) == "try-error"` to `inherits(x, "try-error")`
 ################################################################################
 
 
@@ -147,14 +148,14 @@ normalize.data.helper <- function(data,
     for(x in colnames(data)){  
       res <- try(two.comp.normalize(data[, x], type="unimodal"))
       data.norm.list[[x]] <- res
-      if(class(res) == 'try-error') break;
+      if(inherits(res, 'try-error')) break;
     }
     
     ## check if all runs were successful
     ## return the 'try-error' object to 
     ## catch the error in server.R
     for(i in 1:length(data.norm.list)){
-      if(class(data.norm.list[[i]]) == 'try-error'){
+      if(inherits(data.norm.list[[i]], 'try-error')){
         msg <- data.norm.list[[i]]
         return(msg)
       }

@@ -112,6 +112,7 @@ set_annot_colors <- function( annot_table,
   
 }
 
+#' @importFrom methods existsFunction
 set_annot_colors_discrete <- function( annot_table, # ====
                                        # Default Color Palettes --- Paul Tol Color Palattes-- colorblind safe! (https://personal.sron.nl/~pault/) ====
                                        qual.pals = list("Bright" = c('#4477AA', '#66CCEE', '#27B13E', '#CCBB44', '#EE6677', '#AA3377'), # green (originally '#228833') was modified to be more distinct from blue under tritanopia colorblindness

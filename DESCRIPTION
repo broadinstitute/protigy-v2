@@ -38,7 +38,8 @@ Imports:
     mixtools,
     mclust,
     markdown,
-    utils
+    utils,
+    rlang
 Depends:
     shiny
 Suggests: 

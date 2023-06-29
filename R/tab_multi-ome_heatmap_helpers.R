@@ -29,7 +29,7 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
     }
     
     # condense rdesc to only necessary information
-    rdesc <- meta(gct, dim='row')
+    rdesc <- gct@rdesc
     rdesc_new <- data.frame(ID = paste0(gct@rid, '.', i),
                             geneSymbol = rdesc[[geneSymbol_column]],
                             DataType = rep(label, dim(rdesc)[1]))
@@ -66,7 +66,7 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
     }
     
     # make sure Sample.ID is in cdesc
-    cdesc <- meta(gct, dim='column')
+    cdesc <- gct@cdesc
     cdesc$Sample.ID <- gct@cid
     
     # change gct mat rownames to match rdesc_new rownames
@@ -114,7 +114,7 @@ myComplexHeatmap <- function(
   max.levels <- params$max.levels
   
   # extract genes
-  genes.all <- extractGenes(genes.char, select(merged_rdesc, geneSymbol), GENEMAX)
+  genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
   genes.vec <- genes.all$genes.vec
   
   # extract rows for that gene
@@ -143,9 +143,9 @@ myComplexHeatmap <- function(
     
     # select the maximum SD for each ome/gemeSymbol
     genes.Table.VM <- genes.Table.VM %>%
-      group_by(ome, geneSymbol, .drop = TRUE) %>%
-      filter(SD == max(SD)) %>%
-      select(-SD) %>%
+      group_by(.data$ome, .data$geneSymbol, .drop = TRUE) %>%
+      filter(.data$SD == max(.data$SD)) %>%
+      select(-.data$SD) %>%
       ungroup()
     
     # add back to original table

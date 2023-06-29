@@ -38,9 +38,9 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
   
   # make plot
   ggplot(data = non.missing, 
-         aes(x = SampleID, y = numFeatures, fill = group, 
-             text = paste0("Sample ID: ", SampleID, 
-                           "\nNum. Features: ", numFeatures))) +
+         aes(x = .data$SampleID, y = .data$numFeatures, fill = .data$group, 
+             text = paste0("Sample ID: ", .data$SampleID, 
+                           "\nNum. Features: ", .data$numFeatures))) +
     geom_bar(stat = 'identity') +
     theme_bw() +
     color_definition + 

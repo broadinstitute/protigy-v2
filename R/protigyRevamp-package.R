@@ -24,5 +24,6 @@
 #' @importFrom stats density mad median quantile sd aggregate coef qnorm qt
 #' @importFrom zip zip
 #' @importFrom utils tail
+#' @importFrom rlang .data
 ## usethis namespace: end
 NULL
