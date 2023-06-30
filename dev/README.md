@@ -49,6 +49,14 @@
 
     -   For example, `ggplot(iris, aes(Sepal.Length, Sepal.Width))` becomes `ggplot(iris, aes(.data$Sepal.Length, .data$Sepal.Width))`
 
+    -   You can also use variables as column names with this syntax. Try something like this:
+
+        ```         
+        x_col <- "Sepal.Length"
+        y_col <- "Sepal.Width"
+        ggplot(iris, aes(.data[[x_col]], .data[[y_col]]))
+        ```
+
 ------------------------------------------------------------------------
 
 ### Managing package dependencies

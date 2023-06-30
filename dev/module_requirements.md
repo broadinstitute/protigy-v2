@@ -62,7 +62,7 @@ The "Export" tab is set up to handle all exports from the app. Follow these step
 2.  Save each export function in a list of lists. The first level of the list should be the ome name or `"multi_ome"`. The second level of the list should contain export functions for each object and their names.
 3.  Return the list of lists.
 
-See here for a written out example:
+See here for a written out example. It doesn't quite handle the complexity of having multiple omes, but it gives the general idea. See `R/tab_TEMPLATE_SINGLE-OME.R` for a more complete example.
 
 ``` r
 ## In your module's server function ... ##
