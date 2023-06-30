@@ -340,7 +340,10 @@ merge_processed_gcts <- function(GCTs_processed) {
       
       conflict_columns_ome <- names(which(
         sapply(names(gct@cdesc), function(col) {
-          any(gct@cdesc[[col]] != merged_cdesc_subset[[col]])
+          TRUE %in% c(
+            any(gct@cdesc[[col]] != merged_cdesc_subset[[col]]), # any values are not the same
+            any(is.na(gct@cdesc[[col]]) != is.na(merged_cdesc_subset[[col]])) # any NA's are not in the same place
+          )
         })
       ))
       
