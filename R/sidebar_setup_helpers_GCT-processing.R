@@ -295,7 +295,7 @@ validateGCT <- function(gct) {
 # merge processed GCTs
 merge_processed_gcts <- function(GCTs_processed) {
   withProgress(message = "Merging GCTs", expr = {
-  
+    
     # add a protigy.ome column to each gct's rdesc
     GCTs_processed <- mapply(
       GCTs_processed, names(GCTs_processed),
@@ -331,7 +331,7 @@ merge_processed_gcts <- function(GCTs_processed) {
     # figure out which columns conflict with other omes
     conflict_columns <- c()
     for (i in seq_along(GCTs_processed)) {
-      ome <- names(GCTs_processed)[1]
+      ome <- names(GCTs_processed)[i]
       gct <- GCTs_processed[[i]]
       
       # subset to only samples in ome
@@ -352,51 +352,30 @@ merge_processed_gcts <- function(GCTs_processed) {
     # remove conflicting columns and re-name by ome
     for (col in conflict_columns) {
       
-      # get the index for this column in the merged cdesc
-      merged_cdesc_names <- names(GCTs_merged@cdesc)
-      merged_cdesc_col_idx <- which(merged_cdesc_names == col)
-      
-      # get entries left of column
-      if (merged_cdesc_col_idx == 1){
-        left_of_col <- data.frame(matrix(nrow = dim(GCTs_merged@cdesc)[1], ncol = 0))
-      } else {
-        left_of_col <- GCTs_merged@cdesc[, 1:merged_cdesc_col_idx-1, drop = F]
-      }
-      
-      # get entries right of column
-      if (merged_cdesc_col_idx == dim(GCTs_merged@cdesc)[2]){
-        right_of_col <- data.frame(matrix(nrow = dim(GCTs_merged@cdesc)[1], ncol = 0))
-      } else {
-        right_of_col <- GCTs_merged@cdesc[, (merged_cdesc_col_idx + 1):dim(GCTs_merged@cdesc)[2], drop = F]
-      }
-      
-      
-      ## make a new dataframe with the conflict entries
-      
       # get the omes that contain this conflict column
       omes_with_col <- names(which(
         sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
       ))
       
-      # initialize empty data frame
-      conflict_col_df <- data.frame(matrix(nrow = dim(GCTs_merged@cdesc)[1],
-                                           ncol = 0))
+      # get the new column names, make sure they're unique
+      new_col_names <- utils::tail(
+        n = length(omes_with_col),
+        make.names(c(names(GCTs_merged@cdesc), paste0(col, '.', omes_with_col)),
+                   unique = TRUE)
+      )
+      
+      # get the new columns from each ome's GCT's cdesc
+      # make sure samples are in the same order as they are in GCTs_merged
+      all_samples <- rownames(GCTs_merged@cdesc)
+      new_columns <- as.data.frame(sapply(omes_with_col, 
+             function(ome) GCTs_processed[[ome]]@cdesc[all_samples, col],
+             simplify = FALSE))
+      names(new_columns) <- new_col_names
+      
 
-      # make a new columnn in GCTs_merged for each conflict
-      for (ome in omes_with_col) {
-        # make a new unique name with a suffix for this column
-        # the column name will be unique from other names in `merged_cdesc_names`
-        new_col_name <- utils::tail(
-          make.names(
-            c(merged_cdesc_names, paste0(col, '.', ome)),
-            unique = TRUE),
-          1)
-        
-        conflict_col_df[new_col_name] <- GCTs_processed[[ome]]@cdesc[[col]]
-      }
-
-      # merge left, conflict columns, and right so the order is kept
-      GCTs_merged@cdesc <- cbind(left_of_col, conflict_col_df, right_of_col)
+      GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
+        mutate(new_columns, .after = .data[[col]]) %>% 
+        select(-.data[[col]])
     }
     
     setProgress(1)
