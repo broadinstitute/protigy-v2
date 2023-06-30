@@ -90,9 +90,14 @@ setupmultiomeHeatmapTabServer <- function (id, GCTs) {
       
       ## Preprocessing GCTs ##
       
+      gcts_merged_reactive <- reactiveVal()
+      
+      # reset GCTs_merged to null each time the GCTs input changed
+      observeEvent(GCTs(), gcts_merged_reactive(NULL))
+      
       # run preprocessing on submit
-      gct_merged <- eventReactive(input$submit, {
-        withProgress(
+      observeEvent(input$submit, {
+        merged <- withProgress(
           message = "Preprocessing GCT files for multi-ome heatmap", 
           expr = {
           
@@ -124,21 +129,23 @@ setupmultiomeHeatmapTabServer <- function (id, GCTs) {
               setup_inputs$VM_columns <- c(setup_inputs$VM_columns, this_VM_column)
             }
             
-            # preprocess files
-            gct_merged <- my_shinyalert_tryCatch({
+            # preprocess files, return output
+            my_shinyalert_tryCatch({
               preprocess_gcts_multiome_heatmap(
                 GCTs = GCTs(),
                 setup_inputs = setup_inputs
               )
             }, return.error = NULL)
-            
-            # return the processed and merged gcts
-            gct_merged
           }
         )
+        
+        # update the reactive val
+        gcts_merged_reactive(merged)
       })
       
-      return(gct_merged)
+      return(list(
+        gcts_merged = gcts_merged_reactive,
+        submit = reactive(input$submit)))
       
     } # end module function
   ) # end moduleServer

@@ -374,8 +374,8 @@ merge_processed_gcts <- function(GCTs_processed) {
       
 
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
-        mutate(new_columns, .after = .data[[col]]) %>% 
-        select(-.data[[col]])
+        dplyr::mutate(new_columns, .after = .data[[col]]) %>% 
+        dplyr::select(-.data[[col]])
     }
     
     setProgress(1)

@@ -73,7 +73,11 @@ multiomeHeatmapTabServer <- function(
     ## Setup ##
     setup_ui <- setup_multiomeHeatmapTabUI(id = ns("setup"))
     output$sidebar_content <- renderUI({setup_ui})
-    gcts_merged <- setupmultiomeHeatmapTabServer(id = "setup", GCTs = GCTs)
+    setup_output <- setupmultiomeHeatmapTabServer(id = "setup", GCTs = GCTs)
+    gcts_merged <- setup_output$gcts_merged
+    setup_submit <- setup_output$submit
+    
+    observeEvent(GCTs(), output$sidebar_content <- renderUI({setup_ui}))
     
     merged_rdesc <- reactive({
       validate(need(gcts_merged(), "GCTs not processed for multi-ome heatmap"))
@@ -94,16 +98,19 @@ multiomeHeatmapTabServer <- function(
       multiome_heatmap_custom_colors(globals$colors$multi_ome, sample_anno())
     })
     
+
+    ## Heatmap options 
+    
+    # get heatmap options UI
+    options_ui <- renderUI({tagList(
+      options_multiomeHeatmapTabUI(ns("options"), GENEMAX = GENEMAX),
+      hr(),
+      actionButton(ns("back"), "Back to setup")
+    )})
     
     # go to heatmap options
-    observeEvent(gcts_merged(), {
-      output$sidebar_content <- renderUI({
-        tagList(
-          options_multiomeHeatmapTabUI(ns("options"), GENEMAX = GENEMAX),
-          hr(),
-          actionButton(ns("back"), "Back to setup")
-        )
-      })
+    observeEvent(setup_submit(), {
+      output$sidebar_content <- options_ui
     })
     
     # go back to setup
@@ -111,11 +118,10 @@ multiomeHeatmapTabServer <- function(
       output$sidebar_content <- renderUI({setup_ui})
     })
     
-    
-    ## Heatmap options 
     HM.params <- options_multiomeHeatmapTabServer("options",
                                                   merged_rdesc = merged_rdesc,
-                                                  sample_anno = sample_anno)
+                                                  sample_anno = sample_anno,
+                                                  setup_submit = setup_submit)
     
     
     ## Generate Heatmap

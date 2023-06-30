@@ -80,38 +80,38 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
 }
 
 ## server for heatmap options
-options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno) {
+options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit) {
   moduleServer(
     id,
     ## module function
     function (input, output, session) {
       
       # update selectizeInput for genes
-      observe(
+      observeEvent(setup_submit(), {
         updateSelectizeInput(
           session,
           inputId = "genes",
           choices = sort(unique(merged_rdesc()$geneSymbol)),
           server = T)
-      )
+      })
       
       
-      # update selectTinput for annotations
-      observe(
+      # update selectInput for annotations
+      observeEvent(setup_submit(), {
         updateSelectInput(
           session,
           inputId = "sort.after",
           choices = setdiff(names(sample_anno()), 'Sample.ID'))
-      )
+      })
       
       
       # update data ordering options
-      observe(
+      observeEvent(setup_submit(), {
         updateOrderInput(
           session,
           inputId = 'ome.order',
           items = sort(unique(merged_rdesc()$DataType)))
-      )
+      })
       
       
       ## get heatmap parameters

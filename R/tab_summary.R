@@ -270,6 +270,8 @@ summaryOmeServer <- function(id, ome,
     
     # sidebar contents
     output$quant_features_sidebar_contents <- renderUI({
+      req(GCT_processed())
+      
       add_css_attributes(
         selectInput(
           ns("quant_features_annotation"),
