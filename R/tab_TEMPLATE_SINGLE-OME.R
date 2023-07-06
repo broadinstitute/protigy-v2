@@ -5,7 +5,7 @@
 # each ome. This template has built-in functionality for handing omes, 
 # displaying plots/tables/etc in boxes, and exporting outputs.
 ################################################################################
-# This template comtains two pairs of server/UI module functions:
+# This template contains two pairs of server/UI module functions:
 #
 # templateSingleOme_Tab_UI & templateSingleOme_Tab_Server handle the overall skeleton
 # for having tabs with multiple -omes. Much of this code shouldn't need to be 
@@ -74,7 +74,9 @@ templateSingleOme_Tab_Server <- function(id = "templateSingleOmeTab",
     # `parameters`
     # `default_annotations`
     # `custom_colors`
-    # `all_omes` and `default_ome` are used in this function
+    # `GCTs_merged`
+    #
+    # `all_omes` and `default_ome` are used in this function, DO NOT REMOVE
     
     # GCTs to use for analysis/visualization
     GCTs <- reactive({

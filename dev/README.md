@@ -63,6 +63,8 @@
         ggplot(iris, aes(.data[[x_col]], .data[[y_col]]))
         ```
 
+6.  Check out `R/utilities.R` for some useful functions!
+
 ------------------------------------------------------------------------
 
 ### Managing package dependencies
