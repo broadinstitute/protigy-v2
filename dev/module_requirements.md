@@ -127,7 +127,7 @@ In instances where an object could also hold multi-ome data, the reserved word `
 
 -   `globals$default_ome`: A string containing the user selected default ome. This should be the first ome tab a user sees when they navigate to a module.
 
-`GCTs_original`: A `reactiveVal` named list of the original GCT object that the user uploaded. Names correspond to user-selected ome labels. This has the exact same structure as `GCTs_and_params()$GCTs`.
+`GCTs_original`: A `reactiveVal` named list of the original GCT objects that the user uploaded (before any processing). Names correspond to user-selected ome labels. This has the exact same structure as `GCTs_and_params()$GCTs`.
 
 ------------------------------------------------------------------------
 
@@ -182,15 +182,15 @@ return(module_exports)
 
 Most modules should **not** need to update any global variables (beyond exporting plots/tables/etc.). However, some special modules may want to add/edit global variables that will affect multiple modules. Here's some suggestions for how to hand that logic.
 
-**Editing/adding to `globals` (or any `reactiveValues`):**
+**Editing/adding to `globals` (or any `reactiveValues` object):**
 
-1.  Have your module's server return a reactive version of the object that you want to add to `globals`. The module can return only this reactive object or a list containing the reactive object if you also need to return other things. Note: make sure to return the reactive *object* (e.g. `return(my_reactive_object)`) instead of *calling* the reactive object (e.g. DO NOT DO `return(my_reactive_object())`).
+1.  Have your module's server return a reactive version of the object that you want to add to `globals`. The module can return just the reactive object or a list containing the reactive object if you also need to return other things. Note: make sure to return the reactive *object* (e.g. `return(my_reactive_object)`) instead of *calling* the reactive object (e.g. DO NOT DO `return(my_reactive_object())`).
 
 2.  Assign the output to a variable in `app_server()`.
 
 3.  Write an `observeEvent` statement in `app_server()` to update the correct field in `globals`. Something like:
 
-    ``` R
+    ``` r
     ## Inside of app_server ...
 
     # assign the output of your module's server
@@ -202,9 +202,9 @@ Most modules should **not** need to update any global variables (beyond exportin
     })
     ```
 
-**Editing `GCTs_and_params`** **(or any `reactiveVal`):** This can follow a similar logic as adding to `globals` (return reactive object, update using an `observe` statement in `app_server()`). However, the catch is that GCTs_and_params is on giant `reactiveVal` object, so you cannot just update an individual field....the whole object must be updated together. I imagine updating this would look something like:
+**Editing `GCTs_and_params`** **(or any `reactiveVal` object):** This can follow a similar logic as adding to `globals` (return reactive object, update using an `observe` statement in `app_server()`). However, the catch is that GCTs_and_params is on giant `reactiveVal` object, so you cannot just update an individual field....the whole object must be updated together. I imagine updating this would look something like:
 
-``` R
+``` r
 # I want to update the `GCTs` part
 new_GCTs_reactive <- ...
 

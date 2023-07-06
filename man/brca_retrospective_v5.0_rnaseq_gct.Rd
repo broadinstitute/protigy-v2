@@ -23,7 +23,7 @@ Formal class 'GCT' from package \code{cmapR} with 7 slots:
 https://github.com/broadinstitute/PANOPLY/blob/dev/tutorial/tutorial-brca-input.zip
 }
 \usage{
-brca_retrospective_v5.0_rnaseq_gct
+data(brca_retrospective_v5.0_rnaseq_gct)
 }
 \description{
 A GCT containing the BRCA retrospective v5.0 RNAseq dataset.

@@ -18,6 +18,7 @@
 #' 
 #' @source https://github.com/broadinstitute/PANOPLY/blob/dev/tutorial/tutorial-brca-input.zip
 #' 
+#' @usage data(brca_retrospective_v5.0_phosphoproteome_gct)
 "brca_retrospective_v5.0_phosphoproteome_gct"
 
 #' Proteome example GCT
@@ -38,6 +39,7 @@
 #' 
 #' @source https://github.com/broadinstitute/PANOPLY/blob/dev/tutorial/tutorial-brca-input.zip
 #' 
+#' @usage data(brca_retrospective_v5.0_proteome_gct)
 "brca_retrospective_v5.0_proteome_gct"
 
 #' RNAseq example GCT
@@ -58,6 +60,7 @@
 #' 
 #' @source https://github.com/broadinstitute/PANOPLY/blob/dev/tutorial/tutorial-brca-input.zip
 #' 
+#' @usage data(brca_retrospective_v5.0_rnaseq_gct)
 "brca_retrospective_v5.0_rnaseq_gct"
 
 

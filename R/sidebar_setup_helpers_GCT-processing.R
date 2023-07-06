@@ -327,7 +327,7 @@ merge_processed_gcts <- function(GCTs_processed) {
     # cmapR::merge_gct will override any conflicting annotation columns in cdesc
     # with whatever is in the first GCT. Instead, we want to duplicate conflict
     # columns so no data is lost.
-    
+
     # figure out which columns conflict with other omes
     conflict_columns <- c()
     for (i in seq_along(GCTs_processed)) {
@@ -338,6 +338,18 @@ merge_processed_gcts <- function(GCTs_processed) {
       samples_in_ome <- gct@cid
       merged_cdesc_subset <- GCTs_merged@cdesc[samples_in_ome, , drop = FALSE]
       
+      # if there's a column with all NA, replace with values in this ome
+      replace_NA_col <- intersect(
+        names(which(sapply(merged_cdesc_subset, function(col) all(is.na(col))))),
+        names(gct@cdesc)
+      )
+      if (length(replace_NA_col) > 0) {
+        GCTs_merged@cdesc[samples_in_ome, replace_NA_col] <- gct@cdesc[samples_in_ome, replace_NA_col]
+        merged_cdesc_subset <- GCTs_merged@cdesc[samples_in_ome, , drop = FALSE]
+      }
+      
+      
+      # find columns that have a conflict
       conflict_columns_ome <- names(which(
         sapply(names(gct@cdesc), function(col) {
           TRUE %in% c(
