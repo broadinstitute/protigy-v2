@@ -52,6 +52,12 @@ templateTabServer <- function(id = "templateTab",
       GCTs_and_params()$parameters
     })
     
+    # merged GCTs from ALL omes, contains "protigy.ome" column in rdesc
+    GCTs_merged <- reactive({
+      validate(need(GCTs_and_params(), "GCTs not yet processed"))
+      GCTs_and_params()$GCTs_merged
+    })
+    
     # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
     GCTs_merged <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))

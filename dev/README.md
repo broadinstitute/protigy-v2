@@ -1,5 +1,11 @@
 # Developer Notes, Resources, and Recommendations
 
+------------------------------------------------------------------------
+
+### See `dev/module_requirements.md` for requirements and tips for adding a new module.
+
+------------------------------------------------------------------------
+
 ### Useful resources
 
 -   [Basics for R shiny modules](https://shiny.posit.co/r/articles/improve/modules/)
