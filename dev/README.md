@@ -94,3 +94,11 @@ data(brca_retrospective_v5.0_rnaseq_gct)
 data(brca_retrospective_v5.0_phosphoproteome_gct)
 data(brca_retrospective_v5.0_proteome_gct)
 ```
+
+------------------------------------------------------------------------
+
+### Deploying to RSConnect
+
+Check out `app.R` for basic deployment instructions.
+
+See `dev/deployment_notes_cytolib.md` for deployment related issues with the `cytolib` package.
