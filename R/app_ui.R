@@ -50,8 +50,9 @@ app_UI <- function(request) {dashboardPage(
       tabPanel("Table"),
       navbarMenu(
         "QC",
-        tabPanel("1"),
-        tabPanel("2")),
+        tabPanel("Boxplots",QCBoxplots_Tab_UI()),
+        tabPanel("Profile plots"),
+        tabPanel("Correlation")),
       navbarMenu(
         "Multi-ome",
         tabPanel('Heatmap', multiomeHeatmapTabUI()),

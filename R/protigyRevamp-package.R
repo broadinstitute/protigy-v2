@@ -6,6 +6,7 @@
 #' @import shiny
 #' @import ggplot2
 #' @import dplyr
+#' @import tidyr
 #' @import ComplexHeatmap
 #' @import markdown
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
