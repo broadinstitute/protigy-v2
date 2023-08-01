@@ -6,10 +6,10 @@
 \alias{protigyRevamp-package}
 \title{protigyRevamp: Revamp of the original Protigy app}
 \description{
-A tool for proteomic data analysis and visualization.
+A tool for multiomics data analysis and visualization.
 }
 \author{
-\strong{Maintainer}: Natalie Clark \email{nclark@broadinstitute.org}
+\strong{Maintainer}: Natalie M Clark \email{nclark@broadinstitute.org}
 
 Authors:
 \itemize{

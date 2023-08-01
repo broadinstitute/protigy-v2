@@ -5,11 +5,9 @@
 ################################################################################
 
 ## Create boxplot using ggplot on pre-computed summary statistics
-## NOTE: This DOES NOT work with plotly due to an ongoing issue with plotly not correctly interpreting geom_box(stat="identity). If using this, you MUST render as a ggplot and NOT as a ggplotly!
+## NOTE: This DOES NOT work with plotly due to an ongoing issue with plotly not correctly interpreting geom_boxplot(stat="identity"). If using this, you MUST render as a ggplot and NOT as a ggplotly!
 
 create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, type=c("org","norm")) {
-  
-  #browser()
   
   # compute box plot statistics
   mat <- apply(gct@mat, 2, function(x) boxplot.stats(x))
@@ -24,24 +22,30 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
   annot <- data.frame("sample"=colnames(gct@mat),"annot"=group)
   stats <- left_join(stats,annot,by="sample")
   
+  #get the outliers and add annotation information
+  outliers <- sapply(mat,"[[","out")
+  outliers <- stack(outliers)
+  colnames(outliers) <- c("values","sample")
+  outliers <- left_join(outliers,annot,by="sample")
+  
   #sort by annotation
   stats <- stats[order(stats$annot),]
+  outliers <- outliers[order(outliers$annot),]
   stats$sample <- factor(stats$sample, levels=unique(stats$sample))
-  
-  #get the outliers
-  #outliers <- sapply(data,"[[","out")
-  #outliers <- Reduce(rbind,outliers)
+  outliers$sample <- factor(outliers$sample, levels=unique(outliers$sample))
   
   # get color definition
+  #NOTE: geom_tufteboxplot doesn't like colors as lists, but can take a named vector of colors for whatever reason
+  #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
   if (is.null(custom_color_map)) {
-    color_definition <- NULL
+    color_defintion <- NULL
   } else if (custom_color_map$is_discrete) {
-    colors <- as.list(custom_color_map$colors)
-    names(colors) <- custom_color_map$vals
-    color_definition <- scale_fill_manual(values = colors)
+    colors <- c(unlist(custom_color_map$colors),"gray50")
+    names(colors) <- c(custom_color_map$vals,NA)
+    color_definition <- scale_colour_manual(values = colors)
   } else {
     group <- as.numeric(group)
-    color_definition <- scale_fill_gradient2(
+    fill_definition <- scale_colour_gradient2(
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],
@@ -50,26 +54,35 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
     )
   }
   
+  #get font size
+  font.size <- scale_font_size(dimension=dim(stats)[1])
+  
   # make plot
-  ggplot(data = stats, 
+  g <- ggplot(data = stats,    #base boxplot with calculated stats
          aes(x = sample,  
-             ymin = .data$ymin,
-             lower = .data$lower,
-             middle = .data$middle,
-             upper = .data$upper,
-             ymax = .data$ymax,
-             fill = .data$annot)) +
-    geom_boxplot(stat="identity") +
-    theme_bw() +
-    color_definition + 
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-          text= element_text(size=14)) +
-    ylab("Expression") +
-    xlab("Sample") + 
-    labs(fill = col_of_interest) +
-    ggtitle(if(type=="org"){
-      paste("Boxplot before normalization:", ome)
-    }else{
-      paste("Boxplot after normalization:",ome)
-    })
+             ymin = ymin,
+             lower = lower,
+             middle = middle,
+             upper = upper,
+             ymax = ymax),show.legend=F) +
+    geom_tufteboxplot(stat="identity",aes(colour=annot),show.legend=F) + #convert to tufte boxplot
+    geom_point(size = 1, aes(y = middle, colour = annot))+ #make the median point bigger (and fixes the legend too!)
+    geom_point(data=outliers, aes(x=sample, y=values), inherit.aes=FALSE, size=0.1, pch=1, show.legend=F) + #add outliers
+    theme_bw() + #change theme
+    color_definition + #color scale
+    theme(text= element_text(size=14)) + #change font sizes
+    ylab("Expression") + #y axis title
+    xlab("Sample") + #x axis title
+    labs(colour = col_of_interest) + #legend title
+    ggtitle(ifelse(type=="org", paste("Boxplot before normalization:", ome), paste("Boxplot after normalization:",ome))) #plot title
+  
+  # if font size is too small, hide the labels
+  if(font.size < 8){
+    g <- g + theme(axis.text.x = element_blank())
+  }else{
+    g <- g + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=font.size))
+  }
+  
+  print(g)
+  
 }

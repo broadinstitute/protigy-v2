@@ -119,5 +119,10 @@ add_css_attributes <- function (el, classes = NULL, styles = NULL) {
   el
 }
 
+# scale font size based on a scale factor and a dimension, up to a maximum size
+scale_font_size <- function(dimension, max.size=14, scale.factor=50) {
+  return(min(max.size,floor(max.size*scale.factor/dimension)))
+}
+
 
 

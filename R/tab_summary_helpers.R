@@ -52,7 +52,8 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
 }
 
 summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
-  # make a data frame of the percept missing values
+  
+  # make a data frame of the percent missing values
   missing_val_perc <- apply(gct@mat, 1, function(x) sum(is.na(x)) / length(x) * 100)
   missing_val_df <- data.frame(missing = missing_val_perc)
   

@@ -1,13 +1,13 @@
 Package: protigyRevamp
 Title: Revamp of the original Protigy app
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
     person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),
-    person("Natalie", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre")),
+    person("Natalie M", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre")),
     person("C", "Williams", , "wcorinne@broadinstitute.org", role = "aut")
   )
-Description: A tool for proteomic data analysis and visualization.
+Description: A tool for multiomics data analysis and visualization.
 License: BSD_3_clause + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -18,7 +18,7 @@ Imports:
     ComplexHeatmap,
     dplyr,
     ggplot2,
-    plotly,
+    plotly (>= 4.10.1),
     RColorBrewer,
     shinyalert,
     shinyBS,
@@ -39,9 +39,11 @@ Imports:
     mclust,
     markdown,
     utils,
-    rlang
+    rlang,
+    tidyr,
+    ggthemes
 Depends:
-    R (>= 2.10),
+    R (>= 4.0.0),
     shiny
 Suggests: 
     testthat (>= 3.0.0)
