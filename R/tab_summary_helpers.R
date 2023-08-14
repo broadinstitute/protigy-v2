@@ -37,7 +37,7 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
   }
   
   #get font size
-  font.size <- scale_font_size(dimension=length(sample_id))
+  font.size <- scale_font_size(dimension=length(sample_id),max.size=12,scale.factor=55)
   
   # make plot
   g <- ggplot(data = non.missing, 
