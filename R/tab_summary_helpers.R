@@ -36,19 +36,30 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
     )
   }
   
+  #get font size
+  font.size <- scale_font_size(dimension=length(sample_id))
+  
   # make plot
-  ggplot(data = non.missing, 
+  g <- ggplot(data = non.missing, 
          aes(x = .data$SampleID, y = .data$numFeatures, fill = .data$group, 
              text = paste0("Sample ID: ", .data$SampleID, 
                            "\nNum. Features: ", .data$numFeatures))) +
     geom_bar(stat = 'identity') +
     theme_bw() +
     color_definition + 
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(text= element_text(size=12)) +
     ylab("# Quantified Features") +
     xlab("Sample columns") + 
     labs(fill = col_of_interest)  + 
     ggtitle(paste("Quantified features:", ome))
+  
+  # if font size is too small, hide the labels
+  if(font.size < 8){
+    g <- g + theme(axis.text.x = element_blank())
+  }else{
+    g <- g + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=font.size))
+  }
+  
 }
 
 summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
@@ -74,7 +85,8 @@ summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
     scale_x_continuous(labels = function(x) paste0(x, "%")) +
     xlab("Percent Missing Allowed") + ylab("Percent Features Retained") +
     ggtitle(paste("Missing Value Distribution:", ome)) +
-    theme_bw()
+    theme_bw()+
+    theme(text= element_text(size=12))
 }
 
 summary_missing_value_distribution_to_ggplotly <- function(gg) {

@@ -316,7 +316,10 @@ summaryOmeServer <- function(id, ome,
         filename = paste0("quantified_features_", ome, ".pdf"), 
         plot = quant_features_plot_reactive(), 
         device = 'pdf',
-        path = dir_name
+        path = dir_name,
+        width = 10,
+        height = 6, 
+        units = "in"
       )
     }
     
@@ -325,7 +328,10 @@ summaryOmeServer <- function(id, ome,
         filename = paste0("missing_value_distribution_", ome, ".pdf"), 
         plot = missing_value_distribution_reactive(), 
         device = 'pdf',
-        path = dir_name
+        path = dir_name,
+        width = 10,
+        height = 6, 
+        units = "in"
       )
     }
     
