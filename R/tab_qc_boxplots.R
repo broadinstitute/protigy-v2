@@ -196,6 +196,7 @@ QCBoxplots_Ome_Server <- function(id,
                     col_of_interest = annot_column,
                     ome = ome,
                     custom_color_map = annot_color_map,
+                    parameters=parameters(),
                     type="org")
       }
     )
@@ -233,6 +234,7 @@ QCBoxplots_Ome_Server <- function(id,
                        col_of_interest = annot_column,
                        ome = ome,
                        custom_color_map = annot_color_map,
+                       parameters=parameters(),
                        type="norm")
       }
     )
@@ -265,7 +267,10 @@ QCBoxplots_Ome_Server <- function(id,
         filename = paste0("qc_boxplot_org", ome, ".pdf"), 
         plot = qc_boxplot_org_reactive(), 
         device = 'pdf',
-        path = dir_name
+        path = dir_name,
+        width = 10,
+        height = 6, 
+        units = "in"
       )
     }
     
@@ -274,7 +279,10 @@ QCBoxplots_Ome_Server <- function(id,
         filename = paste0("qc_boxplot_norm", ome, ".pdf"), 
         plot = qc_boxplot_norm_reactive(), 
         device = 'pdf',
-        path = dir_name
+        path = dir_name,
+        width = 10,
+        height = 6, 
+        units = "in"
       )
     }
     
