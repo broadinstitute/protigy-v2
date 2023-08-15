@@ -40,6 +40,13 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original
   )
   
+  ## QC profile plots module
+  all_QCProfilePlots_exports <- QCProfilePlots_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
   ## Multi-ome Heatmap module
   all_multiomeHeatmap_exports <- multiomeHeatmapTabServer(
     GCTs_and_params = GCTs_and_params,
@@ -60,6 +67,7 @@ app_server <- function(input, output, session) {
         summary_exports = all_summary_exports,
         template_exports = all_template_exports,
         QCBoxplot_exports = all_QCBoxplots_exports,
+        QCProfilePlots_exports = all_QCProfilePlots_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports
       )
     )
