@@ -7,7 +7,6 @@
 ## Create profile plot using ggplot (geom_density)
 
 create_profile_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, parameters, type=c("org","norm")) {
-  #browser()
   
   # convert to long format
   mat <- gct@mat

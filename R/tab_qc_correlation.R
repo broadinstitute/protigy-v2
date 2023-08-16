@@ -1,5 +1,5 @@
 ################################################################################
-# Module: QC_BOXPLOTS
+# Module: qc_correlation
 #
 # Produce boxplots before and after normalization
 ################################################################################
@@ -8,9 +8,9 @@
 # Shiny functions (UI and server)
 ################################################################################
 
-# UI for the QCBoxplots tab
+# UI for the QCCorrelation tab
 # contains the structure for the big tabbed box with omes
-QCBoxplots_Tab_UI <- function(id = "QCBoxplotsTab") {
+QCCorrelation_Tab_UI <- function(id = "QCCorrelationTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
   
   tagList(
@@ -21,12 +21,11 @@ QCBoxplots_Tab_UI <- function(id = "QCBoxplotsTab") {
   ) # end tagList
 }
 
-# server for the QCBoxplots tab
+# server for the QCCorrelation tab
 # contains the structure for the big tabbed box with omes
-QCBoxplots_Tab_Server <- function(id = "QCBoxplotsTab",
+QCCorrelation_Tab_Server <- function(id = "QCCorrelationTab",
                                    GCTs_and_params, 
-                                   globals, 
-                                   GCTs_original) { 
+                                   globals) { 
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -74,7 +73,7 @@ QCBoxplots_Tab_Server <- function(id = "QCBoxplotsTab",
           title = ome,
           
           # call the UI function for each individual ome
-          QCBoxplots_Ome_UI(id = ns(ome), ome = ome)
+          QCCorrelation_Ome_UI(id = ns(ome), ome = ome)
           
         ) # end tabPanel
       }) # end lapply
@@ -105,12 +104,11 @@ QCBoxplots_Tab_Server <- function(id = "QCBoxplotsTab",
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
       output_plots <- sapply(all_omes(), function(ome) {
-        QCBoxplots_Ome_Server(
+        QCCorrelation_Ome_Server(
           id = ome,
           ome = ome,
           GCT_processed = reactive(GCTs()[[ome]]),
           parameters = reactive(parameters()[[ome]]),
-          GCT_original = reactive(GCTs_original()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map = reactive(custom_colors()[[ome]])
         )
@@ -126,26 +124,35 @@ QCBoxplots_Tab_Server <- function(id = "QCBoxplotsTab",
 
 
 # UI for an individual ome
-QCBoxplots_Ome_UI <- function (id, ome) {
+QCCorrelation_Ome_UI <- function (id, ome) {
                 
   ns <- NS(id)
   
   tagList(
     
-    # boxplots
+    # Correlation heatmap
     fluidRow(shinydashboardPlus::box(
-      plotOutput(ns("qc_boxplot_org")),
-      plotOutput(ns("qc_boxplot_norm")),
+      plotOutput(ns("qc_corr_heatmap")),
       sidebar = boxSidebar(
-        uiOutput(ns("qc_boxplots_sidebar_contents")),
-        id = ns("qc_boxplots_sidebar"),
+        uiOutput(ns("qc_correlation_sidebar_contents")),
+        id = ns("qc_correlation_sidebar"),
         width = 25,
         icon = icon("gears", class = "fa-2xl"),
         background = "rgba(91, 98, 104, 0.9)"
       ),
       status = "primary",
       width = 12,
-      title = "Boxplots",
+      title = "Correlation Heatmap",
+      headerBorder = TRUE,
+      solidHeader = TRUE
+    )),
+    
+    #Correlation boxplot
+    fluidRow(shinydashboardPlus::box(
+      plotlyOutput(ns("qc_corr_boxplot")),
+      status = "primary",
+      width = 12,
+      title = "Intra-Sample Correlation Boxplot",
       headerBorder = TRUE,
       solidHeader = TRUE
     ))
@@ -154,11 +161,10 @@ QCBoxplots_Ome_UI <- function (id, ome) {
 
 
 # server for an individual ome
-QCBoxplots_Ome_Server <- function(id,
+QCCorrelation_Ome_Server <- function(id,
                                    ome,
                                    GCT_processed,
                                    parameters,
-                                   GCT_original,
                                    default_annotation_column,
                                    color_map) {
   
@@ -168,55 +174,17 @@ QCBoxplots_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
-    ## ORIGINAL BOXPLOT ##
+    ## CORRELATION HEATMAP ##
     
     # reactive
-    qc_boxplot_org_reactive <- eventReactive(
-      eventExpr = c(input$qc_boxplots_annotation, color_map()), 
-      valueExpr = {
-        req(GCT_original(), default_annotation_column(), color_map())
-        
-        # get annotation column
-        if (!is.null(input$qc_boxplots_annotation)) {
-          annot_column <- input$qc_boxplots_annotation
-        } else {
-          annot_column <- default_annotation_column()
-        }
-        
-        # get custom colors
-        custom_colors <- color_map()
-        if (annot_column %in% names(custom_colors)) {
-          annot_color_map <- custom_colors[[annot_column]]
-        } else {
-          annot_color_map <- NULL
-        }
-        
-        # generate plot
-        create_boxplot(gct = GCT_original(),
-                    col_of_interest = annot_column,
-                    ome = ome,
-                    custom_color_map = annot_color_map,
-                    parameters=parameters(),
-                    type="org")
-      }
-    )
-    
-    # render summary plot
-    output$qc_boxplot_org <- renderPlot(
-      qc_boxplot_org_reactive()
-    )
-    
-    ## NORMALIZED BOXPLOT ##
-    
-    # reactive
-    qc_boxplot_norm_reactive <- eventReactive(
-      eventExpr = c(input$qc_boxplots_annotation, color_map()), 
+    qc_corr_heatmap_reactive <- eventReactive(
+      eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
         
         # get annotation column
-        if (!is.null(input$qc_boxplots_annotation)) {
-          annot_column <- input$qc_boxplots_annotation
+        if (!is.null(input$qc_correlation_annotation)) {
+          annot_column <- input$qc_correlation_annotation
         } else {
           annot_column <- default_annotation_column()
         }
@@ -230,27 +198,62 @@ QCBoxplots_Ome_Server <- function(id,
         }
         
         # generate plot
-        create_boxplot(gct = GCT_processed(),
-                       col_of_interest = annot_column,
-                       ome = ome,
-                       custom_color_map = annot_color_map,
-                       parameters=parameters(),
-                       type="norm")
+         HM <- create_corr_heatmap(gct = GCT_processed(),
+                              col_of_interest = annot_column,
+                              ome = ome,
+                              custom_color_map = annot_color_map)
+          draw_corr_HM(HM)
+      }
+    )
+    
+    # render heatmap
+    output$qc_corr_heatmap <- renderPlot(
+      qc_corr_heatmap_reactive()
+    )
+    
+    ## CORRELATION BOXPLOT ##
+    
+    # reactive
+    qc_corr_boxplot_reactive <- eventReactive(
+      eventExpr = c(input$qc_correlation_annotation, color_map()), 
+      valueExpr = {
+        req(GCT_processed(), default_annotation_column(), color_map())
+        
+        # get annotation column
+        if (!is.null(input$qc_correlation_annotation)) {
+          annot_column <- input$qc_correlation_annotation
+        } else {
+          annot_column <- default_annotation_column()
+        }
+        
+        # get custom colors
+        custom_colors <- color_map()
+        if (annot_column %in% names(custom_colors)) {
+          annot_color_map <- custom_colors[[annot_column]]
+        } else {
+          annot_color_map <- NULL
+        }
+        
+        # generate plot
+        create_corr_boxplot(gct = GCT_processed(),
+                           col_of_interest = annot_column,
+                           ome = ome,
+                           custom_color_map = annot_color_map)
       }
     )
     
     # render summary plot
-    output$qc_boxplot_norm <- renderPlot(
-      qc_boxplot_norm_reactive()
+    output$qc_corr_boxplot <- renderPlotly(
+      ggplotly(qc_corr_boxplot_reactive(), tooltip = "text")
     )
     
     # sidebar contents
-    output$qc_boxplots_sidebar_contents <- renderUI({
+    output$qc_correlation_sidebar_contents <- renderUI({
       req(GCT_processed())
       
       add_css_attributes(
         selectInput(
-          ns("qc_boxplots_annotation"),
+          ns("qc_correlation_annotation"),
           "Group by",
           choices = names(GCT_processed()@cdesc),
           selected = default_annotation_column()),
@@ -262,22 +265,19 @@ QCBoxplots_Ome_Server <- function(id,
     ## COMPILE EXPORTS ##
     
     
-    qc_boxplot_org_export_function <- function(dir_name) {
-      ggsave(
-        filename = paste0("qc_boxplot_org", ome, ".pdf"), 
-        plot = qc_boxplot_org_reactive(), 
-        device = 'pdf',
-        path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
-      )
+    qc_corr_heatmap_export_function <- function(dir_name) {
+      req(HM.out()$HM)
+      pdf(file = file.path(dir_name, paste0("qc_corr_heatmap", ome, ".pdf")),
+          width = 1400/72,
+          height = (plot_height() + 48)/72)
+      draw_corr_HM(HM.out()$HM)
+      dev.off()
     }
     
-    qc_boxplot_norm_export_function <- function(dir_name) {
+    qc_corr_boxplot_export_function <- function(dir_name) {
       ggsave(
-        filename = paste0("qc_boxplot_norm", ome, ".pdf"), 
-        plot = qc_boxplot_norm_reactive(), 
+        filename = paste0("qc_corr_boxplot", ome, ".pdf"), 
+        plot = qc_corr_boxplot_reactive(), 
         device = 'pdf',
         path = dir_name,
         width = 10,
@@ -288,8 +288,8 @@ QCBoxplots_Ome_Server <- function(id,
     
     return(
       list(
-        qc_boxplot_org = qc_boxplot_org_export_function,
-        qc_boxplot_norm = qc_boxplot_norm_export_function
+        qc_corr_heatmap = qc_corr_heatmap_export_function,
+        qc_corr_boxplot = qc_corr_boxplot_export_function
       )
     )
   })

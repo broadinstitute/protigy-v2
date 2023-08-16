@@ -1,7 +1,7 @@
 ################################################################################
 # Module: qc_profile_plots
 #
-# Produce boxplots before and after normalization
+# Produce profile plots before and after normalization
 ################################################################################
 
 ################################################################################
@@ -132,7 +132,7 @@ QCProfilePlots_Ome_UI <- function (id, ome) {
   
   tagList(
     
-    # Original boxplot
+    # profile plots
     fluidRow(shinydashboardPlus::box(
       plotlyOutput(ns("qc_profile_plot_org")),
       plotlyOutput(ns("qc_profile_plot_norm")),
@@ -168,7 +168,7 @@ QCProfilePlots_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
-    ## ORIGINAL BOXPLOT ##
+    ## ORIGINAL PROFILE PlOT ##
     
     # reactive
     qc_profile_plot_org_reactive <- eventReactive(
@@ -206,7 +206,7 @@ QCProfilePlots_Ome_Server <- function(id,
       ggplotly(qc_profile_plot_org_reactive(), tooltip = "text")
     )
     
-    ## NORMALIZED BOXPLOT ##
+    ## NORMALIZED PROFILE PLOT ##
     
     # reactive
     qc_profile_plot_norm_reactive <- eventReactive(

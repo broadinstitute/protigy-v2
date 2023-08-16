@@ -52,7 +52,7 @@ app_UI <- function(request) {dashboardPage(
         "QC",
         tabPanel("Boxplots",QCBoxplots_Tab_UI()),
         tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
-        tabPanel("Correlation")),
+        tabPanel("Correlation", QCCorrelation_Tab_UI())),
       navbarMenu(
         "Multi-ome",
         tabPanel('Heatmap', multiomeHeatmapTabUI()),
@@ -60,7 +60,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel('More ideas?')),
       tabPanel("Export", exportTabUI(), icon = icon("download")),
       
-      tabPanel("TEMPLATE", templateSingleOme_Tab_UI())
+      #tabPanel("TEMPLATE", templateSingleOme_Tab_UI())
       
       ) #end navbarPage
   ) # end dashboardBody
