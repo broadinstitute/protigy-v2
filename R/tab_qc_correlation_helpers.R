@@ -116,20 +116,34 @@ dynamicHeightHMCorr <- function(n.entries){
 
 ## Create correlation boxplot
 
-create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL) {
+create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL,corr_method="pearson") {
   
-  # convert to long format
+  #sort matrix by annotation
   mat <- gct@mat
-  mat_long <- as.data.frame(mat) %>% pivot_longer(everything(),names_to="sample",values_to="values")
+  group <- factor(as.character(gct@cdesc[[col_of_interest]]))
+  annot <- data.frame('sample'=colnames(mat),"annot"=group)
+  mat <- mat[,order(annot$annot)]
+  annot <- annot[order(annot$annot),]
   
-  # add annotation information
-  group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
-  annot <- data.frame("sample"=colnames(gct@mat),"annot"=group)
-  mat_long <- left_join(mat_long,annot,by="sample")
+  # calculate the correlation for each subgroup
+  # then get the boxplot statistics
+  cor.group <- lapply(unique(annot$annot), function(x){
+    cm.grp <- cor(mat[,annot$annot==x],use="pairwise.complete.obs",method=corr_method)
+    cm.grp <- cm.grp[upper.tri(cm.grp, diag = FALSE)]
+    stats <- boxplot.stats(cm.grp)
+    return(stats)
+  })
+  names(cor.group) <- unique(annot$annot)
   
-  #sort by annotation
-  mat_long <- mat_long[order(mat_long$annot),]
-  mat_long$sample <- factor(mat_long$sample, levels=unique(mat_long$sample))
+  # get the statistics
+  stats <- as.data.frame(t(sapply(cor.group,"[[","stats")))
+  colnames(stats) <- c("ymin","lower","middle","upper","ymax")
+  stats$annot <- rownames(stats)
+  
+  #get the outliers and add annotation information
+  outliers <- sapply(cor.group,"[[","out")
+  outliers <- stack(outliers)
+  colnames(outliers) <- c("values","annot")
   
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
@@ -138,7 +152,7 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
   } else if (custom_color_map$is_discrete) {
     colors <- c(unlist(custom_color_map$colors),"gray50")
     names(colors) <- c(custom_color_map$vals,NA)
-    color_definition <- scale_colour_manual(values = colors)
+    fill_definition <- scale_fill_manual(values = colors)
   } else {
     group <- as.numeric(group)
     fill_definition <- scale_colour_gradient2(
@@ -150,20 +164,24 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
     )
   }
   
-  # make plot
-  
-  # if type=norm but no normalization, make an empty ggplot with appropriate title
-    g <- ggplot(data = mat_long, 
-                aes(x = .data$values,  
-                    colour = .data$annot,
-                    text = paste0("Sample ID: ", .data$sample))) +
-      geom_line(stat="density",alpha=0.7) + #make density plot
-      theme_bw() + #change theme
-      color_definition + #color scale
-      theme(text= element_text(size=12)) + #change font sizes
-      ylab("Density") + #y axis title
-      xlab("Expression") + #x axis title
-      labs(colour = col_of_interest) + #legend title
-      ggtitle("Intra-group correlations") #plot title
+  # make boxplot
+  g <- ggplot(data = stats,  
+              aes(x = .data$annot,  
+                  ymin = .data$ymin,
+                  lower = .data$lower,
+                  middle = .data$middle,
+                  upper = .data$upper,
+                  ymax = .data$ymax),show.legend=F) +
+    geom_boxplot(stat="identity",aes(fill=.data$annot)) + 
+    geom_point(data=outliers, aes(x=.data$annot, y=.data$values), inherit.aes=FALSE, size=1, show.legend=F) + #add outliers
+    theme_bw() + #change theme
+    fill_definition + #color scale
+    theme(text= element_text(size=14)) + #change font sizes
+    ylab(paste0("Correlation (",corr_method,")")) + #y axis title
+    xlab(col_of_interest) + #x axis title
+    labs(colour = col_of_interest) + #legend title
+    ggtitle(paste0("Intra-group correlations (",corr_method,"): ",ome)) #plot title
+
+print(g)
 }
 

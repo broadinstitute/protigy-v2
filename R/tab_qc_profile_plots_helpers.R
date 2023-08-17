@@ -31,7 +31,7 @@ create_profile_plot <- function (gct, col_of_interest, ome, custom_color_map = N
     color_definition <- scale_colour_manual(values = colors)
   } else {
     group <- as.numeric(group)
-    fill_definition <- scale_colour_gradient2(
+    color_definition <- scale_colour_gradient2(
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],

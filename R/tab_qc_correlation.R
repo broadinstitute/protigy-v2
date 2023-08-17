@@ -132,7 +132,7 @@ QCCorrelation_Ome_UI <- function (id, ome) {
     # Correlation plots
     fluidRow(shinydashboardPlus::box(
       plotOutput(ns("qc_corr_heatmap"), height="auto"),
-      plotlyOutput(ns("qc_corr_boxplot")),
+      plotOutput(ns("qc_corr_boxplot")),
       sidebar = boxSidebar(
         uiOutput(ns("qc_correlation_sidebar_contents")),
         id = ns("qc_correlation_sidebar"),
@@ -246,8 +246,8 @@ QCCorrelation_Ome_Server <- function(id,
     )
     
     # render summary plot
-    output$qc_corr_boxplot <- renderPlotly(
-      ggplotly(qc_corr_boxplot_reactive(), tooltip = "text")
+    output$qc_corr_boxplot <- renderPlot(
+      qc_corr_boxplot_reactive()
     )
     
     # sidebar contents

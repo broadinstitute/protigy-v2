@@ -30,6 +30,11 @@ app_UI <- function(request) {dashboardPage(
                customizeTabUI(),
                icon = icon("wand-magic-sparkles")),
       tabPanel("Summary", summaryTabUI()),
+      navbarMenu(
+        "QC",
+        tabPanel("Boxplots",QCBoxplots_Tab_UI()),
+        tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
+        tabPanel("Correlation", QCCorrelation_Tab_UI())),
       tabPanel("Statistics"),
       navbarMenu(
         "Clustering",
@@ -48,11 +53,6 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("1"),
         tabPanel("2")),
       tabPanel("Table"),
-      navbarMenu(
-        "QC",
-        tabPanel("Boxplots",QCBoxplots_Tab_UI()),
-        tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
-        tabPanel("Correlation", QCCorrelation_Tab_UI())),
       navbarMenu(
         "Multi-ome",
         tabPanel('Heatmap', multiomeHeatmapTabUI()),
