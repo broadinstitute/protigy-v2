@@ -12,8 +12,11 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   
   #sort matrix by annotation
   mat <- gct@mat
-  group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
+  group <- as.character(gct@cdesc[[col_of_interest]])
   annot <- data.frame('sample'=colnames(mat),"annot"=group)
+  #replace NA with characters so that colors map appropriately
+  annot$annot[is.na(annot$annot)]="NA"
+  annot$annot <- as.factor(annot$annot)
   mat <- mat[,order(annot$annot)]
   annot <- annot[order(annot$annot),]
   colnames(annot)[2] = col_of_interest
@@ -23,7 +26,7 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   corr <- cor(mat, use="pairwise.complete.obs", method=corr_method)
   
   #get font size
-  font.size <- scale_font_size(dimension=dim(corr)[1], max.size = 8)
+  font.size <- scale_font_size(dimension=dim(corr)[1], max.size = 8, scale.factor=60)
   
   #if font size is too small, don't show
   if(font.size<8){
@@ -44,9 +47,8 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   
   #create heatmap using ComplexHeatmap
   
-  #Heatmap dimensions
+  #Heatmap height (to return)
   a <- unit(3, "mm")
-  width <- ncol(corr) * a 
   height <- nrow(corr) * a
   
   # Column annotation
@@ -71,10 +73,6 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
                   legend_direction = "vertical",
                   legend_width = unit(50, "mm")
                 ),
-                #width = width,
-                #height = height,
-                column_title = "Sample",
-                row_title = "Sample",
                 row_title_rot = 0,
                 cluster_rows = F,
                 cluster_columns = F,
@@ -84,15 +82,17 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
                 left_annotation = row_ha,
                 show_row_names = show_names,
                 show_column_names = show_names,
-                name = 'relative abundance',
                 column_names_side = "top",
                 column_gap = unit(1, "mm"),
                 row_names_side="left",
                 row_names_gp=grid::gpar(fontsize = font.size),
-                column_names_gp=grid::gpar(fontsize = font.size)
+                column_names_gp=grid::gpar(fontsize = font.size),
+                column_title=paste0("Correlation heatmap (",corr_method,")"),
+                column_title_gp=grid::gpar(fontsize=18),
+                row_title=NULL
   )
   
-  return(HM)
+  return(list(HM=HM,Table=corr))
   
 }
 
@@ -105,7 +105,17 @@ draw_corr_HM <- function(HM) {
 }
 
 
-#create correlation boxplot
+## function to dynamically determine the height (in px) of the heatmap
+## depending on the number of genes
+dynamicHeightHMCorr <- function(n.entries){
+  height <- 0.3*(n.entries+12) + 3  ## height in inch
+  height <- height * 24             ##1/2 inch  to pixel
+  
+  return(height)
+}
+
+## Create correlation boxplot
+
 create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL) {
   
   # convert to long format
@@ -154,5 +164,6 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
       ylab("Density") + #y axis title
       xlab("Expression") + #x axis title
       labs(colour = col_of_interest) + #legend title
-      ggtitle("Correlation boxplot")
+      ggtitle("Intra-group correlations") #plot title
 }
+

@@ -129,10 +129,10 @@ QCCorrelation_Ome_UI <- function (id, ome) {
   ns <- NS(id)
   
   tagList(
-    
-    # Correlation heatmap
+    # Correlation plots
     fluidRow(shinydashboardPlus::box(
-      plotOutput(ns("qc_corr_heatmap")),
+      plotOutput(ns("qc_corr_heatmap"), height="auto"),
+      plotlyOutput(ns("qc_corr_boxplot")),
       sidebar = boxSidebar(
         uiOutput(ns("qc_correlation_sidebar_contents")),
         id = ns("qc_correlation_sidebar"),
@@ -142,20 +142,9 @@ QCCorrelation_Ome_UI <- function (id, ome) {
       ),
       status = "primary",
       width = 12,
-      title = "Correlation Heatmap",
+      title = "Correlation Plots",
       headerBorder = TRUE,
-      solidHeader = TRUE
-    )),
-    
-    #Correlation boxplot
-    fluidRow(shinydashboardPlus::box(
-      plotlyOutput(ns("qc_corr_boxplot")),
-      status = "primary",
-      width = 12,
-      title = "Intra-Sample Correlation Boxplot",
-      headerBorder = TRUE,
-      solidHeader = TRUE
-    ))
+      solidHeader = TRUE))
   )
 }
 
@@ -177,7 +166,7 @@ QCCorrelation_Ome_Server <- function(id,
     ## CORRELATION HEATMAP ##
     
     # reactive
-    qc_corr_heatmap_reactive <- eventReactive(
+    qc_corr_heatmap_out <- eventReactive(
       eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
@@ -198,17 +187,31 @@ QCCorrelation_Ome_Server <- function(id,
         }
         
         # generate plot
-         HM <- create_corr_heatmap(gct = GCT_processed(),
+         create_corr_heatmap(gct = GCT_processed(),
                               col_of_interest = annot_column,
                               ome = ome,
                               custom_color_map = annot_color_map)
-          draw_corr_HM(HM)
       }
     )
     
+    qc_corr_heatmap_reactive <- reactive({
+      validate(need(qc_corr_heatmap_out()$HM, "Heatmap not avaliable"))
+      draw_corr_HM(qc_corr_heatmap_out()$HM)
+    })
+    
+    #get plot height
+    Corr.HM.Table <- reactive(qc_corr_heatmap_out()$Table)
+    corr_plot_height <- reactive({
+      tryCatch(
+        dynamicHeightHMCorr(nrow(Corr.HM.Table())), 
+        error = function(c) 400
+      )
+    })
+    
     # render heatmap
     output$qc_corr_heatmap <- renderPlot(
-      qc_corr_heatmap_reactive()
+      qc_corr_heatmap_reactive(),
+      height=corr_plot_height()
     )
     
     ## CORRELATION BOXPLOT ##
@@ -266,11 +269,11 @@ QCCorrelation_Ome_Server <- function(id,
     
     
     qc_corr_heatmap_export_function <- function(dir_name) {
-      req(HM.out()$HM)
+      req(qc_corr_heatmap_out()$HM)
       pdf(file = file.path(dir_name, paste0("qc_corr_heatmap", ome, ".pdf")),
           width = 1400/72,
-          height = (plot_height() + 48)/72)
-      draw_corr_HM(HM.out()$HM)
+          height = (corr_plot_height() + 48)/72)
+      draw_corr_HM(qc_corr_heatmap_out()()$HM)
       dev.off()
     }
     
