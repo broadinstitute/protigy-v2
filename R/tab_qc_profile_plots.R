@@ -135,6 +135,7 @@ QCProfilePlots_Ome_UI <- function (id, ome) {
     # profile plots
     fluidRow(shinydashboardPlus::box(
       plotlyOutput(ns("qc_profile_plot_org")),
+      br(),
       plotlyOutput(ns("qc_profile_plot_norm")),
       sidebar = boxSidebar(
         uiOutput(ns("qc_profile_plots_sidebar_contents")),

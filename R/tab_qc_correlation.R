@@ -131,8 +131,9 @@ QCCorrelation_Ome_UI <- function (id, ome) {
   tagList(
     # Correlation plots
     fluidRow(shinydashboardPlus::box(
-      plotOutput(ns("qc_corr_heatmap"), height="auto"),
       plotOutput(ns("qc_corr_boxplot")),
+      br(),
+      plotOutput(ns("qc_corr_heatmap"), height="auto"),
       sidebar = boxSidebar(
         uiOutput(ns("qc_correlation_sidebar_contents")),
         id = ns("qc_correlation_sidebar"),

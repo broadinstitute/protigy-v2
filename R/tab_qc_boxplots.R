@@ -135,6 +135,7 @@ QCBoxplots_Ome_UI <- function (id, ome) {
     # boxplots
     fluidRow(shinydashboardPlus::box(
       plotOutput(ns("qc_boxplot_org")),
+      br(),
       plotOutput(ns("qc_boxplot_norm")),
       sidebar = boxSidebar(
         uiOutput(ns("qc_boxplots_sidebar_contents")),

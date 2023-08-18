@@ -67,11 +67,17 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
     annotation_legend_param = list(annot = list(title=col_of_interest))
   )
   
+  #color scale
+  col_fun = colorRamp2(c(-1,-0.5,0,0.5,1), 
+                            c("#2166ac","#92c5de","white","#f4a582","#b2182b"))
+  
   HM <- Heatmap(corr,
                 heatmap_legend_param = list(
                   title = paste0("correlation (",corr_method,")"),
                   legend_direction = "vertical",
-                  legend_width = unit(50, "mm")
+                  legend_width = unit(50, "mm"),
+                  at = c(-1,-0.5,0,0.5,1),
+                  col_fun=col_fun
                 ),
                 row_title_rot = 0,
                 cluster_rows = F,
