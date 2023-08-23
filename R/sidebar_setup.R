@@ -128,7 +128,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           idx <- which(already_parsed_files == file$datapath)
           new_parameters[[label]] <<- parameters_internal_reactive()[[idx]]
           
-        # otherwise use the defaults
+          # otherwise use the defaults
         } else {
           new_parameters[[label]] <<- c(gct_file_path = file$datapath,
                                         gct_file_name = file$name,
@@ -156,7 +156,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 incProgress(amount = 1)
                 return(GCTs_unprocessed_internal_reactive()[[parsed_label]])
                 
-              # otherwise, parse the GCT
+                # otherwise, parse the GCT
               } else {
                 gct <- parse_gctx(p$gct_file_path)
                 incProgress(amount = 1)
@@ -182,7 +182,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       handlerExpr = {
         # get the correct label for this file
         label = names(parameters_internal_reactive())[backNextLogic$place]
-
+        
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns,
                                                    label = label,
@@ -213,7 +213,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           output$rightButton <- renderUI({actionButton_icon_right(
             ns("nextButton"), "Next", icon = icon("chevron-right"))})
         }
-    })
+      })
     
     # update parameter choices when intensity data is toggled
     current_intensity <- reactive({
@@ -311,7 +311,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
       }
     })
-
+    
     # logic for when back button is clicked
     observeEvent(input$backButton, {
       if (backNextLogic$place > 1) {
@@ -405,7 +405,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       globals$default_ome <- input$default_ome,
       ignoreInit = TRUE)
     
-
+    
     
     
     ### LOCAL HELPER FUNCTIONS ###
@@ -471,4 +471,3 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
   }) # end moduleServer
 } # end setupSidebarServer
-

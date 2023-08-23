@@ -60,9 +60,9 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
   # make plot
   
   # if type=norm but no normalization, make an empty ggplot with appropriate title
-  if(type=="norm" & parameters$data_normalization=="None"){
+  if(type=="norm" & parameters$data_normalization=="None" & parameters$max_missing==100 & parameters$data_filter=="None"){
     g <- ggplot() + theme_void() +
-      ggtitle(paste("No normalization performed for",ome)) +
+      ggtitle(paste("No normalization or filtering performed for",ome)) +
       theme(text= element_text(size=14))
   } else{
     g <- ggplot(data = stats,    #base boxplot with calculated stats
@@ -81,7 +81,7 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
       ylab("Expression") + #y axis title
       xlab("Sample") + #x axis title
       labs(colour = col_of_interest) + #legend title
-      ggtitle(ifelse(type=="org", paste("Boxplot before normalization:", ome), paste("Boxplot after normalization:",ome))) #plot title
+      ggtitle(ifelse(type=="org", paste("Boxplot before normalization and filtering:", ome), paste("Boxplot after normalization and filtering:",ome))) #plot title
     
     # if font size is too small, hide the labels
     if(font.size < 8){

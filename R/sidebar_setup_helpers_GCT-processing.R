@@ -83,11 +83,17 @@ processGCTs <- function(GCTs, parameters) {
                 sd.perc = params$data_filter_sd_pct)
               
               incProgress(1, detail = "compiling results")
-    
-              ## re-compine GCT and return
+              
+              #update cdesc and rdesc if needed
+              cdesc <- cdesc[rownames(cdesc)%in%colnames(data.filtered),,drop=F]
+              rdesc <- rdesc[rownames(rdesc)%in%rownames(data.filtered),,drop=F]
+              
+              ## re-combine GCT and return
               processed_GCT <- GCT(cdesc = cdesc, 
                                    rdesc = rdesc,
-                                   mat = data.filtered)
+                                   mat = data.filtered,
+                                   cid=colnames(data.filtered),
+                                   rid=rownames(data.filtered))
               
               return(list(processed_GCT = processed_GCT, params = params))
             }
@@ -98,7 +104,7 @@ processGCTs <- function(GCTs, parameters) {
   
   # have the whole output be NULL if there was an error
   if (any(sapply(processing_out, is.null))) return(NULL)
-    
+  
   # otherwise, continue
   # pull out the GCTs and updated parameters separately
   GCTs_processed <- sapply(processing_out, 
@@ -196,7 +202,7 @@ perform_data_normalization <- function(data, method, cdesc,
       # perform regular normalization
       data.norm <- normalize.data(data, method)
     }
-
+    
     # if two-component norm fails....
     if(inherits(data.norm, 'try-error')){
       # reset to no normalization
@@ -221,7 +227,7 @@ perform_data_normalization <- function(data, method, cdesc,
 # maximum missing value filter
 perform_missing_filter <- function(data, max_missing) {
   missing_percent <- apply(data, 1, function(x) sum(is.na(x))/length(x))
-  data <- data[missing_percent <= max_missing, ]
+  data <- data[missing_percent <= max_missing/100, ]
   return(data)
 }
 
@@ -261,7 +267,7 @@ validateGCT <- function(gct) {
   mat <- gct@mat
   cdesc <- gct@cdesc
   rdesc <- gct@rdesc
-
+  
   # check that rdesc matches row names
   if (!setequal(rownames(mat), rownames(rdesc))) {
     stop("GCT data row names not match `rdesc` row names.")
@@ -327,7 +333,7 @@ merge_processed_gcts <- function(GCTs_processed) {
     # cmapR::merge_gct will override any conflicting annotation columns in cdesc
     # with whatever is in the first GCT. Instead, we want to duplicate conflict
     # columns so no data is lost.
-
+    
     # figure out which columns conflict with other omes
     conflict_columns <- c()
     for (i in seq_along(GCTs_processed)) {
@@ -383,20 +389,19 @@ merge_processed_gcts <- function(GCTs_processed) {
       # make sure samples are in the same order as they are in GCTs_merged
       all_samples <- rownames(GCTs_merged@cdesc)
       new_columns <- as.data.frame(sapply(omes_with_col, 
-             function(ome) GCTs_processed[[ome]]@cdesc[all_samples, col],
-             simplify = FALSE))
+                                          function(ome) GCTs_processed[[ome]]@cdesc[all_samples, col],
+                                          simplify = FALSE))
       names(new_columns) <- new_col_names
       
-
+      
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
         dplyr::mutate(new_columns, .after = .data[[col]]) %>% 
         dplyr::select(-.data[[col]])
     }
     
     setProgress(1)
-  
+    
   })
   
   return(GCTs_merged)
 }
-
