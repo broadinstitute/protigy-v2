@@ -34,7 +34,8 @@ app_UI <- function(request) {dashboardPage(
         "QC",
         tabPanel("Boxplots",QCBoxplots_Tab_UI()),
         tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
-        tabPanel("Correlation", QCCorrelation_Tab_UI())),
+        tabPanel("Correlation", QCCorrelation_Tab_UI()),
+        tabPanel("PCA")),
       tabPanel("Statistics"),
       navbarMenu(
         "Clustering",
@@ -46,10 +47,6 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("2")),
       navbarMenu(
         "Scatterplots",
-        tabPanel("1"),
-        tabPanel("2")),
-      navbarMenu(
-        "PCA",
         tabPanel("1"),
         tabPanel("2")),
       tabPanel("Table"),

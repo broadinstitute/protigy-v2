@@ -265,7 +265,7 @@ QCProfilePlots_Ome_Server <- function(id,
     
     qc_profile_plot_org_export_function <- function(dir_name) {
       ggsave(
-        filename = paste0("qc_profile_plot_org", ome, ".pdf"), 
+        filename = paste0("qc_profile_plot_org_", ome, ".pdf"), 
         plot = qc_profile_plot_org_reactive(), 
         device = 'pdf',
         path = dir_name,
@@ -277,7 +277,7 @@ QCProfilePlots_Ome_Server <- function(id,
     
     qc_profile_plot_norm_export_function <- function(dir_name) {
       ggsave(
-        filename = paste0("qc_profile_plot_norm", ome, ".pdf"), 
+        filename = paste0("qc_profile_plot_norm_", ome, ".pdf"), 
         plot = qc_profile_plot_norm_reactive(), 
         device = 'pdf',
         path = dir_name,

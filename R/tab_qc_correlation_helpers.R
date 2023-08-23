@@ -25,16 +25,6 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   #pearson is default - allows us to change later if we want
   corr <- cor(mat, use="pairwise.complete.obs", method=corr_method)
   
-  #get font size
-  font.size <- scale_font_size(dimension=dim(corr)[1], max.size = 8, scale.factor=60)
-  
-  #if font size is too small, don't show
-  if(font.size<8){
-    show_names=F
-  }else{
-    show_names=T
-  }
-  
   #get colors if defined
   #otherwise just use default colors
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
@@ -46,10 +36,6 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   }
   
   #create heatmap using ComplexHeatmap
-  
-  #Heatmap height (to return)
-  a <- unit(3, "mm")
-  height <- nrow(corr) * a
   
   # Column annotation
   ha <- HeatmapAnnotation(
@@ -69,7 +55,7 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   
   #color scale
   col_fun = colorRamp2(c(-1,-0.5,0,0.5,1), 
-                            c("#2166ac","#92c5de","white","#f4a582","#b2182b"))
+                            c("#2166ac","#92c5de","white","#fddbc7","#b2182b"))
   
   HM <- Heatmap(corr,
                 heatmap_legend_param = list(
@@ -79,6 +65,7 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
                   at = c(-1,-0.5,0,0.5,1),
                   col_fun=col_fun
                 ),
+                col=col_fun,
                 row_title_rot = 0,
                 cluster_rows = F,
                 cluster_columns = F,
@@ -86,13 +73,11 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
                 column_split = annot[,col_of_interest], 
                 top_annotation = ha,
                 left_annotation = row_ha,
-                show_row_names = show_names,
-                show_column_names = show_names,
                 column_names_side = "top",
                 column_gap = unit(1, "mm"),
                 row_names_side="left",
-                row_names_gp=grid::gpar(fontsize = font.size),
-                column_names_gp=grid::gpar(fontsize = font.size),
+                row_names_gp=grid::gpar(fontsize = 10),
+                column_names_gp=grid::gpar(fontsize = 10),
                 column_title=paste0("Correlation heatmap (",corr_method,")"),
                 column_title_gp=grid::gpar(fontsize=18),
                 row_title=NULL
@@ -115,41 +100,37 @@ draw_corr_HM <- function(HM) {
 ## depending on the number of genes
 dynamicHeightHMCorr <- function(n.entries){
   height <- 0.3*(n.entries+12) + 3  ## height in inch
-  height <- height * 24             ##1/2 inch  to pixel
+  height <- height * 36             ##3/4 inch  to pixel
   
   return(height)
 }
 
 ## Create correlation boxplot
 
-create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL,corr_method="pearson") {
+create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL,corr_method="pearson",cor.matrix) {
   
   #sort matrix by annotation
   mat <- gct@mat
-  group <- factor(as.character(gct@cdesc[[col_of_interest]]))
+  group <- as.character(gct@cdesc[[col_of_interest]])
   annot <- data.frame('sample'=colnames(mat),"annot"=group)
+  #replace NA with characters so that colors map appropriately
+  annot$annot[is.na(annot$annot)]="NA"
+  annot$annot <- as.factor(annot$annot)
   mat <- mat[,order(annot$annot)]
   annot <- annot[order(annot$annot),]
   
+  #calculate correlation matrix
+  #pearson is default - allows us to change later if we want
+  corr <- cor(mat, use="pairwise.complete.obs", method=corr_method)
+  
   # calculate the correlation for each subgroup
-  # then get the boxplot statistics
   cor.group <- lapply(unique(annot$annot), function(x){
-    cm.grp <- cor(mat[,annot$annot==x],use="pairwise.complete.obs",method=corr_method)
+    cm.grp <- corr[annot$annot==x,annot$annot==x]
     cm.grp <- cm.grp[upper.tri(cm.grp, diag = FALSE)]
-    stats <- boxplot.stats(cm.grp)
-    return(stats)
+    return(cm.grp)
   })
   names(cor.group) <- unique(annot$annot)
-  
-  # get the statistics
-  stats <- as.data.frame(t(sapply(cor.group,"[[","stats")))
-  colnames(stats) <- c("ymin","lower","middle","upper","ymax")
-  stats$annot <- rownames(stats)
-  
-  #get the outliers and add annotation information
-  outliers <- sapply(cor.group,"[[","out")
-  outliers <- stack(outliers)
-  colnames(outliers) <- c("values","annot")
+  plot.data <- stack(cor.group)
   
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
@@ -157,7 +138,7 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
     color_defintion <- NULL
   } else if (custom_color_map$is_discrete) {
     colors <- c(unlist(custom_color_map$colors),"gray50")
-    names(colors) <- c(custom_color_map$vals,NA)
+    names(colors) <- c(custom_color_map$vals,"NA")
     fill_definition <- scale_fill_manual(values = colors)
   } else {
     group <- as.numeric(group)
@@ -171,23 +152,17 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
   }
   
   # make boxplot
-  g <- ggplot(data = stats,  
-              aes(x = .data$annot,  
-                  ymin = .data$ymin,
-                  lower = .data$lower,
-                  middle = .data$middle,
-                  upper = .data$upper,
-                  ymax = .data$ymax),show.legend=F) +
-    geom_boxplot(stat="identity",aes(fill=.data$annot)) + 
-    geom_point(data=outliers, aes(x=.data$annot, y=.data$values), inherit.aes=FALSE, size=1, show.legend=F) + #add outliers
+  ggplot(data = plot.data,  
+              aes(x = .data$ind,  
+                  y = .data$values)) +
+    geom_boxplot(aes(fill=.data$ind)) + 
     theme_bw() + #change theme
     fill_definition + #color scale
-    theme(text= element_text(size=14)) + #change font sizes
+    theme(text= element_text(size=12)) + #change font sizes
     ylab(paste0("Correlation (",corr_method,")")) + #y axis title
     xlab(col_of_interest) + #x axis title
-    labs(colour = col_of_interest) + #legend title
+    labs(fill = col_of_interest) + #legend title
     ggtitle(paste0("Intra-group correlations (",corr_method,"): ",ome)) #plot title
 
-print(g)
 }
 

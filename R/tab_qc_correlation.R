@@ -131,7 +131,7 @@ QCCorrelation_Ome_UI <- function (id, ome) {
   tagList(
     # Correlation plots
     fluidRow(shinydashboardPlus::box(
-      plotOutput(ns("qc_corr_boxplot")),
+      plotlyOutput(ns("qc_corr_boxplot")),
       br(),
       plotOutput(ns("qc_corr_heatmap"), height="auto"),
       sidebar = boxSidebar(
@@ -247,8 +247,8 @@ QCCorrelation_Ome_Server <- function(id,
     )
     
     # render summary plot
-    output$qc_corr_boxplot <- renderPlot(
-      qc_corr_boxplot_reactive()
+    output$qc_corr_boxplot <- renderPlotly(
+      ggplotly(qc_corr_boxplot_reactive())
     )
     
     # sidebar contents
@@ -271,16 +271,16 @@ QCCorrelation_Ome_Server <- function(id,
     
     qc_corr_heatmap_export_function <- function(dir_name) {
       req(qc_corr_heatmap_out()$HM)
-      pdf(file = file.path(dir_name, paste0("qc_corr_heatmap", ome, ".pdf")),
-          width = 1400/72,
+      pdf(file = file.path(dir_name, paste0("qc_corr_heatmap_", ome, ".pdf")),
+          width = (corr_plot_height() + 48)/72,
           height = (corr_plot_height() + 48)/72)
-      draw_corr_HM(qc_corr_heatmap_out()()$HM)
+      draw_corr_HM(qc_corr_heatmap_out()$HM)
       dev.off()
     }
     
     qc_corr_boxplot_export_function <- function(dir_name) {
       ggsave(
-        filename = paste0("qc_corr_boxplot", ome, ".pdf"), 
+        filename = paste0("qc_corr_boxplot_", ome, ".pdf"), 
         plot = qc_corr_boxplot_reactive(), 
         device = 'pdf',
         path = dir_name,
