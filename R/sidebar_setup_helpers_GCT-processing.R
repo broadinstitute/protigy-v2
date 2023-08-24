@@ -3,6 +3,73 @@
 # The main processGCT()` function and it's helpers
 ################################################################################
 
+# function to transform original GCT file so it is comparable to processed GCT file
+# INPUT: parameters list from setup, list of parsed GCTs
+# OUTPUT: transformed GCTs without filtering or normalization
+transformGCTs <- function(GCTs, parameters) {
+  
+  message("\nProcessing GCTs...")
+  
+  processing_out <- mapply(
+    GCTs, names(GCTs),
+    SIMPLIFY = FALSE,
+    USE.NAMES = TRUE,
+    FUN = function(gct, ome) {
+      
+      # wrap everything in a try/catch statement
+      my_shinyalert_tryCatch(
+        text.warning = paste0("<b>Warning in ", ome, ":</b>"),
+        append.warning = TRUE,
+        text.error = paste0("<b>Error in ", ome, ":</b>"),
+        append.error = TRUE,
+        return.error = NULL,
+        expr = {
+          
+          # also wrap everything in a withProgress
+          withProgress(
+            min = 0,
+            max = 6, # number of preprocessing steps
+            message = paste0("Processing ", ome, ":"),
+            expr = {
+              ## validate GCT
+              gct <- validateGCT(gct)
+              
+              ## extract data and parameters
+              cdesc <- gct@cdesc
+              rdesc <- gct@rdesc
+              data <- gct@mat
+              params <- parameters[[ome]]
+              
+              ## remove unnecesary elements from parameters
+              if (!params$group_normalization) {
+                params$group_normalization_column <- NULL
+              }
+              if (params$data_filter != "StdDev") {
+                params$data_filter_sd_pct <- NULL
+              }
+              
+              incProgress(1, detail = "log transformation")
+              
+              ## log transformation
+              output_list <- perform_log_transformation(data, params$log_transformation)
+              data.log.trans <- output_list$data.log.trans
+              params$log_transformation <- output_list$updated_method
+              
+              ## re-combine GCT and return
+              transformed_GCT <- GCT(cdesc = cdesc, 
+                                   rdesc = rdesc,
+                                   mat = data.log.trans,
+                                   cid=colnames(data.log.trans),
+                                   rid=rownames(data.log.trans))
+              
+              return(transformed_GCT)
+            }
+          )
+        }
+      )
+    })
+}
+
 # function to parse, normalize, filter, etc. GCT file(s)
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: named list of processed GCTs, updated parameters

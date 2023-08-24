@@ -352,12 +352,16 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # call processGCTs function in a tryCatch
       processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
       
+      # also transform the original GCTs
+      transformation_output <- transformGCTs(GCTs = GCTs, parameters = parameters)
+      
       if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
         GCTs_and_params(processing_output) 
         
         # save the original GCTs for output
-        GCTs_original(GCTs)
+        # these have been log transformed if selected
+        GCTs_original(transformation_output)
         
         # increment gctsGO reactiveVal to show that processing is done
         gctsGO(gctsGO() + 1)

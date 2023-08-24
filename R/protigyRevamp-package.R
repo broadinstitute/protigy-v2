@@ -27,5 +27,6 @@
 #' @importFrom utils tail stack
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
+#' @importFrom stats cor
 ## usethis namespace: end
 NULL
