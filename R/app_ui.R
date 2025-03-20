@@ -7,7 +7,7 @@
 ################################################################################
 
 app_UI <- function(request) {dashboardPage(
-  dashboardHeader(title = 'New Protigy?'),
+  dashboardHeader(title = 'Protigy v2.0'),
   
   shinydashboard::dashboardSidebar(
     setupSidebarUI()
