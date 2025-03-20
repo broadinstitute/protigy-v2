@@ -12,7 +12,7 @@ helpAnalysisTabUI <- function(id = "helpTab") {
       shinydashboardPlus::box(
         includeMarkdown(
           system.file("help_documentation/protigy_analysis_help.md", 
-                      package = "protigyRevamp")
+                      package = "Protigy")
         ),
         width = 12,
         headerBorder = FALSE

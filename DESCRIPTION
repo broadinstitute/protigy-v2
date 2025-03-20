@@ -1,6 +1,6 @@
-Package: protigyRevamp
-Title: Revamp of the original Protigy app
-Version: 0.1.0
+Package: Protigy
+Title: Proteomics Toolset for Integrative Data Analysis
+Version: 1.0.0
 Authors@R: c(
     person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
     person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),

@@ -57,8 +57,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     gctsGO <- reactiveVal(0)
     
     # read in default settings and choices from yamls
-    default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'protigyRevamp'))
-    parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'protigyRevamp'))
+    default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
+    parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
     
     
     ### STEP 1: LABEL ASSIGNMENT ###

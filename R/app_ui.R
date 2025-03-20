@@ -7,7 +7,7 @@
 ################################################################################
 
 app_UI <- function(request) {dashboardPage(
-  dashboardHeader(title = 'Protigy v2.0'),
+  dashboardHeader(title = 'Protigy'),
   
   shinydashboard::dashboardSidebar(
     setupSidebarUI()
@@ -15,7 +15,7 @@ app_UI <- function(request) {dashboardPage(
   
   dashboardBody(
     # include custom CSS
-    includeCSS(system.file("custom.css", package = "protigyRevamp")),
+    includeCSS(system.file("custom.css", package = "Protigy")),
   
     navbarPage(
       title = '',
