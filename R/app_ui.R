@@ -26,9 +26,9 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
         icon = icon("question")
       ),
-      tabPanel("Customize", 
-               customizeTabUI(),
-               icon = icon("wand-magic-sparkles")),
+      # tabPanel("Customize", 
+      #          customizeTabUI(),
+      #          icon = icon("wand-magic-sparkles")),
       tabPanel("Summary", summaryTabUI()),
       navbarMenu(
         "QC",
@@ -36,25 +36,26 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
         tabPanel("Correlation", QCCorrelation_Tab_UI()),
         tabPanel("PCA")),
-      tabPanel("Statistics"),
-      navbarMenu(
-        "Clustering",
-        tabPanel("Static Heatmap"),
-        tabPanel("Fan Plot")),
-      navbarMenu(
-        "Volcanos",
-        tabPanel("1"),
-        tabPanel("2")),
-      navbarMenu(
-        "Scatterplots",
-        tabPanel("1"),
-        tabPanel("2")),
-      tabPanel("Table"),
+      #tabPanel("Statistics"),
+      # navbarMenu(
+      #   "Clustering",
+      #   tabPanel("Static Heatmap"),
+      #   tabPanel("Fan Plot")),
+      # navbarMenu(
+      #   "Volcanos",
+      #   tabPanel("1"),
+      #   tabPanel("2")),
+      # navbarMenu(
+      #   "Scatterplots",
+      #   tabPanel("1"),
+      #   tabPanel("2")),
+      # tabPanel("Table"),
       navbarMenu(
         "Multi-ome",
-        tabPanel('Heatmap', multiomeHeatmapTabUI()),
-        tabPanel('Pair-wise correlation'),
-        tabPanel('More ideas?')),
+        tabPanel('Heatmap', multiomeHeatmapTabUI())
+        #tabPanel('Pair-wise correlation'),
+        #tabPanel('More ideas?')
+        ),
       tabPanel("Export", exportTabUI(), icon = icon("download")),
       
       #tabPanel("TEMPLATE", templateSingleOme_Tab_UI())
