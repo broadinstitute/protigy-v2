@@ -310,7 +310,7 @@ summaryOmeServer <- function(id, ome,
     )
     
     
-    ## COMPILE PLOTS FOR EXPORT ##
+    ## COMPILE PLOTS AND FILES FOR EXPORT ##
     quant_features_plot_export_function <- function(dir_name) {
       ggsave(
         filename = paste0("quantified_features_", ome, ".pdf"), 
@@ -335,10 +335,30 @@ summaryOmeServer <- function(id, ome,
       )
     }
     
+    GCT_original_export_function <- function(dir_name) {
+      write_gct(
+        ds = GCT_original(),
+        ofile = paste0("original_GCT_", ome, ".gct"), 
+        appenddim=F
+      )
+    }
+    
+    GCT_processed_export_function <- function(dir_name) {
+      write_gct(
+        ds = GCT_processed(),
+        ofile = paste0("processed_GCT_", ome, ".gct"), 
+        appenddim=F
+      )
+    }
+    
+    
+    
     
     return(list(
       quant_features_plot = quant_features_plot_export_function,
-      missing_value_distribution = missing_value_distribution_export_function
+      missing_value_distribution = missing_value_distribution_export_function,
+      GCT_original_export = GCT_original_export_function,
+      GCT_processed_export = GCT_processed_export_function
     ))
   })
 }
