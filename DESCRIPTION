@@ -41,7 +41,10 @@ Imports:
     utils,
     rlang,
     tidyr,
-    ggthemes
+    ggthemes,
+    ggfortify,
+    limma,
+    glue
 Depends:
     R (>= 4.0.0),
     shiny
