@@ -5,7 +5,7 @@
 ################################################################################
 
 ## plot PCA
-create_pca_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2) {
+create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2) {
   #browser()
   
   #sort matrix by annotation
@@ -50,8 +50,8 @@ create_pca_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     theme_bw() + #change theme
     theme(text= element_text(size=12)) + #change font sizes
     color_definition + #color scale
-    gggtitle(paste0("PCA plot by",col_of_interest,": ",ome)) + #main title
-    labs(colour = col_of_interest) #legend title
+    ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
+    labs(colour = col_of_interest)#legend title
 }
 
 ## calculate PCA regression
@@ -101,11 +101,11 @@ pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
 }
 
 ##plot PCA regression
-create_pca_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,components.max=10){
+create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,components.max=10){
   
   #get data and annotations
-  mat <- my.gct@mat
-  cdesc <- my.gct@cdesc
+  mat <- gct@mat
+  cdesc <- gct@cdesc
   
   #remove zero-variance columns and calculate PCA
   data.norm <- mat %>% data.frame() %>% drop_na() %>% t()

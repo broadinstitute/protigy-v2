@@ -11,6 +11,7 @@
 #' @import markdown
 #' @import limma
 #' @import glue
+#' @import ggfortify
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
@@ -30,6 +31,5 @@
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom stats cor
-#' @importFrom ggfortify autoplot
 ## usethis namespace: end
 NULL
