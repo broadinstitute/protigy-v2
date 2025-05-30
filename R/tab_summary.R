@@ -338,7 +338,7 @@ summaryOmeServer <- function(id, ome,
     GCT_original_export_function <- function(dir_name) {
       write_gct(
         ds = GCT_original(),
-        ofile = paste0("original_GCT_", ome, ".gct"), 
+        ofile = file.path(dir_name,paste0("original_GCT_", ome, ".gct")), 
         appenddim=F
       )
     }
@@ -346,7 +346,7 @@ summaryOmeServer <- function(id, ome,
     GCT_processed_export_function <- function(dir_name) {
       write_gct(
         ds = GCT_processed(),
-        ofile = paste0("processed_GCT_", ome, ".gct"), 
+        ofile = file.path(dir_name,paste0("processed_GCT_", ome, ".gct")), 
         appenddim=F
       )
     }

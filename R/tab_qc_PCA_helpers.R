@@ -5,7 +5,7 @@
 ################################################################################
 
 ## plot PCA
-create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2) {
+create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, labels=T) {
   #browser()
   
   #sort matrix by annotation
@@ -44,14 +44,25 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   }
   
   #create PCA plot using autoplot
-  g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest) + 
-    geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
-    geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
-    theme_bw() + #change theme
-    theme(text= element_text(size=12)) + #change font sizes
-    color_definition + #color scale
-    ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
-    labs(colour = col_of_interest)#legend title
+  if(labels){
+    g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest, shape=F, label.label="sample",label.size = 2.5) + 
+      geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
+      geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
+      theme_bw() + #change theme
+      theme(text= element_text(size=12)) + #change font sizes
+      color_definition + #color scale
+      ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
+      labs(colour = col_of_interest)
+  }else{
+    g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest) + 
+      geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
+      geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
+      theme_bw() + #change theme
+      theme(text= element_text(size=12)) + #change font sizes
+      color_definition + #color scale
+      ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
+      labs(colour = col_of_interest)
+  }
 }
 
 ## calculate PCA regression
