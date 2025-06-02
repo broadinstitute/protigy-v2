@@ -7,6 +7,6 @@
 # * https://testthat.r-lib.org/reference/test_package.html#special-files
 
 library(testthat)
-library(protigyRevamp)
+library(Protigy)
 
-test_check("protigyRevamp")
+test_check("Protigy")
