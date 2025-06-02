@@ -30,6 +30,6 @@
 #' @importFrom utils tail stack
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
-#' @importFrom stats cor
+#' @importFrom stats cor anova lm prcomp var
 ## usethis namespace: end
 NULL
