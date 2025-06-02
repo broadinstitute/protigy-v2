@@ -5,8 +5,12 @@
 ################################################################################
 
 ## plot PCA
-create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, labels=T) {
+create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, format=c("Points","Labels")) {
   #browser()
+  #print error message if PC1=PC2
+  if(comp.x==comp.y){
+    stop("PC1 and PC2 are equal. Please try again with different values for PC1 and PC2.")
+  }
   
   #sort matrix by annotation
   mat <- gct@mat
@@ -44,7 +48,7 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   }
   
   #create PCA plot using autoplot
-  if(labels){
+  if(format %in% "Labels"){
     g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest, shape=F, label.label="sample",label.size = 2.5) + 
       geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
       geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
@@ -53,7 +57,7 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
       color_definition + #color scale
       ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
       labs(colour = col_of_interest)
-  }else{
+  }else if (format %in% "Points"){
     g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest) + 
       geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
       geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +

@@ -163,14 +163,61 @@ QCPCA_Ome_Server <- function(id,
     
     # get namespace, use in renderUI-like functions
     ns <- session$ns
+    
+    # sidebar contents
+    output$qc_PCA_sidebar_contents <- renderUI({
+      req(GCT_processed())
+      
+      tagList(
+        add_css_attributes(
+          selectInput(
+            ns("qc_PCA_annotation"),
+            "Group by",
+            choices = names(GCT_processed()@cdesc),
+            selected = default_annotation_column()),
+          classes = "small-input",
+          styles = "margin-right: 10px"
+        ),
+        
+        add_css_attributes(
+          selectInput(
+            ns("qc_PCA_PC1"),
+            "PC1",
+            choices = 1:10,
+            selected = 1),
+          classes = "small-input",
+          styles = "margin-right: 10px"
+        ),
+        
+        add_css_attributes(
+          selectInput(
+            ns("qc_PCA_PC2"),
+            "PC2",
+            choices = 1:10,
+            selected = 2),
+          classes = "small-input",
+          styles = "margin-right: 10px"
+        ),
+        
+        add_css_attributes(
+          selectInput(
+            ns("qc_PCA_format"),
+            "Format",
+            choices = c("Points","Labels"),
+            selected = "Labels"),
+          classes = "small-input",
+          styles = "margin-right: 10px"
+        )
+      )
+    })
 
     ## PCA PLOT ##
     
     # reactive
     qc_PCA_plot_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, color_map()), 
+      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, input$qc_PCA_format, color_map()), 
       valueExpr = {
-        req(GCT_processed(), default_annotation_column(), color_map())
+        req(GCT_processed(), default_annotation_column(), color_map(),input$qc_PCA_format)
         
         # get annotation column
         if (!is.null(input$qc_PCA_annotation)) {
@@ -191,7 +238,10 @@ QCPCA_Ome_Server <- function(id,
         create_PCA_plot(gct = GCT_processed(),
                             col_of_interest = annot_column,
                             ome = ome,
-                            custom_color_map = annot_color_map)
+                            custom_color_map = annot_color_map,
+                            comp.x = as.numeric(input$qc_PCA_PC1),
+                            comp.y = as.numeric(input$qc_PCA_PC2),
+                            format = input$qc_PCA_format)
       }
     )
     
@@ -199,21 +249,6 @@ QCPCA_Ome_Server <- function(id,
     output$qc_PCA_plot <- renderPlotly(
       ggplotly(qc_PCA_plot_reactive())
     )
-    
-    # sidebar contents
-    output$qc_PCA_sidebar_contents <- renderUI({
-      req(GCT_processed())
-      
-      add_css_attributes(
-        selectInput(
-          ns("qc_PCA_annotation"),
-          "Group by",
-          choices = names(GCT_processed()@cdesc),
-          selected = default_annotation_column()),
-        classes = "small-input",
-        styles = "margin-right: 10px"
-      )
-    })
     
     ## PCA REGRESSION ##
     
@@ -250,21 +285,6 @@ QCPCA_Ome_Server <- function(id,
     output$qc_PCA_reg <- renderPlotly(
       ggplotly(qc_PCA_reg_reactive())
     )
-    
-    # sidebar contents
-    output$qc_PCA_sidebar_contents <- renderUI({
-      req(GCT_processed())
-      
-      add_css_attributes(
-        selectInput(
-          ns("qc_PCA_annotation"),
-          "Group by",
-          choices = names(GCT_processed()@cdesc),
-          selected = default_annotation_column()),
-        classes = "small-input",
-        styles = "margin-right: 10px"
-      )
-    })
     
     ## COMPILE EXPORTS ##
     
