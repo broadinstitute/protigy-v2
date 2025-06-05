@@ -33,6 +33,32 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original
   )
   
+  ## QC boxplots module
+  all_QCBoxplots_exports <- QCBoxplots_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
+  ## QC profile plots module
+  all_QCProfilePlots_exports <- QCProfilePlots_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
+  ## QC correlation module
+  all_QCCorrelation_exports <- QCCorrelation_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals
+  )
+  
+  ## QC PCA module
+  all_QCPCA_exports <- QCPCA_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals
+  )
+  
   ## Multi-ome Heatmap module
   all_multiomeHeatmap_exports <- multiomeHeatmapTabServer(
     GCTs_and_params = GCTs_and_params,
@@ -40,18 +66,22 @@ app_server <- function(input, output, session) {
   )
   
   ## TEMPLATE module
-  all_template_exports <- templateSingleOme_Tab_Server(
-    GCTs_and_params = GCTs_and_params,
-    globals = globals,
-    GCTs_original = GCTs_original
-  )
+  # all_template_exports <- templateSingleOme_Tab_Server(
+  #   GCTs_and_params = GCTs_and_params,
+  #   globals = globals,
+  #   GCTs_original = GCTs_original
+  # )
   
   ## gather all exports
   all_exports <- list(
       omes = reactive(c(names(GCTs_and_params()$GCTs), 'multi_ome')),
       exports = list(
         summary_exports = all_summary_exports,
-        template_exports = all_template_exports,
+        #template_exports = all_template_exports,
+        QCBoxplot_exports = all_QCBoxplots_exports,
+        QCProfilePlots_exports = all_QCProfilePlots_exports,
+        QCCorrelation_exports = all_QCCorrelation_exports,
+        QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports
       )
     )

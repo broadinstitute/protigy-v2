@@ -21,3 +21,11 @@ test_that("smart_trim works on example labels", {
   expect_equal(suppressWarnings(smart_trim(labels_equal_difference)),
                c("xxxx_stuff", "xxxx_thing", "xxxx_stuff"))
 })
+
+test_that("scale_font_size returns appropriate font sizes", {
+  # test different parameters
+  expect_equal(suppressWarnings(scale_font_size(dimension=50,max.size=14,scale.factor=50)), 14)
+  expect_equal(suppressWarnings(scale_font_size(dimension=100,max.size=14,scale.factor=50)), 7)
+  expect_equal(suppressWarnings(scale_font_size(dimension=75,max.size=12,scale.factor=50)), 8)
+  expect_equal(suppressWarnings(scale_font_size(dimension=75,max.size=12,scale.factor=100)), 12)
+})

@@ -1,13 +1,8 @@
 ################################################################################
-# Module: TEMPLATE
+# Module: EXPORT
+#
+# Export desired files.
 ################################################################################
-
-## Steps for adding a new module
-# 1. add core UI and server logic here
-# 2. add helper functions in this same script
-# 3. add necessary libraries in global.R
-# 4. call your UI function in ui.R
-# 5. call your server function in server.R
 
 ################################################################################
 # Shiny funcions (UI and server)
