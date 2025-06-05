@@ -104,10 +104,10 @@ pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
   pct.var <- var.explained * 100 / sum (var.explained)
   
   # calculate % sum total (over pca components in p) of variance attributable to each experimental factor
-  expt.var <- data %>% group_by(experimental.factor) %>% 
-    summarize (sum.total.var.pct=sum(pct.exp/100 * pct.var[dims]/100 * 100))
+  expt.var <- data %>% group_by(.data$experimental.factor) %>% 
+    summarize (sum.total.var.pct=sum(.data$pct.exp/100 * pct.var[.data$dims]/100 * 100))
   
-  g <- ggplot (data=data,aes(as.factor(dims),pct.exp,group=experimental.factor,color=experimental.factor)) +
+  g <- ggplot (data=data,aes(as.factor(.data$dims),.data$pct.exp,group=.data$experimental.factor,color=.data$experimental.factor)) +
     geom_line() + geom_point() + labs (x="Component (% Total Variance Explained)",y="% Variance Explained within Component") + 
     theme_bw() + scale_x_discrete(labels = paste0 ("PC",data$dims, " (",round(pct.var,1),"%)")) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
