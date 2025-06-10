@@ -45,7 +45,7 @@ Imports:
     ggfortify,
     limma,
     glue,
-    Matrix
+    Matrix (>= 1.6-2)
 Depends:
     R (>= 4.0.0),
     shiny
