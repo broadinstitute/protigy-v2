@@ -13,7 +13,7 @@
 #' @import glue
 #' @import ggfortify
 #' @import cmapR
-#' @import Matrix
+#' @importFrom Matrix crossprod tcrossprod
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
