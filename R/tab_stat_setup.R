@@ -215,7 +215,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
       
       #calling the statistical testing function
       stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), intensity=FALSE)
-      
+      print(head(stat.results))
       sink()
     })
   })

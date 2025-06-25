@@ -3,7 +3,6 @@
 #
 # Allow users to setup the test type and parameters
 ################################################################################
-
 ################################################################################
 #Mod F Test
 ################################################################################
@@ -215,67 +214,6 @@ moderated.t <- function (data, design=NULL, intensity=FALSE) {
   return (sig)
 }
 
-#################################################################
-#function for one sample
-#################################################################
-calculate_fc <- function(tab, grp.vec, groups.comp, test, 
-                         mode='sort',  ## for assigning pairwise comparisons
-                         ## sort: group names are ordered alphanumerically
-                         ##       e.g. "Exp_B" and "Exp_A" -> "Exp_A.vs.Exp_B",
-                         center=F     ## if TRUE median centering will be applied
-){
-  #browser()
-  groups <- unique(grp.vec)
-  
-  ## ##########################################
-  ## average groups
-  group_avg <- lapply(groups, function(gg){
-    gg.idx = names(grp.vec)[ which(grp.vec == gg) ]
-    apply(tab[, gg.idx], 1, mean, na.rm=T)
-  })
-  group_avg <- data.frame(Reduce('cbind', group_avg))
-  colnames(group_avg) <- groups
-  
-  ## ##########################################
-  ## one sample & mod F: just average the log values
-  if(test %in% c("One-sample Moderated T-test","Moderated F test")){
-    group_fc <- group_avg
-  }
-
-  ## ##########################################
-  ## two sample: subtract averaged groups
-  if(test %in% c("Two-sample Moderated T-test")){
-    
-    groups.comp.split <- strsplit(groups.comp, split = '\\.vs\\.')
-    names(groups.comp.split) <- groups.comp
-    
-    ## calculate log FCs
-    group_fc <- lapply(groups.comp.split, function(x){
-      g1 <- x[1] 
-      g2 <- x[2]
-      
-      ## subtract logs
-      g2.over.g1 <- group_avg[, g2] - group_avg[, g1]
-      g2.over.g1
-    })
-    group_fc <- data.frame(Reduce('cbind', group_fc))
-    colnames(group_fc) <- groups.comp
-  }
-  
-  ## median center data
-  if(center)
-    group_fc <- apply(group_fc, 2, function(column) column - median(column, na.rm=T))
-  
-  ## for one-sample/mod F/none, it is average, not FC
-  if(test %in% c("One-sample Moderated T-test", "Moderated F test")){
-    colnames(group_fc) <- paste0('RawAveExpr.', colnames(group_fc))
-  }else{
-    colnames(group_fc) <- paste0('RawlogFC.', colnames(group_fc))
-  }
-  return(group_fc)
-}
-
-
 ##################################################################################
 #STATISTICAL TESTING
 ##################################################################################
@@ -425,12 +363,14 @@ observeEvent(input$run_test_button, {
 
 
 #################STARTING OVER###############################################
-stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, p.value.alpha = 0.05, use.adj.pvalue = TRUE, intensity, ...) {
+stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log=FALSE, intensity, ...) {
   
+  ################################################################################
+  #Mod F Test
+  ################################################################################
   if(test == 'Moderated F test'){
     withProgress(message='moderated F-test', value=0, {
       results_list <- list()  # store results by ome
-      
       for (ome_name in chosen_omes) {
         
         incProgress(1/length(chosen_omes), detail = paste("Processing", ome_name))
@@ -445,25 +385,26 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         colnames(tab)[1] <- id.col
         
         sample_names <- colnames(ome_data) 
-        groups <- cdesc[sample_names, annotation_col, drop=TRUE]
-        # samples_to_keep <-names(all_groups)[all_groups %in% chosen_groups]
-        # groups <- all_groups[samples_to_keep]
+        all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
+        keep_samples_logical <- all_groups %in% chosen_groups
+        samples_to_keep <-sample_names[keep_samples_logical] #run test on only the chosen groups
+        groups <- all_groups[match(samples_to_keep, sample_names)]
         
-        tab.group <- cbind(tab[[id.col]], tab[, sample_names])
+        tab.group <- cbind(tab[[id.col]], tab[, samples_to_keep])
         colnames(tab.group)[1] <- id.col
         
-        ##########MOD F LOGIC####################################
+        #MOD F LOGIC
         id <- tab.group[,id.col]
         data <- tab.group[, setdiff (colnames (tab.group), id.col)]
-        
         cat('\n-- stat.test --\n')
         
-        # create design matrix
         f <- factor (groups)
-        # if (length(unique(f)) < 2) {
-        #   warning(paste("Skipping", ome_name, "- only one group found."))
-        #   next
-        # }
+        if (length(levels(f)) < 2) {
+          message(paste("Skipping", ome_name, "- not enough of the selected groups found in the data."))
+          next
+        }
+        
+        # tryCatch({
         design <- model.matrix ( ~ 0 + f )
         
         #use row centered data -- this does not affect 2-sample t test results, but makes the F test more interpretable 
@@ -495,21 +436,29 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         avg <- matrix(as.numeric(avg),ncol=ncol(avg))
         final.results[,grepl("AveExpr.",colnames(final.results))]<-avg
         final.results[,colnames(final.results)=="AveExpr"]<-rowMeans(avg,na.rm=T)
+
+        # final.results
+        # }, error = function(e) {
+        #   message(paste("Error processing", ome_name, ":", e$message))
+        #   return(NULL)
+        # })
         
         cat('\n-- stat.test exit --\n')
-        
-        results_list[[ome_name]] <- final.results
+        results_list[[ome_name]]<-final.results
       }
       return(results_list)
     })
   }
   
+  ################################################################################
+  #One sample Mod T Test
+  ################################################################################
   if(test == 'One-sample Moderated T-test'){
-    withProgress(message='moderated F-test', value=0, {
+    withProgress(message='one-sample moderated T-test', value=0, {
       results_list <- list()  # store results by ome
       
       for (ome_name in chosen_omes) {
-        count=0
+        combined_results<-NULL
         
         ome_data <- gct[[ome_name]]@mat
         rdesc <- gct[[ome_name]]@rdesc
@@ -520,25 +469,84 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         tab <- cbind(rdesc[[id.col]], tab)
         colnames(tab)[1] <- id.col
         
-        res.comb <- tab
         for (group_name in chosen_groups){
+          incProgress(1 / (length(chosen_omes) * length(chosen_groups)), detail = paste("Processing", ome_name, "-", group_name))
+          
           sample_names <- colnames(ome_data) 
-          groups <- cdesc[sample_names, annotation_col, drop=TRUE]
-          samples_in_group <- sample_names[groups == group_value]
+          all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
+          keep_samples_logical <- all_groups %in% group_name
+          samples_to_keep <-sample_names[keep_samples_logical] #run test on one group at a time
+          groups <- all_groups[match(samples_to_keep, sample_names)]
           
-          tab.group <- cbind(tab[[id.col]], tab[, sample_names])
+          tab.group <- cbind(tab[[id.col]], tab[, samples_to_keep])
           colnames(tab.group)[1] <- id.col
+
+          cat('\n-- modT.test --\n')
+          id <- tab.group[, id.col]
+          data <- tab.group[, setdiff (colnames (tab.group), id.col)]
           
-          res.tmp <- modT.test(tab.group, id.col=id.col, plot=F, nastrings=NASTRINGS, label=group_name, na.rm=FALSE)$output
+          data <- data.matrix(data)
           
-          #create data frame of expression values and test results
-          res.test <- res.tmp[, !colnames(res.tmp)%in%colnames(res.comb)]
-          res.comb <- base::merge(res.comb,res.test,by="row.names",all=T)
-          rownames(res.comb) <- res.comb[,1]
-          res.comb <- res.comb[,-1]
+          # log transform is required
+          if (apply.log) data <- log2 (data)
+          
+          #MOD T LOGIC
+          data.matrix <- data.frame (data, stringsAsFactors=F)
+          m <- lmFit (data.matrix, method='robust')
+          m <- eBayes (m, trend=FALSE, robust=TRUE)#one-sample t-test is only run for ratio data
+          sig <- topTable (m, number=nrow(data), sort.by='none')
+          
+          ##View(data)
+          if (use.adj.pvalue) mod.sig <- sig [,'adj.P.Val'] <= p.value.alpha
+          else  mod.sig <- sig [,'P.Value'] <= p.value.alpha
+          change <- apply (data, 1,
+                           function (x) {
+                             x <- x [is.finite (x)]
+                             ret.value <- '?'
+                             if ( all (x < 0) ) ret.value <- 'down'
+                             else if ( all (x > 0)) ret.value <- 'up'
+                             return (ret.value)
+                           })
+          
+          ##MOD T test result
+          mod.t.result <- data.frame(sig, change=change, significant=mod.sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
+          
+          ##add label(group_name)
+          if(!is.null(group_name))
+            colnames(mod.t.result) <- paste(colnames(mod.t.result), group_name, sep='.')
+          
+          mod.t <- data.frame ( cbind (data.frame (id=id), mod.t.result), stringsAsFactors=F )
+          rownames(mod.t) <- id
+          
+          #final.results <- mod.t
+          cat('\n-- modT.test exit --/n')
+          
+          # Keep only id + renamed stats
+          mod.t.sub <- mod.t[, c("id", grep(paste0("\\.", group_name, "$"), colnames(mod.t), value = TRUE))]
+          
+          # Merge into the combined table for this ome
+          if (is.null(combined_results)) {
+            combined_results <- mod.t.sub
+          } else {
+            combined_results <- merge(combined_results, mod.t.sub, by = "id", all = TRUE)
+          }
+          
+          #results_list[[paste(ome_name,group_name,sep="_")]]<-final.results
         }
+        results_list[[ome_name]]<-combined_results
       }
       return(results_list)
+    })
+  }
+  
+  ################################################################################
+  #Two sample Mod T Test
+  ################################################################################
+  if(test == 'One-sample Moderated T-test'){
+    withProgress(message='one-sample moderated T-test', value=0, {
+      results_list <- list()
+      
+      ##########
     })
   }
 }
