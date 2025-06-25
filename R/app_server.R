@@ -59,6 +59,13 @@ app_server <- function(input, output, session) {
     globals = globals
   )
   
+  ## Statistics Setup module
+  all_statSetup_exports <- statSetup_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
   ## Multi-ome Heatmap module
   all_multiomeHeatmap_exports <- multiomeHeatmapTabServer(
     GCTs_and_params = GCTs_and_params,

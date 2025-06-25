@@ -23,15 +23,21 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
         ),
         column(3,
                uiOutput(ns("select_omes_ui")),
+               uiOutput(ns("select_groups_ui"))
         ),
         column(3,
                conditionalPanel(
-                 condition = "input.select_test == 'Two-sample Moderated T-test'",
-                 uiOutput(ns("select_contrast_ui")),
-                 #uiOutput(ns("flip_contrast_ui"))
-               ),
-               actionButton(ns("run_test_button"),"Run Test"),
-               uiOutput(ns("results_ui"))
+                 condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
+                 uiOutput(ns("select_contrast_ui"))
+               )
+        ),
+        column(3,
+              # conditionalPanel(
+              #    condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
+              #    uiOutput(ns("flip_contrast_ui"))
+              # ),
+              actionButton(ns("run_test_button"),"Run Test"),
+              uiOutput(ns("results_ui"))
         )
       )
     )
@@ -95,85 +101,122 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     
     ## MODULE SERVER LOGIC ##
     
-    ##Selected omes and groups
-    chosen_omes_reactive <- reactive({
-      input$selected_omes
-    })
-    
-    chosen_groups_reactive <- reactive({
-      input$stat_setup_annotation
-    })
-    
-    cdesc <- reactive({
-      GCTs()@cdesc
-    })
-    
-    default_annotation_column <- reactive({
-      default_annotations()[[input$selected_omes]]
-    })
-    
-    
     ##Selecting which omes to test
     output$select_omes_ui <- renderUI({
       req(all_omes())
-      req(groups_in_all_omes())
-      #req(cdesc(), default_annotation_column())
-      groups_in_all <- groups_in_all_omes()
-      
-      tagList(
         selectInput(
           inputId = ns("selected_omes"),
           label = "Select omes to test:",
           choices = all_omes(),
           multiple = TRUE,
           selected = all_omes()
-        ),
-        
-        checkboxGroupInput(
-          ns("selected_groups"),
-          "Group by:",
-          choices = groups_in_all,
-          selected = groups_in_all
         )
-        
-        ##Selecting which groups to test
-        # choices<- unique(cdesc()[[default_annotation_column()]]),
-        # 
-        # checkboxGroupInput(
-        #     ns("stat_setup_annotation"),
-        #     "Choose groups:",
-        #     choices = choices,
-        #     selected = choices
-        # )
-      )    
     })
     
+    #############################################################
+    chosen_omes_reactive <- reactive({
+      input$selected_omes
+    })
     
+    cdesc <- reactive({
+      req(GCTs(),input$selected_omes)
+      GCTs()[[input$selected_omes[1]]]@cdesc
+    })
     
+    default_annotation_column <- reactive({
+      req(default_annotations(),input$selected_omes)
+      default_annotations()[[input$selected_omes[1]]]
+    })
+    ##############################################################
+    
+    #Selecting which groups to test
+    output$select_groups_ui <- renderUI({
+      req(cdesc(), default_annotation_column())
+        
+        #Selecting which groups to test
+        choices<- unique(cdesc()[[default_annotation_column()]])
+        
+        checkboxGroupInput(
+          ns("stat_setup_annotation"),
+          "Choose groups:",
+          choices = choices,
+          selected = choices
+        )
+    })
+    
+    chosen_groups_reactive <- reactive({
+      input$stat_setup_annotation
+    })
     
     
     #Selecting the contrast- ONLY FOR TWO SAMPLE TEST
     output$select_contrast_ui <- renderUI({
-      req(chosen_groups_reactive())
-      chosen_groups<-chosen_groups_reactive()
+      req(input$stat_setup_annotation)
+      req(length(input$stat_setup_annotation) >= 2)
       
       #Create pairwise comparisons
-      pairwise_contrasts <- combn(chosen_groups, 2, FUN = function(x) paste(x[1], "over", x[2]), simplify = TRUE)
-      pairwise_contrasts_2 <- combn(chosen_groups, 2, FUN = function(x) paste(x[2], "over", x[1]), simplify = TRUE)
-      checkboxGroupInput("choose_contrast", "Choose contrast:", choices = c(pairwise_contrasts,pairwise_contrasts_2), selected=c(pairwise_contrasts,pairwise_contrasts_2)) 
+      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      
+      lapply(seq_along(pairwise_contrasts), function(i) {
+        pair <- pairwise_contrasts[[i]]
+        flip_id <- ns(paste0("flip_", i))
+        contrast_id <- ns(paste0("contrast_", i))
+        
+        fluidRow(
+          column(5,
+            uiOutput(ns(paste0("label_contrast_", i)))
+            #checkboxInput(ns("contrast"), contrast, TRUE)
+          ),
+          column(5,
+            checkboxInput(flip_id, "Flip?", FALSE)
+          )
+        )
+      })
     })
     
+    #Flip the contrast over if the flip box is clicked
+    observe({
+      req(input$stat_setup_annotation)
+      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      
+      for (i in seq_along(pairwise_contrasts)) {
+        local({
+          j <- i
+          pair <- pairwise_contrasts[[j]]
+          flip_input_id <- paste0("flip_", j)
+          label_output_id <- paste0("label_contrast_", j)
+          contrast_input_id <- paste0("contrast_", j)
+          
+          output[[label_output_id]] <- renderUI({
+            flipped <- input[[flip_input_id]]
+            label <- if (!is.null(flipped) && flipped) {
+              paste(pair[2], "over", pair[1])
+            } else {
+              paste(pair[1], "over", pair[2])
+            }
+            checkboxInput(ns(contrast_input_id), label, TRUE)
+          })
+        })
+      }
+    })
     
-    ##Flip contrasts for the two-sample test
-    # output$flip_contrast_ui <- renderUI({
-    #   req(input$choose_contrast)
-    #   checkbox_list <- lapply(seq_along(input$choose_contrast), function(y) {
-    #     contrast <- input$choose_contrast[y]
-    #     checkboxInput("flip_contrast", paste("Flip", contrast, "?"), value = FALSE)
-    #   })
-    #   
-    #   tagList(checkbox_list)
-    # })
-    
+    #The actual tests after the run test button is clicked
+    observeEvent(input$run_test_button, {
+      req(chosen_omes_reactive())
+      req(chosen_groups_reactive())
+      req(GCTs())
+      req(input$select_test)
+      req(default_annotation_column())
+      
+      # Capture system output in a file 
+      timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+      filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+      sink(filename)
+      
+      #calling the statistical testing function
+      stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), intensity=FALSE)
+      
+      sink()
+    })
   })
 }
