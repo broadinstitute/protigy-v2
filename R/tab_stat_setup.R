@@ -165,7 +165,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
         fluidRow(
           column(5,
             uiOutput(ns(paste0("label_contrast_", i)))
-            #checkboxInput(ns("contrast"), contrast, TRUE)
           ),
           column(5,
             checkboxInput(flip_id, "Flip?", FALSE)
@@ -200,8 +199,30 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
       }
     })
     
+    #final contrasts passed into the function
+    selected_contrasts_reactive <- reactive({
+      req(input$stat_setup_annotation)
+      selected_contrasts <- list()
+      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      
+      for (i in seq_along(pairwise_contrasts)) {
+        pair <- pairwise_contrasts[[i]]
+        flip_id <- paste0("flip_", i)
+        contrast_id <- paste0("contrast_", i)
+        
+        if (isTRUE(input[[contrast_id]])) {
+          flipped <- isTRUE(input[[flip_id]])
+          contrast <- if (flipped) rev(pair) else pair
+          selected_contrasts[[length(selected_contrasts) + 1]] <- contrast
+        }
+      }
+      selected_contrasts
+    })
+    
+    
     #The actual tests after the run test button is clicked
     observeEvent(input$run_test_button, {
+      req(selected_contrasts_reactive())
       req(chosen_omes_reactive())
       req(chosen_groups_reactive())
       req(GCTs())
@@ -212,9 +233,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
       timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
       filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
       sink(filename)
-      
+
       #calling the statistical testing function
-      stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), intensity=FALSE)
+      stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
       print(head(stat.results))
       sink()
     })

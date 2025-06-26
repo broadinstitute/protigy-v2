@@ -85,7 +85,7 @@ modF.test <- function (d, class.vector, output.prefix, id.col=NULL,
 }
 
 ################################################################################
-#Mod T Test
+#Mod T Test- ONE SAMPLE
 ################################################################################
 modT.test <- function (d, output.prefix, id.col=NULL, data.col=NULL, fix.id=FALSE,
                        p.value.alpha=0.05, use.adj.pvalue=TRUE, apply.log=FALSE,
@@ -214,6 +214,46 @@ moderated.t <- function (data, design=NULL, intensity=FALSE) {
   return (sig)
 }
 
+################################################################################
+#Mod T Test- TWO SAMPLE
+################################################################################
+
+modT.test.2class <- function (d, output.prefix, groups, id.col=NULL, data.col=NULL,
+                              group.na.rm=FALSE, nastrings=c("NA", "<NA>", "#NUM!", "#DIV/0!", "#NA", "#NAME?"), label=NULL, intensity=FALSE) {
+  
+  cat('\n-- modT.test.2class --\n')
+  
+  ## store group names
+  groups.org <- groups
+  groups <- as.numeric(factor(groups, levels=sort(unique(groups)))) ## kk 20170106
+  
+  id <- d[ , id.col]
+  
+  ## extract data columns
+  if (is.null (data.col)) data <- d [, setdiff (colnames (d), id.col)]
+  else data <- d [, make.names (data.col)]
+  
+  
+  ## moderated t test for 2 classes
+  design.mat <- cbind (ref=1, comparison=groups)
+  mod.t.result <- moderated.t (data, design.mat, intensity)
+  
+  ## 20151211 kk
+  mod.t.result <- data.frame( mod.t.result, Log.P.Value=-10*log(mod.t.result$P.Value,10), stringsAsFactors=F)
+  
+  ## add label
+  if(!is.null(label))
+    colnames(mod.t.result) <- paste(colnames(mod.t.result), label, sep='.')
+  
+  mod.t <- data.frame ( cbind (data.frame (id=id), data, mod.t.result), stringsAsFactors=F )
+  rownames(mod.t) <- id ##make.unique(as.character(mod.t[, 1]), sep='_')
+  
+  ## write out / return results
+  final.results <- mod.t
+  
+  ##invisible (final.results)
+  return( list(input=d, output=final.results, groups=groups.org) )
+}
 ##################################################################################
 #STATISTICAL TESTING
 ##################################################################################
@@ -363,7 +403,7 @@ observeEvent(input$run_test_button, {
 
 
 #################STARTING OVER###############################################
-stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log=FALSE, intensity, ...) {
+stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, selected_contrasts, p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log=FALSE, intensity, ...) {
   
   ################################################################################
   #Mod F Test
@@ -436,12 +476,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         avg <- matrix(as.numeric(avg),ncol=ncol(avg))
         final.results[,grepl("AveExpr.",colnames(final.results))]<-avg
         final.results[,colnames(final.results)=="AveExpr"]<-rowMeans(avg,na.rm=T)
-
-        # final.results
-        # }, error = function(e) {
-        #   message(paste("Error processing", ome_name, ":", e$message))
-        #   return(NULL)
-        # })
         
         cat('\n-- stat.test exit --\n')
         results_list[[ome_name]]<-final.results
@@ -542,11 +576,107 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
   ################################################################################
   #Two sample Mod T Test
   ################################################################################
-  if(test == 'One-sample Moderated T-test'){
-    withProgress(message='one-sample moderated T-test', value=0, {
+  if(test == 'Two-sample Moderated T-test'){
+    withProgress(message='two-sample moderated T-test', value=0, {
       results_list <- list()
-      
-      ##########
+      for (ome_name in chosen_omes) {
+        combined_results<-NULL
+        
+        ome_data <- gct[[ome_name]]@mat
+        rdesc <- gct[[ome_name]]@rdesc
+        cdesc <- gct[[ome_name]]@cdesc
+        tab <- as.data.frame(ome_data)
+
+        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
+        tab <- cbind(rdesc[[id.col]], tab)
+        colnames(tab)[1] <- id.col
+
+        for (contrast_name in selected_contrasts){
+          
+          group1 <- contrast_name[1]  
+          group2 <- contrast_name[2]  
+          contrast_name <- paste0(group1, "_vs_", group2)
+          
+          print(paste("running ",ome_name,contrast_name))
+  
+          incProgress(1 / (length(chosen_omes) * length(selected_contrasts)), detail = paste("Processing", ome_name, "-", contrast_name))
+          sample_names <- colnames(ome_data)
+          all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
+          keep_samples_logical <- all_groups %in% c(group1,group2)
+          
+          print("keep_samples")
+          print(keep_samples_logical)
+          
+          samples_to_keep <-sample_names[keep_samples_logical] #run test on only the chosen groups
+          
+          print("samples_to_keep")
+          print(samples_to_keep)
+          
+          groups <- all_groups[match(samples_to_keep, sample_names)]
+          #groups <- factor(all_groups[match(samples_to_keep, sample_names)], levels=c(group1,group2))
+  
+          print("groups")
+          print(groups)
+          
+          tab.group <- cbind(tab[[id.col]], tab[, samples_to_keep])
+          colnames(tab.group)[1] <- id.col
+
+          #MOD T LOGIC- TWO SAMPLE
+          cat('\n-- modT.test.2class --\n')
+
+          ## store group names
+          #groups <- as.numeric(factor(groups, levels=sort(unique(groups)))) 
+          groups <- factor(groups, levels = c(group1, group2))
+          id <- tab.group[,id.col]
+          data <- tab.group[, setdiff (colnames (tab.group), id.col)]
+          
+          print("groups before design.mat:")
+          print(groups)
+          print("as numeric:")
+          print(as.numeric(groups))
+          
+          
+          ## moderated t test for 2 classes
+          design.mat <- cbind (ref=1, comparison=as.numeric(groups))
+          data.matrix <- data.frame (data, stringsAsFactors=F)
+
+          if(!is.null(design.mat)){
+            m <- lmFit (data.matrix, design.mat)
+            if(intensity){
+              m <- tryCatch({
+                eBayes (m, trend=TRUE, robust=TRUE)},
+                error= function(e){
+                  shinyalert("Setting intensity-trend failed. Performing with trend=FALSE. This usually occurs when the distribution of detected features is not uniform across samples. Please evaluate your data and consider re-running analysis with a stricter missing value filter.",type="warning",immediate=T)
+                  eBayes (m, trend=FALSE, robust=TRUE)
+                })
+            }else{
+              m <- eBayes (m, robust=TRUE)
+            }
+            sig <- topTable (m, coef=colnames (design.mat)[2], number=nrow(data), sort.by='none')
+          }
+
+          mod.t.result <- data.frame(sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
+
+          ##add label(contrast_name)
+          if(!is.null(contrast_name))
+            colnames(mod.t.result) <- paste(colnames(mod.t.result), contrast_name, sep='.')
+
+          final.results <- data.frame ( cbind (data.frame (id=id), mod.t.result), stringsAsFactors=F )
+          rownames(final.results) <- id
+          
+          cat('\n-- modT.test.2class exit--\n')
+          
+          # Merge into the combined table for this ome
+          if (is.null(combined_results)) {
+            combined_results <- final.results
+          } else {
+            combined_results <- merge(combined_results, final.results, by = "id", all = TRUE)
+          }
+
+        }
+        results_list[[ome_name]]<-combined_results
+      }
+      return(results_list)
     })
   }
 }
