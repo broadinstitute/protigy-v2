@@ -36,13 +36,17 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
         tabPanel("Correlation", QCCorrelation_Tab_UI()),
         tabPanel("PCA", QCPCA_Tab_UI())),
+     
       navbarMenu(
         "Statistics",
         tabPanel("Setup",statSetup_Tab_UI()),
-      # tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
-      # tabPanel("Correlation", QCCorrelation_Tab_UI()),
-      # tabPanel("PCA", QCPCA_Tab_UI())
+        #observeEvent(isTRUE(stat_ready()) {
+          tabPanel("Summary", statSummary_Tab_UI()),
+          tabPanel("Plot", statPlot_Tab_UI()),
+          tabPanel("Table", statTable_Tab_UI())
+        #})
       ),
+      
       # navbarMenu(
       #   "Clustering",
       #   tabPanel("Static Heatmap"),

@@ -5,6 +5,7 @@
 # server functions and handles any global variable logic.
 ################################################################################
 
+
 app_server <- function(input, output, session) { 
   
   ## sidebar set up server
@@ -66,6 +67,29 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original
   )
   
+  ## Statistics Summary module
+  all_statSummary_exports <- statSummary_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
+  ## Statistics Plot module
+  all_statPlot_exports <- statPlot_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
+  ## Statistics Table module
+  all_statTable_exports <- statTable_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+  
+
+  
   ## Multi-ome Heatmap module
   all_multiomeHeatmap_exports <- multiomeHeatmapTabServer(
     GCTs_and_params = GCTs_and_params,
@@ -90,6 +114,7 @@ app_server <- function(input, output, session) {
         QCCorrelation_exports = all_QCCorrelation_exports,
         QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports
+        #statSummary_exports = all_statSummary_exports
       )
     )
 

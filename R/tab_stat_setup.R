@@ -9,6 +9,7 @@
 ################################################################################
 
 source("R/tab_stat_setup_helpers.R")
+#shared <- reactiveValues()
 
 # UI for the statSetup tab
 statSetup_Tab_UI <- function(id = "statSetupTab") {
@@ -32,10 +33,6 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
                )
         ),
         column(3,
-              # conditionalPanel(
-              #    condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
-              #    uiOutput(ns("flip_contrast_ui"))
-              # ),
               actionButton(ns("run_test_button"),"Run Test"),
               uiOutput(ns("results_ui"))
         )
@@ -61,7 +58,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
-    
     
     # GCTs to use for analysis/visualization
     GCTs <- reactive({
@@ -117,6 +113,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     chosen_omes_reactive <- reactive({
       input$selected_omes
     })
+    observe({
+      shared$chosen_omes <- chosen_omes_reactive()
+    })
     
     cdesc <- reactive({
       req(GCTs(),input$selected_omes)
@@ -127,6 +126,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
       req(default_annotations(),input$selected_omes)
       default_annotations()[[input$selected_omes[1]]]
     })
+    
     ##############################################################
     
     #Selecting which groups to test
@@ -151,7 +151,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     
     #Selecting the contrast- ONLY FOR TWO SAMPLE TEST
     output$select_contrast_ui <- renderUI({
-      req(input$stat_setup_annotation)
+      req(input$select_test == "Two-sample Moderated T-test")
       req(length(input$stat_setup_annotation) >= 2)
       
       #Create pairwise comparisons
@@ -175,7 +175,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     
     #Flip the contrast over if the flip box is clicked
     observe({
-      req(input$stat_setup_annotation)
+      req(input$select_test == "Two-sample Moderated T-test")
       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
       
       for (i in seq_along(pairwise_contrasts)) {
@@ -202,6 +202,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
     #final contrasts passed into the function
     selected_contrasts_reactive <- reactive({
       req(input$stat_setup_annotation)
+      if(length(input$stat_setup_annotation) < 2) {
+        return(list())  # Return empty list when fewer than 2 groups selected
+      }
+      
       selected_contrasts <- list()
       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
       
@@ -229,15 +233,22 @@ statSetup_Tab_Server <- function(id = "statSetupTab",
       req(input$select_test)
       req(default_annotation_column())
       
-      # Capture system output in a file 
-      timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-      filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-      sink(filename)
+      # #Capture system output in a file
+      # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+      # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+      # sink(filename)
 
       #calling the statistical testing function
       stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
-      print(head(stat.results))
-      sink()
+      #stat.results<- stat.results[order(rownames(stat.results)), sort(colnames(stat.results)), drop = FALSE]
+      
+      if (!is.null(stat.results)) {
+        assign("stat.results",stat.results,envir=.GlobalEnv)
+      }
+      
+      #sink()
     })
+    
+    
   })
 }

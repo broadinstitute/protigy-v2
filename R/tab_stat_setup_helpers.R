@@ -420,10 +420,12 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
         
+        #Add ID column to tab
         id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
         tab <- cbind(rdesc[[id.col]], tab)
         colnames(tab)[1] <- id.col
         
+        #Run test on only the chosen groups
         sample_names <- colnames(ome_data) 
         all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
         keep_samples_logical <- all_groups %in% chosen_groups
@@ -436,7 +438,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         #MOD F LOGIC
         id <- tab.group[,id.col]
         data <- tab.group[, setdiff (colnames (tab.group), id.col)]
-        cat('\n-- stat.test --\n')
+        cat('\n-- modF.test --\n')
         
         f <- factor (groups)
         if (length(levels(f)) < 2) {
@@ -477,10 +479,9 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         final.results[,grepl("AveExpr.",colnames(final.results))]<-avg
         final.results[,colnames(final.results)=="AveExpr"]<-rowMeans(avg,na.rm=T)
         
-        cat('\n-- stat.test exit --\n')
+        cat('\n-- modF.test exit --\n')
         results_list[[ome_name]]<-final.results
       }
-      return(results_list)
     })
   }
   
@@ -506,6 +507,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         for (group_name in chosen_groups){
           incProgress(1 / (length(chosen_omes) * length(chosen_groups)), detail = paste("Processing", ome_name, "-", group_name))
           
+          #run test on chosen groups only
           sample_names <- colnames(ome_data) 
           all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
           keep_samples_logical <- all_groups %in% group_name
@@ -533,17 +535,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           ##View(data)
           if (use.adj.pvalue) mod.sig <- sig [,'adj.P.Val'] <= p.value.alpha
           else  mod.sig <- sig [,'P.Value'] <= p.value.alpha
-          change <- apply (data, 1,
-                           function (x) {
-                             x <- x [is.finite (x)]
-                             ret.value <- '?'
-                             if ( all (x < 0) ) ret.value <- 'down'
-                             else if ( all (x > 0)) ret.value <- 'up'
-                             return (ret.value)
-                           })
+          # change <- apply (data, 1,
+          #                  function (x) {
+          #                    x <- x [is.finite (x)]
+          #                    ret.value <- '?'
+          #                    if ( all (x < 0) ) ret.value <- 'down'
+          #                    else if ( all (x > 0)) ret.value <- 'up'
+          #                    return (ret.value)
+          #                  })
           
           ##MOD T test result
-          mod.t.result <- data.frame(sig, change=change, significant=mod.sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
+          mod.t.result <- data.frame(sig, significant=mod.sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
           
           ##add label(group_name)
           if(!is.null(group_name))
@@ -552,7 +554,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           mod.t <- data.frame ( cbind (data.frame (id=id), mod.t.result), stringsAsFactors=F )
           rownames(mod.t) <- id
           
-          #final.results <- mod.t
           cat('\n-- modT.test exit --/n')
           
           # Keep only id + renamed stats
@@ -565,11 +566,9 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
             combined_results <- merge(combined_results, mod.t.sub, by = "id", all = TRUE)
           }
           
-          #results_list[[paste(ome_name,group_name,sep="_")]]<-final.results
         }
         results_list[[ome_name]]<-combined_results
       }
-      return(results_list)
     })
   }
   
@@ -579,6 +578,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
   if(test == 'Two-sample Moderated T-test'){
     withProgress(message='two-sample moderated T-test', value=0, {
       results_list <- list()
+      
       for (ome_name in chosen_omes) {
         combined_results<-NULL
         
@@ -586,7 +586,8 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         rdesc <- gct[[ome_name]]@rdesc
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
-
+        
+        #Add ID column to tab
         id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
         tab <- cbind(rdesc[[id.col]], tab)
         colnames(tab)[1] <- id.col
@@ -596,28 +597,15 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           group1 <- contrast_name[1]  
           group2 <- contrast_name[2]  
           contrast_name <- paste0(group1, "_vs_", group2)
-          
-          print(paste("running ",ome_name,contrast_name))
   
           incProgress(1 / (length(chosen_omes) * length(selected_contrasts)), detail = paste("Processing", ome_name, "-", contrast_name))
           sample_names <- colnames(ome_data)
           all_groups <- cdesc[sample_names, annotation_col, drop=TRUE]
           keep_samples_logical <- all_groups %in% c(group1,group2)
-          
-          print("keep_samples")
-          print(keep_samples_logical)
-          
           samples_to_keep <-sample_names[keep_samples_logical] #run test on only the chosen groups
           
-          print("samples_to_keep")
-          print(samples_to_keep)
-          
           groups <- all_groups[match(samples_to_keep, sample_names)]
-          #groups <- factor(all_groups[match(samples_to_keep, sample_names)], levels=c(group1,group2))
-  
-          print("groups")
-          print(groups)
-          
+
           tab.group <- cbind(tab[[id.col]], tab[, samples_to_keep])
           colnames(tab.group)[1] <- id.col
 
@@ -625,16 +613,9 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           cat('\n-- modT.test.2class --\n')
 
           ## store group names
-          #groups <- as.numeric(factor(groups, levels=sort(unique(groups)))) 
           groups <- factor(groups, levels = c(group1, group2))
           id <- tab.group[,id.col]
           data <- tab.group[, setdiff (colnames (tab.group), id.col)]
-          
-          print("groups before design.mat:")
-          print(groups)
-          print("as numeric:")
-          print(as.numeric(groups))
-          
           
           ## moderated t test for 2 classes
           design.mat <- cbind (ref=1, comparison=as.numeric(groups))
@@ -676,7 +657,9 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         }
         results_list[[ome_name]]<-combined_results
       }
-      return(results_list)
     })
   }
+  
+  #Return the final results table from the chosen test
+  return(results_list)
 }
