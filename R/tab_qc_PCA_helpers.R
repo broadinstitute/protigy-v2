@@ -5,8 +5,11 @@
 ################################################################################
 
 ## plot PCA
-create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, format=c("Points","Labels")) {
-  #browser()
+create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2) {
+  # Check for valid PC inputs
+  if (is.null(comp.x) || is.null(comp.y) || length(comp.x) == 0 || length(comp.y) == 0) {
+    stop("PC1 and PC2 must be valid and non-empty.")
+  }
   #print error message if PC1=PC2
   if(comp.x==comp.y){
     stop("PC1 and PC2 are equal. Please try again with different values for PC1 and PC2.")
@@ -47,26 +50,31 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     )
   }
   
-  #create PCA plot using autoplot
-  if(format %in% "Labels"){
-    g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest, shape=F, label.label="sample",label.size = 2.5) + 
-      geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
-      geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
-      theme_bw() + #change theme
-      theme(text= element_text(size=12)) + #change font sizes
-      color_definition + #color scale
-      ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
-      labs(colour = col_of_interest)
-  }else if (format %in% "Points"){
-    g <- autoplot(my_pca, x=comp.x,y=comp.y,data=annot, colour=col_of_interest) + 
-      geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
-      geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
-      theme_bw() + #change theme
-      theme(text= element_text(size=12)) + #change font sizes
-      color_definition + #color scale
-      ggtitle(paste0("PCA plot by ",col_of_interest,": ",ome)) + #main title
-      labs(colour = col_of_interest)
-  }
+  # Use manual ggplot for PCA points with enhanced tooltip
+  pca_df <- as.data.frame(my_pca$x)
+  pca_df$sample <- rownames(pca_df)
+  pca_df <- merge(pca_df, annot, by = "sample")
+  # Compose tooltip text
+  pca_df$tooltip <- paste0(
+    "Sample: ", pca_df$sample,
+    "<br>PC", comp.x, ": ", signif(pca_df[[paste0("PC", comp.x)]], 4),
+    "<br>PC", comp.y, ": ", signif(pca_df[[paste0("PC", comp.y)]], 4),
+    "<br>", col_of_interest, ": ", pca_df[[col_of_interest]]
+  )
+  g <- ggplot(pca_df, aes_string(
+    x = paste0("PC", comp.x),
+    y = paste0("PC", comp.y),
+    color = col_of_interest,
+    text = "tooltip"
+  )) +
+    geom_point(size = 2) +
+    geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
+    geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
+    theme_bw() +
+    theme(text = element_text(size = 12)) +
+    color_definition +
+    ggtitle(paste0("PCA plot by ", col_of_interest, ": ", ome)) +
+    labs(colour = col_of_interest)
 }
 
 ## calculate PCA regression
