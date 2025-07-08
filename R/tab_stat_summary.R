@@ -80,7 +80,7 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
           title = ome,
     
           # call the UI function for each individual ome
-          templateSingleOme_Ome_UI(id = ns(ome), ome = ome)
+          statSummary_Ome_UI(id = ns(ome), ome = ome)
     
         ) # end tabPanel
       }) # end lapply
@@ -111,16 +111,29 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
       output_plots <- sapply(all_omes(), function(ome) {
-        templateSingleOme_Ome_Server(
-          # TODO: edit inputs to the ome server function, the last 4 may be unnecessary
-          id = ome,
-          ome = ome,
-          GCT_processed = reactive(GCTs()[[ome]]),
-          parameters = reactive(parameters()[[ome]]),
-          GCT_original = reactive(GCTs_original()[[ome]]),
-          default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors()[[ome]])
-        )
+        local({
+          ome_local <- ome  # capture the value NOW
+          
+          statSummary_Ome_Server(
+            id = ome_local,
+            ome = ome_local,
+            GCT_processed = reactive(GCTs()[[ome_local]]),
+            parameters = reactive(parameters()[[ome_local]]),
+            GCT_original = reactive(GCTs_original()[[ome_local]]),
+            default_annotation_column = reactive(default_annotations()[[ome_local]]),
+            color_map = reactive(custom_colors()[[ome_local]])
+          )
+        })
+        # statSummary_Ome_Server(
+        #   # TODO: edit inputs to the ome server function, the last 4 may be unnecessary
+        #   id = ome,
+        #   ome = ome,
+        #   GCT_processed = reactive(GCTs()[[ome]]),
+        #   parameters = reactive(parameters()[[ome]]),
+        #   GCT_original = reactive(GCTs_original()[[ome]]),
+        #   default_annotation_column = reactive(default_annotations()[[ome]]),
+        #   color_map = reactive(custom_colors()[[ome]])
+        # )
       }, simplify = FALSE)
     
       all_plots(output_plots) # set reactive value with outputs
@@ -202,27 +215,58 @@ statSummary_Ome_Server <- function(id,
     ns <- session$ns
 
     ## DATASET INFO ##
-
+    #Capture system output in a file
+    # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+    # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+    # sink(filename)
+    # 
+    # 
+    #   print("=== MODULE DEBUG ===\n")
+    #   print("Module ID:")
+    #   print(id)
+    #   print("Received ome:")
+    #   print(ome)
+    #   print("Available stat_results keys:")
+    #   print(names(stat_results()))
+    #   
+    #   sr <- stat_results()[[ome]]
+    #   if (is.null(sr)) {
+    #     print("stat_results()[[ome]] is NULL\n")
+    #   } else {
+    #     print("nrow:")
+    #     print(nrow(sr))
+    #     print(head(sr))
+    #   }
+    # 
+    #   print("DEBUG: class of sr:")
+    #   print(class(sr))
+    #   #lapply(stat_results(), class)
+    #   
+    # 
+    # sink()
+    
     # render dataset info
     output$dataset_table <- renderTable(
+      df <- stat_results()[[ome]],
       data.frame(
-        Description = c("Features tested", "Signigicant features"),
-        Count = c(nrow(stat.results), sum(stat.results$significant == TRUE))
+        Description = c("Features tested", "Significant features"),
+        Count = c(nrow(df), 10)
+        #Count = c(nrow(df), sum(df$significant == TRUE, na.rm = TRUE))
       )
     )
 
-    ## WORKFLOW INFO ##
+    # WORKFLOW INFO ##
 
     # render workflow info
     output$workflow_table <- renderTable(
       data.frame(
         Description = c("Test chosen", "Cutoff"),
-        Count = c(input['statSetupTab-select_test'], 10)#replace 10 when I find out if the cutoff number should change as the user adjusts it on this page or whether this is just 0.05
+        Count = c(stat_param()[[ome]]$test, 0.05)#replace 10 when I find out if the cutoff number should change as the user adjusts it on this page or whether this is just 0.05
       )
     )
 
     ## P.value Histogram- for both non-adj and adj p values ##
-    # Get hist. code from Natalie
+    # Get hist. code from Dr.Clark
 
 
     ## COMPILE EXPORTS ##

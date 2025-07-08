@@ -19,7 +19,8 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
       fluidRow(
         column(3,
                #uiOutput(ns("selected_omes")),
-               selectInput(ns("selected_omes"), "Select omes to test:", choices = NULL),
+               selectInput(ns("selected_omes"), "Select datasets to test:", choices = NULL),
+               textOutput(ns("annotation_col")),
                actionButton(ns("run_test_button"),"Run Test")
         ),
         column(3,
@@ -46,9 +47,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
   moduleServer(id, function (input, output, session) {
 
     ## GATHERING INPUTS ##
-    stat_param<- reactiveVal(list())
-    stat_results<- reactiveVal(list())
-
+    stat_param <- reactiveVal(list())
+    stat_results <- reactiveVal(list())
+    
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
 
@@ -88,60 +89,111 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
 
-#      ## MODULE SERVER LOGIC ##
+### MODULE SERVER LOGIC ########################################################
     
-    selected_ome <- reactive({ #Ome that is currently selected
+    #OME THAT IS CURRENTLY SELECTED
+    selected_ome <- reactive({ 
       req(input$selected_omes)
       input$selected_omes
     })
 
+    #SETS THE OME SELECT INPUT
     observe({
       req(all_omes())
       ome_list <- all_omes()
       updateSelectInput(session, "selected_omes",choices = ome_list, selected = ome_list[[1]] )
     })
 
-    cdesc <- reactive({ #cdesc of selected ome
+    #CDESC OF SELECTED OME
+    cdesc <- reactive({ 
       req(GCTs(), selected_ome())
       GCTs()[[selected_ome()]]@cdesc
     })
 
-    default_annotation_column <- reactive({ #Default annotation column for selected ome
+    #DEFAULT ANNOTATION COLUMN FOR SELECTED OME
+    default_annotation_column <- reactive({ 
       req(default_annotations(), selected_ome())
       default_annotations()[[selected_ome()]]
     })
 
+    #DISPLAY ANNOTATION COLUMN
+    output$annotation_col <- renderText({
+      req(default_annotation_column())
+      paste("Selected annotation column:", default_annotation_column())  
+    })
     
-    #defualt ome setup
-    default_val<- reactive({list(test="None", groups=unique(cdesc()[[default_annotation_column()]]))})
-    
-    
+######TEST SELECTION############################################################
+    #saving the selected test to stat_param
     observeEvent(input$select_test, {
       req(selected_ome())
-      current <- stat_param()              # get current full list
-      ome <- selected_ome()                # get the OME we're working on
+      current <- stat_param()             
+      ome <- selected_ome()               
       
       if (is.null(current[[ome]])) {
-        current[[ome]] <- list()           # create an empty sublist if needed
+        current[[ome]] <- list()           
       }
       
-      current[[ome]]$test <- input$select_test   # update just the test field
-      stat_param(current)                  # save the whole thing back
+      current[[ome]]$test <- input$select_test   
+      stat_param(current)                 
     })
     
+    #displaying the test choices (default)
+    output$select_test <- renderUI ({
+      selectInput(ns("select_test"), 
+                  "Select test:", 
+                  choices= c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), 
+                  selected="None"
+      )
+    })
+    
+    #displaying the previously chosen test from the parameters
+    observe({
+      req(selected_ome(),input$select_test)
+      saved_test <- stat_param()[[selected_ome()]]$test
+      if (is.null(saved_test)) saved_test <- "None"
+      updateSelectInput(session, "select_test", selected = saved_test)
+    })
+################################################################################
+######GROUP SELECTION############################################################
+    #saving the selected groups to stat_param
     observeEvent(input$stat_setup_annotation, {
       req(selected_ome())
-      current <- stat_param()              # get current full list
-      ome <- selected_ome()                # get the OME we're working on
+      current <- stat_param()           
+      ome <- selected_ome()                
       
       if (is.null(current[[ome]])) {
-        current[[ome]] <- list()           # create an empty sublist if needed
+        current[[ome]] <- list()          
       }
       
-      current[[ome]]$groups <- input$stat_setup_annotation   # update just the test field
-      stat_param(current)                  # save the whole thing back
+      current[[ome]]$groups <- input$stat_setup_annotation   
+      stat_param(current)                  
     })
     
+    #displaying the groups choices (default)
+    output$select_groups_ui <- renderUI({
+      
+      req(cdesc(), default_annotation_column(),selected_ome())
+      
+      choices<- unique(cdesc()[[default_annotation_column()]])
+      
+      checkboxGroupInput(
+        ns("stat_setup_annotation"),
+        "Include groups:",
+        choices = choices,
+        selected = choices 
+      )
+    })
+    
+    #displaying the previously chosen groups from the parameters
+    observe({
+      req(selected_ome(),input$stat_setup_annotation)
+      saved_groups <- stat_param()[[selected_ome()]]$groups
+      if (is.null(saved_groups)) {saved_groups <- unique(cdesc()[[default_annotation_column()]])}
+      updateCheckboxGroupInput(session, "stat_setup_annotation", selected = saved_groups)
+    })
+################################################################################
+######CONTRAST SELECTION########################################################
+    #saving the selected contrasts to stat_param
     observe ({
       req(input$select_test == "Two-sample Moderated T-test")
       req(length(input$stat_setup_annotation) >= 2)
@@ -154,81 +206,40 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
         current[[ome]] <- list()           # create an empty sublist if needed
       }
       
-      current[[ome]]$contrasts <- selected_contrasts_reactive()   # update just the test field
-      stat_param(current)                  # save the whole thing back
+      if (input$select_test == "Two-sample Moderated T-test"){
+        current[[ome]]$contrasts <- selected_contrasts_reactive()   # update just the test field
+        stat_param(current)      
+      } else {
+        current[[ome]]$contrasts <-NULL
+      }
     })
     
     
-    #Selecting which groups to test and saving them in the parameters
-    output$select_groups_ui <- renderUI({
-      # #Capture system output in a file
-      # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-      # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-      # sink(filename)
-      
-      req(cdesc(), default_annotation_column(),selected_ome(), default_val())
-
-      choices<- unique(cdesc()[[default_annotation_column()]])
-      
-      checkboxGroupInput(
-        ns("stat_setup_annotation"),
-        "Choose groups:",
-        choices = choices,
-        selected = choices 
-      )
-    })
-    
-     observe({
-       req(selected_ome(),input$stat_setup_annotation)
-       saved_groups <- stat_param()[[selected_ome()]]$groups
-       if (is.null(saved_groups)) {saved_groups <- unique(cdesc()[[default_annotation_column()]])}
-       updateCheckboxGroupInput(session, "stat_setup_annotation", selected = saved_groups)
-     })
-      
-      # sink()
-
-     output$select_test <- renderUI ({
-       selectInput(ns("select_test"), 
-        "Select test:", 
-        choices= c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), 
-        selected="None"
-      )
-     })
-     
-     observe({
-       req(selected_ome(),input$select_test)
-       saved_test <- stat_param()[[selected_ome()]]$test
-       if (is.null(saved_test)) saved_test <- "None"
-       updateSelectInput(session, "select_test", selected = saved_test)
-     })
-
-
-
-     #Selecting the contrast- ONLY FOR TWO SAMPLE TEST
-     output$select_contrast_ui <- renderUI({
-       req(input$select_test == "Two-sample Moderated T-test")
-       req(length(input$stat_setup_annotation) >= 2)
+    #selecting the contrast
+    output$select_contrast_ui <- renderUI({
+      req(input$select_test == "Two-sample Moderated T-test")
+      req(length(input$stat_setup_annotation) >= 2)
        
-       #Create pairwise comparisons
-       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      #create pairwise comparisons
+      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
        
-       lapply(seq_along(pairwise_contrasts), function(i) {
-         pair <- pairwise_contrasts[[i]]
-         flip_id <- ns(paste0("flip_", i))
-         contrast_id <- ns(paste0("contrast_", i))
+      lapply(seq_along(pairwise_contrasts), function(i) {
+        pair <- pairwise_contrasts[[i]]
+        flip_id <- ns(paste0("flip_", i))
+        contrast_id <- ns(paste0("contrast_", i))
          
-         fluidRow(
-           column(5,
-                  uiOutput(ns(paste0("label_contrast_", i)))
-           ),
-           column(5,
-                  checkboxInput(flip_id, "Flip?", FALSE)
-           )
-         )
-       })
-     })
+        fluidRow(
+          column(5,
+             uiOutput(ns(paste0("label_contrast_", i)))
+          ),
+          column(5,
+             checkboxInput(flip_id, "Flip", FALSE)
+          )
+        )
+      })
+    })
      
-     #Flip the contrast over if the flip box is clicked
+    #flip the contrast over if the flip box is clicked
      observe({
        req(input$select_test == "Two-sample Moderated T-test")
        pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
@@ -279,48 +290,40 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
      })
      
 ##############################################################################
-        #The actual tests after the run test button is clicked
+        #TESTS RUN AFTER RUN BUTTON CLICKED
         observeEvent(input$run_test_button, {
+          #Capture system output in a file
+          timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+          filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+          sink(filename)
+          
           req(GCTs(), default_annotations(), selected_contrasts_reactive())
           param_list <- stat_param()
           gcts <- GCTs()
 
-          # req(selected_contrasts_reactive())
-          # req(chosen_omes_reactive())
-          # req(chosen_groups_reactive())
-          # req(GCTs())
-          # req(input$select_test)
-          # req(default_annotation_column())
-
           test_results<- list()
+          
           for (ome in names(param_list)) {
             test <- param_list[[ome]]$test
             groups <- param_list[[ome]]$groups
             annotation_col <- default_annotations()[[ome]]
             contrasts <- selected_contrasts_reactive()
 
-            print(paste("running ",ome," with ",test, "on the groups ",groups, " in the annotation column ", annotation_col, " with the contrasts ", contrasts))
             stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts,intensity = FALSE)
-
-            test_results[[ome]]<-stat.results
-
-            #calling the statistical testing function
-          #stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
-          #stat.results<- stat.results[order(rownames(stat.results)), sort(colnames(stat.results)), drop = FALSE]
-
-          # if (!is.null(stat.results)) {
-          #   assign("stat.results",stat.results,envir=.GlobalEnv)
-          # }
-
+            #stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
+            
+            test_results[[ome]] <- as.data.frame(stat.results)
           }
-          print(head(test_results))
-
-          
+   
           stat_results(test_results)
+          
+          assign("stat_results", stat_results, envir = .GlobalEnv)
+          assign("stat_param", stat_param, envir = .GlobalEnv)
+          
+          sink()
         })
-
-        sink()
-      })
+     
+  })
 }
 
 
