@@ -157,6 +157,16 @@ statSummary_Ome_UI <- function (id, ome) {
 
     # example plot
     fluidRow(
+      # Adjustments box
+      shinydashboardPlus::box(
+        uiOutput(ns("adjustments_table")),
+        title = "Adjustments",
+        status = "primary",
+        solidHeader = TRUE,
+        width = 6,
+        headerBorder = TRUE
+      ),
+      
       # Dataset information box
       shinydashboardPlus::box(
         tableOutput(ns("dataset_table")),
@@ -177,22 +187,22 @@ statSummary_Ome_UI <- function (id, ome) {
         headerBorder = TRUE
       ),
 
-      # # P.val histogram box
-      # fluidRow(shinydashboardPlus::box(
-      #   plotlyOutput(ns("quant_features_plot")),
-      #   sidebar = boxSidebar(
-      #     uiOutput(ns("quant_features_sidebar_contents")),
-      #     id = ns("quant_features_sidebar"),
-      #     width = 25,
-      #     icon = icon("gears", class = "fa-2xl"),
-      #     background = "rgba(91, 98, 104, 0.9)"
-      #   ),
-      #   status = "primary",
-      #   width = 12,
-      #   title = "P.value Histogram",
-      #   headerBorder = TRUE,
-      #   solidHeader = TRUE
-      # ))
+      # P.val histogram box
+      fluidRow(shinydashboardPlus::box(
+        plotlyOutput(ns("pval_hist_plot")),
+        sidebar = boxSidebar(
+          uiOutput(ns("pval_hist_sidebar_contents")),
+          id = ns("pval_hist_sidebar"),
+          width = 25,
+          icon = icon("gears", class = "fa-2xl"),
+          background = "rgba(91, 98, 104, 0.9)"
+        ),
+        status = "primary",
+        width = 12,
+        title = "P.value Histogram",
+        headerBorder = TRUE,
+        solidHeader = TRUE
+      ))
 
     ) # end fluidRow
   )
@@ -213,37 +223,51 @@ statSummary_Ome_Server <- function(id,
 
     # get namespace, use in renderUI-like functions
     ns <- session$ns
-
+    
+    ## ADJUSTMENTS INFO ##
+    output$adjustments_table <- renderUI(
+      tagList(
+        selectInput(ns("select_stat"),"Choose stat:", c("adj.p.val","nom.p.val")),
+        sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=0.05, step=0.01 )
+      )
+    )
+    
+    observeEvent(input$select_stat, {
+      current <- stat_param() 
+      current[[ome]]$stat <-input$select_stat
+      stat_param(current)                  
+    })
+    
+    observeEvent(input$select_cutoff, {
+      current <- stat_param() 
+      current[[ome]]$cutoff <-input$select_cutoff
+      stat_param(current)                  
+    })
+    
     ## DATASET INFO ##
     #Capture system output in a file
-    # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-    # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-    # sink(filename)
-    # 
-    # 
-    #   print("=== MODULE DEBUG ===\n")
-    #   print("Module ID:")
-    #   print(id)
-    #   print("Received ome:")
-    #   print(ome)
-    #   print("Available stat_results keys:")
-    #   print(names(stat_results()))
-    #   
-    #   sr <- stat_results()[[ome]]
-    #   if (is.null(sr)) {
-    #     print("stat_results()[[ome]] is NULL\n")
-    #   } else {
-    #     print("nrow:")
-    #     print(nrow(sr))
-    #     print(head(sr))
-    #   }
-    # 
-    #   print("DEBUG: class of sr:")
-    #   print(class(sr))
-    #   #lapply(stat_results(), class)
-    #   
-    # 
-    # sink()
+    timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+    filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+    sink(filename)
+
+
+      print("=== MODULE DEBUG ===\n")
+      print("Module ID:")
+      print(id)
+      print("Received ome:")
+      print(ome)
+      print("Available stat_results keys:")
+      print(names(stat_results()))
+
+      sr <- stat_results()[[ome]]
+        print("nrow:")
+        print(nrow(sr))
+        print(head(sr))
+
+      print("DEBUG: class of sr:")
+      print(class(sr))
+
+    sink()
     
     # render dataset info
     output$dataset_table <- renderTable(
@@ -266,7 +290,59 @@ statSummary_Ome_Server <- function(id,
     )
 
     ## P.value Histogram- for both non-adj and adj p values ##
-    # Get hist. code from Dr.Clark
+    pval_hist_plot_reactive <- reactive({
+      req(stat_results())
+      
+      # validate/need/require statements
+      validate(
+        need(GCT_processed(), "GCTs not processed") %then%
+          need(default_annotation_column(), "don't know what annotation to use")
+      )
+      
+      pval_stat<- stat_param()[[ome]]$stat 
+      pval_cutoff<- stat_param()[[ome]]$cutoff
+      
+      df <- stat_results()[[ome]]
+      if (pval_stat == "adj.p.val") {
+        col_name <- grep("adj\\.P\\.Val", colnames(df), value = TRUE)[1]
+      } else {
+        col_name <- grep("P\\.Value", colnames(df), value = TRUE)[1]
+      }
+      req(col_name)
+      pvals <- df[[col_name]]
+      pvals <- pvals[!is.na(pvals)]
+      
+      ggplot(data.frame(pval = pvals), aes(x = pval)) +
+        geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "skyblue", color = "white") +
+        geom_vline(xintercept = pval_cutoff, color = "red", linetype = "dashed", size = 1) +
+        labs(
+          title = paste("P-value Histogram for", ome),
+          x = ifelse(pval_stat == "adj.p.val", "Adjusted P-value", "Nominal P-value"),
+          y = "Number of Features"
+        ) +
+        xlim(0, 1)
+      
+    })
+    
+    
+    output$pval_hist_plot <- renderPlotly({
+        gg <- pval_hist_plot_reactive()
+        req(gg)
+        ggplotly(gg)
+        
+    })
+    
+    output$pval_hist_sidebar_contents <- renderUI({
+      req(stat_param())
+      tagList(
+        if (stat_param()[[ome]]$test=="One-sample Moderated T-test" || stat_param()[[ome]]$test=="Moderated F test"){
+          radioButtons(ns("pval_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
+        } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+          radioButtons(ns("pval_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
+        }
+      )
+    })
+    
 
 
     ## COMPILE EXPORTS ##

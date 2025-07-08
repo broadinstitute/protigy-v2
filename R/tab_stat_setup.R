@@ -165,7 +165,11 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
         current[[ome]] <- list()          
       }
       
-      current[[ome]]$groups <- input$stat_setup_annotation   
+      current[[ome]]$groups <- input$stat_setup_annotation  
+      current[[ome]]$contrasts <-NULL
+      current[[ome]]$stat <-"adj.p.val"
+      current[[ome]]$cutoff <-0.05
+      
       stat_param(current)                  
     })
     
@@ -194,100 +198,134 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
 ################################################################################
 ######CONTRAST SELECTION########################################################
     #saving the selected contrasts to stat_param
-    observe ({
-      req(input$select_test == "Two-sample Moderated T-test")
-      req(length(input$stat_setup_annotation) >= 2)
-      
+    observeEvent(input$select_contrasts, {
       req(selected_ome())
-      current <- stat_param()              # get current full list
-      ome <- selected_ome()                # get the OME we're working on
+      current <- stat_param()              
+      ome <- selected_ome()               
       
-      if (is.null(current[[ome]])) {
-        current[[ome]] <- list()           # create an empty sublist if needed
-      }
+      if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
-      if (input$select_test == "Two-sample Moderated T-test"){
-        current[[ome]]$contrasts <- selected_contrasts_reactive()   # update just the test field
-        stat_param(current)      
-      } else {
-        current[[ome]]$contrasts <-NULL
-      }
+      current[[ome]]$contrasts <- input$select_contrasts
+
+      stat_param(current)
     })
     
-    
-    #selecting the contrast
     output$select_contrast_ui <- renderUI({
       req(input$select_test == "Two-sample Moderated T-test")
-      req(length(input$stat_setup_annotation) >= 2)
-       
-      #create pairwise comparisons
-      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
-       
-      lapply(seq_along(pairwise_contrasts), function(i) {
-        pair <- pairwise_contrasts[[i]]
-        flip_id <- ns(paste0("flip_", i))
-        contrast_id <- ns(paste0("contrast_", i))
-         
-        fluidRow(
-          column(5,
-             uiOutput(ns(paste0("label_contrast_", i)))
-          ),
-          column(5,
-             checkboxInput(flip_id, "Flip", FALSE)
-          )
-        )
-      })
+      if (length(input$stat_setup_annotation) >= 2) {
+        pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+        labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      }
+      checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=labels)
     })
-     
-    #flip the contrast over if the flip box is clicked
-     observe({
-       req(input$select_test == "Two-sample Moderated T-test")
-       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
-       
-       for (i in seq_along(pairwise_contrasts)) {
-         local({
-           j <- i
-           pair <- pairwise_contrasts[[j]]
-           flip_input_id <- paste0("flip_", j)
-           label_output_id <- paste0("label_contrast_", j)
-           contrast_input_id <- paste0("contrast_", j)
-           
-           output[[label_output_id]] <- renderUI({
-             flipped <- input[[flip_input_id]]
-             label <- if (!is.null(flipped) && flipped) {
-               paste(pair[2], "over", pair[1])
-             } else {
-               paste(pair[1], "over", pair[2])
-             }
-             checkboxInput(ns(contrast_input_id), label, TRUE)
-           })
-         })
-       }
-     })
-     
-     #final contrasts passed into the function
-     selected_contrasts_reactive <- reactive({
-       req(input$stat_setup_annotation)
-       if(length(input$stat_setup_annotation) < 2) {
-         return(list())  # Return empty list when fewer than 2 groups selected
-       }
-       
-       selected_contrasts <- list()
-       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
-       
-       for (i in seq_along(pairwise_contrasts)) {
-         pair <- pairwise_contrasts[[i]]
-         flip_id <- paste0("flip_", i)
-         contrast_id <- paste0("contrast_", i)
-         
-         if (isTRUE(input[[contrast_id]])) {
-           flipped <- isTRUE(input[[flip_id]])
-           contrast <- if (flipped) rev(pair) else pair
-           selected_contrasts[[length(selected_contrasts) + 1]] <- contrast
-         }
-       }
-       selected_contrasts
-     })
+    
+    #displaying the previously chosen groups from the parameters
+    observe({
+      req(selected_ome(),input$select_contrasts)
+      
+      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+      labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      
+      saved_contrasts <- stat_param()[[selected_ome()]]$contrasts
+      if (is.null(saved_contrasts)){saved_contrasts <- labels}
+      updateCheckboxGroupInput(session, "select_contrasts", choices= labels, selected = saved_contrasts)
+    })
+    
+    
+    
+    # observe({
+    #   req(input$selected_ome)
+    #   req(input$stat_setup_annotation)
+    #   if (length(input$stat_setup_annotation) < 2) return(list())
+    #   
+    #   pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #   all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+    #   
+    #   selected_contrasts <- list()
+    #   for (i in seq_along(all_pairs)) {
+    #     contrast_id <- paste0("contrast_", i)
+    #     if (isTRUE(input[[contrast_id]])) {
+    #       selected_contrasts[[length(selected_contrasts) + 1]] <- all_pairs[[i]]
+    #     }
+    #   }
+    #   contrast_store[[input$selected_ome]] <- selected
+    # })
+    
+    # #selecting the contrast
+    # output$select_contrast_ui <- renderUI({
+    #   req(input$select_test == "Two-sample Moderated T-test")
+    #   req(length(input$stat_setup_annotation) >= 2)
+    #    
+    #   #create pairwise comparisons
+    #   pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #    
+    #   lapply(seq_along(pairwise_contrasts), function(i) {
+    #     pair <- pairwise_contrasts[[i]]
+    #     flip_id <- ns(paste0("flip_", i))
+    #     contrast_id <- ns(paste0("contrast_", i))
+    #      
+    #     fluidRow(
+    #       column(5,
+    #          uiOutput(ns(paste0("label_contrast_", i)))
+    #       ),
+    #       column(5,
+    #          checkboxInput(flip_id, "Flip", FALSE)
+    #       )
+    #     )
+    #   })
+    # })
+    #  
+    # #flip the contrast over if the flip box is clicked
+    #  observe({
+    #    req(input$select_test == "Two-sample Moderated T-test")
+    #    pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #    
+    #    for (i in seq_along(pairwise_contrasts)) {
+    #      local({
+    #        j <- i
+    #        pair <- pairwise_contrasts[[j]]
+    #        flip_input_id <- paste0("flip_", j)
+    #        label_output_id <- paste0("label_contrast_", j)
+    #        contrast_input_id <- paste0("contrast_", j)
+    #        
+    #        output[[label_output_id]] <- renderUI({
+    #          flipped <- input[[flip_input_id]]
+    #          label <- if (!is.null(flipped) && flipped) {
+    #            paste(pair[2], "over", pair[1])
+    #          } else {
+    #            paste(pair[1], "over", pair[2])
+    #          }
+    #          checkboxInput(ns(contrast_input_id), label, TRUE)
+    #        })
+    #      })
+    #    }
+    #  })
+    #  
+    #  #final contrasts passed into the function
+    #  selected_contrasts_reactive <- reactive({
+    #    req(input$stat_setup_annotation)
+    #    if(length(input$stat_setup_annotation) < 2) {
+    #      return(list())  # Return empty list when fewer than 2 groups selected
+    #    }
+    #    
+    #    selected_contrasts <- list()
+    #    pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #    
+    #    for (i in seq_along(pairwise_contrasts)) {
+    #      pair <- pairwise_contrasts[[i]]
+    #      flip_id <- paste0("flip_", i)
+    #      contrast_id <- paste0("contrast_", i)
+    #      
+    #      if (isTRUE(input[[contrast_id]])) {
+    #        flipped <- isTRUE(input[[flip_id]])
+    #        contrast <- if (flipped) rev(pair) else pair
+    #        selected_contrasts[[length(selected_contrasts) + 1]] <- contrast
+    #      }
+    #    }
+    #    selected_contrasts
+    #  })
      
 ##############################################################################
         #TESTS RUN AFTER RUN BUTTON CLICKED
@@ -297,7 +335,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
           filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
           sink(filename)
           
-          req(GCTs(), default_annotations(), selected_contrasts_reactive())
+          req(GCTs(), default_annotations())
           param_list <- stat_param()
           gcts <- GCTs()
 
@@ -307,7 +345,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
             test <- param_list[[ome]]$test
             groups <- param_list[[ome]]$groups
             annotation_col <- default_annotations()[[ome]]
-            contrasts <- selected_contrasts_reactive()
+            contrasts <- param_list[[ome]]$contrasts
 
             stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts,intensity = FALSE)
             #stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
