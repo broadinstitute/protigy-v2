@@ -1,12 +1,14 @@
 ################################################################################
 # Module: Stat_Plot
 #
-# Allow users to see the plots of their results
+# Allow users to see the Volcano plot of their results
 ################################################################################
 
 ################################################################################
 # Shiny functions (UI and server)
 ################################################################################
+
+source("R/tab_stat_plot_helpers.R")
 
 # UI for the statPlot tab
 # contains the structure for the big tabbed box with omes
@@ -27,12 +29,7 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
                                    GCTs_and_params, 
                                    globals, 
                                    GCTs_original) { 
-  
-  # TODO: edit this tab's inputs...depending on the module, you may not need
-  # `globals` or `GCTs_original` 
-  # (I would be surprised if you didn't need `GCTs_and_params`)
-  
-  
+ 
   ## module function
   moduleServer(id, function (input, output, session) {
     
@@ -40,15 +37,6 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
-    
-    # TODO: edit the rest of the inputs in this section, remove unnecessary ones
-    # Parameters that can be removed if unnecessary are:
-    # `parameters`
-    # `default_annotations`
-    # `custom_colors`
-    # `GCTs_merged`
-    #
-    # `all_omes` and `default_ome` are used in this function, DO NOT REMOVE
     
     # GCTs to use for analysis/visualization
     GCTs <- reactive({
@@ -86,6 +74,16 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
+      req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
+      
+      stat_param_val <- globals$stat_param()
+      stat_results_val <- globals$stat_results()
+      
+      validate(
+        need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
+        need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
+      )
+      
       req(all_omes(), default_ome())
       
       # generate a tab for each -ome
@@ -153,39 +151,22 @@ statPlot_Ome_UI <- function (id, ome) {
   
   tagList(
     
-    # TODO: add UI for each ome tab here. Make sure to use `ns`!
-    # Example included below
-    
-    # example plot
-    fluidRow(
-      shinydashboardPlus::box(
-        
-        # add the contents of the box (e.g. a plot) here
-        plotlyOutput(ns("example_plot")),
-        
-        # add a sidebar for controls (remove if not needed)
-        sidebar = boxSidebar(
-          uiOutput(ns("example_plot_sidebar_contents")),
-          id = ns("example_plot_sidebar"),
-          width = 25,
-          icon = icon("gears", class = "fa-2xl"),
-          background = "rgba(91, 98, 104, 0.9)"
-        ),
-        
-        # add a dropdown for help text (remove if not needed)
-        dropdownMenu = boxDropdown(
-          icon = icon("question", class = "fa-xl"),
-          uiOutput(ns("example_plot_dropdown_contents"))
-        ),
-        
-        # other box parameters
-        status = "primary",
-        width = 12,
-        title = "Example Plot",
-        headerBorder = TRUE,
-        solidHeader = TRUE
-      ) # end box
-    ) # end fluidRow
+    # Volcano plot
+    fluidRow(shinydashboardPlus::box(
+      plotlyOutput(ns("volcano_plot")),
+      sidebar = boxSidebar(
+        uiOutput(ns("volcano_sidebar_contents")),
+        id = ns("volcano_sidebar"),
+        width = 25,
+        icon = icon("gears", class = "fa-2xl"),
+        background = "rgba(91, 98, 104, 0.9)"
+      ),
+      status = "primary",
+      width = 12,
+      title = "Volcano Plot",
+      headerBorder = TRUE,
+      solidHeader = TRUE
+    ))
   )
 }
 
@@ -199,91 +180,96 @@ statPlot_Ome_Server <- function(id,
                                    default_annotation_column,
                                    color_map) {
   
-  # TODO: edit ome server inputs, remove unnecessary ones
-  # make sure to keep `id` (necessary for the module to work) and `ome` (so you
-  # know which ome you're working with)
-  # NOTE: other than `id` and `ome`, all inputs should be reactive!
-  
   ## module function
   moduleServer(id, function (input, output, session) {
     
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
-    # TODO: render plots/tables/etc according to the example below.
     
-    ## RENDER EXAMPLE PLOT ##
+    ## RENDER VOLCANO PLOT ##
+    output$volcano_sidebar_contents <- renderUI({
+      req(stat_param())
+      tagList(
+        if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
+          radioButtons(ns("volcano_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
+        } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+          radioButtons(ns("volcano_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
+        } else if (stat_param()[[ome]]$test=="Moderated F test"){
+          h3("Cannot show a volcano plot for the Mod F test")
+        } else {
+          return(NULL)
+        }
+      )
+    })
     
-    # A reactive function that creates your plot for a single ome
-    # This function should use reactive variables and should only be called in
-    # a reactive context.
-    # The output should be used for display AND for exporting....
-    # meaning it should output something that can be rendered in the app's UI
-    # and also downloaded as a PDF.
-    # Note: this means that this function's output should be non-interactive 
-    # (for example, output a ggplot object here, convert to plotly later)
-    example_plot_reactive <- reactive({
-      
-      # validate/need/require statements
+    # volcano_plot_reactive <- reactive({
+    #   req(stat_results())
+    #   
+    #   # validate/need/require statements
+    #   validate(
+    #     need(GCT_processed(), "GCTs not processed") %then%
+    #       need(default_annotation_column(), "don't know what annotation to use")
+    #   )
+    #   
+    #   if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
+    #     req(input$volcano_groups)
+    #     group<- input$volcano_groups
+    #   } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+    #     req(input$volcano_contrasts)
+    #     group<- input$volcano_contrasts
+    #   } else {
+    #     group<-NULL
+    #   }
+    #   plotVolcano(group = group)
+    #   
+    #   ggplot() + ggtitle(paste("Volcano Plot for:", ome))
+    # })
+    # 
+    # 
+    # output$volcano_plot <- renderPlotly({
+    #   
+    #   gg <- volcano_plot_reactive()
+    #   ggplotly(gg)
+    # })
+    # 
+    
+    output$volcano_plot <- renderPlot({
+      req(stat_results())
       validate(
         need(GCT_processed(), "GCTs not processed") %then%
           need(default_annotation_column(), "don't know what annotation to use")
       )
       
-      # generating a dummy example plot here
-      # Note: it's helpful to have the -ome somewhere in the title
-      ggplot() + ggtitle(paste("Example for:", ome))
-    })
-    
-    # Render the plot to display in the app
-    # This is also where you would do anything that is app-display-specific  
-    # (like converting ggplot to plotly)
-    output$example_plot <- renderPlotly({
+      if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
+        req(input$volcano_groups)
+        group <- input$volcano_groups
+      } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+        req(input$volcano_contrasts)
+        group <- input$volcano_contrasts
+      } else {
+        return(NULL)
+      }
       
-      # call your reactive function, defined above
-      gg <- example_plot_reactive()
-      
-      # convert to plotly
-      ggplotly(gg)
+      plotVolcano(group = group)  ## draws the plot directly
     })
     
-    # add sidebar content, if desired
-    output$example_plot_sidebar_contents <- renderUI({
-      tagList(
-        "Sidebar contents here"
-      )
-    })
-    
-    # add dropdown content, if desired
-    output$example_plot_dropdown_contents <- renderUI({
-      tagList(
-        p("Dropdown contents here")
-      )
-    })
-    
-    ## COMPILE EXPORTS ##
-    
-    # TODO: make a function to save desired exports
-    # input to the functionis the output directory path
-    # the function should save your plot/table/etc. in this directory
-    # you should call the reactive object for the export here
-    
-    # Example of export function
-    example_plot_export_function <- function(dir_name) {
-      ggsave(
-        filename = paste0("example_plot_", ome, ".pdf"), 
-        plot = example_plot_reactive(), # call the reactive object
-        device = 'pdf',
-        path = dir_name # save in the desired output directory
-      )
-    }
-    
-    
-    # TODO: return a named list of custom export functions, example included
-    return(
-      list(
-        example_plot = example_plot_export_function
-      )
-    )
+    # ## COMPILE EXPORTS ##
+    # # Example of export function
+    # example_plot_export_function <- function(dir_name) {
+    #   ggsave(
+    #     filename = paste0("example_plot_", ome, ".pdf"), 
+    #     plot = example_plot_reactive(), # call the reactive object
+    #     device = 'pdf',
+    #     path = dir_name # save in the desired output directory
+    #   )
+    # }
+    # 
+    # # TODO: return a named list of custom export functions, example included
+    # return(
+    #   list(
+    #     example_plot = example_plot_export_function
+    #   )
+    # )
   })
 }

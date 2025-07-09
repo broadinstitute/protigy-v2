@@ -74,13 +74,13 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original
   )
   
-  # ## Statistics Plot module
-  # all_statPlot_exports <- statPlot_Tab_Server(
-  #   GCTs_and_params = GCTs_and_params,
-  #   globals = globals,
-  #   GCTs_original = GCTs_original
-  # )
-  # 
+  ## Statistics Plot module
+  all_statPlot_exports <- statPlot_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original
+  )
+
   # ## Statistics Table module
   # all_statTable_exports <- statTable_Tab_Server(
   #   GCTs_and_params = GCTs_and_params,

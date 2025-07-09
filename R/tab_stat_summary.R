@@ -72,6 +72,16 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
 
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
+      req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
+      
+      stat_param_val <- globals$stat_param()
+      stat_results_val <- globals$stat_results()
+      
+      validate(
+        need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
+        need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
+      )
+      
       req(all_omes(), default_ome())
     
       # generate a tab for each -ome
@@ -124,16 +134,6 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
             color_map = reactive(custom_colors()[[ome_local]])
           )
         })
-        # statSummary_Ome_Server(
-        #   # TODO: edit inputs to the ome server function, the last 4 may be unnecessary
-        #   id = ome,
-        #   ome = ome,
-        #   GCT_processed = reactive(GCTs()[[ome]]),
-        #   parameters = reactive(parameters()[[ome]]),
-        #   GCT_original = reactive(GCTs_original()[[ome]]),
-        #   default_annotation_column = reactive(default_annotations()[[ome]]),
-        #   color_map = reactive(custom_colors()[[ome]])
-        # )
       }, simplify = FALSE)
     
       all_plots(output_plots) # set reactive value with outputs
@@ -224,6 +224,25 @@ statSummary_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
+    # req(
+    #   exists("stat_param", envir = .GlobalEnv),
+    #   exists("stat_results", envir = .GlobalEnv)
+    # )
+    # 
+    # stat_param_reactive <- get("stat_param", envir = .GlobalEnv)
+    # stat_results_reactive <- get("stat_results", envir = .GlobalEnv)
+    # 
+    # stat_param <- stat_param_reactive()
+    # stat_results <- stat_results_reactive()
+    # 
+    # validate(
+    #   need(!is.null(stat_param), "Please run Setup: Stat parameters missing."),
+    #   need(!is.null(stat_results), "Please run Setup: Stat results missing."),
+    #   need(!is.null(stat_param[[ome]]), paste0("Please run Setup: Parameters for ", ome, " missing.")),
+    #   need(!is.null(stat_results[[ome]]), paste0("Please run Setup: Results for ", ome, " missing."))
+    # )
+    
+    
     ## ADJUSTMENTS INFO ##
     output$adjustments_table <- renderUI(
       tagList(
@@ -245,39 +264,42 @@ statSummary_Ome_Server <- function(id,
     })
     
     ## DATASET INFO ##
-    #Capture system output in a file
-    timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-    filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-    sink(filename)
-
-
-      print("=== MODULE DEBUG ===\n")
-      print("Module ID:")
-      print(id)
-      print("Received ome:")
-      print(ome)
-      print("Available stat_results keys:")
-      print(names(stat_results()))
-
-      sr <- stat_results()[[ome]]
-        print("nrow:")
-        print(nrow(sr))
-        print(head(sr))
-
-      print("DEBUG: class of sr:")
-      print(class(sr))
-
-    sink()
+    # #Capture system output in a file
+    # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+    # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+    # sink(filename)
+    # 
+    # 
+    #   print("=== MODULE DEBUG ===\n")
+    #   print("Module ID:")
+    #   print(id)
+    #   print("Received ome:")
+    #   print(ome)
+    #   print("Available stat_results keys:")
+    #   print(names(stat_results()))
+    # 
+    #   sr <- stat_results()[[ome]]
+    #     print("nrow:")
+    #     print(nrow(sr))
+    #     print(head(sr))
+    # 
+    #   print("DEBUG: class of sr:")
+    #   print(class(sr))
+    # 
+    # sink()
     
     # render dataset info
-    output$dataset_table <- renderTable(
-      df <- stat_results()[[ome]],
+    output$dataset_table <- renderTable({
+      df <- stat_results()[[ome]]
+      col_name <- grep("significant", colnames(df), value = TRUE, ignore.case=TRUE)[1]
+      req(col_name)
+      sig_vals <- df[[col_name]]
+      sig_vals <- sig_vals[!is.na(sig_vals)]
       data.frame(
         Description = c("Features tested", "Significant features"),
-        Count = c(nrow(df), 10)
-        #Count = c(nrow(df), sum(df$significant == TRUE, na.rm = TRUE))
+        Count = c(nrow(df), sum(as.logical(sig_vals)))
       )
-    )
+    })
 
     # WORKFLOW INFO ##
 
@@ -290,6 +312,17 @@ statSummary_Ome_Server <- function(id,
     )
 
     ## P.value Histogram- for both non-adj and adj p values ##
+    output$pval_hist_sidebar_contents <- renderUI({
+      req(stat_param())
+      tagList(
+        if (stat_param()[[ome]]$test=="One-sample Moderated T-test" || stat_param()[[ome]]$test=="Moderated F test"){
+          radioButtons(ns("pval_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
+        } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+          radioButtons(ns("pval_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
+        }
+      )
+    })
+    
     pval_hist_plot_reactive <- reactive({
       req(stat_results())
       
@@ -301,17 +334,35 @@ statSummary_Ome_Server <- function(id,
       
       pval_stat<- stat_param()[[ome]]$stat 
       pval_cutoff<- stat_param()[[ome]]$cutoff
+      pattern_base <- if (pval_stat == "adj.p.val") "adj\\.P\\.Val" else "P\\.Value"
       
       df <- stat_results()[[ome]]
-      if (pval_stat == "adj.p.val") {
-        col_name <- grep("adj\\.P\\.Val", colnames(df), value = TRUE)[1]
+      
+      #FIND COLUMN IN RESULTS THAT SHOWS THE DESIRED STAT AND GROUP/CONTRAST
+      if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+        req(input$pval_groups)
+        keyword <- input$pval_groups
+      } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+        req(input$pval_contrasts)
+        keyword <- input$pval_contrasts
       } else {
-        col_name <- grep("P\\.Value", colnames(df), value = TRUE)[1]
+        keyword <- NULL
       }
+
+      if (is.null(keyword)) {
+        pattern <- pattern_base
+      } else {
+        # match both p-value type and group/contrast name (any order), case-insensitive
+        pattern <- paste0("(?i)(?=.*", pattern_base, ")(?=.*", keyword, ")")
+      }
+      
+      col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
       req(col_name)
+      
       pvals <- df[[col_name]]
       pvals <- pvals[!is.na(pvals)]
       
+      #ACTUAL HISTOGRAM
       ggplot(data.frame(pval = pvals), aes(x = pval)) +
         geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "skyblue", color = "white") +
         geom_vline(xintercept = pval_cutoff, color = "red", linetype = "dashed", size = 1) +
@@ -332,16 +383,7 @@ statSummary_Ome_Server <- function(id,
         
     })
     
-    output$pval_hist_sidebar_contents <- renderUI({
-      req(stat_param())
-      tagList(
-        if (stat_param()[[ome]]$test=="One-sample Moderated T-test" || stat_param()[[ome]]$test=="Moderated F test"){
-          radioButtons(ns("pval_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
-        } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
-          radioButtons(ns("pval_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
-        }
-      )
-    })
+  
     
 
 

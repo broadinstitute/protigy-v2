@@ -42,7 +42,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Setup",statSetup_Tab_UI()),
         #observeEvent(isTRUE(stat_ready()) {
           tabPanel("Summary", statSummary_Tab_UI()),
-          # tabPanel("Plot", statPlot_Tab_UI()),
+          tabPanel("Plot", statPlot_Tab_UI()),
           # tabPanel("Table", statTable_Tab_UI())
         #})
       ),

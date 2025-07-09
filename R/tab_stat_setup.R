@@ -133,7 +133,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
         current[[ome]] <- list()           
       }
       
-      current[[ome]]$test <- input$select_test   
+      current[[ome]]$test <- input$select_test 
+      if (input$select_test !="Two-sample Moderated T-test"){
+        current[[ome]]$contrasts <-NULL
+      }
+      current[[ome]]$stat <-"adj.p.val"
+      current[[ome]]$cutoff <-0.05
+      
       stat_param(current)                 
     })
     
@@ -165,10 +171,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
         current[[ome]] <- list()          
       }
       
-      current[[ome]]$groups <- input$stat_setup_annotation  
-      current[[ome]]$contrasts <-NULL
-      current[[ome]]$stat <-"adj.p.val"
-      current[[ome]]$cutoff <-0.05
+      current[[ome]]$groups <- input$stat_setup_annotation
       
       stat_param(current)                  
     })
@@ -179,6 +182,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       req(cdesc(), default_annotation_column(),selected_ome())
       
       choices<- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
       
       checkboxGroupInput(
         ns("stat_setup_annotation"),
@@ -197,21 +201,20 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     })
 ################################################################################
 ######CONTRAST SELECTION########################################################
-    #saving the selected contrasts to stat_param
+       #saving the selected contrasts to stat_param
     observeEvent(input$select_contrasts, {
       req(selected_ome())
-      current <- stat_param()              
-      ome <- selected_ome()               
-      
-      if (is.null(current[[ome]])) {current[[ome]] <- list()}
-      
-      current[[ome]]$contrasts <- input$select_contrasts
+      current <- stat_param()
+      ome <- selected_ome()
 
+      if (is.null(current[[ome]])) {current[[ome]] <- list()}
+
+      current[[ome]]$contrasts <- input$select_contrasts
       stat_param(current)
     })
-    
+
     output$select_contrast_ui <- renderUI({
-      req(input$select_test == "Two-sample Moderated T-test")
+      #req(input$select_test == "Two-sample Moderated T-test")
       if (length(input$stat_setup_annotation) >= 2) {
         pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
         all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
@@ -219,19 +222,23 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       }
       checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=labels)
     })
-    
+
     #displaying the previously chosen groups from the parameters
     observe({
       req(selected_ome(),input$select_contrasts)
-      
+
       pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
       labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      
+
       saved_contrasts <- stat_param()[[selected_ome()]]$contrasts
       if (is.null(saved_contrasts)){saved_contrasts <- labels}
       updateCheckboxGroupInput(session, "select_contrasts", choices= labels, selected = saved_contrasts)
     })
+
+
+    
+    
     
     
     
@@ -345,18 +352,46 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
             test <- param_list[[ome]]$test
             groups <- param_list[[ome]]$groups
             annotation_col <- default_annotations()[[ome]]
-            contrasts <- param_list[[ome]]$contrasts
+            contrasts_str <- param_list[[ome]]$contrasts
 
-            stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts,intensity = FALSE)
-            #stat.results<- stat.testing(test=input$select_test, annotation_col=default_annotation_column(), chosen_omes=chosen_omes_reactive(), gct=GCTs(), chosen_groups=chosen_groups_reactive(), selected_contrasts=selected_contrasts_reactive(), intensity=FALSE)
+            contrasts_list <- NULL
+            if (!is.null(contrasts_str)) {
+              contrasts_list <- lapply(contrasts_str, function(x) strsplit(x, " / ")[[1]])
+            }
             
-            test_results[[ome]] <- as.data.frame(stat.results)
+            # For two-sample test, ensure proper contrasts
+            if (test == "Two-sample Moderated T-test") {
+              if (length(groups) < 2) {
+                showNotification("Please select at least two groups for Two-sample test", type = "error")
+                next
+              }
+              if (is.null(contrasts_list) || length(contrasts_list) == 0) {
+                showNotification("Please select at least one contrast", type = "error")
+                next
+              }
+            }
+            
+            stat.results <- NULL
+            tryCatch({
+              stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
+              }, error = function(e) {
+              showNotification(paste("Test failed for ome", ome, ":", e$message), type = "error")
+              stat.results <<- NULL
+            })
+            
+            #stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
+            
+            if (!is.null(stat.results)) {
+              test_results[[ome]] <- as.data.frame(stat.results)
+            }
           }
    
           stat_results(test_results)
+          # assign("stat_results", stat_results, envir = .GlobalEnv)
+          # assign("stat_param", stat_param, envir = .GlobalEnv)
+          globals$stat_param <- stat_param
+          globals$stat_results <- stat_results
           
-          assign("stat_results", stat_results, envir = .GlobalEnv)
-          assign("stat_param", stat_param, envir = .GlobalEnv)
           
           sink()
         })

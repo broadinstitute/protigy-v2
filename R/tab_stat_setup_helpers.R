@@ -5,7 +5,12 @@
 ################################################################################
 
 stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, selected_contrasts, p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log=FALSE, intensity, ...) {
-  
+  ################################################################################
+  #None
+  ################################################################################
+  if(test == 'None'){
+    results_list<-NULL
+  }
   ################################################################################
   #Mod F Test
   ################################################################################
@@ -136,15 +141,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           ##View(data)
           if (use.adj.pvalue) mod.sig <- sig [,'adj.P.Val'] <= p.value.alpha
           else  mod.sig <- sig [,'P.Value'] <= p.value.alpha
-          # change <- apply (data, 1,
-          #                  function (x) {
-          #                    x <- x [is.finite (x)]
-          #                    ret.value <- '?'
-          #                    if ( all (x < 0) ) ret.value <- 'down'
-          #                    else if ( all (x > 0)) ret.value <- 'up'
-          #                    return (ret.value)
-          #                  })
-          
+        
           ##MOD T test result
           mod.t.result <- data.frame(sig, significant=mod.sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
           
