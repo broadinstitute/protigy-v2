@@ -243,6 +243,7 @@ set_annot_colors_discrete <- function( annot_table, # ====
 #' @import RColorBrewer
 #' @import khroma
 #' @import circlize
+#' @importFrom utils compareVersion packageVersion
 set_annot_colors_continuous <- function( annot_table, # ====
                                          return_function = FALSE, # toggle for returning a FUNCTION rather than a discrete low-mid-high palette
                                          palettes = NULL, # when NULL, defaults to RColorBrewer sequential palettes

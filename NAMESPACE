@@ -3,6 +3,7 @@
 export(launchApp)
 import(ComplexHeatmap)
 import(RColorBrewer)
+import(khroma)
 import(cmapR)
 import(dplyr)
 import(ggfortify)
