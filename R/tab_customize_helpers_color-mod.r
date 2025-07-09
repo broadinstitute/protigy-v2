@@ -1,4 +1,4 @@
-# Code written by C. Williams
+# Code written by C.M. Williams
 # Copied from R-utilities
 # Stephanie Vartany changed `require` to `@import` statements
 
@@ -9,11 +9,11 @@
 # Default Color Palettes --- colorblind safe! --- courtesy of Paul Tol (https://personal.sron.nl/~pault/)
 #
 
-
 ### Set Color Palette (for an annotation datatable)
 
-set_annot_colors <- function( annot_table,
+set_annot_colors <- function( annot_table, 
                               # General Parameters ====
+                              continuous.return_function = FALSE, # whether to return a function for continuous variables-- or a discrete vector with low/mid/high
                               continuous_columns = NULL, # vector of columns (either numeric or string)
                               autodetect_continuous=TRUE, # allow built-in detection of continuous columns
                               autodetect_continuous_nfactor_cutoff = 10, # number of non-NA factor levels allowed, before an annot is considered continuous
@@ -21,24 +21,9 @@ set_annot_colors <- function( annot_table,
                               # Special-Treatment Annotation Values ====
                               normal_annot_vals = c("^nat$", "^wt$", "^unmut$","^normal$","^0$"), # possible "normal" annotations (not case sensitive). Assigned the first color from the paired palette.
                               na_annot_vals = c("^na$", "^n.a.$", "^n/a$", "^unknown$", "^$"), # possible "NA" annotations (not case sensitive). Assigned na_color in discrete palettes, and placed at the end of vector.
-                              # Default Color Palettes --- Paul Tol Color Palattes-- colorblind safe! (https://personal.sron.nl/~pault/) ====
-                              qual.pals = list("Bright" = c('#4477AA', '#66CCEE', '#27B13E', '#CCBB44', '#EE6677', '#AA3377'), # green (originally '#228833') was modified to be more distinct from blue under tritanopia colorblindness
-                                               "Vibrant" = c('#0077BB', '#33BBEE', '#009988', '#EE7733', '#CC3311', '#EE3377'),
-                                               "Muted" = c( '#332288', '#88CCEE', '#44AA99', '#117733', '#999933', '#DDCC77', '#CC6677', '#882255', '#AA4499'),
-                                               "Light" = c( '#77AADD', '#99DDFF', '#44BB99', '#BBCC33', '#AAAA00', '#EEDD88', '#EE8866', '#FFAABB'),
-                                               "HighContrast" = c('#004488', '#DDAA33', '#BB5566')),
-                              # if adding a new paired-palette, please add LIGHTER colors FIRST, to ensure consistent formatting
-                              pair.pals = list("BrightPaired" = c("#A8DBFF", '#4477AA', "#CAFFFF", '#66CCEE', "#8BFFA2", '#27B13E', "#FFFFA8", '#CCBB44', "#FFCADB", '#EE6677', "#FF97DB", '#AA3377'),
-                                               "VibrantPaired" = c("#64DBFF", '#0077BB', "#64FDEC", '#009988', "#FFDB97", '#EE7733', "#FF97DB", '#EE3377' ),
-                                               "HighContrastPaired" = c('#6699CC', '#004488', '#EECC66', '#997700', '#EE99AA', '#994455')),
-                              seq.pals = list("YlOrBr" = c('#FFFFE5', '#FFF7BC', '#FEE391', '#FEC44F', '#FB9A29', '#EC7014', '#CC4C02', '#993404', '#662506'),
-                                              "Iridescent" = c('#FEFBE9', '#FCF7D5', '#F5F3C1', '#EAF0B5', '#DDECBF', '#D0E7CA', '#C2E3D2', '#B5DDD8', '#A8D8DC', '#9BD2E1', '#8DCBE4', '#81C4E7', '#7BBCE7', '#7EB2E4', '#88A5DD', '#9398D2', '#9B8AC4', '#9D7DB2', '#9A709E', '#906388', '#805770', '#684957', '#46353A'),
-                                              "Incandescent" = c('#CEFFFF', '#C6F7D6', '#A2F49B', '#BBE453', '#D5CE04', '#E7B503', '#F19903', '#F6790B', '#F94902', '#E40515', '#A80003')),
-                              na_color = "#BBBBBB",
-                              cont.pals = NULL, # by default, uses RColorBrewer Sequential Palettes, formatted list("palette_name" = c(low='#HEXVAL', mid='#HEXVAL', high='#HEXVAL'))
                               # ====
-                              warn_for_interpolation = TRUE # warn if discrete function linearly interpolates colors (which may not be color blind safe) 
-) {
+                              warn_for_interpolation = TRUE, # warn if discrete function linearly interpolates colors (which may not be color blind safe) 
+                              ...) { # ... allows for additional parameters to be passed in, such as: qual.pals, pair.pals, seq.pals, na_color, cont.pals, etc.
   annot_names = names(annot_table)
   annot_table_discrete = annot_table # start by assuming all annotations are discrete
   annot_table_continuous = annot_table[,0] # and that NO annotations are continuous
@@ -58,40 +43,48 @@ set_annot_colors <- function( annot_table,
       if ( length(continuous_columns_invalid)>0 )
         warning(paste0("The following 'continuous' column-names were not found in the annotation table, and will be ignored:\n",paste(continuous_columns_invalid, collapse=", ")))
       # and convert names to indices
-      continuous_columns = which(continuous_columns_valid %in% names(annot_table_discrete)) # subset continuous_columns to JUST valid column names, and convert to indices
+      continuous_columns_idx = which(names(annot_table_discrete) %in% continuous_columns_valid) # get column indices of valid continuous columns
+    } else {
+      out_of_bounds = setdiff(continuous_columns, 1:length(annot_table_discrete))
+      if (length(out_of_bounds)>0)
+        warning(paste0("The following 'continuous' column-indices were out of bounds, and will be ignored:\n",paste(out_of_bounds, collapse=", ") ))
+      continuous_columns_idx = continuous_columns[!continuous_columns %in% out_of_bounds]
     }
     
-    annot_table_continuous = cbind(annot_table_continuous, annot_table_discrete[continuous_columns]) # add continuous columns to annot_table_continuous
-    annot_table_discrete = annot_table_discrete[setdiff(1:length(annot_table_discrete), continuous_columns)] # remove continuous columns from annot_table_discrete
+    annot_table_continuous = cbind(annot_table_continuous, annot_table_discrete[continuous_columns_idx]) # add continuous columns to annot_table_continuous
+    annot_table_discrete = annot_table_discrete[setdiff(1:length(annot_table_discrete), continuous_columns_idx)] # remove continuous columns from annot_table_discrete
   }
   
   # Autodetection
   if (autodetect_continuous) {
     # auto-detect continuous variables that are STILL in annot_table_discrete
-    
-    # utility function to determine if an annotation column contains continuous data (i.e. )
-    is.continuous <- function ( annot_col, na_annot_vals, nfactor_cutoff=10 ) {
-      if (is.factor(annot_col)) {
-        annot_vals = levels(annot_col) # take values from levels, do not re-sort
-      } else annot_vals = sort(unique(annot_col)) # find and sort unique annotations (sorting prevents different color assignments based on order-of-appearance)
-      annot_vals[is.na( annot_vals )] <- "NA" # set literal NA to a string "NA"
+    if (!is.null(continuous_columns)) { 
+      warning("The 'autodetect_continuous' parameter is set to TRUE, but continuous columns were manually selected with the 'continuous_columns' parameter. Autodetection will be skipped.")
+    } else {
+      # utility function to determine if an annotation column contains continuous data (i.e. )
+      is.continuous <- function ( annot_col, na_annot_vals, nfactor_cutoff=10 ) {
+        if (is.factor(annot_col)) {
+          annot_vals = levels(annot_col) # take values from levels, do not re-sort
+        } else annot_vals = sort(unique(annot_col)) # find and sort unique annotations (sorting prevents different color assignments based on order-of-appearance)
+        annot_vals[is.na( annot_vals )] <- "NA" # set literal NA to a string "NA"
+        
+        n_na = sum(na.rm = TRUE, # sum number of NAs detected:
+                   unlist(sapply(na_annot_vals, # for each possible type of na_annot_vals
+                                 function(na_vals) { grepl(na_vals, annot_vals, ignore.case=TRUE) }))) # check if it appears in our annotation-values
+        
+        all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$" # regex to match all possible numeric strings, including scientific notation
+        if ( (length(annot_vals)-n_na) > nfactor_cutoff && # if we have more than nfactor_cutoff unique (non-na) annotation-values
+             sum(!grepl(all_numbers_regex, annot_vals), na.rm=TRUE) <= n_na ) # AND have all numeric data
+          return(TRUE) # assume continuous
+        return(FALSE) # otherwise, assume discrete
+      }
       
-      n_na = sum(na.rm = TRUE, # sum number of NAs detected:
-                 unlist(sapply(na_annot_vals, # for each possible type of na_annot_vals
-                               function(na_vals) { grepl(na_vals, annot_vals, ignore.case=TRUE) }))) # check if it appears in our annotation-values
+      continuous_columns_idx = which(unname(sapply( annot_table_discrete, simplify=TRUE, # get column indices
+                                                    function(annot_col) { is.continuous(annot_col, na_annot_vals, autodetect_continuous_nfactor_cutoff) }))) # of continuous columns
       
-      all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$" # regex to match all possible numeric strings, including scientific notation
-      if ( (length(annot_vals)-n_na) > nfactor_cutoff && # if we have more than nfactor_cutoff unique (non-na) annotation-values
-           sum(!grepl(all_numbers_regex, annot_vals), na.rm=TRUE) <= n_na ) # AND have all numeric data
-        return(TRUE) # assume continuous
-      return(FALSE) # otherwise, assume discrete
+      annot_table_continuous = cbind(annot_table_continuous, annot_table_discrete[continuous_columns_idx]) # add continuous columns to annot_table_continuous
+      annot_table_discrete = annot_table_discrete[setdiff(1:length(annot_table_discrete), continuous_columns_idx)] # remove continuous columns from annot_table_discrete
     }
-    
-    continuous_columns = which(unname(sapply( annot_table_discrete, simplify=TRUE, # get column indices
-                                              function(annot_col) { is.continuous(annot_col, na_annot_vals, autodetect_continuous_nfactor_cutoff) }))) # of continuous columns
-    
-    annot_table_continuous = cbind(annot_table_continuous, annot_table_discrete[continuous_columns]) # add continuous columns to annot_table_continuous
-    annot_table_discrete = annot_table_discrete[setdiff(1:length(annot_table_discrete), continuous_columns)] # remove continuous columns from annot_table_discrete
   }
   
   # Sanity Checks for continuous/discrete assignments
@@ -106,11 +99,11 @@ set_annot_colors <- function( annot_table,
   ### Color Assignment
   return(c(set_annot_colors_discrete(annot_table_discrete, # set discrete colors
                                      normal_annot_vals=normal_annot_vals, na_annot_vals=na_annot_vals,
-                                     qual.pals = qual.pals, pair.pals = pair.pals, seq.pals = seq.pals, na_color = na_color,
-                                     warn_for_interpolation=warn_for_interpolation),
-           set_annot_colors_continuous(annot_table_continuous, palettes = cont.pals, na_color = na_color)))
+                                     warn_for_interpolation=warn_for_interpolation, ...),
+           set_annot_colors_continuous(annot_table_continuous, return_function = continuous.return_function, ...)))
   
 }
+
 
 #' @importFrom methods existsFunction
 set_annot_colors_discrete <- function( annot_table, # ====
@@ -174,24 +167,23 @@ set_annot_colors_discrete <- function( annot_table, # ====
     
     # locate NA values
     annot_vals[is.na( annot_vals )] <- "NA" # set NA to a string "NA"
-    na_index = unlist(sapply(na_annot_vals, function(annot_table) { grep(annot_table, annot_vals, ignore.case=TRUE) }, USE.NAMES = FALSE)) # identify any NA indices
+    na_index = unique(unlist(sapply(na_annot_vals, function(na_val) { grep(na_val, annot_vals, ignore.case=TRUE) }, USE.NAMES = FALSE))) # identify any NA indices
     n_colors = length(annot_vals)-length(na_index) # do not choose colors for NA values
     
     # Assign paired or sequential/qualitative colors, depending on vector length
-    if( length( annot_vals ) == 2 || # if we have a pair, 
-        ( length( annot_vals ) == 3 && "NA" %in% annot_vals ) ){ # or a annot of three with an NA val
+    if( n_colors == 2 ) { # if we have a pair
       pair.count=pair.index+1 # re-index starting at 1 for.... everything other than the modulo operator
       annot_colors <- pair.colors[[pair.count]] # choose colors
       pair.index <- ( pair.index + 1 ) %% length(pair.colors) # increment pair.index, or restart if we've exhausted the pairs palette list
       
       # Assign the "normal" annotations the lighter color
-      norm_index = unlist(sapply(normal_annot_vals, function(annot_table) { grep(annot_table, annot_vals, ignore.case=TRUE) }, USE.NAMES = FALSE)) # identify index of annot_vals that is "normal"
+      norm_index = unique(unlist(sapply(normal_annot_vals, function(norm_val) { grep(norm_val, annot_vals, ignore.case=TRUE) }, USE.NAMES = FALSE))) # identify index of annot_vals that is "normal"
       if ( length(norm_index)!=0 ) { # if any of the "normal" annots can be found
         annot_vals <- c( annot_vals[norm_index], annot_vals[-norm_index] ) # move norm value to beginning-- this will assign it the lighter color.
         norm_index=numeric(0) # reset norm_index
       }
     } else { # pick a sequential or qualitative colorscheme
-      if (sum(!grepl("^[0-9]+$", annot_vals), na.rm=TRUE) <= length(na_index)) { # if we have SEQUENTIAL data (i.e. its JUST digits)
+      if (sum(!grepl("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$", annot_vals), na.rm=TRUE) <= length(na_index)) { # if we have SEQUENTIAL data (i.e. numeric)
         seq.count=seq.index+1 # re-index starting at 1 for.... everything other than the modulo operator
         annot_colors = grDevices::colorRampPalette(seq.pals[[seq.count]])(n_colors) # choose color palette
         seq.index <- (seq.index+1) %% length(seq.pals) # increment seq.index, or restart if we've exhausted the sequential palette list
@@ -223,19 +215,19 @@ set_annot_colors_discrete <- function( annot_table, # ====
     }
     
     # Assign "NA" annotations grey
-    if ( length(na_index)!=0 ) { # if any of the "normal" annots can be found
-      annot_vals <- c( annot_vals[-na_index], annot_vals[na_index]) # move na values to end. these will assigned grey
+    if ( length(na_index)!=0 ) { # if any of the NA annots can be found
+      annot_vals <- c( annot_vals[-na_index], annot_vals[na_index]) # move na value(s) to end. these will assigned grey
       annot_colors <- c( annot_colors, rep(na_color, length(na_index)) ) # set color to grey
       na_index=numeric(0) # reset na_index to an empty vector
     }
     
     # Sanity Checks // Save into annots_color_list
     if ( length(annot_vals)!=length(annot_colors) ) { # do we have the right number of colors, total
-      stop(paste0("For the annotation ", annot, ", the color-vector (length ", length(annot_colors),
+      stop(paste0("For the annotation '", annot, "', the color-vector (length ", length(annot_colors),
                   ") does not match the number of annotations (",length(annot_vals),"). Something has gone terribly wrong."))
     } else {
       if ( length( setdiff(unique(annot_colors), na_color) ) != n_colors ) # are all our (non-na) colors unique?
-        warning(paste0("For the annotation ", annot, ", there are ", n_colors," unique, non-NA annotations values.",
+        warning(paste0("For the annotation '", annot, "', there are ", n_colors," unique, non-NA annotations values.",
                        " However, the color-vector contains only ", length( setdiff(unique(annot_colors), na_color) )," unique non-NA colors."))
       
       annots_color_list[[annot]]$is_discrete <- TRUE # record that this palette is DISCRETE, not continuous
@@ -249,28 +241,60 @@ set_annot_colors_discrete <- function( annot_table, # ====
 }
 
 #' @import RColorBrewer
+#' @import khroma
+#' @import circlize
 set_annot_colors_continuous <- function( annot_table, # ====
+                                         return_function = FALSE, # toggle for returning a FUNCTION rather than a discrete low-mid-high palette
                                          palettes = NULL, # when NULL, defaults to RColorBrewer sequential palettes
                                          shuffle_palettes = TRUE, # whether or not to shuffle palettes, compared to RColorBrewer default order
                                          na_color = "#BBBBBB" # color to be assigned to NA vals
                                          # ====
 ){
   # if user hasn't set a palette
-  if (is.null(palettes)) { # use the RColorBrewer palettes
-    pal.names = setdiff(rownames(RColorBrewer::brewer.pal.info[which(RColorBrewer::brewer.pal.info$category=='seq'),]), # pull sequential palettes from RColorBrewer
-                        c("Greys")) # EXCEPT the grey color-palette
-    palettes = sapply(pal.names, simplify = FALSE,
-                      function(pal) { # for each palette
-                        colors = RColorBrewer::brewer.pal(3, pal) # pull out n_colors colors
-                        names(colors) = c('low', 'mid', 'high') # label them
-                        colors[['na_color']]=na_color # set NA color
-                        return(colors)
-                      })
+  if (is.null(palettes)) { # use the RColorBrewer (non-function) khroma palettes (function)
+    
+    if (return_function) { # if return_function, palettes = a list of functions (khroma)
+      # check for circlize package
+      if (!requireNamespace("circlize", quietly = TRUE)) {
+        stop("The 'circlize' package is required for continuous color mapping with `return_function = TRUE`. Please install it.")
+      }
+      # Khroma
+      if (!requireNamespace("khroma", quietly = TRUE)) {
+        stop("The 'khroma' package is required for continuous color mapping with `return_function = TRUE`. Please install it.")
+      }
+      if (compareVersion(as.character(packageVersion('khroma')), "1.11.0") < 0) {
+        warning(paste0("The version of khroma loaded ", as.character(packageVersion('khroma')),
+                       " is below version 1.11.0, and will cause errors if `continuous.return_function` is set to TRUE."))
+      }
+      palettes = sapply(dplyr::filter(khroma::info(), type=="sequential")$palette, # use khroma sequential palettes
+                        khroma::color) # 
+    } else { # otherwise, palettes = a list of three colors, named low mid and high
+      # # Khroma Continuous Palettes
+      # palettes = sapply(dplyr::filter(khroma::info(), type=="sequential")$palette, # use khroma sequential palettes
+      #                   function(pal) {
+      #                     colors = c(as.vector(khroma::color(pal)(3)), na_color)
+      #                     names(colors) = c('low', 'mid', 'high', "na_color")
+      #                     return(colors) },
+      #                   simplify = F)
+      
+      # R Color Brewer
+      if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+        stop("The 'RColorBrewer' package is required for continuous color mapping. Please install it.")
+      }
+      pal.names = setdiff(rownames(RColorBrewer::brewer.pal.info[which(RColorBrewer::brewer.pal.info$category=='seq'),]), # pull sequential palettes from RColorBrewer
+                          c("Greys")) # EXCEPT the grey color-palette
+      palettes = sapply(pal.names, simplify = FALSE,
+                        function(pal) { # for each palette
+                          colors = RColorBrewer::brewer.pal(3, pal) # pull out n_colors colors
+                          names(colors) = c('low', 'mid', 'high') # label them
+                          colors[['na_color']]=na_color # set NA color
+                          return(colors)
+                        })
+    }
   }
   
   # shuffle palette order, if toggle is on
   if (shuffle_palettes) {
-    
     # if we can't find the eval_with_seed() utility function
     if (!existsFunction("eval_with_seed")) { # define it here
       eval_with_seed <- function(expression, seed_string="randomstring") { 
@@ -296,8 +320,18 @@ set_annot_colors_continuous <- function( annot_table, # ====
   annots_color_list <- list() # initialize empty list
   for ( annot in annot_names  ) {
     annots_color_list[[annot]]$is_discrete <- FALSE # record that this palette is CONTINUOUS, not discrete
-    annots_color_list[[annot]]$vals <- names(palettes[[pal.index+1]]) # save names of color palette (i.e. low mid high)
-    annots_color_list[[annot]]$colors <- unname(palettes[[pal.index+1]]) # choose color palette, re-indexing at 1, rather than at 0 
+    if (return_function) {
+      annots_color_list[[annot]]$vals <- NULL
+      pal <- unname(palettes[[pal.index+1]]) # palette in khroma::color() structure
+      # convert to add circlize::colorRamp2
+      annots_color_list[[annot]]$colors <- circlize::colorRamp2(seq(min(as.numeric(annot_table[[annot]]), na.rm = T), # breaks vector from min
+                                                                    max(as.numeric(annot_table[[annot]]), na.rm = T), # to max
+                                                                    length.out = attr(pal, "max")), # with max-colors number of elements
+                                                                pal(attr(pal, "max"))) # color-function
+    } else {
+      annots_color_list[[annot]]$vals <- names(palettes[[pal.index+1]]) # save names of color palette (i.e. low mid high)
+      annots_color_list[[annot]]$colors <- unname(palettes[[pal.index+1]]) # choose color palette, re-indexing at 1, rather than at 0 
+    }
     
     pal.index = (pal.index+1) %% length(palettes) # increment pal.index, or restart if we've exhausted the palette list\
   }
@@ -357,6 +391,7 @@ color_mod <- function(color_string, modifier, mod_R, mod_G, mod_B) {
 
 #' @import stringr
 color_dist <- function(color_start, color_end) { 
+  # require(stringr)
   # Split colors into their R, G, and B HEX digits
   a<-stringr::str_remove(color_start, "#")
   color_start<-c(str_sub(a, 1, 2),str_sub(a, 3, 4), str_sub(a, 5, 6))
