@@ -264,30 +264,6 @@ statSummary_Ome_Server <- function(id,
     })
     
     ## DATASET INFO ##
-    # #Capture system output in a file
-    # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-    # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-    # sink(filename)
-    # 
-    # 
-    #   print("=== MODULE DEBUG ===\n")
-    #   print("Module ID:")
-    #   print(id)
-    #   print("Received ome:")
-    #   print(ome)
-    #   print("Available stat_results keys:")
-    #   print(names(stat_results()))
-    # 
-    #   sr <- stat_results()[[ome]]
-    #     print("nrow:")
-    #     print(nrow(sr))
-    #     print(head(sr))
-    # 
-    #   print("DEBUG: class of sr:")
-    #   print(class(sr))
-    # 
-    # sink()
-    
     # render dataset info
     output$dataset_table <- renderTable({
       df <- stat_results()[[ome]]
@@ -302,7 +278,6 @@ statSummary_Ome_Server <- function(id,
     })
 
     # WORKFLOW INFO ##
-
     # render workflow info
     output$workflow_table <- renderTable(
       data.frame(
@@ -311,7 +286,7 @@ statSummary_Ome_Server <- function(id,
       )
     )
 
-    ## P.value Histogram- for both non-adj and adj p values ##
+    # P.VALUE HISTOGRAM ##
     output$pval_hist_sidebar_contents <- renderUI({
       req(stat_param())
       tagList(
@@ -342,19 +317,33 @@ statSummary_Ome_Server <- function(id,
       if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
         req(input$pval_groups)
         keyword <- input$pval_groups
+        pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", pattern_base, ")")
+
       } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
         req(input$pval_contrasts)
-        keyword <- input$pval_contrasts
-      } else {
-        keyword <- NULL
-      }
+        groups <- unlist(strsplit(input$pval_contrasts, " / "))
+        pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", pattern_base, ")")
 
-      if (is.null(keyword)) {
-        pattern <- pattern_base
       } else {
-        # match both p-value type and group/contrast name (any order), case-insensitive
-        pattern <- paste0("(?i)(?=.*", pattern_base, ")(?=.*", keyword, ")")
+        pattern <- pattern_base
       }
+      
+      # if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+      #   req(input$pval_groups)
+      #   keyword <- input$pval_groups
+      # } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+      #   req(input$pval_contrasts)
+      #   keyword <- input$pval_contrasts
+      # } else {
+      #   keyword <- NULL
+      # }
+      # 
+      # if (is.null(keyword)) {
+      #   pattern <- pattern_base
+      # } else {
+      #   # match both p-value type and group/contrast name (any order), case-insensitive
+      #   pattern <- paste0("(?i)(?=.*", pattern_base, ")(?=.*", keyword, ")")
+      # }
       
       col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
       req(col_name)

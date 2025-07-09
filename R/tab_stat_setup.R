@@ -387,8 +387,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
           }
    
           stat_results(test_results)
-          # assign("stat_results", stat_results, envir = .GlobalEnv)
-          # assign("stat_param", stat_param, envir = .GlobalEnv)
+          print(stat_results())
+          assign("stat_results", stat_results, envir = .GlobalEnv)
+          assign("stat_param", stat_param, envir = .GlobalEnv)
           globals$stat_param <- stat_param
           globals$stat_results <- stat_results
           
