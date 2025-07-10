@@ -137,8 +137,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       if (input$select_test !="Two-sample Moderated T-test"){
         current[[ome]]$contrasts <-NULL
       }
-      current[[ome]]$stat <-"adj.p.val"
-      current[[ome]]$cutoff <-0.05
+      
+      # Only set stat and cutoff if not already set
+      if (is.null(current[[ome]]$stat)) current[[ome]]$stat <- "adj.p.val"
+      if (is.null(current[[ome]]$cutoff)) current[[ome]]$cutoff <- 0.05
       
       stat_param(current)                 
     })

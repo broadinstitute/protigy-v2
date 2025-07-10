@@ -232,6 +232,13 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
               m <- eBayes (m, robust=TRUE)
             }
             sig <- topTable (m, coef=colnames (design.mat)[2], number=nrow(data), sort.by='none')
+            
+            sig$significant <- if (use.adj.pvalue) {
+              sig$adj.P.Val <= p.value.alpha
+            } else {
+              sig$P.Value <= p.value.alpha
+            }
+            
           }
 
           mod.t.result <- data.frame(sig, Log.P.Value=-10*log(sig$P.Value,10), stringsAsFactors=F)
