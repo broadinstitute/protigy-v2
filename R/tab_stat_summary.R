@@ -7,7 +7,7 @@
 ################################################################################
 # Shiny functions (UI and server)
 ################################################################################
-
+source("R/tab_stat_summary_helpers.R")
 # UI for the statSummary tab
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_UI <- function(id = "statSummaryTab") {
@@ -188,15 +188,18 @@ statSummary_Ome_Server <- function(id,
     
       tagList(
         fluidRow(
-          # Adjustments box
-          shinydashboardPlus::box(
-            uiOutput(ns("adjustments_table")),
-            title = "Adjustments",
-            status = "primary",
-            solidHeader = TRUE,
-            width = 6,
-            headerBorder = TRUE
-          ),
+          
+            # Adjustments box
+            shinydashboardPlus::box(
+              uiOutput(ns("adjustments_table")),
+              title = "Adjustments",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 6,
+              headerBorder = TRUE
+            
+            )
+          ,
 
           # Dataset information box
           shinydashboardPlus::box(
@@ -272,11 +275,16 @@ statSummary_Ome_Server <- function(id,
       df <- stat_results()[[ome]]
       col_name <- grep("significant", colnames(df), value = TRUE, ignore.case=TRUE)[1]
       req(col_name)
+      
+      # Keep rows with at least one non-NA numeric value
+      numeric_cols <- sapply(df, is.numeric)
+      df_filtered <- df[rowSums(!is.na(df[, numeric_cols])) > 0, ]
+      
       sig_vals <- df[[col_name]]
       sig_vals <- sig_vals[!is.na(sig_vals)]
       data.frame(
         Description = c("Features tested", "Significant features"),
-        Count = c(nrow(df), sum(as.logical(sig_vals)))
+        Count = c(nrow(df_filtered), sum(as.logical(sig_vals)))
       )
     })
 
@@ -328,10 +336,14 @@ statSummary_Ome_Server <- function(id,
     
     plot_pval_histogram <- function(pvals, title, xlabel) {
       ggplot(data.frame(pval = pvals), aes(x = pval)) +
-        geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "skyblue", color = "white") +
+        geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#4d4d4d", color = "white") +
         geom_vline(xintercept = stat_param()[[ome]]$cutoff, color = "red", linetype = "dashed", size = 1) +
         labs(title = title, x = xlabel, y = "Number of Features") +
-        xlim(0, 1)
+        xlim(0, 1) +
+        theme(
+          panel.background = element_rect(fill = "#f0f0f0", color = NA),
+          plot.background = element_rect(fill = "white", color = NA)
+        )
     }
     
     output$adj_pval_hist_plot <- renderPlotly({

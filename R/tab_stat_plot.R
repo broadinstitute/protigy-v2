@@ -196,11 +196,20 @@ statPlot_Ome_Server <- function(id,
         } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
           radioButtons(ns("volcano_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
         } else if (stat_param()[[ome]]$test=="Moderated F test"){
-          h3("Cannot show a volcano plot for the Mod F test")
+          h4("Cannot show a volcano plot for the Mod F test")
         } else {
           return(NULL)
         }
       )
+    })
+    
+    
+    output$volcano_plot <- renderPlotly({
+      req(stat_results(), input$volcano_contrasts)
+      plotVolcano(ome=ome)
+      
+      # gg <- volcano_plot(results, group)
+      # ggplotly(gg, tooltip = "text")
     })
     
     # volcano_plot_reactive <- reactive({
@@ -234,26 +243,28 @@ statPlot_Ome_Server <- function(id,
     # })
     # 
     
-    output$volcano_plot <- renderPlot({
-      req(stat_results())
-      validate(
-        need(GCT_processed(), "GCTs not processed") %then%
-          need(default_annotation_column(), "don't know what annotation to use")
-      )
-      
-      if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
-        req(input$volcano_groups)
-        group <- input$volcano_groups
-      } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
-        req(input$volcano_contrasts)
-        group <- input$volcano_contrasts
-      } else {
-        return(NULL)
-      }
-      
-      plotVolcano(group = group)  ## draws the plot directly
-    })
     
+    
+    # output$volcano_plot <- renderPlot({
+    #   req(stat_results())
+    #   validate(
+    #     need(GCT_processed(), "GCTs not processed") %then%
+    #       need(default_annotation_column(), "don't know what annotation to use")
+    #   )
+    # 
+    #   if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
+    #     req(input$volcano_groups)
+    #     group <- input$volcano_groups
+    #   } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
+    #     req(input$volcano_contrasts)
+    #     group <- input$volcano_contrasts
+    #   } else {
+    #     return(NULL)
+    #   }
+    # 
+    #   plotVolcano(group = group)  ## draws the plot directly
+    # })
+
     # ## COMPILE EXPORTS ##
     # # Example of export function
     # example_plot_export_function <- function(dir_name) {

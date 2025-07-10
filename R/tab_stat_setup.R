@@ -134,11 +134,12 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       }
       
       current[[ome]]$test <- input$select_test 
-      if (input$select_test !="Two-sample Moderated T-test"){
-        current[[ome]]$contrasts <-NULL
-      }
+      # if (input$select_test !="Two-sample Moderated T-test"){
+      #   current[[ome]]$contrasts <-NULL
+      # }
       
       # Only set stat and cutoff if not already set
+      if (is.null(current[[ome]]$contrasts)) current[[ome]]$contrasts <- NULL
       if (is.null(current[[ome]]$stat)) current[[ome]]$stat <- "adj.p.val"
       if (is.null(current[[ome]]$cutoff)) current[[ome]]$cutoff <- 0.05
       
@@ -216,7 +217,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     })
 
     output$select_contrast_ui <- renderUI({
-      #req(input$select_test == "Two-sample Moderated T-test")
       if (length(input$stat_setup_annotation) >= 2) {
         pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
         all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))

@@ -44,6 +44,8 @@ Imports:
     ggthemes,
     ggfortify,
     limma,
+    shinyWidgets,
+    shinyBS,
     glue,
     Matrix (>= 1.6-2)
 Depends:
