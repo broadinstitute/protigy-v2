@@ -76,6 +76,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         non.na.n <- apply (data, 1, function (x) { sum (is.finite (x)) })
         
         final.results<- data.frame ( cbind (id=id, sig, significant=mod.sig, total.n=non.na.n, Log.P.Value=-log(sig[,'P.Value'] ,10)), stringsAsFactors=F )
+        # final.results$sign.logP <-final.results$Log.P.Value*sign(final.results$logFC)
         colnames(final.results) <- sub("^f", "AveExpr.", colnames(final.results))
         
         #replace zero-centered average with the true average expression
@@ -144,6 +145,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         
           ##MOD T test result
           mod.t.result <- data.frame(sig, significant=mod.sig, Log.P.Value=-log(sig$P.Value,10), stringsAsFactors=F)
+          mod.t.result$sign.logP <-mod.t.result$Log.P.Value*sign(mod.t.result$logFC)
           
           ##add label(group_name)
           if(!is.null(group_name))
@@ -242,7 +244,8 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           }
 
           mod.t.result <- data.frame(sig, Log.P.Value=-log(sig$P.Value,10), stringsAsFactors=F)
-
+          mod.t.result$sign.logP <-mod.t.result$Log.P.Value*sign(mod.t.result$logFC)
+          
           ##add label(contrast_name)
           if(!is.null(contrast_name))
             colnames(mod.t.result) <- paste(colnames(mod.t.result), contrast_name, sep='.')

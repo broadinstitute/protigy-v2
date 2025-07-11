@@ -72,11 +72,13 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
 
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
+      if (!exists("stat_param", envir = .GlobalEnv) || !exists("stat_results", envir = .GlobalEnv)) {
+        return(h4("Please go to the statistics setup tab."))
+      }
       req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
-      
       stat_param_val <- globals$stat_param()
       stat_results_val <- globals$stat_results()
-      
+
       validate(
         need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
         need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
@@ -176,7 +178,7 @@ statSummary_Ome_Server <- function(id,
     output$ome_summary_contents <- renderUI({
       # fallback if stat_param not defined yet
       if (!exists("stat_param", envir = .GlobalEnv)) {
-        return(h4("No test selected to run on this dataset."))
+        return(h4("Please go to the Statistics setup tab first."))
       }
       
       stat_param <- get("stat_param", envir = .GlobalEnv)
@@ -271,23 +273,6 @@ statSummary_Ome_Server <- function(id,
       stat_param(current)                  
     })
     
-    ## DATASET INFO ##
-    output$dataset_table <- renderTable({
-      df <- stat_results()[[ome]]
-      col_name <- grep("significant", colnames(df), value = TRUE, ignore.case=TRUE)[1]
-      req(col_name)
-      
-      # Keep rows with at least one non-NA numeric value
-      numeric_cols <- sapply(df, is.numeric)
-      df_filtered <- df[rowSums(!is.na(df[, numeric_cols])) > 0, ]
-      
-      sig_vals <- df[[col_name]]
-      sig_vals <- sig_vals[!is.na(sig_vals)]
-      data.frame(
-        Description = c("Features tested", "Significant features"),
-        Count = c(nrow(df_filtered), sum(as.logical(sig_vals)))
-      )
-    })
 
     # WORKFLOW INFO ##
     output$workflow_table <- renderTable(
@@ -301,10 +286,12 @@ statSummary_Ome_Server <- function(id,
     output$pval_hist_sidebar_contents <- renderUI({
       req(stat_param())
       tagList(
-        if (stat_param()[[ome]]$test=="One-sample Moderated T-test" || stat_param()[[ome]]$test=="Moderated F test"){
+        if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
           radioButtons(ns("pval_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
         } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
           radioButtons(ns("pval_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
+        } else if (stat_param()[[ome]]$test=="Moderated F test"){
+          h5("No group option for F-test.")
         }
       )
     })
@@ -359,6 +346,38 @@ statSummary_Ome_Server <- function(id,
       ggplotly(gg)
     })
     
+    
+    ## DATASET INFO ##
+    output$dataset_table <- renderTable({
+      req(stat_param(),stat_results())
+      df <- stat_results()[[ome]]
+      
+      if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+        req(input$pval_groups)
+        keyword <- input$pval_groups
+        pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "significant", ")")
+      } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+        req(input$pval_contrasts)
+        groups <- unlist(strsplit(input$pval_contrasts, " / "))
+        pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "significant", ")")
+      } else {
+        pattern <- "significant"
+      }
+      
+      col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+      req(col_name)
+      
+      # Keep rows with at least one non-NA numeric value
+      numeric_cols <- sapply(df, is.numeric)
+      df_filtered <- df[rowSums(!is.na(df[, numeric_cols])) > 0, ]
+      
+      sig_vals <- df[[col_name]]
+      sig_vals <- sig_vals[!is.na(sig_vals)]
+      data.frame(
+        Description = c("Features tested", "Significant features"),
+        Count = c(nrow(df_filtered), sum(as.logical(sig_vals)))
+      )
+    })
 
     ## COMPILE EXPORTS ##
     # stat_summary_csv_export_function <- function(stat.results,dir_name) {
