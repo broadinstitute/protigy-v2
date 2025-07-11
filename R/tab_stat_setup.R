@@ -339,10 +339,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
 ##############################################################################
         #TESTS RUN AFTER RUN BUTTON CLICKED
         observeEvent(input$run_test_button, {
-          #Capture system output in a file
-          timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-          filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-          sink(filename)
+          # #Capture system output in a file
+          # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+          # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
+          # sink(filename)
           
           req(GCTs(), default_annotations())
           param_list <- stat_param()
@@ -396,7 +396,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
           globals$stat_results <- stat_results
           
           
-          sink()
+          # sink()
         })
      
   })

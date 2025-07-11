@@ -35,7 +35,6 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     
     ## GATHERING INPUTS ##
     
-    # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
     
     # GCTs to use for analysis/visualization
@@ -150,23 +149,7 @@ statPlot_Ome_UI <- function (id, ome) {
   ns <- NS(id)
   
   tagList(
-    
-    # Volcano plot
-    fluidRow(shinydashboardPlus::box(
-      plotlyOutput(ns("volcano_plot")),
-      sidebar = boxSidebar(
-        uiOutput(ns("volcano_sidebar_contents")),
-        id = ns("volcano_sidebar"),
-        width = 25,
-        icon = icon("gears", class = "fa-2xl"),
-        background = "rgba(91, 98, 104, 0.9)"
-      ),
-      status = "primary",
-      width = 12,
-      title = "Volcano Plot",
-      headerBorder = TRUE,
-      solidHeader = TRUE
-    ))
+    uiOutput(ns("ome_plot_contents"))
   )
 }
 
@@ -186,8 +169,45 @@ statPlot_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
+    output$ome_plot_contents <- renderUI({
+      # fallback if stat_param not defined yet
+      if (!exists("stat_param", envir = .GlobalEnv)) {
+        return(h4("No test selected to run on this dataset."))
+      }
+      
+      stat_param <- get("stat_param", envir = .GlobalEnv)
+      test <- stat_param()[[ome]]$test
+      
+      if (is.null(test) || test == "None") {
+        return(h4("No test selected to run on this dataset."))
+      }
+      
+      if (test == "Moderated F test") {
+        return(h4("No volcano plot for the Moderated F test."))
+      }
+      
+      tagList(
+        # Volcano plot
+          fluidRow(shinydashboardPlus::box(
+            plotlyOutput(ns("volcano_plot")),
+            sidebar = boxSidebar(
+              uiOutput(ns("volcano_sidebar_contents")),
+              id = ns("volcano_sidebar"),
+              width = 25,
+              icon = icon("gears", class = "fa-2xl"),
+              background = "rgba(91, 98, 104, 0.9)"
+            ),
+            status = "primary",
+            width = 12,
+            title = "Volcano Plot",
+            headerBorder = TRUE,
+            solidHeader = TRUE
+          ))
+      )
+    })
     
     ## RENDER VOLCANO PLOT ##
+    #Sidebar
     output$volcano_sidebar_contents <- renderUI({
       req(stat_param())
       tagList(
@@ -203,67 +223,24 @@ statPlot_Ome_Server <- function(id,
       )
     })
     
-    
+    #Plot
     output$volcano_plot <- renderPlotly({
-      req(stat_results(), input$volcano_contrasts)
-      plotVolcano(ome=ome)
+      req(stat_results())
+      req(stat_param())
+      req(ome)
       
-      # gg <- volcano_plot(results, group)
-      # ggplotly(gg, tooltip = "text")
+      test <- stat_param()[[ome]]$test
+      if (test == "One-sample Moderated T-test") {
+        req(input$volcano_groups)
+      } else if (test == "Two-sample Moderated T-test") {
+        req(input$volcano_contrasts)
+      } else {
+        return(NULL)
+      }
+      
+      plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = input$volcano_contrasts, df= stat_results()[[ome]]) 
     })
     
-    # volcano_plot_reactive <- reactive({
-    #   req(stat_results())
-    #   
-    #   # validate/need/require statements
-    #   validate(
-    #     need(GCT_processed(), "GCTs not processed") %then%
-    #       need(default_annotation_column(), "don't know what annotation to use")
-    #   )
-    #   
-    #   if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
-    #     req(input$volcano_groups)
-    #     group<- input$volcano_groups
-    #   } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
-    #     req(input$volcano_contrasts)
-    #     group<- input$volcano_contrasts
-    #   } else {
-    #     group<-NULL
-    #   }
-    #   plotVolcano(group = group)
-    #   
-    #   ggplot() + ggtitle(paste("Volcano Plot for:", ome))
-    # })
-    # 
-    # 
-    # output$volcano_plot <- renderPlotly({
-    #   
-    #   gg <- volcano_plot_reactive()
-    #   ggplotly(gg)
-    # })
-    # 
-    
-    
-    
-    # output$volcano_plot <- renderPlot({
-    #   req(stat_results())
-    #   validate(
-    #     need(GCT_processed(), "GCTs not processed") %then%
-    #       need(default_annotation_column(), "don't know what annotation to use")
-    #   )
-    # 
-    #   if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
-    #     req(input$volcano_groups)
-    #     group <- input$volcano_groups
-    #   } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
-    #     req(input$volcano_contrasts)
-    #     group <- input$volcano_contrasts
-    #   } else {
-    #     return(NULL)
-    #   }
-    # 
-    #   plotVolcano(group = group)  ## draws the plot directly
-    # })
 
     # ## COMPILE EXPORTS ##
     # # Example of export function

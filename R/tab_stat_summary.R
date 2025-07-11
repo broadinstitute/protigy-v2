@@ -253,6 +253,7 @@ statSummary_Ome_Server <- function(id,
       current_cutoff <- stat_param()[[ome]]$cutoff
       
       tagList(
+        h5("The following selections are applied to all Statistics tabs"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
         sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=current_cutoff, step=0.01 )
       )
