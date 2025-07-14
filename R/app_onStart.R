@@ -12,7 +12,7 @@
 app_onStart <- function() {
 
   # set maximum upload size
-  UPLOADMAX <- 100 # upload size in MB
+  UPLOADMAX <- 500 # upload size in MB
   options(shiny.maxRequestSize = UPLOADMAX*1024^2)
   
 }
