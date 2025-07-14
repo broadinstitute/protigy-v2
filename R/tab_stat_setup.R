@@ -174,6 +174,17 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
         current[[ome]] <- list()          
       }
       
+      # pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      # all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+      # labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      # 
+      # if (!is.null(current[[ome]]$test) && current[[ome]]$test != "Two-sample Moderated T-test") {
+      #   current[[ome]]$contrasts <- NULL
+      # } else if (!is.null(current[[ome]]$test) && current[[ome]]$test == "Two-sample Moderated T-test") {
+      #   current[[ome]]$contrasts <- labels
+      # }
+      # 
+      
       current[[ome]]$groups <- input$stat_setup_annotation
       
       stat_param(current)                  
@@ -210,21 +221,22 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       current <- stat_param()
       ome <- selected_ome()
       
+      
       if (is.null(current[[ome]])) {current[[ome]] <- list()}
+      
       
       current[[ome]]$contrasts <- input$select_contrasts
       stat_param(current)
     })
-    
+
     output$select_contrast_ui <- renderUI({
       tryCatch({
-      if (length(input$stat_setup_annotation) < 2 || is.null(input$stat_setup_annotation)) stop("too few groups")
+        if (length(input$stat_setup_annotation) < 2 || is.null(input$stat_setup_annotation)) stop("too few groups")
         
         pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
         all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
         labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      
-      checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=labels)
+        checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=labels)
       }, error= function(e) {
         NULL 
       })
@@ -233,6 +245,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     #displaying the previously chosen groups from the parameters
     observe({
       req(selected_ome(),input$select_contrasts)
+      
       groups <- input$stat_setup_annotation
       if (is.null(groups) || length(groups) < 2) {
         return()  
@@ -242,6 +255,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
       labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
       
+      
       saved_contrasts <- stat_param()[[selected_ome()]]$contrasts
       if (is.null(saved_contrasts)){saved_contrasts <- labels}
       updateCheckboxGroupInput(session, "select_contrasts", choices= labels, selected = saved_contrasts)
@@ -249,8 +263,12 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     
     
 
+
+
     
+
     
+    ##FLIPPING THE CONTRASTS##
     # observe({
     #   req(input$selected_ome)
     #   req(input$stat_setup_annotation)

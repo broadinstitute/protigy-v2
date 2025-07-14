@@ -349,34 +349,53 @@ statSummary_Ome_Server <- function(id,
     
     ## DATASET INFO ##
     output$dataset_table <- renderTable({
-      req(stat_param(),stat_results())
-      df <- stat_results()[[ome]]
-      
-      if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
-        req(input$pval_groups)
-        keyword <- input$pval_groups
-        pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "significant", ")")
-      } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
-        req(input$pval_contrasts)
-        groups <- unlist(strsplit(input$pval_contrasts, " / "))
-        pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "significant", ")")
-      } else {
-        pattern <- "significant"
-      }
-      
-      col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-      req(col_name)
-      
-      # Keep rows with at least one non-NA numeric value
-      numeric_cols <- sapply(df, is.numeric)
-      df_filtered <- df[rowSums(!is.na(df[, numeric_cols])) > 0, ]
-      
-      sig_vals <- df[[col_name]]
-      sig_vals <- sig_vals[!is.na(sig_vals)]
-      data.frame(
-        Description = c("Features tested", "Significant features"),
-        Count = c(nrow(df_filtered), sum(as.logical(sig_vals)))
-      )
+        req(stat_param(), stat_results())
+        df <- stat_results()[[ome]]
+        
+        test_type <- stat_param()[[ome]]$test
+        sig_cutoff <- stat_param()[[ome]]$cutoff
+        sig_stat <- stat_param()[[ome]]$stat
+        
+        #PVAL & ADJ.PVAL COLUMN#
+        if (test_type == "One-sample Moderated T-test") {
+          req(input$pval_groups)
+          keyword <- input$pval_groups
+          adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val)")
+          pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*P\\.Value)")
+        } else if (test_type == "Two-sample Moderated T-test") {
+          req(input$pval_contrasts)
+          groups <- unlist(strsplit(input$pval_contrasts, " / "))
+          adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
+          pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
+        }
+        adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+        pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+        
+        #check for missing columns
+        req(!is.na(adjP_col), !is.na(pval_col))
+        
+        adj.P.Val <- as.numeric(df[[adjP_col]])
+        P.Value <- as.numeric(df[[pval_col]])
+        
+        #CALCULATE SIGNIFICANCE#
+        significant <- rep(FALSE, length(P.Value))
+        if (sig_stat == "adj.p.val") {
+          significant <- adj.P.Val < sig_cutoff
+        } else if (sig_stat == "nom.p.val") {
+          significant <- P.Value < sig_cutoff
+        }
+        
+        significant <- significant[!is.na(significant)]
+        
+        # Filter to only rows with at least one non-NA numeric value
+        numeric_cols <- sapply(df, is.numeric)
+        df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
+ 
+        #RETURN DATAFRAME#
+        data.frame(
+          Description = c("Features tested", "Significant features"),
+          Count = c(nrow(df_filtered), sum(significant))
+        )
     })
 
     ## COMPILE EXPORTS ##

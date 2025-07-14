@@ -40,11 +40,10 @@ app_UI <- function(request) {dashboardPage(
       navbarMenu(
         "Statistics",
         tabPanel("Setup",statSetup_Tab_UI()),
-        #observeEvent(isTRUE(stat_ready()) {
-          tabPanel("Summary", statSummary_Tab_UI()),
-          tabPanel("Plot", statPlot_Tab_UI()),
-          # tabPanel("Table", statTable_Tab_UI())
-        #})
+        tabPanel("Summary", statSummary_Tab_UI()),
+        tabPanel("Volcano Plot", statPlot_Tab_UI()),
+        # tabPanel("Table", statTable_Tab_UI())
+       
       ),
       
       # navbarMenu(
