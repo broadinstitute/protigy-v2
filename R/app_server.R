@@ -113,8 +113,9 @@ app_server <- function(input, output, session) {
         QCProfilePlots_exports = all_QCProfilePlots_exports,
         QCCorrelation_exports = all_QCCorrelation_exports,
         QCPCA_exports = all_QCPCA_exports,
-        multiomeHeatmap_exports = all_multiomeHeatmap_exports
-        #statSummary_exports = all_statSummary_exports
+        multiomeHeatmap_exports = all_multiomeHeatmap_exports,
+        statSummary_exports = all_statSummary_exports,
+        statPlot_exports = all_statPlot_exports
       )
     )
 

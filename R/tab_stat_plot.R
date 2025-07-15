@@ -238,26 +238,66 @@ statPlot_Ome_Server <- function(id,
         return(NULL)
       }
       
-      plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = input$volcano_contrasts, df= stat_results()[[ome]]) 
+      gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = input$volcano_contrasts, df= stat_results()[[ome]]) 
+      ggplotly(gg)
     })
     
 
     # ## COMPILE EXPORTS ##
-    # # Example of export function
-    # example_plot_export_function <- function(dir_name) {
-    #   ggsave(
-    #     filename = paste0("example_plot_", ome, ".pdf"), 
-    #     plot = example_plot_reactive(), # call the reactive object
-    #     device = 'pdf',
-    #     path = dir_name # save in the desired output directory
-    #   )
-    # }
-    # 
-    # # TODO: return a named list of custom export functions, example included
-    # return(
-    #   list(
-    #     example_plot = example_plot_export_function
-    #   )
-    # )
+    volcano_plot_export_function <- function(dir_name) {
+      test <- stat_param()[[ome]]$test
+      df <- stat_results()[[ome]]
+      
+      if (test == "One-sample Moderated T-test") {
+        groups <- stat_param()[[ome]]$groups
+        for (group in groups) {
+          gg <- plotVolcano(
+            ome = ome,
+            volcano_groups = group,
+            volcano_contrasts = NULL,
+            df = df
+          )
+          
+          ggsave(
+            filename = paste0("volcano_plot_", ome, "_", gsub(" ", "_", group), ".pdf"),
+            plot = gg,
+            device = "pdf",
+            path = dir_name,
+            width = 10,
+            height = 6,
+            units = "in"
+          )
+        }
+        
+      } else if (test == "Two-sample Moderated T-test") {
+        contrasts <- stat_param()[[ome]]$contrasts
+        for (contrast in contrasts) {
+          gg <- plotVolcano(
+            ome = ome,
+            volcano_groups = NULL,
+            volcano_contrasts = contrast,
+            df = df
+          )
+            
+          ggsave(
+            filename = paste0("volcano_plot_", ome, "_", gsub(" / ", "_vs_", contrast), ".pdf"),
+            plot = gg,
+            device = "pdf",
+            path = dir_name,
+            width = 10,
+            height = 6,
+            units = "in"
+          )  
+        }
+        
+      } else {
+        warning("Volcano plot export not supported for test type: ", test)
+      }
+    }
+    
+    
+    return(list(
+      volcano_plot = volcano_plot_export_function
+    ))
   })
 }

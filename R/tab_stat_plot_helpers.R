@@ -104,5 +104,6 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     theme_minimal()
   
   cat('\n-- plotVolcano finished--\n')
-  ggplotly(volcano)
+  return(volcano)
+  
 }

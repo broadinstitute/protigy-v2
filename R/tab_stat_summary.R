@@ -231,7 +231,6 @@ statSummary_Ome_Server <- function(id,
 
           # P.val histogram box
           fluidRow(shinydashboardPlus::box(
-            #plotlyOutput(ns("pval_hist_plot")),
             fluidRow(
               column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
               column(6, plotlyOutput(ns("nom_pval_hist_plot")))
@@ -302,53 +301,15 @@ statSummary_Ome_Server <- function(id,
       )
     })
     
-    get_pvals <- function(pval_type = c("adj.P.Val", "P.Value")) {
-      req(stat_results())
-      pval_type <- match.arg(pval_type)
-      
-      df <- stat_results()[[ome]]
-      
-      if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
-        req(input$pval_groups)
-        keyword <- input$pval_groups
-        pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", pval_type, ")")
-      } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
-        req(input$pval_contrasts)
-        groups <- unlist(strsplit(input$pval_contrasts, " / "))
-        pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", pval_type, ")")
-      } else {
-        pattern <- pval_type
-      }
-      
-      col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-      req(col_name)
-      
-      pvals <- df[[col_name]]
-      pvals <- pvals[!is.na(pvals)]
-      pvals
-    }
-    
-    plot_pval_histogram <- function(pvals, title, xlabel) {
-      ggplot(data.frame(pval = pvals), aes(x = pval)) +
-        geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#4d4d4d", color = "white") +
-        geom_vline(xintercept = stat_param()[[ome]]$cutoff, color = "red", linetype = "dashed", size = 1) +
-        labs(title = title, x = xlabel, y = "Number of Features") +
-        xlim(0, 1) +
-        theme(
-          panel.background = element_rect(fill = "#f0f0f0", color = NA),
-          plot.background = element_rect(fill = "white", color = NA)
-        )
-    }
-    
     output$adj_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals("adj.P.Val")
-      gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value")
+      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "adj.P.Val")
+      gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
       ggplotly(gg)
     })
     
     output$nom_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals("P.Value")
-      gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value")
+      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "P.Value")
+      gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
       ggplotly(gg)
     })
     
@@ -404,22 +365,149 @@ statSummary_Ome_Server <- function(id,
         #RETURN DATAFRAME#
         data.frame(
           Description = c("Features tested", "Significant features"),
-          Count = c(nrow(df_filtered), sum(significant))
+          Value = c(nrow(df_filtered), sum(significant))
         )
     })
 
     ## COMPILE EXPORTS ##
-    # stat_summary_csv_export_function <- function(stat.results,dir_name) {
-    #   print(dir_name)
-    #   write.csv(
-    #     stat.results,
-    #     file = file.path(dir_name, paste0("stat_results_", ome, ".csv")),
-    #     row.names = FALSE
-    #   )
-    # }
-    #
-    # return(list(stat_summary= stat_summary_csv_export_function))
-
-
+    adj_pval_hist_plot_export_function <- function(dir_name) {
+      test <- stat_param()[[ome]]$test
+      df <- stat_results()[[ome]]
+      
+      if (test == "One-sample Moderated T-test") {
+        groups <- stat_param()[[ome]]$groups
+        for (group in groups) {
+          pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "adj.P.Val")
+          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", group), "Adjusted P-value", stat_param(), ome)
+          
+          ggsave(
+            filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
+            plot = gg, 
+            device = 'pdf',
+            path = dir_name,
+            width = 10,
+            height = 6, 
+            units = "in"
+          )
+        }
+        
+      } else if (test == "Two-sample Moderated T-test") {
+        contrasts <- stat_param()[[ome]]$contrasts
+        for (contrast in contrasts) {
+          pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "adj.P.Val")
+          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", contrast), "Adjusted P-value", stat_param(), ome)
+          
+          ggsave(
+            filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
+            plot = gg, 
+            device = 'pdf',
+            path = dir_name,
+            width = 10,
+            height = 6, 
+            units = "in"
+          )
+        }
+        
+      } else if (test == "Moderated F test") {
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
+        
+        ggsave(
+          filename = paste0("adj_pval_hist_plot_", ome, ".pdf"), 
+          plot = gg, 
+          device = 'pdf',
+          path = dir_name,
+          width = 10,
+          height = 6, 
+          units = "in"
+        )
+      }
+    }
+    
+    nom_pval_hist_plot_export_function <- function(dir_name) {
+      test <- stat_param()[[ome]]$test
+      df <- stat_results()[[ome]]
+      
+      if (test == "One-sample Moderated T-test") {
+        groups <- stat_param()[[ome]]$groups
+        for (group in groups) {
+          pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "P.Value")
+          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", group), "Nominal P-value", stat_param(), ome)
+          
+          ggsave(
+            filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
+            plot = gg, 
+            device = 'pdf',
+            path = dir_name,
+            width = 10,
+            height = 6, 
+            units = "in"
+          )
+        }
+        
+      } else if (test == "Two-sample Moderated T-test") {
+        contrasts <- stat_param()[[ome]]$contrasts
+        for (contrast in contrasts) {
+          pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "P.Value")
+          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", contrast), "Nominal P-value", stat_param(), ome)
+          
+          ggsave(
+            filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
+            plot = gg, 
+            device = 'pdf',
+            path = dir_name,
+            width = 10,
+            height = 6, 
+            units = "in"
+          )
+        }
+        
+      } else if (test == "Moderated F test") {
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
+        
+        ggsave(
+          filename = paste0("nom_pval_hist_plot_", ome, ".pdf"), 
+          plot = gg, 
+          device = 'pdf',
+          path = dir_name,
+          width = 10,
+          height = 6, 
+          units = "in"
+        )
+      }
+    }
+    
+    stat_results_export_function <- function(dir_name) {
+      write.csv(
+        stat_results()[[ome]],
+        file = file.path(dir_name, paste0("stat_results_", ome, ".csv")),
+        row.names = FALSE
+      )
+    }
+    
+    workflow_parameters_export_function <- function(dir_name) {
+      df <- data.frame(
+        Description = c("Test chosen", "Cutoff", "Stat"),
+        Count = c(stat_param()[[ome]]$test, stat_param()[[ome]]$cutoff, stat_param()[[ome]]$stat)
+      )
+      
+      write.table(
+        df,
+        file = file.path(dir_name, paste0("workflow_parameters_", ome, ".txt")),
+        sep = "\t",
+        quote = FALSE, #doesn't add quotation marks around text
+        row.names = FALSE
+      )
+    }
+    
+    
+    return(list(
+      adj_pval_hist_plot = adj_pval_hist_plot_export_function,
+      nom_pval_hist_plot = nom_pval_hist_plot_export_function,
+      stat_results = stat_results_export_function,
+      workflow_parameters = workflow_parameters_export_function
+    ))
+  
   })
 }
