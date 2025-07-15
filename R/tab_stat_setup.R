@@ -27,10 +27,7 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
                uiOutput(ns("select_groups_ui"))
         ),
         column(3,
-               # conditionalPanel(
-               # condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
                uiOutput(ns("select_contrast_ui"))
-               #)
         )
       )
     )
@@ -127,9 +124,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       current <- stat_param()             
       ome <- selected_ome()               
       
-      if (is.null(current[[ome]])) {
-        current[[ome]] <- list()           
-      }
+      if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
       current[[ome]]$test <- input$select_test 
       
@@ -142,20 +137,21 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     
     #displaying the test choices (default)
     output$select_test <- renderUI ({
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      if (is.null(current[[ome]]$test)) {
+        current[[ome]]$test <- "None"
+        stat_param(current)
+      }
+      
       selectInput(ns("select_test"), 
                   "Select test:", 
                   choices= c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), 
-                  selected="None"
+                  selected= current[[ome]]$test
       )
     })
     
-    #displaying the previously chosen test from the parameters
-    observe({
-      req(selected_ome(),input$select_test)
-      saved_test <- stat_param()[[selected_ome()]]$test
-      if (is.null(saved_test)) saved_test <- "None"
-      updateSelectInput(session, "select_test", selected = saved_test)
-    })
 ################################################################################
 ######GROUP SELECTION############################################################
     #saving the selected groups to stat_param
@@ -166,34 +162,32 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       
       if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
-      current[[ome]]$groups <- input$stat_setup_annotation
-      
+      current[[ome]]$groups <- input$stat_setup_annotation 
       stat_param(current)                  
     })
     
     #displaying the groups choices (default)
     output$select_groups_ui <- renderUI({
-      
+      current <- stat_param()
+      ome <- selected_ome()
       req(cdesc(), default_annotation_column(),selected_ome(), stat_param())
       
       choices<- unique(cdesc()[[default_annotation_column()]])
       choices <- choices[!is.na(choices)]
       
+      if (is.null(current[[ome]]$groups)) {
+        current[[ome]]$groups <- choices 
+        stat_param(current)
+      }
+      
       checkboxGroupInput(
         ns("stat_setup_annotation"),
         "Include groups:",
         choices = choices,
-        selected = choices 
+        selected = current[[ome]]$groups 
       )
     })
     
-    #displaying the previously chosen groups from the parameters
-    observe({
-      req(selected_ome(),input$stat_setup_annotation)
-      saved_groups <- stat_param()[[selected_ome()]]$groups
-      if (is.null(saved_groups)) {saved_groups <- unique(cdesc()[[default_annotation_column()]])}
-      updateCheckboxGroupInput(session, "stat_setup_annotation", selected = saved_groups)
-    })
 ################################################################################
 ######CONTRAST SELECTION########################################################
     #saving the selected contrasts to stat_param
@@ -225,9 +219,8 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=current[[ome]]$contrasts)
     })
 
- 
-    
-    ##FLIPPING THE CONTRASTS##
+################################################################################
+##FLIPPING THE CONTRASTS- not implemented but can be in the future##############
     # observe({
     #   req(input$selected_ome)
     #   req(input$stat_setup_annotation)
@@ -320,78 +313,66 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     #    selected_contrasts
     #  })
      
-##############################################################################
-        #TESTS RUN AFTER RUN BUTTON CLICKED
-        observeEvent(input$run_test_button, {
-          # #Capture system output in a file
-          # timestamp <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-          # filename <- paste0("C:/Users/dabburi/Documents/run_", timestamp, ".txt")
-          # sink(filename)
-          
-          req(GCTs(), default_annotations())
-          param_list <- stat_param()
-          gcts <- GCTs()
+################################################################################
+######TESTS RUN AFTER RUN BUTTON CLICKED########################################
+    observeEvent(input$run_test_button, {
+        req(GCTs(), default_annotations())
+        param_list <- stat_param()
+        gcts <- GCTs()
 
-          test_results<- list()
+        test_results<- list()
           
-          for (ome in names(param_list)) {
-            test <- param_list[[ome]]$test
-            groups <- param_list[[ome]]$groups
-            annotation_col <- default_annotations()[[ome]]
-            contrasts <- param_list[[ome]]$contrasts
+        for (ome in names(param_list)) {
+          test <- param_list[[ome]]$test
+          groups <- param_list[[ome]]$groups
+          annotation_col <- default_annotations()[[ome]]
+          contrasts <- param_list[[ome]]$contrasts
 
-            contrasts_list <- NULL
-            if (!is.null(contrasts)) {
-              contrasts_list <- lapply(contrasts, function(x) strsplit(x, " / ")[[1]])
-            }
+          contrasts_list <- NULL
+          if (!is.null(contrasts)) {
+            contrasts_list <- lapply(contrasts, function(x) strsplit(x, " / ")[[1]])
+          }
             
-            # For two-sample test, ensure proper contrasts
-            if (test == "Two-sample Moderated T-test") {
-              if (length(groups) < 2) {
-                showNotification("Please select at least two groups for Two-sample test", type = "error")
-                next
-              }
-              if (is.null(contrasts_list) || length(contrasts_list) == 0) {
-                showNotification("Please select at least one contrast", type = "error")
-                next
-              }
-            }
-            
-            if (test== "Moderated F test" && length(groups) < 2) {
-              showNotification("Please select at least two groups for F test", type = "error")
+          # Ensure proper contrasts for two sample
+          if (test == "Two-sample Moderated T-test") {
+            if (length(groups) < 2) {
+              showNotification("Please select at least two groups for Two-sample test", type = "error")
               next
             }
-            
-            stat.results <- NULL
-            tryCatch({
-              stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
-              }, error = function(e) {
-              showNotification(paste("Test failed for ome", ome, ":", e$message), type = "error")
-              stat.results <<- NULL
-            })
-            
-            
-            if (!is.null(stat.results)) {
-              test_results[[ome]] <- as.data.frame(stat.results)
+            if (is.null(contrasts_list) || length(contrasts_list) == 0) {
+              showNotification("Please select at least one contrast", type = "error")
+              next
             }
           }
-   
-          stat_results(test_results)
-          #print(head(stat_results()))
-          assign("stat_results", stat_results, envir = .GlobalEnv)
-          assign("stat_param", stat_param, envir = .GlobalEnv)
-          globals$stat_param <- stat_param
-          globals$stat_results <- stat_results
           
+          # Ensure proper number of groups for f test 
+          if (test== "Moderated F test" && length(groups) < 2) {
+            showNotification("Please select at least two groups for F test", type = "error")
+            next
+          }
           
-          # sink()
-        })
-     
+          # Actual test  
+          stat.results <- NULL
+          tryCatch({
+            stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
+            }, error = function(e) {
+            showNotification(paste("Test failed for ome", ome, ":", e$message), type = "error")
+            stat.results <<- NULL
+          })
+            
+          # Save results for that ome into test_results list  
+          if (!is.null(stat.results)) {
+            test_results[[ome]] <- as.data.frame(stat.results)
+          }
+        }
+        
+        stat_results(test_results)
+        
+        # Make the results a global object
+        assign("stat_results", stat_results, envir = .GlobalEnv)
+        assign("stat_param", stat_param, envir = .GlobalEnv)
+        globals$stat_param <- stat_param
+        globals$stat_results <- stat_results
+    })
   })
 }
-
-
-
-
-
-
