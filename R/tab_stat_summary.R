@@ -32,7 +32,7 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
   moduleServer(id, function (input, output, session) {
 
     ## GATHERING INPUTS ##
-
+    
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
 
@@ -69,7 +69,7 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
 
 
    ## OME TABS ##
-
+    
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
       if (!exists("stat_param", envir = .GlobalEnv) || !exists("stat_results", envir = .GlobalEnv)) {
@@ -78,31 +78,37 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
       req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
       stat_param_val <- globals$stat_param()
       stat_results_val <- globals$stat_results()
-
+      
       validate(
         need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
         need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
       )
       
       req(all_omes(), default_ome())
-    
+      
+      #preserve current selected tab
+      selected_tab <- input$ome_tabs
+      if (is.null(selected_tab) || !(selected_tab %in% all_omes())) {
+        selected_tab <- default_ome()
+      }
+      
       # generate a tab for each -ome
       tabs <- lapply(all_omes(), function(ome){
         tabPanel(
           title = ome,
-    
+          
           # call the UI function for each individual ome
           statSummary_Ome_UI(id = ns(ome), ome = ome)
-    
+          
         ) # end tabPanel
       }) # end lapply
-    
+      
       # combine all tabs into tabSetPanel
       tab_set_panel <- do.call(
         tabsetPanel,
-        c(tabs, list(id = ns("ome_tabs"), selected = isolate(default_ome())))
+        c(tabs, list(id = ns("ome_tabs"), selected = isolate(selected_tab)))
       )
-    
+      
       # put everything in a big box with ome tabs and return
       # add necessary CSS classes
       add_css_attributes(
@@ -255,7 +261,7 @@ statSummary_Ome_Server <- function(id,
       current_cutoff <- stat_param()[[ome]]$cutoff
       
       tagList(
-        h5("The following selections are applied to all Statistics tabs"),
+        h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
         sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=current_cutoff, step=0.01 )
       )
@@ -277,8 +283,8 @@ statSummary_Ome_Server <- function(id,
     # WORKFLOW INFO ##
     output$workflow_table <- renderTable(
       data.frame(
-        Description = c("Test chosen", "Cutoff"),
-        Count = c(stat_param()[[ome]]$test, stat_param()[[ome]]$cutoff)
+        Description = c("Test chosen", "Cutoff", "Stat"),
+        Count = c(stat_param()[[ome]]$test, stat_param()[[ome]]$cutoff, stat_param()[[ome]]$stat)
       )
     )
 
@@ -367,7 +373,11 @@ statSummary_Ome_Server <- function(id,
           groups <- unlist(strsplit(input$pval_contrasts, " / "))
           adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
           pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
-        }
+        } else if (test_type == "Moderated F test"){
+          adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
+          pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
+        } 
+        
         adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
         pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
         
