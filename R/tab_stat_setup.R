@@ -18,21 +18,19 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
       titlePanel("Test Setup"),
       fluidRow(
         column(3,
-               #uiOutput(ns("selected_omes")),
                selectInput(ns("selected_omes"), "Select datasets to test:", choices = NULL),
                textOutput(ns("annotation_col")),
                actionButton(ns("run_test_button"),"Run Test")
         ),
         column(3,
                uiOutput(ns("select_test")),
-               #selectInput(ns("select_test"), "Select test:", c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), selected="None"),
                uiOutput(ns("select_groups_ui"))
         ),
         column(3,
-               conditionalPanel(
-                 condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
-                 uiOutput(ns("select_contrast_ui"))
-               )
+               # conditionalPanel(
+               # condition = "input['statSetupTab-select_test'] == 'Two-sample Moderated T-test'",
+               uiOutput(ns("select_contrast_ui"))
+               #)
         )
       )
     )
@@ -134,16 +132,12 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       }
       
       current[[ome]]$test <- input$select_test 
-      # if (input$select_test !="Two-sample Moderated T-test"){
-      #   current[[ome]]$contrasts <-NULL
-      # }
       
       # Only set stat and cutoff if not already set
-      if (is.null(current[[ome]]$contrasts)) current[[ome]]$contrasts <- NULL
       if (is.null(current[[ome]]$stat)) current[[ome]]$stat <- "adj.p.val"
       if (is.null(current[[ome]]$cutoff)) current[[ome]]$cutoff <- 0.05
       
-      stat_param(current)                 
+      stat_param(current) 
     })
     
     #displaying the test choices (default)
@@ -170,20 +164,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       current <- stat_param()           
       ome <- selected_ome()                
       
-      if (is.null(current[[ome]])) {
-        current[[ome]] <- list()          
-      }
-      
-      # pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
-      # all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-      # labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      # 
-      # if (!is.null(current[[ome]]$test) && current[[ome]]$test != "Two-sample Moderated T-test") {
-      #   current[[ome]]$contrasts <- NULL
-      # } else if (!is.null(current[[ome]]$test) && current[[ome]]$test == "Two-sample Moderated T-test") {
-      #   current[[ome]]$contrasts <- labels
-      # }
-      # 
+      if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
       current[[ome]]$groups <- input$stat_setup_annotation
       
@@ -220,53 +201,31 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       req(selected_ome())
       current <- stat_param()
       ome <- selected_ome()
-      
-      
-      if (is.null(current[[ome]])) {current[[ome]] <- list()}
-      
-      
+
       current[[ome]]$contrasts <- input$select_contrasts
       stat_param(current)
     })
 
     output$select_contrast_ui <- renderUI({
-      tryCatch({
-        if (length(input$stat_setup_annotation) < 2 || is.null(input$stat_setup_annotation)) stop("too few groups")
+      current <- stat_param()
+      ome <- selected_ome()
         
-        pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
-        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-        labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-        checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=labels)
-      }, error= function(e) {
-        NULL 
-      })
-    })
-    
-    #displaying the previously chosen groups from the parameters
-    observe({
-      req(selected_ome(),input$select_contrasts)
+      req(current[[ome]]$test=="Two-sample Moderated T-test")
+      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("too few groups")
       
-      groups <- input$stat_setup_annotation
-      if (is.null(groups) || length(groups) < 2) {
-        return()  
-      }
-      
-      pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+      pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
       labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      
-      
-      saved_contrasts <- stat_param()[[selected_ome()]]$contrasts
-      if (is.null(saved_contrasts)){saved_contrasts <- labels}
-      updateCheckboxGroupInput(session, "select_contrasts", choices= labels, selected = saved_contrasts)
+        
+      if (is.null(current[[ome]]$contrasts)) {
+        current[[ome]]$contrasts <- labels 
+        stat_param(current)
+      }
+        
+      checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=current[[ome]]$contrasts)
     })
-    
-    
 
-
-
-    
-
+ 
     
     ##FLIPPING THE CONTRASTS##
     # observe({
@@ -379,11 +338,11 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
             test <- param_list[[ome]]$test
             groups <- param_list[[ome]]$groups
             annotation_col <- default_annotations()[[ome]]
-            contrasts_str <- param_list[[ome]]$contrasts
+            contrasts <- param_list[[ome]]$contrasts
 
             contrasts_list <- NULL
-            if (!is.null(contrasts_str)) {
-              contrasts_list <- lapply(contrasts_str, function(x) strsplit(x, " / ")[[1]])
+            if (!is.null(contrasts)) {
+              contrasts_list <- lapply(contrasts, function(x) strsplit(x, " / ")[[1]])
             }
             
             # For two-sample test, ensure proper contrasts
@@ -411,7 +370,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
               stat.results <<- NULL
             })
             
-            #stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
             
             if (!is.null(stat.results)) {
               test_results[[ome]] <- as.data.frame(stat.results)

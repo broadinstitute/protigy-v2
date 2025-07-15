@@ -262,7 +262,7 @@ statSummary_Ome_Server <- function(id,
       tagList(
         h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
-        sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=current_cutoff, step=0.01 )
+        sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=current_cutoff, step=0.001 )
       )
     })
     
