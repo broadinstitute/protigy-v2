@@ -72,16 +72,10 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
-      if (!exists("stat_param", envir = .GlobalEnv) || !exists("stat_results", envir = .GlobalEnv)) {
-        return(h4("Please go to the statistics setup tab."))
-      }
       req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
-      stat_param_val <- globals$stat_param()
-      stat_results_val <- globals$stat_results()
-      
       validate(
-        need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
-        need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
+        need(!is.null(globals$stat_param()) && length(globals$stat_param()) > 0, "Please do the setup first."),
+        need(!is.null(globals$stat_results()) && length(globals$stat_results()) > 0, "Please do the setup first.")
       )
       
       req(all_omes(), default_ome())
@@ -197,17 +191,15 @@ statSummary_Ome_Server <- function(id,
       tagList(
         fluidRow(
           
-            # Adjustments box
-            shinydashboardPlus::box(
-              uiOutput(ns("adjustments_table")),
-              title = "Adjustments",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            
-            )
-          ,
+          # Adjustments box
+          shinydashboardPlus::box(
+            uiOutput(ns("adjustments_table")),
+            title = "Adjustments",
+            status = "primary",
+            solidHeader = TRUE,
+            width = 6,
+            headerBorder = TRUE
+          ),
 
           # Dataset information box
           shinydashboardPlus::box(
@@ -253,7 +245,7 @@ statSummary_Ome_Server <- function(id,
       )
     })
     
-    ## ADJUSTMENTS INFO ##
+    ## ADJUSTMENTS INFO #######################################################
     output$adjustments_table <- renderUI({
       req(stat_param())
       current_stat <- stat_param()[[ome]]$stat
@@ -262,24 +254,34 @@ statSummary_Ome_Server <- function(id,
       tagList(
         h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
-        sliderInput(ns("select_cutoff"), "Choose cutoff:", min=0, max=1, value=current_cutoff, step=0.001 )
+        sliderInput(ns("select_cutoff_slider"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001),
+        numericInput(ns("select_cutoff_text"), NULL, min=0.001, max=1, value=current_cutoff, step=0.001)
       )
     })
     
+    # save selected stat to stat_param
     observeEvent(input$select_stat, {
       current <- stat_param() 
       current[[ome]]$stat <-input$select_stat
       stat_param(current)                  
     })
     
-    observeEvent(input$select_cutoff, {
+    # save selected cutoff to stat_param
+    observeEvent(input$select_cutoff_slider, {
       current <- stat_param() 
-      current[[ome]]$cutoff <-input$select_cutoff
+      current[[ome]]$cutoff <-input$select_cutoff_slider
       stat_param(current)                  
     })
     
+    #slider and text input show the same value
+    observe({
+      updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
+    })
+    observe({
+      updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
+    })
 
-    # WORKFLOW INFO ##
+    ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(
       data.frame(
         Description = c("Test chosen", "Cutoff", "Stat"),
@@ -287,7 +289,8 @@ statSummary_Ome_Server <- function(id,
       )
     )
 
-    # P.VALUE HISTOGRAM ##
+    ## P.VALUE HISTOGRAM #######################################################
+    #Sidebar
     output$pval_hist_sidebar_contents <- renderUI({
       req(stat_param())
       tagList(
@@ -301,20 +304,21 @@ statSummary_Ome_Server <- function(id,
       )
     })
     
+    #Adj p value histogram
     output$adj_pval_hist_plot <- renderPlotly({
       pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "adj.P.Val")
       gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
       ggplotly(gg)
     })
     
+    #Nom p value histogram
     output$nom_pval_hist_plot <- renderPlotly({
       pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "P.Value")
       gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
       ggplotly(gg)
     })
     
-    
-    ## DATASET INFO ##
+    ## DATASET INFO #######################################################
     output$dataset_table <- renderTable({
         req(stat_param(), stat_results())
         df <- stat_results()[[ome]]
@@ -323,7 +327,7 @@ statSummary_Ome_Server <- function(id,
         sig_cutoff <- stat_param()[[ome]]$cutoff
         sig_stat <- stat_param()[[ome]]$stat
         
-        #PVAL & ADJ.PVAL COLUMN#
+        #get pval and adj pval column#
         if (test_type == "One-sample Moderated T-test") {
           req(input$pval_groups)
           keyword <- input$pval_groups
@@ -348,7 +352,7 @@ statSummary_Ome_Server <- function(id,
         adj.P.Val <- as.numeric(df[[adjP_col]])
         P.Value <- as.numeric(df[[pval_col]])
         
-        #CALCULATE SIGNIFICANCE#
+        #calculate significance#
         significant <- rep(FALSE, length(P.Value))
         if (sig_stat == "adj.p.val") {
           significant <- adj.P.Val < sig_cutoff
@@ -369,7 +373,7 @@ statSummary_Ome_Server <- function(id,
         )
     })
 
-    ## COMPILE EXPORTS ##
+    ## COMPILE EXPORTS #######################################################
     adj_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_param()[[ome]]$test
       df <- stat_results()[[ome]]

@@ -4,7 +4,7 @@
 # Allow users to see the summary of their results
 ################################################################################
 
-##TOOL TIP FUNCTION#######################################################
+##TOOL TIP FUNCTION#############################################################
 #' @import shinyWidgets
 #' @import shinyBS
 helpButton <- function(el, title = NULL, content = NULL, placement = "right", trigger = "hover", offset=0.5, col=10) {
@@ -19,7 +19,7 @@ helpButton <- function(el, title = NULL, content = NULL, placement = "right", tr
                   shinyBS::popify(button, title, content, placement=placement, trigger = trigger)))
 }
 
-##GETTING PVAL FOR THE HISTOGRAM FUNCTION#######################################################
+##GETTING PVAL FOR THE HISTOGRAM FUNCTION#######################################
 get_pvals <- function(ome, stat_param, stat_results, group, contrast, pval_type = c("adj.P.Val", "P.Value")) {
   pval_type <- match.arg(pval_type)
   df <- stat_results[[ome]]

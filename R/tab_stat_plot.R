@@ -74,13 +74,9 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
       req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
-      
-      stat_param_val <- globals$stat_param()
-      stat_results_val <- globals$stat_results()
-      
       validate(
-        need(!is.null(stat_param_val) && length(stat_param_val) > 0, "Please do the setup first."),
-        need(!is.null(stat_results_val) && length(stat_results_val) > 0, "Please do the setup first.")
+        need(!is.null(globals$stat_param()) && length(globals$stat_param()) > 0, "Please do the setup first."),
+        need(!is.null(globals$stat_results()) && length(globals$stat_results()) > 0, "Please do the setup first.")
       )
       
       req(all_omes(), default_ome())
@@ -172,7 +168,7 @@ statPlot_Ome_Server <- function(id,
     output$ome_plot_contents <- renderUI({
       # fallback if stat_param not defined yet
       if (!exists("stat_param", envir = .GlobalEnv)) {
-        return(h4("No test selected to run on this dataset."))
+        return(h4("Please go to the Statistics setup tab first."))
       }
       
       stat_param <- get("stat_param", envir = .GlobalEnv)
@@ -238,12 +234,13 @@ statPlot_Ome_Server <- function(id,
         return(NULL)
       }
       
+      #Run plot function
       gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = input$volcano_contrasts, df= stat_results()[[ome]]) 
       ggplotly(gg)
     })
     
 
-    # ## COMPILE EXPORTS ##
+    ## COMPILE EXPORTS ##
     volcano_plot_export_function <- function(dir_name) {
       test <- stat_param()[[ome]]$test
       df <- stat_results()[[ome]]

@@ -135,7 +135,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       stat_param(current) 
     })
     
-    #displaying the test choices (default)
+    #displaying the test choices
     output$select_test <- renderUI ({
       current <- stat_param()
       ome <- selected_ome()
@@ -162,11 +162,31 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       
       if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
-      current[[ome]]$groups <- input$stat_setup_annotation 
-      stat_param(current)                  
+      new_groups <- input$stat_setup_annotation
+      old_groups <- current[[ome]]$groups
+      current[[ome]]$groups <- new_groups
+
+      #resets the contrasts to default if a group is selected/deselected (two-sample only)
+      if (current[[ome]]$test=="Two-sample Moderated T-test"){
+        if (is.null(current[[ome]]$contrasts) || !setequal(old_groups, new_groups)) {
+          if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) {
+            showNotification("Please select at least two groups.", type = "error", duration = 5)
+            return()
+          }
+  
+          pairwise_contrasts <- combn(new_groups, 2, simplify = FALSE)
+          all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+          labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+  
+          current[[ome]]$contrasts <- labels
+          updateCheckboxGroupInput(session, "select_contrasts", choices = labels, selected = labels)
+        }
+      }
+      
+      stat_param(current)    
     })
     
-    #displaying the groups choices (default)
+    #displaying the group choices
     output$select_groups_ui <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
@@ -200,6 +220,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       stat_param(current)
     })
 
+    #displaying the contrast choices
     output$select_contrast_ui <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
@@ -210,13 +231,18 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
       labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-        
+      
       if (is.null(current[[ome]]$contrasts)) {
-        current[[ome]]$contrasts <- labels 
+        current[[ome]]$contrasts <- labels
         stat_param(current)
       }
-        
-      checkboxGroupInput(ns("select_contrasts"), "Select contrasts:", choices=labels, selected=current[[ome]]$contrasts)
+          
+      checkboxGroupInput(
+        ns("select_contrasts"), 
+        "Select contrasts:", 
+        choices=labels, 
+        selected=current[[ome]]$contrasts
+      )
     })
 
 ################################################################################
@@ -333,7 +359,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
             contrasts_list <- lapply(contrasts, function(x) strsplit(x, " / ")[[1]])
           }
             
-          # Ensure proper contrasts for two sample
+          # Ensure proper number of contrasts for two sample t test
           if (test == "Two-sample Moderated T-test") {
             if (length(groups) < 2) {
               showNotification("Please select at least two groups for Two-sample test", type = "error")
@@ -351,7 +377,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
             next
           }
           
-          # Actual test  
+          # Ensure proper number of groups for one sample t test 
+          if (test== "One-sample Moderated T-test" && length(groups) < 1) {
+            showNotification("Please select at least one group for one sample t test", type = "error")
+            next
+          }
+          
+          # Run test  
           stat.results <- NULL
           tryCatch({
             stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)

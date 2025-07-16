@@ -62,8 +62,6 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   if(!all(required_cols %in% colnames(df))) {
     stop("Some required columns are missing in the result data.")
   }
-  
-  ## Keep only complete cases
   df <- df[complete.cases(df[, required_cols]), ]
   
   ## Add columns for plotting
@@ -74,7 +72,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   df$logP <- df[[logP_col]]
   df$P.Value <- as.numeric(df[[pval_col]])
   
-  ## Define significance based on adj.P.Val threshold
+  ## Define significance based on chosen stat and cutoff
   sig_cutoff <- stat_param()[[ome]]$cutoff
   sig_stat <- stat_param()[[ome]]$stat
   
@@ -85,7 +83,6 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   } else {
     df$Significant <- FALSE
   }
-  
   
   if(sig_stat == "adj.p.val") {
     stat <- df$log.adjP
