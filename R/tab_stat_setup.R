@@ -20,6 +20,7 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
         column(3,
                selectInput(ns("selected_omes"), "Select datasets to test:", choices = NULL),
                textOutput(ns("annotation_col")),
+               checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE),
                actionButton(ns("run_test_button"),"Run Test")
         ),
         column(3,
@@ -116,7 +117,54 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       req(default_annotation_column())
       paste("Selected annotation column:", default_annotation_column())  
     })
+
     
+######APPLY TO ALL OMES#########################################################
+    original_stat_param <- reactiveVal(NULL)
+    
+    observeEvent(input$apply_all, {
+      req(selected_ome(), stat_param(), all_omes(), default_annotations(), default_annotation_column())
+      
+      current <- stat_param()
+      ome_source <- selected_ome()
+      ome_list <- all_omes()
+      
+      if (input$apply_all) {
+        
+          # Check default annotation columns are identical for all omes
+          if (!all(sapply(default_annotations(), identical, default_annotation_column()))) {
+            showNotification("Default annotation columns differ across datasets. Cannot apply settings to all.", type = "error", duration = 5)
+            updateCheckboxInput(session, "apply_all", value=FALSE)
+            return()
+          }
+          
+          # Save original parameters before overwriting
+          if (is.null(original_stat_param())) {
+            original_stat_param(stat_param())
+          }
+          
+          # Only copy if source ome parameters aren't empty
+          if (!is.null(current[[ome_source]])) {
+            for (ome in ome_list) {
+              if (ome != ome_source) {
+                current[[ome]] <- current[[ome_source]]
+              }
+            }
+            stat_param(current)
+            showNotification("Applied current dataset's parameters to all datasets.", type = "message", duration = 3)
+          }
+      } else {
+        # Revert to original parameters if button unclicked
+        if (!is.null(original_stat_param())) {
+          stat_param(original_stat_param())
+          original_stat_param(NULL)
+          showNotification("Reverted to original parameters for each dataset.", type = "message", duration = 3)
+        }
+      }
+    })
+    
+    
+################################################################################
 ######TEST SELECTION############################################################
     #saving the selected test to stat_param
     observeEvent(input$select_test, {

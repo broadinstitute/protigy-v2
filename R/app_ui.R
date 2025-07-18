@@ -43,7 +43,6 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Summary", statSummary_Tab_UI()),
         tabPanel("Volcano Plot", statPlot_Tab_UI()),
         # tabPanel("Table", statTable_Tab_UI())
-       
       ),
       
       # navbarMenu(
