@@ -235,7 +235,7 @@ statPlot_Ome_Server <- function(id,
       }
       
       #Run plot function
-      gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = input$volcano_contrasts, df= stat_results()[[ome]]) 
+      gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = as.character(input$volcano_contrasts), df= stat_results()[[ome]]) 
       ggplotly(gg)
     })
     

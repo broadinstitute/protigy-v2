@@ -313,7 +313,7 @@ statSummary_Ome_Server <- function(id,
     
     #Nom p value histogram
     output$nom_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "P.Value")
+      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, as.character(input$pval_contrasts), "P.Value")
       gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
       ggplotly(gg)
     })
