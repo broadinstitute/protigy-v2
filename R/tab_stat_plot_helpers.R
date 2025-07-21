@@ -100,6 +100,17 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     labs(title = paste("Volcano plot for",ome), x = "log2 Fold Change", y = paste("-log10 ", sig_stat)) +
     theme_minimal()
   
+  groups <- unlist(strsplit(volcano_contrasts, " / "))
+  top_left <- groups[1]
+  top_right <- groups[2]
+  x_range <- range(df$logFC, na.rm = TRUE)
+  y_range <- range(stat, na.rm = TRUE)
+  if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+    volcano <- volcano +
+      annotate("text", x = x_range[1], y = y_range[2], label = top_left, hjust = -0.1, vjust = 2.1, size = 5, fontface = "bold", color = "red") +
+      annotate("text", x = x_range[2], y = y_range[2], label = top_right, hjust = 1.1, vjust = 2.1, size = 5, fontface = "bold", color = "red")
+  }
+  
   cat('\n-- plotVolcano finished--\n')
   return(volcano)
   

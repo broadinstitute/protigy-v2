@@ -118,7 +118,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       paste("Selected annotation column:", default_annotation_column())  
     })
 
-    
 ######APPLY TO ALL OMES#########################################################
     original_stat_param <- reactiveVal(NULL)
     

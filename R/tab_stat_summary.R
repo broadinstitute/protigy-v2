@@ -306,7 +306,7 @@ statSummary_Ome_Server <- function(id,
     
     #Adj p value histogram
     output$adj_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, input$pval_contrasts, "adj.P.Val")
+      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, as.character(input$pval_contrasts), "adj.P.Val")
       gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
       ggplotly(gg)
     })
@@ -335,7 +335,7 @@ statSummary_Ome_Server <- function(id,
           pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*P\\.Value)")
         } else if (test_type == "Two-sample Moderated T-test") {
           req(input$pval_contrasts)
-          groups <- unlist(strsplit(input$pval_contrasts, " / "))
+          groups <- unlist(strsplit(as.character(input$pval_contrasts), " / "))
           adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
           pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
         } else if (test_type == "Moderated F test"){
