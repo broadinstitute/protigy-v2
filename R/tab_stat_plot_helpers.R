@@ -57,6 +57,9 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   ##ID COLUMN##
   id_col <- grep("id", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   
+  ##GENE SYMBOL COLUMN##
+  geneSymbol_col <- grep("geneSymbol", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+  
   ## Check columns exist
   required_cols <- c(logFC_col, logP_col, adjP_col, id_col)
   if(!all(required_cols %in% colnames(df))) {
@@ -66,9 +69,9 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   
   ## Add columns for plotting
   df$id <- df[[id_col]]
+  df$geneSymbol <- df[[geneSymbol_col]]
   df$logFC <- df[[logFC_col]]
   df$adj.P.Val <- as.numeric(df[[adjP_col]])
-  df$log.adjP <- -log10(df$adj.P.Val)
   df$logP <- df[[logP_col]]
   df$P.Value <- as.numeric(df[[pval_col]])
   
@@ -76,28 +79,32 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   sig_cutoff <- stat_param()[[ome]]$cutoff
   sig_stat <- stat_param()[[ome]]$stat
   
+  # Always use nominal p-values for Y-axis
+  stat <- df$logP
+  
+  # Compute threshold for dashed line
   if(sig_stat == "adj.p.val") {
-    df$Significant <- df$adj.P.Val < sig_cutoff
-  } else if(sig_stat == "nom.p.val") {
-    df$Significant <- df$P.Value < sig_cutoff
+    passing.id <- which(df$adj.P.Val < sig_cutoff)
+    if(length(passing.id) > 0){
+      # Set y-axis threshold based on largest nominal p that still passes adj.p filter
+      y_cutoff <- -log10(max(df$P.Value[passing.id], na.rm = TRUE))
+    } else {
+      y_cutoff <- Inf
+    }
   } else {
-    df$Significant <- FALSE
+    y_cutoff <- -log10(sig_cutoff)
   }
   
-  if(sig_stat == "adj.p.val") {
-    stat <- df$log.adjP
-  } else if(sig_stat == "nom.p.val") {
-    stat <- df$logP
-  }
+  df$Significant <- df$logP > y_cutoff
 
   ## Plot
   volcano <- ggplot(df, aes(x = logFC, y = stat, 
-                       text = paste("ID:", id, "<br>logFC:", round(logFC,2), "<br>logP:", round(stat,2)))) +
+                       text = paste("ID:", id, "<br>Gene Symbol:", geneSymbol))) +
     geom_point(aes(color = Significant)) +
     scale_color_manual(values = c(`TRUE` = sig.col, `FALSE` = bg.col)) +
-    geom_hline(yintercept = -log10(sig_cutoff), color = "black", linetype = "dashed", size = 1) +
+    geom_hline(yintercept = y_cutoff, color = "black", linetype = "dashed", size = 1) +
     geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 1) +
-    labs(title = paste("Volcano plot for",ome), x = "log2 Fold Change", y = paste("-log10 ", sig_stat)) +
+    labs(title = paste("Volcano plot for",ome), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
     theme_minimal()
   
 

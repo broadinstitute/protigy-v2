@@ -202,14 +202,14 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
 ################################################################################
 ######GROUP SELECTION############################################################
     #saving the selected groups to stat_param
-    observeEvent(input$stat_setup_annotation, {
+    observeEvent(input$select_groups, {
       req(selected_ome())
       current <- stat_param()           
       ome <- selected_ome()                
       
       if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
-      new_groups <- input$stat_setup_annotation
+      new_groups <- input$select_groups
       old_groups <- current[[ome]]$groups
       current[[ome]]$groups <- new_groups
 
@@ -248,7 +248,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       }
       
       checkboxGroupInput(
-        ns("stat_setup_annotation"),
+        ns("select_groups"),
         "Include groups:",
         choices = choices,
         selected = current[[ome]]$groups 
@@ -296,10 +296,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
 ##FLIPPING THE CONTRASTS- not implemented but can be in the future##############
     # observe({
     #   req(input$selected_ome)
-    #   req(input$stat_setup_annotation)
-    #   if (length(input$stat_setup_annotation) < 2) return(list())
+    #   req(input$select_groups)
+    #   if (length(input$select_groups) < 2) return(list())
     #   
-    #   pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #   pairwise_contrasts <- combn(input$select_groups, 2, simplify = FALSE)
     #   all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
     #   
     #   selected_contrasts <- list()
@@ -315,10 +315,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     # #selecting the contrast
     # output$select_contrast_ui <- renderUI({
     #   req(input$select_test == "Two-sample Moderated T-test")
-    #   req(length(input$stat_setup_annotation) >= 2)
+    #   req(length(input$select_groups) >= 2)
     #    
     #   #create pairwise comparisons
-    #   pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #   pairwise_contrasts <- combn(input$select_groups, 2, simplify = FALSE)
     #    
     #   lapply(seq_along(pairwise_contrasts), function(i) {
     #     pair <- pairwise_contrasts[[i]]
@@ -339,7 +339,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     # #flip the contrast over if the flip box is clicked
     #  observe({
     #    req(input$select_test == "Two-sample Moderated T-test")
-    #    pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #    pairwise_contrasts <- combn(input$select_groups, 2, simplify = FALSE)
     #    
     #    for (i in seq_along(pairwise_contrasts)) {
     #      local({
@@ -364,13 +364,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     #  
     #  #final contrasts passed into the function
     #  selected_contrasts_reactive <- reactive({
-    #    req(input$stat_setup_annotation)
-    #    if(length(input$stat_setup_annotation) < 2) {
+    #    req(input$select_groups)
+    #    if(length(input$select_groups) < 2) {
     #      return(list())  # Return empty list when fewer than 2 groups selected
     #    }
     #    
     #    selected_contrasts <- list()
-    #    pairwise_contrasts <- combn(input$stat_setup_annotation, 2, simplify = FALSE)
+    #    pairwise_contrasts <- combn(input$select_groups, 2, simplify = FALSE)
     #    
     #    for (i in seq_along(pairwise_contrasts)) {
     #      pair <- pairwise_contrasts[[i]]
@@ -443,6 +443,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
           if (!is.null(stat.results)) {
             test_results[[ome]] <- as.data.frame(stat.results)
           }
+          
+          print(ome)
+          print(head(stat.results))
         }
         
         stat_results(test_results)
