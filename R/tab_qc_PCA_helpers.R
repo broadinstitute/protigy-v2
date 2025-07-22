@@ -31,6 +31,10 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
   my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
   
+  # get variance explained
+  vars <- my_pca$sdev^2
+  prop_vars <- vars / sum(vars)
+  
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
   if (is.null(custom_color_map)) {
@@ -74,7 +78,11 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     theme(text = element_text(size = 12)) +
     color_definition +
     ggtitle(paste0("PCA plot by ", col_of_interest, ": ", ome)) +
-    labs(colour = col_of_interest)
+    labs(
+      x = paste0("PC", comp.x, " (", round(prop_vars[comp.x] * 100, 1), "%)"),
+      y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)"),
+      colour = col_of_interest
+    )
 }
 
 ## calculate PCA regression
