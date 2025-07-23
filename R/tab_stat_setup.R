@@ -443,6 +443,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
           if (!is.null(stat.results)) {
             test_results[[ome]] <- as.data.frame(stat.results)
           }
+         
         }
         
         stat_results(test_results)

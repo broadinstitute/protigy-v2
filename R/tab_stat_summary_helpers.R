@@ -30,7 +30,11 @@ get_pvals <- function(ome, stat_param, stat_results, group, contrast, pval_type 
     pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", pval_type, ")")
   } else if (test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(contrast, " / "))
-    pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", pval_type, ")")
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    pattern <- paste0("(?i)", pval_type, "\\.", contrast_name)
+    
+    # groups <- unlist(strsplit(contrast, " / "))
+    # pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", pval_type, ")")
   } else {
     pattern <- pval_type
   }

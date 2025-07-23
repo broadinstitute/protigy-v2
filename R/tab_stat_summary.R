@@ -8,8 +8,6 @@
 # Shiny functions (UI and server)
 ################################################################################
 source("R/tab_stat_summary_helpers.R")
-#' @import shinyWidgets
-
 # UI for the statSummary tab
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_UI <- function(id = "statSummaryTab") {
@@ -155,59 +153,10 @@ statSummary_Ome_UI <- function (id, ome) {
   ns <- NS(id)
   
   tagList(
-        fluidRow(
-            # Adjustments box
-            shinydashboardPlus::box(
-              uiOutput(ns("adjustments_table")),
-              title = "Adjustments",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            ),
-            
-            # Dataset information box
-            shinydashboardPlus::box(
-              tableOutput(ns("dataset_table")),
-              title = "Dataset Information",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            ),
-            
-            # Data workflow box
-            shinydashboardPlus::box(
-              tableOutput(ns("workflow_table")),
-              title = "Workflow Parameters",
-              status = "primary",
-              solidHeader = TRUE,
-              width = 6,
-              headerBorder = TRUE
-            ),
-            
-            # P.val histogram box
-            fluidRow(shinydashboardPlus::box(
-              fluidRow(
-                column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
-                column(6, plotlyOutput(ns("nom_pval_hist_plot")))
-              ),
-              sidebar = boxSidebar(
-                uiOutput(ns("pval_hist_sidebar_contents")),
-                id = ns("pval_hist_sidebar"),
-                width = 25,
-                icon = icon("gears", class = "fa-2xl"),
-                background = "rgba(91, 98, 104, 0.9)"
-              ),
-              status = "primary",
-              width = 12,
-              title = "P.value Histogram",
-              headerBorder = TRUE,
-              solidHeader = TRUE
-            ))
-            
-        ) # end fluidRow
-  ) #end tagList
+    
+    uiOutput(ns("ome_summary_contents"))
+    
+  )
 }
 
 
@@ -226,33 +175,76 @@ statSummary_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
-    # ## ADJUSTMENTS INFO #######################################################
-    # output$adjustments_table <- renderUI({
-    #   req(stat_param())
-    #   current_stat <- stat_param()[[ome]]$stat
-    #   current_cutoff <- stat_param()[[ome]]$cutoff
-    #   
-    #   tagList(
-    #     h5("The following selections are applied to Volcano Plots as well"),
-    #     selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
-    #     numericInput(ns("select_cutoff_text"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001)
-    #   )
-    # })
-    # 
-    # # save selected stat to stat_param
-    # observeEvent(input$select_stat, {
-    #   current <- stat_param() 
-    #   current[[ome]]$stat <-input$select_stat
-    #   stat_param(current)                  
-    # })
-    # 
-    # # save selected cutoff to stat_param
-    # observeEvent(input$select_cutoff_text, {
-    #   current <- stat_param() 
-    #   current[[ome]]$cutoff <-input$select_cutoff_text
-    #   stat_param(current)                  
-    # })
-
+    output$ome_summary_contents <- renderUI({
+      # fallback if stat_param not defined yet
+      if (!exists("stat_param", envir = .GlobalEnv)) {
+        return(h4("Please go to the Statistics setup tab first."))
+      }
+      
+      stat_param <- get("stat_param", envir = .GlobalEnv)
+      test <- stat_param()[[ome]]$test
+      
+      if (is.null(test) || test == "None") {
+        return(h4("No test selected to run on this dataset."))
+      }
+      
+      tagList(
+        fluidRow(
+          
+          # Adjustments box
+          shinydashboardPlus::box(
+            uiOutput(ns("adjustments_table")),
+            title = "Adjustments",
+            status = "primary",
+            solidHeader = TRUE,
+            width = 6,
+            headerBorder = TRUE
+          ),
+          
+          # Dataset information box
+          shinydashboardPlus::box(
+            tableOutput(ns("dataset_table")),
+            title = "Dataset Information",
+            status = "primary",
+            solidHeader = TRUE,
+            width = 6,
+            headerBorder = TRUE
+          ),
+          
+          # Data workflow box
+          shinydashboardPlus::box(
+            tableOutput(ns("workflow_table")),
+            title = "Workflow Parameters",
+            status = "primary",
+            solidHeader = TRUE,
+            width = 6,
+            headerBorder = TRUE
+          ),
+          
+          # P.val histogram box
+          fluidRow(shinydashboardPlus::box(
+            fluidRow(
+              column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
+              column(6, plotlyOutput(ns("nom_pval_hist_plot")))
+            ),
+            sidebar = boxSidebar(
+              uiOutput(ns("pval_hist_sidebar_contents")),
+              id = ns("pval_hist_sidebar"),
+              width = 25,
+              icon = icon("gears", class = "fa-2xl"),
+              background = "rgba(91, 98, 104, 0.9)"
+            ),
+            status = "primary",
+            width = 12,
+            title = "P.value Histogram",
+            headerBorder = TRUE,
+            solidHeader = TRUE
+          ))
+          
+        ) # end fluidRow
+      )
+    })
+    
     ## ADJUSTMENTS INFO #######################################################
     output$adjustments_table <- renderUI({
       req(stat_param())
@@ -288,7 +280,6 @@ statSummary_Ome_Server <- function(id,
     observe({
       updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
     })
-    
     
     ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(

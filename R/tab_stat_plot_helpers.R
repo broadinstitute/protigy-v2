@@ -16,7 +16,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     logfc_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "logFC.", ")")
   } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    logfc_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "logFC.", ")")
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    logfc_pattern <- paste0("logFC.*", contrast_name)
   } 
   
   logFC_col <- grep(logfc_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
@@ -27,7 +28,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     logP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "Log.P.Value.", ")")
   } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    logP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "Log.P.Value.", ")")
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    logP_pattern  <- paste0("Log\\.P\\.Value.*", contrast_name)
   } 
   
   logP_col <- grep(logP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
@@ -38,7 +40,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
   } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "adj.P.Val.", ")")
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    adjP_pattern  <- paste0("adj\\.P\\.Val.*", contrast_name)
   } 
   
   adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
@@ -49,7 +52,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
   } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*", "P.value.", ")")
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    pval_pattern  <- paste0("P\\.value.*", contrast_name)
   }
 
   pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
