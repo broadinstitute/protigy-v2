@@ -116,8 +116,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     y_range <- range(stat, na.rm = TRUE)
     
     volcano <- volcano +
-      annotate("text", x = x_range[1], y = y_range[2], label = top_left, hjust = -0.1, vjust = 2.1, size = 5, fontface = "bold", color = "red") +
-      annotate("text", x = x_range[2], y = y_range[2], label = top_right, hjust = 1.1, vjust = 2.1, size = 5, fontface = "bold", color = "red")
+      annotate("text", x = x_range[1], y = y_range[2], label = top_left, hjust = -0.1, vjust = 3.1, size = 5, fontface = "bold", color = "red") +
+      annotate("text", x = x_range[2], y = y_range[2], label = top_right, hjust = 1.1, vjust = 3.1, size = 5, fontface = "bold", color = "red")
   }
   
   cat('\n-- plotVolcano finished--\n')

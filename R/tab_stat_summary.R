@@ -8,67 +8,69 @@
 # Shiny functions (UI and server)
 ################################################################################
 source("R/tab_stat_summary_helpers.R")
+#' @import shinyWidgets
+
 # UI for the statSummary tab
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_UI <- function(id = "statSummaryTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
-
+  
   tagList(
-
+    
     # display omes tabs
     fluidRow(uiOutput(ns("ome_tabset_box")))
-
+    
   ) # end tagList
 }
 
 # server for the statSummary tab
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_Server <- function(id = "statSummaryTab",
-                                 GCTs_and_params,
-                                 globals,
-                                 GCTs_original) {
-
+                                   GCTs_and_params,
+                                   globals,
+                                   GCTs_original) {
+  
   ## module function
   moduleServer(id, function (input, output, session) {
-
+    
     ## GATHERING INPUTS ##
     
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
-
+    
     # GCTs to use for analysis/visualization
     GCTs <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$GCTs
     })
-
+    
     # parameters used to process GCTs
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
     })
-
+    
     # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
     GCTs_merged <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$GCTs_merged
     })
-
+    
     # named list of default annotation columns for each ome
     default_annotations <- reactive({
       req(parameters())
       sapply(parameters(), function(p) p$annotation_column, simplify = FALSE)
     })
-
+    
     # vector of all omes
     all_omes <- reactive(names(GCTs())) # don't remove
-
+    
     # gather relevant variables from globals
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
-
-
-   ## OME TABS ##
+    
+    
+    ## OME TABS ##
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
@@ -137,114 +139,120 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
           )
         })
       }, simplify = FALSE)
-    
+      
       all_plots(output_plots) # set reactive value with outputs
     })
     
     return(all_plots)
-    })
-    }
+  })
+}
 
 
 
 # UI for an individual ome
 statSummary_Ome_UI <- function (id, ome) {
-
+  
   ns <- NS(id)
-
+  
   tagList(
-
-    uiOutput(ns("ome_summary_contents"))
-
-  )
+        fluidRow(
+            # Adjustments box
+            shinydashboardPlus::box(
+              uiOutput(ns("adjustments_table")),
+              title = "Adjustments",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 6,
+              headerBorder = TRUE
+            ),
+            
+            # Dataset information box
+            shinydashboardPlus::box(
+              tableOutput(ns("dataset_table")),
+              title = "Dataset Information",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 6,
+              headerBorder = TRUE
+            ),
+            
+            # Data workflow box
+            shinydashboardPlus::box(
+              tableOutput(ns("workflow_table")),
+              title = "Workflow Parameters",
+              status = "primary",
+              solidHeader = TRUE,
+              width = 6,
+              headerBorder = TRUE
+            ),
+            
+            # P.val histogram box
+            fluidRow(shinydashboardPlus::box(
+              fluidRow(
+                column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
+                column(6, plotlyOutput(ns("nom_pval_hist_plot")))
+              ),
+              sidebar = boxSidebar(
+                uiOutput(ns("pval_hist_sidebar_contents")),
+                id = ns("pval_hist_sidebar"),
+                width = 25,
+                icon = icon("gears", class = "fa-2xl"),
+                background = "rgba(91, 98, 104, 0.9)"
+              ),
+              status = "primary",
+              width = 12,
+              title = "P.value Histogram",
+              headerBorder = TRUE,
+              solidHeader = TRUE
+            ))
+            
+        ) # end fluidRow
+  ) #end tagList
 }
 
 
 # server for an individual ome
 statSummary_Ome_Server <- function(id,
-                                 ome,
-                                 GCT_processed,
-                                 parameters,
-                                 GCT_original,
-                                 default_annotation_column,
-                                 color_map) {
-
+                                   ome,
+                                   GCT_processed,
+                                   parameters,
+                                   GCT_original,
+                                   default_annotation_column,
+                                   color_map) {
+  
   ## module function
   moduleServer(id, function (input, output, session) {
-
+    
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
-    output$ome_summary_contents <- renderUI({
-      # fallback if stat_param not defined yet
-      if (!exists("stat_param", envir = .GlobalEnv)) {
-        return(h4("Please go to the Statistics setup tab first."))
-      }
-      
-      stat_param <- get("stat_param", envir = .GlobalEnv)
-      test <- stat_param()[[ome]]$test
-      
-      if (is.null(test) || test == "None") {
-        return(h4("No test selected to run on this dataset."))
-      }
-    
-      tagList(
-        fluidRow(
-          
-          # Adjustments box
-          shinydashboardPlus::box(
-            uiOutput(ns("adjustments_table")),
-            title = "Adjustments",
-            status = "primary",
-            solidHeader = TRUE,
-            width = 6,
-            headerBorder = TRUE
-          ),
+    # ## ADJUSTMENTS INFO #######################################################
+    # output$adjustments_table <- renderUI({
+    #   req(stat_param())
+    #   current_stat <- stat_param()[[ome]]$stat
+    #   current_cutoff <- stat_param()[[ome]]$cutoff
+    #   
+    #   tagList(
+    #     h5("The following selections are applied to Volcano Plots as well"),
+    #     selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
+    #     numericInput(ns("select_cutoff_text"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001)
+    #   )
+    # })
+    # 
+    # # save selected stat to stat_param
+    # observeEvent(input$select_stat, {
+    #   current <- stat_param() 
+    #   current[[ome]]$stat <-input$select_stat
+    #   stat_param(current)                  
+    # })
+    # 
+    # # save selected cutoff to stat_param
+    # observeEvent(input$select_cutoff_text, {
+    #   current <- stat_param() 
+    #   current[[ome]]$cutoff <-input$select_cutoff_text
+    #   stat_param(current)                  
+    # })
 
-          # Dataset information box
-          shinydashboardPlus::box(
-            tableOutput(ns("dataset_table")),
-            title = "Dataset Information",
-            status = "primary",
-            solidHeader = TRUE,
-            width = 6,
-            headerBorder = TRUE
-          ),
-
-          # Data workflow box
-          shinydashboardPlus::box(
-            tableOutput(ns("workflow_table")),
-            title = "Workflow Parameters",
-            status = "primary",
-            solidHeader = TRUE,
-            width = 6,
-            headerBorder = TRUE
-          ),
-
-          # P.val histogram box
-          fluidRow(shinydashboardPlus::box(
-            fluidRow(
-              column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
-              column(6, plotlyOutput(ns("nom_pval_hist_plot")))
-            ),
-            sidebar = boxSidebar(
-              uiOutput(ns("pval_hist_sidebar_contents")),
-              id = ns("pval_hist_sidebar"),
-              width = 25,
-              icon = icon("gears", class = "fa-2xl"),
-              background = "rgba(91, 98, 104, 0.9)"
-            ),
-            status = "primary",
-            width = 12,
-            title = "P.value Histogram",
-            headerBorder = TRUE,
-            solidHeader = TRUE
-          ))
-
-        ) # end fluidRow
-      )
-    })
-    
     ## ADJUSTMENTS INFO #######################################################
     output$adjustments_table <- renderUI({
       req(stat_param())
@@ -280,7 +288,8 @@ statSummary_Ome_Server <- function(id,
     observe({
       updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
     })
-
+    
+    
     ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(
       data.frame(
@@ -288,7 +297,7 @@ statSummary_Ome_Server <- function(id,
         Count = c(stat_param()[[ome]]$test, stat_param()[[ome]]$cutoff, stat_param()[[ome]]$stat)
       )
     )
-
+    
     ## P.VALUE HISTOGRAM #######################################################
     #Sidebar
     output$pval_hist_sidebar_contents <- renderUI({
@@ -320,59 +329,59 @@ statSummary_Ome_Server <- function(id,
     
     ## DATASET INFO #######################################################
     output$dataset_table <- renderTable({
-        req(stat_param(), stat_results())
-        df <- stat_results()[[ome]]
-        
-        test_type <- stat_param()[[ome]]$test
-        sig_cutoff <- stat_param()[[ome]]$cutoff
-        sig_stat <- stat_param()[[ome]]$stat
-        
-        #get pval and adj pval column#
-        if (test_type == "One-sample Moderated T-test") {
-          req(input$pval_groups)
-          keyword <- input$pval_groups
-          adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val)")
-          pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*P\\.Value)")
-        } else if (test_type == "Two-sample Moderated T-test") {
-          req(input$pval_contrasts)
-          groups <- unlist(strsplit(as.character(input$pval_contrasts), " / "))
-          adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
-          pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
-        } else if (test_type == "Moderated F test"){
-          adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
-          pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
-        } 
-        
-        adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-        pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-        
-        #check for missing columns
-        req(!is.na(adjP_col), !is.na(pval_col))
-        
-        adj.P.Val <- as.numeric(df[[adjP_col]])
-        P.Value <- as.numeric(df[[pval_col]])
-        
-        #calculate significance#
-        significant <- rep(FALSE, length(P.Value))
-        if (sig_stat == "adj.p.val") {
-          significant <- adj.P.Val < sig_cutoff
-        } else if (sig_stat == "nom.p.val") {
-          significant <- P.Value < sig_cutoff
-        }
-        
-        significant <- significant[!is.na(significant)]
-        
-        # Filter to only rows with at least one non-NA numeric value
-        numeric_cols <- sapply(df, is.numeric)
-        df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
- 
-        #RETURN DATAFRAME#
-        data.frame(
-          Description = c("Features tested", "Significant features"),
-          Value = c(nrow(df_filtered), sum(significant))
-        )
+      req(stat_param(), stat_results())
+      df <- stat_results()[[ome]]
+      
+      test_type <- stat_param()[[ome]]$test
+      sig_cutoff <- stat_param()[[ome]]$cutoff
+      sig_stat <- stat_param()[[ome]]$stat
+      
+      #get pval and adj pval column#
+      if (test_type == "One-sample Moderated T-test") {
+        req(input$pval_groups)
+        keyword <- input$pval_groups
+        adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val)")
+        pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*P\\.Value)")
+      } else if (test_type == "Two-sample Moderated T-test") {
+        req(input$pval_contrasts)
+        groups <- unlist(strsplit(as.character(input$pval_contrasts), " / "))
+        adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
+        pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
+      } else if (test_type == "Moderated F test"){
+        adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
+        pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
+      } 
+      
+      adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+      pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+      
+      #check for missing columns
+      req(!is.na(adjP_col), !is.na(pval_col))
+      
+      adj.P.Val <- as.numeric(df[[adjP_col]])
+      P.Value <- as.numeric(df[[pval_col]])
+      
+      #calculate significance#
+      significant <- rep(FALSE, length(P.Value))
+      if (sig_stat == "adj.p.val") {
+        significant <- adj.P.Val < sig_cutoff
+      } else if (sig_stat == "nom.p.val") {
+        significant <- P.Value < sig_cutoff
+      }
+      
+      significant <- significant[!is.na(significant)]
+      
+      # Filter to only rows with at least one non-NA numeric value
+      numeric_cols <- sapply(df, is.numeric)
+      df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
+      
+      #RETURN DATAFRAME#
+      data.frame(
+        Description = c("Features tested", "Significant features"),
+        Value = c(nrow(df_filtered), sum(significant))
+      )
     })
-
+    
     ## COMPILE EXPORTS #######################################################
     adj_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_param()[[ome]]$test
@@ -512,6 +521,6 @@ statSummary_Ome_Server <- function(id,
       stat_results = stat_results_export_function,
       workflow_parameters = workflow_parameters_export_function
     ))
-  
+    
   })
 }

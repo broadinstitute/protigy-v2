@@ -107,8 +107,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
         
-        print(colnames(rdesc))
-        
         id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
         tab <- cbind(rdesc[[id.col]], tab)
         colnames(tab)[1] <- id.col
@@ -193,8 +191,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         rdesc <- gct[[ome_name]]@rdesc
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
-        
-        print(colnames(rdesc))
         
         #Add ID column to tab
         id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
