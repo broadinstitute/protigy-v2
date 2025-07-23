@@ -273,13 +273,19 @@ statSummary_Ome_Server <- function(id,
       stat_param(current)                  
     })
     
-    #slider and text input show the same value
-    observe({
-      updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
+    observeEvent(input$select_cutoff_text, {
+      current <- stat_param() 
+      current[[ome]]$cutoff <-input$select_cutoff_text
+      stat_param(current)                  
     })
-    observe({
-      updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
-    })
+    
+    # #slider and text input show the same value
+    # observe({
+    #   updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
+    # })
+    # observe({
+    #   updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
+    # })
     
     ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(

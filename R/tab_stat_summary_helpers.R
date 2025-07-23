@@ -40,7 +40,7 @@ get_pvals <- function(ome, stat_param, stat_results, group, contrast, pval_type 
   }
   
   col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  stopifnot(!is.na(col_name))
+  #stopifnot(!is.na(col_name))
   
   pvals <- df[[col_name]]
   pvals <- pvals[!is.na(pvals)]
