@@ -246,11 +246,12 @@ statSummary_Ome_Server <- function(id,
     })
     
     ## ADJUSTMENTS INFO #######################################################
+    
     output$adjustments_table <- renderUI({
       req(stat_param())
       current_stat <- stat_param()[[ome]]$stat
       current_cutoff <- stat_param()[[ome]]$cutoff
-      
+
       tagList(
         h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
@@ -258,34 +259,32 @@ statSummary_Ome_Server <- function(id,
         numericInput(ns("select_cutoff_text"), NULL, min=0.001, max=1, value=current_cutoff, step=0.001)
       )
     })
-    
+
     # save selected stat to stat_param
     observeEvent(input$select_stat, {
-      current <- stat_param() 
+      current <- stat_param()
       current[[ome]]$stat <-input$select_stat
-      stat_param(current)                  
+      stat_param(current)
     })
-    
+
     # save selected cutoff to stat_param
     observeEvent(input$select_cutoff_slider, {
-      current <- stat_param() 
-      current[[ome]]$cutoff <-input$select_cutoff_slider
-      stat_param(current)                  
+      updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
+
+      current <- stat_param()
+      current[[ome]]$cutoff <- input$select_cutoff_slider
+      stat_param(current)
     })
-    
+
+    # save selected cutoff to stat_param
     observeEvent(input$select_cutoff_text, {
-      current <- stat_param() 
-      current[[ome]]$cutoff <-input$select_cutoff_text
-      stat_param(current)                  
+      updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
+
+      current <- stat_param()
+      current[[ome]]$cutoff <- input$select_cutoff_text
+      stat_param(current)
     })
-    
-    # #slider and text input show the same value
-    # observe({
-    #   updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
-    # })
-    # observe({
-    #   updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
-    # })
+
     
     ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(
@@ -310,19 +309,52 @@ statSummary_Ome_Server <- function(id,
       )
     })
     
-    #Adj p value histogram
+    # Adjusted p-value histogram
     output$adj_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, as.character(input$pval_contrasts), "adj.P.Val")
-      gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
+      req(stat_param(), stat_results())
+      
+      test <- stat_param()[[ome]]$test
+      
+      if (test == "One-sample Moderated T-test") {
+        req(input$pval_groups)
+        pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, NULL, "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "adj.P.Val")
+      } else if (test == "Two-sample Moderated T-test") {
+        req(input$pval_contrasts)
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, as.character(input$pval_contrasts), "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "adj.P.Val")
+      } else {
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, NULL, "adj.P.Val")
+      }
+      
+      #gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome, input$pval_groups)
       ggplotly(gg)
     })
     
-    #Nom p value histogram
+    # Nominal p-value histogram
     output$nom_pval_hist_plot <- renderPlotly({
-      pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, as.character(input$pval_contrasts), "P.Value")
-      gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
+      req(stat_param(), stat_results())
+      
+      test <- stat_param()[[ome]]$test
+      
+      if (test == "One-sample Moderated T-test") {
+        req(input$pval_groups)
+        pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, NULL, "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "P.Value")
+      } else if (test == "Two-sample Moderated T-test") {
+        req(input$pval_contrasts)
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, as.character(input$pval_contrasts), "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "P.Value")
+      } else {
+        pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, NULL, "P.Value")
+      }
+      
+      #gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
       ggplotly(gg)
     })
+    
     
     ## DATASET INFO #######################################################
     output$dataset_table <- renderTable({
@@ -388,7 +420,7 @@ statSummary_Ome_Server <- function(id,
         groups <- stat_param()[[ome]]$groups
         for (group in groups) {
           pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "adj.P.Val")
-          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", group), "Adjusted P-value", stat_param(), ome)
+          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", group), "Adjusted P-value", stat_param(),stat_results(), ome, group, NULL, "adj.P.Val")
           
           ggsave(
             filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
@@ -405,7 +437,7 @@ statSummary_Ome_Server <- function(id,
         contrasts <- stat_param()[[ome]]$contrasts
         for (contrast in contrasts) {
           pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "adj.P.Val")
-          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", contrast), "Adjusted P-value", stat_param(), ome)
+          gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", contrast), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, contrast, "adj.P.Val")
           
           ggsave(
             filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
@@ -420,7 +452,7 @@ statSummary_Ome_Server <- function(id,
         
       } else if (test == "Moderated F test") {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "adj.P.Val")
-        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(), ome)
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, NULL, "adj.P.Val")
         
         ggsave(
           filename = paste0("adj_pval_hist_plot_", ome, ".pdf"), 
@@ -442,7 +474,7 @@ statSummary_Ome_Server <- function(id,
         groups <- stat_param()[[ome]]$groups
         for (group in groups) {
           pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "P.Value")
-          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", group), "Nominal P-value", stat_param(), ome)
+          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", group), "Nominal P-value", stat_param(),stat_results(), ome, group, NULL, "P.Value")
           
           ggsave(
             filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
@@ -459,7 +491,7 @@ statSummary_Ome_Server <- function(id,
         contrasts <- stat_param()[[ome]]$contrasts
         for (contrast in contrasts) {
           pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "P.Value")
-          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", contrast), "Nominal P-value", stat_param(), ome)
+          gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", contrast), "Nominal P-value", stat_param(),stat_results(), ome, NULL, contrast, "P.Value")
           
           ggsave(
             filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
@@ -474,7 +506,7 @@ statSummary_Ome_Server <- function(id,
         
       } else if (test == "Moderated F test") {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "P.Value")
-        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(), ome)
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, NULL, "P.Value")
         
         ggsave(
           filename = paste0("nom_pval_hist_plot_", ome, ".pdf"), 

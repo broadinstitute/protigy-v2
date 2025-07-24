@@ -40,7 +40,6 @@ get_pvals <- function(ome, stat_param, stat_results, group, contrast, pval_type 
   }
   
   col_name <- grep(pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  #stopifnot(!is.na(col_name))
   
   pvals <- df[[col_name]]
   pvals <- pvals[!is.na(pvals)]
@@ -48,10 +47,57 @@ get_pvals <- function(ome, stat_param, stat_results, group, contrast, pval_type 
 }
 
 ##PVAL HISTOGRAM FUNCTION#######################################################
-plot_pval_histogram <- function(pvals, title, xlabel, stat_param, ome) {
+plot_pval_histogram <- function(pvals, title, xlabel, stat_param, stat_results, ome, group, contrast, pval_type) {
+  
+  df<- stat_results[[ome]]
+  ##ADJ P VALUE COLUMN##
+  if (stat_param[[ome]]$test == "One-sample Moderated T-test") {
+    keyword <- group
+    adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
+  } else if (stat_param[[ome]]$test == "Two-sample Moderated T-test") {
+    groups <- unlist(strsplit(contrast, " / "))
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    adjP_pattern  <- paste0("adj\\.P\\.Val.*", contrast_name)
+  } 
+  
+  adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+  df$adj.P.Val <- as.numeric(df[[adjP_col]])
+  
+  ##P VAL COLUMN##
+  if (stat_param[[ome]]$test == "One-sample Moderated T-test") {
+    keyword <- group
+    pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
+  } else if (stat_param[[ome]]$test == "Two-sample Moderated T-test") {
+    groups <- unlist(strsplit(contrast, " / "))
+    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    pval_pattern  <- paste0("P\\.value.*", contrast_name)
+  }
+  
+  pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+  df$P.Value <- as.numeric(df[[pval_col]])
+  
+  stat_choice <- stat_param[[ome]]$stat
+  cutoff_val <- stat_param[[ome]]$cutoff
+  
+  if (pval_type == "P.Value") {
+    if (stat_choice == "nom.p.val") {
+      x_cutoff <- cutoff_val
+    } else {
+      passing.id <- which(df$adj.P.Val < cutoff_val)
+      x_cutoff <- if (length(passing.id) > 0) max(df$P.Value[passing.id], na.rm = TRUE) else Inf
+    }
+  } else if (pval_type == "adj.P.Val") {
+    if (stat_choice == "adj.p.val") {
+      x_cutoff <- cutoff_val
+    } else {
+      passing.id <- which(df$P.Value < cutoff_val)
+      x_cutoff <- if (length(passing.id) > 0) max(df$adj.P.Val[passing.id], na.rm = TRUE) else Inf
+    }
+  }
+  
   ggplot(data.frame(pval = pvals), aes(x = pval)) +
     geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#4d4d4d", color = "white") +
-    geom_vline(xintercept = stat_param[[ome]]$cutoff, color = "red", linetype = "dashed", size = 1) +
+    geom_vline(xintercept = x_cutoff, color = "red", linetype = "dashed", size = 1) +
     labs(title = title, x = xlabel, y = "Number of Features") +
     xlim(0, 1) +
     theme(
