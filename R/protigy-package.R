@@ -28,9 +28,9 @@
 #' @importFrom methods new
 #' @importFrom stats density mad median quantile sd aggregate coef qnorm qt
 #' @importFrom zip zip
-#' @importFrom utils tail stack
+#' @importFrom utils tail stack combn compareVersion packageVersion write.csv write.table
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
-#' @importFrom stats cor anova lm prcomp var
+#' @importFrom stats cor anova lm prcomp var complete.cases model.matrix
 ## usethis namespace: end
 NULL
