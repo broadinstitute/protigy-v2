@@ -25,8 +25,7 @@ statSummary_Tab_UI <- function(id = "statSummaryTab") {
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_Server <- function(id = "statSummaryTab",
                                    GCTs_and_params,
-                                   globals,
-                                   GCTs_original) {
+                                   globals) {
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -48,12 +47,6 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
       GCTs_and_params()$parameters
     })
     
-    # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
-    GCTs_merged <- reactive({
-      validate(need(GCTs_and_params(), "GCTs not yet processed"))
-      GCTs_and_params()$GCTs_merged
-    })
-    
     # named list of default annotation columns for each ome
     default_annotations <- reactive({
       req(parameters())
@@ -72,9 +65,8 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
-      req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
+      req(globals$stat_results)  # stop if these reactiveVals don’t exist
       validate(
-        need(!is.null(globals$stat_param()) && length(globals$stat_param()) > 0, "Please do the setup first."),
         need(!is.null(globals$stat_results()) && length(globals$stat_results()) > 0, "Please do the setup first.")
       )
       
@@ -131,7 +123,6 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
             ome = ome_local,
             GCT_processed = reactive(GCTs()[[ome_local]]),
             parameters = reactive(parameters()[[ome_local]]),
-            GCT_original = reactive(GCTs_original()[[ome_local]]),
             default_annotation_column = reactive(default_annotations()[[ome_local]]),
             color_map = reactive(custom_colors()[[ome_local]])
           )
@@ -165,7 +156,6 @@ statSummary_Ome_Server <- function(id,
                                    ome,
                                    GCT_processed,
                                    parameters,
-                                   GCT_original,
                                    default_annotation_column,
                                    color_map) {
   
@@ -176,8 +166,8 @@ statSummary_Ome_Server <- function(id,
     ns <- session$ns
     
     output$ome_summary_contents <- renderUI({
-      # fallback if stat_param not defined yet
-      if (!exists("stat_param", envir = .GlobalEnv)) {
+      # fallback if stat_results not defined yet
+      if (!exists("stat_results", envir = .GlobalEnv)) {
         return(h4("Please go to the Statistics setup tab first."))
       }
       
@@ -318,11 +308,11 @@ statSummary_Ome_Server <- function(id,
       if (test == "One-sample Moderated T-test") {
         req(input$pval_groups)
         pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, NULL, "adj.P.Val")
-        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, ": ", input$pval_groups), "Adjusted P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "adj.P.Val")
       } else if (test == "Two-sample Moderated T-test") {
         req(input$pval_contrasts)
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, as.character(input$pval_contrasts), "adj.P.Val")
-        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "adj.P.Val")
+        gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, ": ", input$pval_contrasts), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "adj.P.Val")
       } else {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "adj.P.Val")
         gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, NULL, "adj.P.Val")
@@ -341,11 +331,11 @@ statSummary_Ome_Server <- function(id,
       if (test == "One-sample Moderated T-test") {
         req(input$pval_groups)
         pvals <- get_pvals(ome, stat_param(), stat_results(), input$pval_groups, NULL, "P.Value")
-        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, ": ", input$pval_groups), "Nominal P-value", stat_param(),stat_results(), ome, input$pval_groups, NULL, "P.Value")
       } else if (test == "Two-sample Moderated T-test") {
         req(input$pval_contrasts)
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, as.character(input$pval_contrasts), "P.Value")
-        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "P.Value")
+        gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, ": ", input$pval_contrasts), "Nominal P-value", stat_param(),stat_results(), ome, NULL, as.character(input$pval_contrasts), "P.Value")
       } else {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "P.Value")
         gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, NULL, "P.Value")

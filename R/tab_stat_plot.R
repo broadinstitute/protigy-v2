@@ -27,8 +27,7 @@ statPlot_Tab_UI <- function(id = "statPlotTab") {
 # contains the structure for the big tabbed box with omes
 statPlot_Tab_Server <- function(id = "statPlotTab",
                                    GCTs_and_params, 
-                                   globals, 
-                                   GCTs_original) { 
+                                   globals) { 
  
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -47,12 +46,6 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
-    })
-    
-    # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
-    GCTs_merged <- reactive({
-      validate(need(GCTs_and_params(), "GCTs not yet processed"))
-      GCTs_and_params()$GCTs_merged
     })
     
     # named list of default annotation columns for each ome
@@ -124,7 +117,6 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           ome = ome,
           GCT_processed = reactive(GCTs()[[ome]]),
           parameters = reactive(parameters()[[ome]]),
-          GCT_original = reactive(GCTs_original()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map = reactive(custom_colors()[[ome]])
         )
@@ -155,7 +147,6 @@ statPlot_Ome_Server <- function(id,
                                    ome,
                                    GCT_processed,
                                    parameters,
-                                   GCT_original,
                                    default_annotation_column,
                                    color_map) {
   
@@ -166,8 +157,8 @@ statPlot_Ome_Server <- function(id,
     ns <- session$ns
     
     output$ome_plot_contents <- renderUI({
-      # fallback if stat_param not defined yet
-      if (!exists("stat_param", envir = .GlobalEnv)) {
+      # fallback if stat_results not defined yet
+      if (!exists("stat_results", envir = .GlobalEnv)) {
         return(h4("Please go to the Statistics setup tab first."))
       }
       

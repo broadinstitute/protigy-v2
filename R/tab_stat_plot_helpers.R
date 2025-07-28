@@ -4,6 +4,14 @@
 # Allow users to see the Volcano plot of their results
 ################################################################################
 
+# #Input parameters- 
+# ome- ome that plot is run on
+# volcano_groups- current group selected in the plot sidebar
+# volcano_contrasts- current contrast selected in the plot sidebar
+# df- stat_results of selected ome
+# sig.col- color of significant points
+# bg.col- color of non significant points
+
 plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='darkred', bg.col='gray'){
   cat('\n-- plotVolcano --\n')
   
@@ -101,14 +109,18 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   
   df$Significant <- df$logP > y_cutoff
 
+  if (stat_param()[[ome]]$test == "Two-sample Moderated T-test"){
+    group_contrast<- volcano_contrasts
+  } else if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+    group_contrast<- volcano_groups
+  }
   ## Plot
   volcano <- ggplot(df, aes(x = logFC, y = stat, 
                        text = paste("ID:", id, "<br>Gene Symbol:", geneSymbol))) +
-    geom_point(aes(color = Significant)) +
+    geom_point(aes(color = Significant), size = 1) +
     scale_color_manual(values = c(`TRUE` = sig.col, `FALSE` = bg.col)) +
-    geom_hline(yintercept = y_cutoff, color = "black", linetype = "dashed", size = 1) +
-    geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 1) +
-    labs(title = paste("Volcano plot for",ome), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
+    geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", size = 0.5) +
+    labs(title = paste("Volcano plot for",ome, ": ",group_contrast, "(cutoff:", stat_param()[[ome]]$cutoff, ")"), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
     theme_minimal()
   
 

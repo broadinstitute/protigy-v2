@@ -97,7 +97,7 @@ plot_pval_histogram <- function(pvals, title, xlabel, stat_param, stat_results, 
   
   ggplot(data.frame(pval = pvals), aes(x = pval)) +
     geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#4d4d4d", color = "white") +
-    geom_vline(xintercept = x_cutoff, color = "red", linetype = "dashed", size = 1) +
+    geom_vline(xintercept = x_cutoff, color = "red", linetype = "solid", size = 0.5) +
     labs(title = title, x = xlabel, y = "Number of Features") +
     xlim(0, 1) +
     theme(

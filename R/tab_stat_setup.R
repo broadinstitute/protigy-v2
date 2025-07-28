@@ -38,7 +38,7 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
 
 # server for the statSetup tab
 # contains the structure for the big tabbed box with omes
-statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GCTs_original){
+statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
   ## module function
   moduleServer(id, function (input, output, session) {
 
@@ -59,12 +59,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
-    })
-
-    # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
-    GCTs_merged <- reactive({
-      validate(need(GCTs_and_params(), "GCTs not yet processed"))
-      GCTs_and_params()$GCTs_merged
     })
 
     # named list of default annotation columns for each ome
@@ -273,7 +267,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals,GC
       ome <- selected_ome()
         
       req(current[[ome]]$test=="Two-sample Moderated T-test")
-      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("too few groups")
+      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("need at least 2 groups to perform two-sample t-test")
       
       pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
