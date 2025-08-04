@@ -26,15 +26,15 @@ test_that("merge works on full brca test dataset", {
     rna_subset <- cmapR::subset_gct(GCTs_merged, rid = which(GCTs_merged@rdesc$protigy.ome == "RNA"))
     prot_subset <- cmapR::subset_gct(GCTs_merged, rid = which(GCTs_merged@rdesc$protigy.ome == "Prot"))
     
-    # check that rdesc's match original gct
-    expect_equal(GCTs$Phos@rdesc, phos_subset@rdesc[, names(GCTs$Phos@rdesc)])
-    expect_equal(GCTs$Prot@rdesc, prot_subset@rdesc[, names(GCTs$Prot@rdesc)])
-    expect_equal(GCTs$RNA@rdesc, rna_subset@rdesc[, names(GCTs$RNA@rdesc)])
+    # check that rdesc's match original gct (excluding org_id and id columns and ignoring rownames)
+    expect_equal(GCTs$Phos@rdesc[, setdiff(names(GCTs$Phos@rdesc), c("org_id", "id"))], phos_subset@rdesc[, setdiff(names(GCTs$Phos@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
+    expect_equal(GCTs$Prot@rdesc[, setdiff(names(GCTs$Prot@rdesc), c("org_id", "id"))], prot_subset@rdesc[, setdiff(names(GCTs$Prot@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
+    expect_equal(GCTs$RNA@rdesc[, setdiff(names(GCTs$RNA@rdesc), c("org_id", "id"))], rna_subset@rdesc[, setdiff(names(GCTs$RNA@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
     
-    # check that the mat's match original gct
-    expect_equal(GCTs$Phos@mat, phos_subset@mat[GCTs$Phos@rid, GCTs$Phos@cid])
-    expect_equal(GCTs$Prot@mat, prot_subset@mat[GCTs$Prot@rid, GCTs$Prot@cid])
-    expect_equal(GCTs$RNA@mat, rna_subset@mat[GCTs$RNA@rid, GCTs$RNA@cid])
+    # check that the mat's match original gct (ignoring dimnames)
+    expect_equal(GCTs$Phos@mat, phos_subset@mat, ignore_attr = "dimnames")
+    expect_equal(GCTs$Prot@mat, prot_subset@mat, ignore_attr = "dimnames")
+    expect_equal(GCTs$RNA@mat, rna_subset@mat, ignore_attr = "dimnames")
     
     # check that cdesc match original gct for Phos (has known conflicts)
     phos_cdesc_cols <- intersect(
@@ -83,15 +83,15 @@ test_that("merge works on full brca test dataset in reverse order", {
     rna_subset <- cmapR::subset_gct(GCTs_merged, rid = which(GCTs_merged@rdesc$protigy.ome == "RNA"))
     prot_subset <- cmapR::subset_gct(GCTs_merged, rid = which(GCTs_merged@rdesc$protigy.ome == "Prot"))
     
-    # check that rdesc's match original gct
-    expect_equal(GCTs$Phos@rdesc, phos_subset@rdesc[, names(GCTs$Phos@rdesc)])
-    expect_equal(GCTs$Prot@rdesc, prot_subset@rdesc[, names(GCTs$Prot@rdesc)])
-    expect_equal(GCTs$RNA@rdesc, rna_subset@rdesc[, names(GCTs$RNA@rdesc)])
+    # check that rdesc's match original gct (excluding org_id and id columns and ignoring rownames)
+    expect_equal(GCTs$Phos@rdesc[, setdiff(names(GCTs$Phos@rdesc), c("org_id", "id"))], phos_subset@rdesc[, setdiff(names(GCTs$Phos@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
+    expect_equal(GCTs$Prot@rdesc[, setdiff(names(GCTs$Prot@rdesc), c("org_id", "id"))], prot_subset@rdesc[, setdiff(names(GCTs$Prot@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
+    expect_equal(GCTs$RNA@rdesc[, setdiff(names(GCTs$RNA@rdesc), c("org_id", "id"))], rna_subset@rdesc[, setdiff(names(GCTs$RNA@rdesc), c("org_id", "id"))], ignore_attr = "row.names")
     
-    # check that the mat's match original gct
-    expect_equal(GCTs$Phos@mat, phos_subset@mat[GCTs$Phos@rid, GCTs$Phos@cid])
-    expect_equal(GCTs$Prot@mat, prot_subset@mat[GCTs$Prot@rid, GCTs$Prot@cid])
-    expect_equal(GCTs$RNA@mat, rna_subset@mat[GCTs$RNA@rid, GCTs$RNA@cid])
+    # check that the mat's match original gct (ignoring dimnames)
+    expect_equal(GCTs$Phos@mat, phos_subset@mat, ignore_attr = "dimnames")
+    expect_equal(GCTs$Prot@mat, prot_subset@mat, ignore_attr = "dimnames")
+    expect_equal(GCTs$RNA@mat, rna_subset@mat, ignore_attr = "dimnames")
     
     # check that cdesc match original gct for Phos (has known conflicts)
     phos_cdesc_cols <- intersect(

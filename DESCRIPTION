@@ -18,6 +18,7 @@ Imports:
     ComplexHeatmap,
     dplyr,
     ggplot2,
+    khroma,
     plotly (>= 4.10.1),
     RColorBrewer,
     shinyalert,

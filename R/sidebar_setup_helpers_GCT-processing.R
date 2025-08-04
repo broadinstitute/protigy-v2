@@ -387,6 +387,15 @@ merge_processed_gcts <- function(GCTs_processed) {
     # merge GCTs first using cmapR::merge_gct
     GCTs_merged <- Reduce(
       function(gct1, gct2) {
+        #before merging, need to make sure the rids are unique
+        #first save the old IDs
+        gct1@rdesc$old_id = gct1@rid
+        gct2@rdesc$old_id = gct2@rid
+        #create new unique id by concatenating ome and rid
+        #have to change it in every single part of the GCT or it will error!
+        rownames(gct1@mat) = rownames(gct1@rdesc) = gct1@rdesc$id = gct1@rid = paste(gct1@rdesc$protigy.ome,gct1@rid,sep="_")
+        rownames(gct2@mat) = rownames(gct2@rdesc) = gct2@rdesc$id = gct2@rid = paste(gct2@rdesc$protigy.ome,gct2@rid,sep="_")
+        #now can merge and rids will always be unique
         merged <- cmapR::merge_gct(gct1, gct2, dim='row')
         incProgress()
         return(merged)

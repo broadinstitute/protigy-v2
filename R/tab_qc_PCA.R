@@ -197,16 +197,6 @@ QCPCA_Ome_Server <- function(id,
             selected = 2),
           classes = "small-input",
           styles = "margin-right: 10px"
-        ),
-        
-        add_css_attributes(
-          selectInput(
-            ns("qc_PCA_format"),
-            "Format",
-            choices = c("Points","Labels"),
-            selected = "Labels"),
-          classes = "small-input",
-          styles = "margin-right: 10px"
         )
       )
     })
@@ -215,9 +205,11 @@ QCPCA_Ome_Server <- function(id,
     
     # reactive
     qc_PCA_plot_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, input$qc_PCA_format, color_map()), 
+      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, color_map()), 
       valueExpr = {
-        req(GCT_processed(), default_annotation_column(), color_map(),input$qc_PCA_format)
+        req(GCT_processed(), default_annotation_column(), color_map())
+        # Ensure all PCA inputs are properly initialized
+        req(input$qc_PCA_PC1, input$qc_PCA_PC2, cancelOutput = TRUE)
         
         # get annotation column
         if (!is.null(input$qc_PCA_annotation)) {
@@ -240,14 +232,13 @@ QCPCA_Ome_Server <- function(id,
                             ome = ome,
                             custom_color_map = annot_color_map,
                             comp.x = as.numeric(input$qc_PCA_PC1),
-                            comp.y = as.numeric(input$qc_PCA_PC2),
-                            format = input$qc_PCA_format)
+                            comp.y = as.numeric(input$qc_PCA_PC2))
       }
     )
     
     # render summary plot
     output$qc_PCA_plot <- renderPlotly(
-      ggplotly(qc_PCA_plot_reactive())
+      ggplotly(qc_PCA_plot_reactive(), tooltip = "text")
     )
     
     ## PCA REGRESSION ##
