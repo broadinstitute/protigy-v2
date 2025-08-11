@@ -236,6 +236,13 @@ statPlot_Ome_Server <- function(id,
       test <- stat_param()[[ome]]$test
       df <- stat_results()[[ome]]
       
+      # Create a single PDF file for all plots from this ome
+      pdf_filename <- paste0("volcano_plots_", ome, ".pdf")
+      pdf_path <- file.path(dir_name, pdf_filename)
+      
+      # Start PDF device
+      pdf(pdf_path, width = 10, height = 6)
+      
       if (test == "One-sample Moderated T-test") {
         groups <- stat_param()[[ome]]$groups
         for (group in groups) {
@@ -246,15 +253,8 @@ statPlot_Ome_Server <- function(id,
             df = df
           )
           
-          ggsave(
-            filename = paste0("volcano_plot_", ome, "_", gsub(" ", "_", group), ".pdf"),
-            plot = gg,
-            device = "pdf",
-            path = dir_name,
-            width = 10,
-            height = 6,
-            units = "in"
-          )
+          # Print plot to current page
+          print(gg)
         }
         
       } else if (test == "Two-sample Moderated T-test") {
@@ -266,21 +266,19 @@ statPlot_Ome_Server <- function(id,
             volcano_contrasts = contrast,
             df = df
           )
-            
-          ggsave(
-            filename = paste0("volcano_plot_", ome, "_", gsub(" / ", "_vs_", contrast), ".pdf"),
-            plot = gg,
-            device = "pdf",
-            path = dir_name,
-            width = 10,
-            height = 6,
-            units = "in"
-          )  
+          
+          # Print plot to current page
+          print(gg)
         }
         
       } else {
         warning("Volcano plot export not supported for test type: ", test)
       }
+      
+      # Close PDF device
+      dev.off()
+      
+      cat("Saved volcano plots for", ome, "to:", pdf_path, "\n")
     }
     
     

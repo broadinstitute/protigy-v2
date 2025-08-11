@@ -406,21 +406,21 @@ statSummary_Ome_Server <- function(id,
       test <- stat_param()[[ome]]$test
       df <- stat_results()[[ome]]
       
+      # Create a single PDF file for all adjusted p-value histogram plots from this ome
+      pdf_filename <- paste0("adj_pval_hist_plots_", ome, ".pdf")
+      pdf_path <- file.path(dir_name, pdf_filename)
+      
+      # Start PDF device
+      pdf(pdf_path, width = 10, height = 6)
+      
       if (test == "One-sample Moderated T-test") {
         groups <- stat_param()[[ome]]$groups
         for (group in groups) {
           pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "adj.P.Val")
           gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", group), "Adjusted P-value", stat_param(),stat_results(), ome, group, NULL, "adj.P.Val")
           
-          ggsave(
-            filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
-            plot = gg, 
-            device = 'pdf',
-            path = dir_name,
-            width = 10,
-            height = 6, 
-            units = "in"
-          )
+          # Print plot to current page
+          print(gg)
         }
         
       } else if (test == "Two-sample Moderated T-test") {
@@ -429,36 +429,34 @@ statSummary_Ome_Server <- function(id,
           pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "adj.P.Val")
           gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome, "-", contrast), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, contrast, "adj.P.Val")
           
-          ggsave(
-            filename = paste0("adj_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
-            plot = gg, 
-            device = 'pdf',
-            path = dir_name,
-            width = 10,
-            height = 6, 
-            units = "in"
-          )
+          # Print plot to current page
+          print(gg)
         }
         
       } else if (test == "Moderated F test") {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "adj.P.Val")
         gg <- plot_pval_histogram(pvals, paste("Adjusted P-value Histogram for", ome), "Adjusted P-value", stat_param(),stat_results(), ome, NULL, NULL, "adj.P.Val")
         
-        ggsave(
-          filename = paste0("adj_pval_hist_plot_", ome, ".pdf"), 
-          plot = gg, 
-          device = 'pdf',
-          path = dir_name,
-          width = 10,
-          height = 6, 
-          units = "in"
-        )
+        # Print plot to current page
+        print(gg)
       }
+      
+      # Close PDF device
+      dev.off()
+      
+      cat("Saved adjusted p-value histogram plots for", ome, "to:", pdf_path, "\n")
     }
     
     nom_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_param()[[ome]]$test
       df <- stat_results()[[ome]]
+      
+      # Create a single PDF file for all nominal p-value histogram plots from this ome
+      pdf_filename <- paste0("nom_pval_hist_plots_", ome, ".pdf")
+      pdf_path <- file.path(dir_name, pdf_filename)
+      
+      # Start PDF device
+      pdf(pdf_path, width = 10, height = 6)
       
       if (test == "One-sample Moderated T-test") {
         groups <- stat_param()[[ome]]$groups
@@ -466,15 +464,8 @@ statSummary_Ome_Server <- function(id,
           pvals <- get_pvals(ome, stat_param(), stat_results(), group, NULL, "P.Value")
           gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", group), "Nominal P-value", stat_param(),stat_results(), ome, group, NULL, "P.Value")
           
-          ggsave(
-            filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" ", "_", group), ".pdf"), 
-            plot = gg, 
-            device = 'pdf',
-            path = dir_name,
-            width = 10,
-            height = 6, 
-            units = "in"
-          )
+          # Print plot to current page
+          print(gg)
         }
         
       } else if (test == "Two-sample Moderated T-test") {
@@ -483,31 +474,22 @@ statSummary_Ome_Server <- function(id,
           pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, contrast, "P.Value")
           gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome, "-", contrast), "Nominal P-value", stat_param(),stat_results(), ome, NULL, contrast, "P.Value")
           
-          ggsave(
-            filename = paste0("nom_pval_hist_plot_", ome,"_", gsub(" / ", "_vs_", contrast), ".pdf"), 
-            plot = gg, 
-            device = 'pdf',
-            path = dir_name,
-            width = 10,
-            height = 6, 
-            units = "in"
-          )
+          # Print plot to current page
+          print(gg)
         }
         
       } else if (test == "Moderated F test") {
         pvals <- get_pvals(ome, stat_param(), stat_results(), NULL, NULL, "P.Value")
         gg <- plot_pval_histogram(pvals, paste("Nominal P-value Histogram for", ome), "Nominal P-value", stat_param(),stat_results(), ome, NULL, NULL, "P.Value")
         
-        ggsave(
-          filename = paste0("nom_pval_hist_plot_", ome, ".pdf"), 
-          plot = gg, 
-          device = 'pdf',
-          path = dir_name,
-          width = 10,
-          height = 6, 
-          units = "in"
-        )
+        # Print plot to current page
+        print(gg)
       }
+      
+      # Close PDF device
+      dev.off()
+      
+      cat("Saved nominal p-value histogram plots for", ome, "to:", pdf_path, "\n")
     }
     
     stat_results_export_function <- function(dir_name) {
