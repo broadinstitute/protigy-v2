@@ -29,14 +29,22 @@ app_UI <- function(request) {dashboardPage(
       # tabPanel("Customize", 
       #          customizeTabUI(),
       #          icon = icon("wand-magic-sparkles")),
-      tabPanel("Summary", summaryTabUI()),
+      tabPanel("Summary", summaryTabUI(), value = "Summary"),
       navbarMenu(
         "QC",
-        tabPanel("Boxplots",QCBoxplots_Tab_UI()),
-        tabPanel("Profile plots", QCProfilePlots_Tab_UI()),
-        tabPanel("Correlation", QCCorrelation_Tab_UI()),
-        tabPanel("PCA", QCPCA_Tab_UI())),
-      #tabPanel("Statistics"),
+        tabPanel("Boxplots",QCBoxplots_Tab_UI(), value="QC-Boxplots"),
+        tabPanel("Profile plots", QCProfilePlots_Tab_UI(),value="QC-Profile-Plots"),
+        tabPanel("Correlation", QCCorrelation_Tab_UI(), value="QC-Correlation"),
+        tabPanel("PCA", QCPCA_Tab_UI(), value="QC-PCA")),
+     
+      navbarMenu(
+        "Statistics",
+        tabPanel("Setup", statSetup_Tab_UI(), value = "Statistics-Setup"),
+        tabPanel("Summary", statSummary_Tab_UI(), value = "Statistics-Summary"),
+        tabPanel("Volcano Plot", statPlot_Tab_UI(), value = "Statistics-Volcano")
+        # tabPanel("Table", statTable_Tab_UI())
+      ),
+      
       # navbarMenu(
       #   "Clustering",
       #   tabPanel("Static Heatmap"),
