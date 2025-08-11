@@ -251,8 +251,7 @@ statSummary_Ome_Server <- function(id,
       tagList(
         h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
-        sliderInput(ns("select_cutoff_slider"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001),
-        numericInput(ns("select_cutoff_text"), NULL, min=0.001, max=1, value=current_cutoff, step=0.001)
+        numericInput(ns("select_cutoff_text"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001)
       )
     })
 
@@ -264,18 +263,7 @@ statSummary_Ome_Server <- function(id,
     })
 
     # save selected cutoff to stat_params
-    observeEvent(input$select_cutoff_slider, {
-      updateNumericInput(session, "select_cutoff_text", value = input$select_cutoff_slider)
-
-      current <- stat_params()
-      current[[ome]]$cutoff <- input$select_cutoff_slider
-      stat_params(current)
-    })
-
-    # save selected cutoff to stat_params
     observeEvent(input$select_cutoff_text, {
-      updateSliderInput(session, "select_cutoff_slider", value = input$select_cutoff_text)
-
       current <- stat_params()
       current[[ome]]$cutoff <- input$select_cutoff_text
       stat_params(current)
@@ -526,13 +514,13 @@ statSummary_Ome_Server <- function(id,
     
     workflow_parameters_export_function <- function(dir_name) {
       df <- data.frame(
-        Description = c("Test chosen", "Cutoff", "Stat"),
-        Count = c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+        Parameter = c("Test", "Cutoff", "Stat"),
+        Value = c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
       )
       
       write.table(
         df,
-        file = file.path(dir_name, paste0("workflow_parameters_", ome, ".txt")),
+        file = file.path(dir_name, paste0("stat_parameters_", ome, ".txt")),
         sep = "\t",
         quote = FALSE, #doesn't add quotation marks around text
         row.names = FALSE

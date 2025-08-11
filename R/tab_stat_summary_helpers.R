@@ -100,13 +100,15 @@ plot_pval_histogram <- function(pvals, title, xlabel, stat_params, stat_results,
   }
   
   ggplot(data.frame(pval = pvals), aes(x = pval)) +
-    geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#4d4d4d", color = NA) +
-    geom_vline(xintercept = x_cutoff, color = "red", linetype = "solid", size = 0.5) +
+    geom_histogram(breaks = seq(0, 1, by = 0.01), fill = "#d3d3d3", color = "#404040", linewidth = 0.2) +
+    geom_vline(xintercept = x_cutoff, color = "red", linetype = "solid", size = 0.2) +
     labs(title = title, x = xlabel, y = "Number of Features") +
     xlim(0, 1) +
     theme(
-      panel.background = element_rect(fill = "#f0f0f0", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
       plot.background = element_rect(fill = "white", color = NA),
+      panel.grid.major = element_line(color = "#f5f5f5", linewidth = 0.3),
+      panel.grid.minor = element_line(color = "#fafafa", linewidth = 0.2),
       plot.title = element_text(size = 10)
     )
 }
