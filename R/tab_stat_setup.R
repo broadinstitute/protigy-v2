@@ -233,6 +233,11 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       ome <- selected_ome()
       req(cdesc(), default_annotation_column(),selected_ome(), stat_param())
       
+      # Only show groups if a test other than "None" is selected
+      if (is.null(current[[ome]]$test) || current[[ome]]$test == "None") {
+        return(NULL)  # Don't show anything if no test or "None" test
+      }
+      
       choices<- unique(cdesc()[[default_annotation_column()]])
       choices <- choices[!is.na(choices)]
       
@@ -241,11 +246,18 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
         stat_param(current)
       }
       
-      checkboxGroupInput(
-        ns("select_groups"),
-        "Include groups:",
-        choices = choices,
-        selected = current[[ome]]$groups 
+      pickerInput(
+        ns("select_groups"), 
+        "Select groups:", 
+        choices = choices, 
+        selected = current[[ome]]$groups,
+        multiple = TRUE,
+        options = pickerOptions(
+          actionsBox = TRUE,
+          selectAllText = "Select All",
+          deselectAllText = "Deselect All",
+          noneSelectedText = "No contrasts selected"
+        )
       )
     })
     
@@ -265,7 +277,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
     output$select_contrast_ui <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
-        
+      
       req(current[[ome]]$test=="Two-sample Moderated T-test")
       if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("need at least 2 groups to perform two-sample t-test")
       
@@ -277,12 +289,19 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
         current[[ome]]$contrasts <- labels
         stat_param(current)
       }
-          
-      checkboxGroupInput(
+      
+      pickerInput(
         ns("select_contrasts"), 
         "Select contrasts:", 
-        choices=labels, 
-        selected=current[[ome]]$contrasts
+        choices = labels, 
+        selected = current[[ome]]$contrasts,
+        multiple = TRUE,
+        options = pickerOptions(
+          actionsBox = TRUE,
+          selectAllText = "Select All",
+          deselectAllText = "Deselect All",
+          noneSelectedText = "No contrasts selected"
+        )
       )
     })
 
@@ -447,6 +466,16 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
         assign("stat_param", stat_param, envir = .GlobalEnv)
         globals$stat_param <- stat_param
         globals$stat_results <- stat_results
+        
+        # Check if tests completed successfully and switch to Summary tab
+        if (length(test_results) > 0) {
+          # Show success notification with clear navigation instructions
+          showNotification(
+            "Statistical testing completed successfully! Please navigate to Statistics > Summary tab to view your results.", 
+            type = "default", 
+            duration = 10
+          )
+        }
     })
   })
 }

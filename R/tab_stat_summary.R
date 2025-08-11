@@ -184,7 +184,7 @@ statSummary_Ome_Server <- function(id,
           # Adjustments box
           shinydashboardPlus::box(
             uiOutput(ns("adjustments_table")),
-            title = "Adjustments",
+            title = "Cutoff Selection",
             status = "primary",
             solidHeader = TRUE,
             width = 6,
@@ -279,7 +279,7 @@ statSummary_Ome_Server <- function(id,
     ## WORKFLOW INFO #######################################################
     output$workflow_table <- renderTable(
       data.frame(
-        Description = c("Test chosen", "Cutoff", "Stat"),
+        Description = c("Test", "Cutoff", "Stat"),
         Count = c(stat_param()[[ome]]$test, stat_param()[[ome]]$cutoff, stat_param()[[ome]]$stat)
       )
     )
