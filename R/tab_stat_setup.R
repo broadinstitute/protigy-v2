@@ -56,38 +56,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           ),
           column(3,
                  uiOutput(ns("select_test")),
-                 conditionalPanel(
-                   condition = "input.select_test !== 'None'",
-                   ns = ns,
-                   pickerInput(ns("select_groups"), 
-                             "Select groups:", 
-                             choices = NULL, 
-                             selected = NULL,
-                             multiple = TRUE,
-                             options = pickerOptions(
-                               actionsBox = TRUE,
-                               selectAllText = "Select All",
-                               deselectAllText = "Deselect All",
-                               noneSelectedText = "No groups selected"
-                             ))
-                 )
+                 uiOutput(ns("select_groups_ui"))
           ),
           column(3,
-                 conditionalPanel(
-                   condition = "input.select_test === 'Two-sample Moderated T-test'",
-                   ns = ns,
-                   pickerInput(ns("select_contrasts"), 
-                             "Select contrasts:", 
-                             choices = NULL, 
-                             selected = NULL,
-                             multiple = TRUE,
-                             options = pickerOptions(
-                               actionsBox = TRUE,
-                               selectAllText = "Select All",
-                               deselectAllText = "Deselect All",
-                               noneSelectedText = "No contrasts selected"
-                             ))
-                 )
+                 uiOutput(ns("select_contrast_ui"))
           )
         )
       )
@@ -138,53 +110,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       input$selected_omes
     })
 
-    # Update the groups picker input to keep dropdown open
-    observeEvent(list(cdesc(), default_annotation_column(), selected_ome()), {
-      req(cdesc(), default_annotation_column(), selected_ome())
-      choices <- unique(cdesc()[[default_annotation_column()]])
-      choices <- choices[!is.na(choices)]
-      
-      current <- stat_param()
-      ome <- selected_ome()
-      selected_groups <- if (!is.null(current[[ome]]$groups)) current[[ome]]$groups else choices
-      
-      updatePickerInput(
-        session = session,
-        inputId = "select_groups",
-        choices = choices,
-        selected = selected_groups
-      )
-    })
-    
-    # Update the contrasts picker input to keep dropdown open
-    observeEvent(list(stat_param(), selected_ome()), {
-      req(stat_param(), selected_ome())
-      current <- stat_param()
-      ome <- selected_ome()
-      
-      if (current[[ome]]$test == "Two-sample Moderated T-test" && length(current[[ome]]$groups) >= 2) {
-        pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
-        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-        labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-        
-        selected_contrasts <- if (!is.null(current[[ome]]$contrasts)) current[[ome]]$contrasts else labels
-        
-        updatePickerInput(
-          session = session,
-          inputId = "select_contrasts",
-          choices = labels,
-          selected = selected_contrasts
-        )
-      } else {
-        # Clear contrasts if not two-sample test or insufficient groups
-        updatePickerInput(
-          session = session,
-          inputId = "select_contrasts",
-          choices = NULL,
-          selected = NULL
-        )
-      }
-    })
+
 
     #CDESC OF SELECTED OME
     cdesc <- reactive({ 
@@ -293,21 +219,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       )
     })
     
-    # Update the test select input to keep it in sync
-    observe({
-      req(selected_ome())
-      current <- stat_param()
-      ome <- selected_ome()
-      
-      if (!is.null(current[[ome]]$test)) {
-        updateSelectInput(
-          session = session,
-          inputId = "select_test",
-          selected = current[[ome]]$test
-        )
-      }
-    })
-    
 ################################################################################
 ######GROUP SELECTION############################################################
     #saving the selected groups to stat_param
@@ -335,11 +246,44 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
   
           current[[ome]]$contrasts <- labels
-          updateCheckboxGroupInput(session, "select_contrasts", choices = labels, selected = labels)
         }
       }
       
       stat_param(current)    
+    })
+    
+    #displaying the group choices
+    output$select_groups_ui <- renderUI({
+      current <- stat_param()
+      ome <- selected_ome()
+      req(cdesc(), default_annotation_column(),selected_ome(), stat_param())
+      
+      # Only show groups if a test other than "None" is selected
+      if (is.null(current[[ome]]$test) || current[[ome]]$test == "None") {
+        return(NULL)  # Don't show anything if no test or "None" test
+      }
+      
+      choices<- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      
+      if (is.null(current[[ome]]$groups)) {
+        current[[ome]]$groups <- choices 
+        stat_param(current)
+      }
+      
+      pickerInput(
+        ns("select_groups"), 
+        "Select groups:", 
+        choices = choices, 
+        selected = current[[ome]]$groups,
+        multiple = TRUE,
+        options = pickerOptions(
+          actionsBox = TRUE,
+          selectAllText = "Select All",
+          deselectAllText = "Deselect All",
+          noneSelectedText = "No groups selected"
+        )
+      )
     })
     
 
@@ -354,6 +298,38 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
 
       current[[ome]]$contrasts <- input$select_contrasts
       stat_param(current)
+    })
+    
+    #displaying the contrast choices
+    output$select_contrast_ui <- renderUI({
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      req(current[[ome]]$test=="Two-sample Moderated T-test")
+      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("need at least 2 groups to perform two-sample t-test")
+      
+      pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
+      all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+      labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      
+      if (is.null(current[[ome]]$contrasts)) {
+        current[[ome]]$contrasts <- labels
+        stat_param(current)
+      }
+      
+      pickerInput(
+        ns("select_contrasts"), 
+        "Select contrasts:", 
+        choices = labels, 
+        selected = current[[ome]]$contrasts,
+        multiple = TRUE,
+        options = pickerOptions(
+          actionsBox = TRUE,
+          selectAllText = "Select All",
+          deselectAllText = "Deselect All",
+          noneSelectedText = "No contrasts selected"
+        )
+      )
     })
 
 
