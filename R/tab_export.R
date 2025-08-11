@@ -14,10 +14,8 @@ exportTabUI <- function(id = "exportTab") {
   
   tagList(
     
-    checkboxGroupInput(ns("omesForExport"),"Omes for export:"),
-    checkboxGroupInput(ns("tabsForExport"),"Tabs for export:"),
-    
-    downloadButton(ns("download"), label = "Download")
+    # Display content or "GCTs not yet processed" message
+    uiOutput(ns("export_content"))
     
   ) # end tagList
 }
@@ -37,20 +35,65 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
       GCTs_and_params()$parameters
     })
     
+    output$export_content <- renderUI({
+      # This will trigger the validate() statements and show "GCTs not yet processed"
+      req(GCTs_and_params())
+      
+      tagList(
+        # Omes for export using pickerInput
+        pickerInput(
+          ns("omesForExport"),
+          "Omes for export:",
+          choices = all_exports$omes(),
+          selected = all_exports$omes(),
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No omes selected"
+          )
+        ),
+        
+        # Tabs for export using pickerInput
+        pickerInput(
+          ns("tabsForExport"),
+          "Tabs for export:",
+          choices = names(all_exports$exports),
+          selected = names(all_exports$exports),
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No tabs selected"
+          )
+        ),
+        
+        downloadButton(ns("download"), label = "Download")
+      )
+    })
+    
     # update omes for export
     observe({
-      updateCheckboxGroupInput(
+      req(GCTs_and_params())
+      updatePickerInput(
+        session = session,
         inputId = "omesForExport",
         choices = all_exports$omes(),
-        selected = all_exports$omes())
+        selected = all_exports$omes()
+      )
     })
-     
+    
     # update tabs for export 
     observe({
-      updateCheckboxGroupInput(
+      req(GCTs_and_params())
+      updatePickerInput(
+        session = session,
         inputId = "tabsForExport",
         choices = names(all_exports$exports),
-        selected = names(all_exports$exports))
+        selected = names(all_exports$exports)
+      )
     })
     
     

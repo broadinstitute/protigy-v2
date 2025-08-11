@@ -27,7 +27,9 @@ statPlot_Tab_UI <- function(id = "statPlotTab") {
 # contains the structure for the big tabbed box with omes
 statPlot_Tab_Server <- function(id = "statPlotTab",
                                    GCTs_and_params, 
-                                   globals) { 
+                                   globals,
+                                   stat_results,
+                                   stat_params) { 
  
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -61,17 +63,19 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
     
+    # Check if statistical results exist
+    stat_results_check <- reactive({
+      validate(need(stat_results(), "Statistical testing not yet run."))
+      stat_results()
+    })
     
     ## OME TABS ##
     
     # handles compiling ome tabs into styled tabset box
     output$ome_tabset_box <- renderUI({
-      req(globals$stat_param, globals$stat_results)  # stop if these reactiveVals don’t exist
-      validate(
-        need(!is.null(globals$stat_param()) && length(globals$stat_param()) > 0, "Please do the setup first."),
-        need(!is.null(globals$stat_results()) && length(globals$stat_results()) > 0, "Please do the setup first.")
-      )
-      
+      # This will trigger the validate() statements and show "GCTs not yet processed"
+      req(GCTs(), parameters())
+      req(stat_results_check())  # stop if these reactiveVals don’t exist
       req(all_omes(), default_ome())
       
       # generate a tab for each -ome
@@ -118,7 +122,9 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           GCT_processed = reactive(GCTs()[[ome]]),
           parameters = reactive(parameters()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors()[[ome]])
+          color_map = reactive(custom_colors()[[ome]]),
+          stat_params = stat_params,
+          stat_results = stat_results
         )
       }, simplify = FALSE)
       
@@ -148,7 +154,9 @@ statPlot_Ome_Server <- function(id,
                                    GCT_processed,
                                    parameters,
                                    default_annotation_column,
-                                   color_map) {
+                                   color_map,
+                                   stat_params,
+                                   stat_results) {
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -158,12 +166,9 @@ statPlot_Ome_Server <- function(id,
     
     output$ome_plot_contents <- renderUI({
       # fallback if stat_results not defined yet
-      if (!exists("stat_results", envir = .GlobalEnv)) {
-        return(h4("Please go to the Statistics setup tab first."))
-      }
+      req(stat_params())
       
-      stat_param <- get("stat_param", envir = .GlobalEnv)
-      test <- stat_param()[[ome]]$test
+      test <- stat_params()[[ome]]$test
       
       if (is.null(test) || test == "None") {
         return(h4("No test selected to run on this dataset."))
@@ -196,13 +201,13 @@ statPlot_Ome_Server <- function(id,
     ## RENDER VOLCANO PLOT ##
     #Sidebar
     output$volcano_sidebar_contents <- renderUI({
-      req(stat_param())
+      req(stat_params())
       tagList(
-        if (stat_param()[[ome]]$test=="One-sample Moderated T-test"){
-          radioButtons(ns("volcano_groups"), "Select Group:", choices=stat_param()[[ome]]$groups)
-        } else if (stat_param()[[ome]]$test=="Two-sample Moderated T-test" ){
-          radioButtons(ns("volcano_contrasts"), "Select Contrast:", choices=stat_param()[[ome]]$contrasts)
-        } else if (stat_param()[[ome]]$test=="Moderated F test"){
+        if (stat_params()[[ome]]$test=="One-sample Moderated T-test"){
+          radioButtons(ns("volcano_groups"), "Select Group:", choices=stat_params()[[ome]]$groups)
+        } else if (stat_params()[[ome]]$test=="Two-sample Moderated T-test" ){
+          radioButtons(ns("volcano_contrasts"), "Select Contrast:", choices=stat_params()[[ome]]$contrasts)
+        } else if (stat_params()[[ome]]$test=="Moderated F test"){
           h4("Cannot show a volcano plot for the Mod F test")
         } else {
           return(NULL)
@@ -213,10 +218,10 @@ statPlot_Ome_Server <- function(id,
     #Plot
     output$volcano_plot <- renderPlotly({
       req(stat_results())
-      req(stat_param())
+      req(stat_params())
       req(ome)
       
-      test <- stat_param()[[ome]]$test
+      test <- stat_params()[[ome]]$test
       if (test == "One-sample Moderated T-test") {
         req(input$volcano_groups)
       } else if (test == "Two-sample Moderated T-test") {
@@ -226,14 +231,14 @@ statPlot_Ome_Server <- function(id,
       }
       
       #Run plot function
-      gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = as.character(input$volcano_contrasts), df= stat_results()[[ome]]) 
+      gg<- plotVolcano(ome = ome, volcano_groups = input$volcano_groups, volcano_contrasts = as.character(input$volcano_contrasts), df= stat_results()[[ome]], stat_params = stat_params, stat_results = stat_results) 
       ggplotly(gg)
     })
     
 
     ## COMPILE EXPORTS ##
     volcano_plot_export_function <- function(dir_name) {
-      test <- stat_param()[[ome]]$test
+      test <- stat_params()[[ome]]$test
       df <- stat_results()[[ome]]
       
       # Create a single PDF file for all plots from this ome
@@ -244,13 +249,15 @@ statPlot_Ome_Server <- function(id,
       pdf(pdf_path, width = 10, height = 6)
       
       if (test == "One-sample Moderated T-test") {
-        groups <- stat_param()[[ome]]$groups
+        groups <- stat_params()[[ome]]$groups
         for (group in groups) {
           gg <- plotVolcano(
             ome = ome,
             volcano_groups = group,
             volcano_contrasts = NULL,
-            df = df
+            df = df,
+            stat_params = stat_params,
+            stat_results = stat_results
           )
           
           # Print plot to current page
@@ -258,13 +265,15 @@ statPlot_Ome_Server <- function(id,
         }
         
       } else if (test == "Two-sample Moderated T-test") {
-        contrasts <- stat_param()[[ome]]$contrasts
+        contrasts <- stat_params()[[ome]]$contrasts
         for (contrast in contrasts) {
           gg <- plotVolcano(
             ome = ome,
             volcano_groups = NULL,
             volcano_contrasts = contrast,
-            df = df
+            df = df,
+            stat_params = stat_params,
+            stat_results = stat_results
           )
           
           # Print plot to current page

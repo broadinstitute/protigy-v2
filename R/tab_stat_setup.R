@@ -16,21 +16,8 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
   tagList(
     fluidPage(
       titlePanel("Test Setup"),
-      fluidRow(
-        column(3,
-               selectInput(ns("selected_omes"), "Select datasets to test:", choices = NULL),
-               textOutput(ns("annotation_col")),
-               checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE),
-               actionButton(ns("run_test_button"),"Run Test")
-        ),
-        column(3,
-               uiOutput(ns("select_test")),
-               uiOutput(ns("select_groups_ui"))
-        ),
-        column(3,
-               uiOutput(ns("select_contrast_ui"))
-        )
-      )
+      # Main setup controls wrapped in renderUI
+      uiOutput(ns("setup_controls"))
     )
   )}
 
@@ -41,6 +28,70 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
 statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
   ## module function
   moduleServer(id, function (input, output, session) {
+    
+    # Main setup controls
+    output$setup_controls <- renderUI({
+      # This will trigger the validate() statements and show "GCTs not yet processed"
+      req(GCTs(), parameters())
+      
+      # Get the ome names directly here
+      ome_names <- names(GCTs())
+      
+      tagList(
+        # Warning about log transformation - only show after GCTs are processed
+        div(
+          style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 20px; border-radius: 0 4px 4px 0;",
+          icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+          strong("Note: ", style = "color: #495057;"),
+          "Statistical tests require log-transformed data. Please ensure your data have been log-transformed.",
+          style = "color: #495057;"
+        ),
+        
+        fluidRow(
+          column(3,
+                 selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
+                 textOutput(ns("annotation_col")),
+                 checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE),
+                 actionButton(ns("run_test_button"),"Run Test")
+          ),
+          column(3,
+                 uiOutput(ns("select_test")),
+                 conditionalPanel(
+                   condition = "input.select_test !== 'None'",
+                   ns = ns,
+                   pickerInput(ns("select_groups"), 
+                             "Select groups:", 
+                             choices = NULL, 
+                             selected = NULL,
+                             multiple = TRUE,
+                             options = pickerOptions(
+                               actionsBox = TRUE,
+                               selectAllText = "Select All",
+                               deselectAllText = "Deselect All",
+                               noneSelectedText = "No groups selected"
+                             ))
+                 )
+          ),
+          column(3,
+                 conditionalPanel(
+                   condition = "input.select_test === 'Two-sample Moderated T-test'",
+                   ns = ns,
+                   pickerInput(ns("select_contrasts"), 
+                             "Select contrasts:", 
+                             choices = NULL, 
+                             selected = NULL,
+                             multiple = TRUE,
+                             options = pickerOptions(
+                               actionsBox = TRUE,
+                               selectAllText = "Select All",
+                               deselectAllText = "Deselect All",
+                               noneSelectedText = "No contrasts selected"
+                             ))
+                 )
+          )
+        )
+      )
+    })
 
     ## GATHERING INPUTS ##
     stat_param <- reactiveVal(list())
@@ -87,11 +138,52 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       input$selected_omes
     })
 
-    #SETS THE OME SELECT INPUT
-    observe({
-      req(all_omes())
-      ome_list <- all_omes()
-      updateSelectInput(session, "selected_omes",choices = ome_list, selected = ome_list[[1]] )
+    # Update the groups picker input to keep dropdown open
+    observeEvent(list(cdesc(), default_annotation_column(), selected_ome()), {
+      req(cdesc(), default_annotation_column(), selected_ome())
+      choices <- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      
+      current <- stat_param()
+      ome <- selected_ome()
+      selected_groups <- if (!is.null(current[[ome]]$groups)) current[[ome]]$groups else choices
+      
+      updatePickerInput(
+        session = session,
+        inputId = "select_groups",
+        choices = choices,
+        selected = selected_groups
+      )
+    })
+    
+    # Update the contrasts picker input to keep dropdown open
+    observeEvent(list(stat_param(), selected_ome()), {
+      req(stat_param(), selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      if (current[[ome]]$test == "Two-sample Moderated T-test" && length(current[[ome]]$groups) >= 2) {
+        pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
+        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+        labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+        
+        selected_contrasts <- if (!is.null(current[[ome]]$contrasts)) current[[ome]]$contrasts else labels
+        
+        updatePickerInput(
+          session = session,
+          inputId = "select_contrasts",
+          choices = labels,
+          selected = selected_contrasts
+        )
+      } else {
+        # Clear contrasts if not two-sample test or insufficient groups
+        updatePickerInput(
+          session = session,
+          inputId = "select_contrasts",
+          choices = NULL,
+          selected = NULL
+        )
+      }
     })
 
     #CDESC OF SELECTED OME
@@ -173,6 +265,14 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       if (is.null(current[[ome]]$stat)) current[[ome]]$stat <- "adj.p.val"
       if (is.null(current[[ome]]$cutoff)) current[[ome]]$cutoff <- 0.05
       
+      # Initialize groups if test is not "None"
+      if (input$select_test != "None" && is.null(current[[ome]]$groups)) {
+        req(cdesc(), default_annotation_column())
+        choices <- unique(cdesc()[[default_annotation_column()]])
+        choices <- choices[!is.na(choices)]
+        current[[ome]]$groups <- choices
+      }
+      
       stat_param(current) 
     })
     
@@ -191,6 +291,21 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
                   choices= c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), 
                   selected= current[[ome]]$test
       )
+    })
+    
+    # Update the test select input to keep it in sync
+    observe({
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      if (!is.null(current[[ome]]$test)) {
+        updateSelectInput(
+          session = session,
+          inputId = "select_test",
+          selected = current[[ome]]$test
+        )
+      }
     })
     
 ################################################################################
@@ -227,39 +342,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       stat_param(current)    
     })
     
-    #displaying the group choices
-    output$select_groups_ui <- renderUI({
-      current <- stat_param()
-      ome <- selected_ome()
-      req(cdesc(), default_annotation_column(),selected_ome(), stat_param())
-      
-      # Only show groups if a test other than "None" is selected
-      if (is.null(current[[ome]]$test) || current[[ome]]$test == "None") {
-        return(NULL)  # Don't show anything if no test or "None" test
-      }
-      
-      choices<- unique(cdesc()[[default_annotation_column()]])
-      choices <- choices[!is.na(choices)]
-      
-      if (is.null(current[[ome]]$groups)) {
-        current[[ome]]$groups <- choices 
-        stat_param(current)
-      }
-      
-      pickerInput(
-        ns("select_groups"), 
-        "Select groups:", 
-        choices = choices, 
-        selected = current[[ome]]$groups,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          selectAllText = "Select All",
-          deselectAllText = "Deselect All",
-          noneSelectedText = "No contrasts selected"
-        )
-      )
-    })
+
     
 ################################################################################
 ######CONTRAST SELECTION########################################################
@@ -273,37 +356,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       stat_param(current)
     })
 
-    #displaying the contrast choices
-    output$select_contrast_ui <- renderUI({
-      current <- stat_param()
-      ome <- selected_ome()
-      
-      req(current[[ome]]$test=="Two-sample Moderated T-test")
-      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("need at least 2 groups to perform two-sample t-test")
-      
-      pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
-      all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-      labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      
-      if (is.null(current[[ome]]$contrasts)) {
-        current[[ome]]$contrasts <- labels
-        stat_param(current)
-      }
-      
-      pickerInput(
-        ns("select_contrasts"), 
-        "Select contrasts:", 
-        choices = labels, 
-        selected = current[[ome]]$contrasts,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          selectAllText = "Select All",
-          deselectAllText = "Deselect All",
-          noneSelectedText = "No contrasts selected"
-        )
-      )
-    })
+
 
 ################################################################################
 ##FLIPPING THE CONTRASTS- not implemented but can be in the future##############
@@ -446,26 +499,34 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           # Run test  
           stat.results <- NULL
           tryCatch({
-            stat.results <- stat.testing(test = test,annotation_col = annotation_col,chosen_omes = ome,gct = gcts,chosen_groups = groups,selected_contrasts = contrasts_list,intensity = FALSE)
-            }, error = function(e) {
+            # Get intensity parameter from the processing parameters
+            intensity_param <- parameters()[[ome]]$intensity
+            if (is.null(intensity_param)) {
+              intensity_param <- FALSE  # Default fallback if not specified
+            }
+            
+            stat.results <- stat.testing(
+              test = test,
+              annotation_col = annotation_col,
+              chosen_omes = ome,
+              gct = gcts,
+              chosen_groups = groups,
+              selected_contrasts = contrasts_list,
+              intensity = intensity_param
+            )
+          }, error = function(e) {
             showNotification(paste("Test failed for ome", ome, ":", e$message), type = "error")
             stat.results <<- NULL
           })
             
           # Save results for that ome into test_results list  
           if (!is.null(stat.results)) {
-            test_results[[ome]] <- as.data.frame(stat.results)
+            test_results[[ome]] <- as.data.frame(stat.results[[ome]])
           }
          
         }
         
         stat_results(test_results)
-        
-        # Make the results a global object
-        assign("stat_results", stat_results, envir = .GlobalEnv)
-        assign("stat_param", stat_param, envir = .GlobalEnv)
-        globals$stat_param <- stat_param
-        globals$stat_results <- stat_results
         
         # Check if tests completed successfully and switch to Summary tab
         if (length(test_results) > 0) {
@@ -473,9 +534,15 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           showNotification(
             "Statistical testing completed successfully! Please navigate to Statistics > Summary tab to view your results.", 
             type = "default", 
-            duration = 10
+            duration = NULL
           )
         }
     })
+    
+    # Return the reactive values so other modules can access them
+    return(list(
+      stat_params = stat_param,
+      stat_results = stat_results
+    ))
   })
 }

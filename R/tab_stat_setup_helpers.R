@@ -5,6 +5,15 @@
 ################################################################################
 
 stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups, selected_contrasts, p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log=FALSE, intensity, ...) {
+  # Ensure intensity is a logical value
+  if (is.null(intensity)) {
+    intensity <- FALSE
+  } else if (is.character(intensity)) {
+    # Convert "Yes"/"No" strings to logical values
+    intensity <- tolower(intensity) %in% c("yes", "true", "1", "t")
+  } else {
+    intensity <- as.logical(intensity)
+  }
   ################################################################################
   #None
   ################################################################################
@@ -85,6 +94,12 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         avg <- matrix(as.numeric(avg),ncol=ncol(avg))
         final.results[,grepl("AveExpr.",colnames(final.results))]<-avg
         final.results[,colnames(final.results)=="AveExpr"]<-rowMeans(avg,na.rm=T)
+        
+        # Join all rdesc columns to the results 
+        rdesc_df <- as.data.frame(rdesc)
+        rdesc_df[[id.col]] <- rownames(rdesc_df)  # Ensure ID column exists
+        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
+        combined_results <- dplyr::right_join(rdesc_df,final.results, by = "id")
         
         cat('\n-- modF.test exit --\n')
         results_list[[ome_name]]<-final.results
@@ -167,10 +182,10 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           }
           
         }
-        # Merge in gene symbol from rdesc
-        gene_symbols <- rdesc[, c(id.col, "geneSymbol")]
-        colnames(gene_symbols)[1] <- "id"  
-        combined_results <- merge(gene_symbols, combined_results, by = "id", all.y = TRUE)
+        # Join all rdesc columns to the results
+        rdesc_df <- as.data.frame(rdesc)
+        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
+        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }
@@ -268,9 +283,10 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           }
 
         }
-        gene_symbols <- rdesc[, c(id.col, "geneSymbol")]
-        colnames(gene_symbols)[1] <- "id"
-        combined_results <- merge(gene_symbols, combined_results, by = "id", all.y = TRUE)
+        # Join all rdesc columns to the results
+        rdesc_df <- as.data.frame(rdesc)
+        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
+        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }

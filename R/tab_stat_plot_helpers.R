@@ -12,17 +12,17 @@
 # sig.col- color of significant points
 # bg.col- color of non significant points
 
-plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='darkred', bg.col='gray'){
+plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params, stat_results, sig.col='darkred', bg.col='gray',gene_symbol_col = "geneSymbol"){
   cat('\n-- plotVolcano --\n')
   
-  req(stat_param())
+  req(stat_params())
   req(stat_results())
   
   ##LOG FC COLUMN##
-  if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+  if (stat_params()[[ome]]$test == "One-sample Moderated T-test") {
     keyword <- volcano_groups
     logfc_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "logFC.", ")")
-  } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+  } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
     contrast_name <- paste0(groups[1], "_vs_", groups[2])
     logfc_pattern <- paste0("logFC.*", contrast_name)
@@ -31,10 +31,10 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   logFC_col <- grep(logfc_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   
   ##LOG P VALUE COLUMN##
-  if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+  if (stat_params()[[ome]]$test == "One-sample Moderated T-test") {
     keyword <- volcano_groups
     logP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "Log.P.Value.", ")")
-  } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+  } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
     contrast_name <- paste0(groups[1], "_vs_", groups[2])
     logP_pattern  <- paste0("Log\\.P\\.Value.*", contrast_name)
@@ -43,10 +43,10 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   logP_col <- grep(logP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   
   ##ADJ P VALUE COLUMN##
-  if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+  if (stat_params()[[ome]]$test == "One-sample Moderated T-test") {
     keyword <- volcano_groups
     adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
-  } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+  } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
     contrast_name <- paste0(groups[1], "_vs_", groups[2])
     adjP_pattern  <- paste0("adj\\.P\\.Val.*", contrast_name)
@@ -55,10 +55,10 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   
   ##P VAL COLUMN##
-  if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+  if (stat_params()[[ome]]$test == "One-sample Moderated T-test") {
     keyword <- volcano_groups
     pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
-  } else if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+  } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
     contrast_name <- paste0(groups[1], "_vs_", groups[2])
     pval_pattern  <- paste0("P\\.value.*", contrast_name)
@@ -70,7 +70,12 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   id_col <- grep("id", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   
   ##GENE SYMBOL COLUMN##
-  geneSymbol_col <- grep("geneSymbol", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+  #make a parameter so this could be user-specified
+  geneSymbol_col <- tryCatch({
+    grep(gene_symbol_col, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+  }, error = function(e) {
+    NULL
+  })
   
   ## Check columns exist
   required_cols <- c(logFC_col, logP_col, adjP_col, id_col)
@@ -81,15 +86,22 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   
   ## Add columns for plotting
   df$id <- df[[id_col]]
-  df$geneSymbol <- df[[geneSymbol_col]]
   df$logFC <- df[[logFC_col]]
   df$adj.P.Val <- as.numeric(df[[adjP_col]])
   df$logP <- df[[logP_col]]
   df$P.Value <- as.numeric(df[[pval_col]])
   
+  # Handle geneSymbol column - create it if it exists, otherwise use ID
+  if (!is.null(geneSymbol_col) && !is.na(geneSymbol_col)) {
+    df$geneSymbol <- df[[geneSymbol_col]]
+  } else {
+    # If no geneSymbol column, use ID as fallback
+    df$geneSymbol <- df$id
+  }
+  
   ## Define significance based on chosen stat and cutoff
-  sig_cutoff <- stat_param()[[ome]]$cutoff
-  sig_stat <- stat_param()[[ome]]$stat
+  sig_cutoff <- stat_params()[[ome]]$cutoff
+  sig_stat <- stat_params()[[ome]]$stat
   
   # Always use nominal p-values for Y-axis
   stat <- df$logP
@@ -109,9 +121,9 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
   
   df$Significant <- df$logP > y_cutoff
 
-  if (stat_param()[[ome]]$test == "Two-sample Moderated T-test"){
+  if (stat_params()[[ome]]$test == "Two-sample Moderated T-test"){
     group_contrast<- volcano_contrasts
-  } else if (stat_param()[[ome]]$test == "One-sample Moderated T-test") {
+  } else if (stat_params()[[ome]]$test == "One-sample Moderated T-test") {
     group_contrast<- volcano_groups
   }
   ## Plot
@@ -120,11 +132,11 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, sig.col='dar
     geom_point(aes(color = Significant), size = 1) +
     scale_color_manual(values = c(`TRUE` = sig.col, `FALSE` = bg.col)) +
     geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", size = 0.5) +
-    labs(title = paste("Volcano plot for",ome, ": ",group_contrast, "(cutoff:", stat_param()[[ome]]$cutoff, ")"), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
+    labs(title = paste("Volcano plot for",ome, ": ",group_contrast, "(cutoff:", stat_params()[[ome]]$cutoff, ")"), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
     theme_minimal()
   
 
-  if (stat_param()[[ome]]$test == "Two-sample Moderated T-test") {
+  if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
     top_left <- groups[1]
     top_right <- groups[2]
