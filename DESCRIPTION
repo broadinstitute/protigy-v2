@@ -48,7 +48,8 @@ Imports:
     shinyWidgets,
     shinyBS,
     glue,
-    Matrix (>= 1.6-2)
+    Matrix (>= 1.6-2),
+    shinyWidgets
 Depends:
     R (>= 4.0.0),
     shiny
