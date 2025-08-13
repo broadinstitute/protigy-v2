@@ -197,6 +197,50 @@ QCPCA_Ome_Server <- function(id,
             selected = 2),
           classes = "small-input",
           styles = "margin-right: 10px"
+        ),
+        
+        br(),
+        
+        add_css_attributes(
+          checkboxInput(
+            ns("qc_PCA_add_second_var"),
+            "Add second variable for visualization",
+            value = FALSE),
+          classes = "small-input",
+          styles = "margin-right: 10px"
+        ),
+        
+        conditionalPanel(
+          condition = paste0("input['", ns("qc_PCA_add_second_var"), "']"),
+          
+          add_css_attributes(
+            selectInput(
+              ns("qc_PCA_second_annotation"),
+              "Second variable",
+              choices = names(GCT_processed()@cdesc)),
+            classes = "small-input",
+            styles = "margin-right: 10px"
+          ),
+          
+          add_css_attributes(
+            selectInput(
+              ns("qc_PCA_var1_display"),
+              "First variable display",
+              choices = c("Color" = "color", "Shape" = "shape"),
+              selected = "color"),
+            classes = "small-input",
+            styles = "margin-right: 10px"
+          ),
+          
+          add_css_attributes(
+            selectInput(
+              ns("qc_PCA_var2_display"),
+              "Second variable display",
+              choices = c("Color" = "color", "Shape" = "shape"),
+              selected = "shape"),
+            classes = "small-input",
+            styles = "margin-right: 10px"
+          )
         )
       )
     })
@@ -205,7 +249,9 @@ QCPCA_Ome_Server <- function(id,
     
     # reactive
     qc_PCA_plot_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, color_map()), 
+      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, 
+                    input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
+                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
         # Ensure all PCA inputs are properly initialized
@@ -216,6 +262,33 @@ QCPCA_Ome_Server <- function(id,
           annot_column <- input$qc_PCA_annotation
         } else {
           annot_column <- default_annotation_column()
+        }
+        
+        # get second annotation column if selected
+        second_annot_column <- NULL
+        var1_display <- "color"
+        var2_display <- "shape"
+        
+        if (!is.null(input$qc_PCA_add_second_var) && input$qc_PCA_add_second_var) {
+          if (!is.null(input$qc_PCA_second_annotation)) {
+            second_annot_column <- input$qc_PCA_second_annotation
+          }
+          if (!is.null(input$qc_PCA_var1_display)) {
+            var1_display <- input$qc_PCA_var1_display
+          }
+          if (!is.null(input$qc_PCA_var2_display)) {
+            var2_display <- input$qc_PCA_var2_display
+          }
+          
+          # validate that both variables don't use the same display method
+          if (var1_display == var2_display) {
+            validate(need(FALSE, "First and second variables cannot use the same display method (color or shape). Please select different display options."))
+          }
+          
+          # validate that second variable is different from first
+          if (!is.null(second_annot_column) && second_annot_column == annot_column) {
+            validate(need(FALSE, "Second variable must be different from the first variable. Please select a different variable."))
+          }
         }
         
         # get custom colors
@@ -232,7 +305,10 @@ QCPCA_Ome_Server <- function(id,
                             ome = ome,
                             custom_color_map = annot_color_map,
                             comp.x = as.numeric(input$qc_PCA_PC1),
-                            comp.y = as.numeric(input$qc_PCA_PC2))
+                            comp.y = as.numeric(input$qc_PCA_PC2),
+                            second_col_of_interest = second_annot_column,
+                            var1_display = var1_display,
+                            var2_display = var2_display)
       }
     )
     

@@ -5,7 +5,8 @@
 ################################################################################
 
 ## plot PCA
-create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2) {
+create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, 
+                            second_col_of_interest = NULL, var1_display = "color", var2_display = "shape") {
   # Check for valid PC inputs
   if (is.null(comp.x) || is.null(comp.y) || length(comp.x) == 0 || length(comp.y) == 0) {
     stop("PC1 and PC2 must be valid and non-empty.")
@@ -15,6 +16,16 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     stop("PC1 and PC2 are equal. Please try again with different values for PC1 and PC2.")
   }
   
+  # validate dual variable inputs
+  if (!is.null(second_col_of_interest)) {
+    if (var1_display == var2_display) {
+      stop("Both variables cannot use the same display method. Please select different display options for each variable.")
+    }
+    if (second_col_of_interest == col_of_interest) {
+      stop("Second variable must be different from the first variable.")
+    }
+  }
+  
   #sort matrix by annotation
   mat <- gct@mat
   group <- as.character(gct@cdesc[[col_of_interest]])
@@ -22,6 +33,17 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   #replace NA with characters so that colors map appropriately
   annot$annot[is.na(annot$annot)]="NA"
   annot$annot <- as.factor(annot$annot)
+  
+  # add second annotation if provided
+  if (!is.null(second_col_of_interest)) {
+    second_group <- as.character(gct@cdesc[[second_col_of_interest]])
+    annot$second_annot <- second_group
+    #replace NA with characters so that colors map appropriately
+    annot$second_annot[is.na(annot$second_annot)] <- "NA"
+    annot$second_annot <- as.factor(annot$second_annot)
+    colnames(annot)[3] <- second_col_of_interest
+  }
+  
   mat <- mat[,order(annot$annot)]
   annot <- annot[order(annot$annot),]
   colnames(annot)[2] = col_of_interest
@@ -58,31 +80,105 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   pca_df <- as.data.frame(my_pca$x)
   pca_df$sample <- rownames(pca_df)
   pca_df <- merge(pca_df, annot, by = "sample")
+  
   # Compose tooltip text
-  pca_df$tooltip <- paste0(
+  tooltip_text <- paste0(
     "Sample: ", pca_df$sample,
     "<br>PC", comp.x, ": ", signif(pca_df[[paste0("PC", comp.x)]], 4),
     "<br>PC", comp.y, ": ", signif(pca_df[[paste0("PC", comp.y)]], 4),
     "<br>", col_of_interest, ": ", pca_df[[col_of_interest]]
   )
-  g <- ggplot(pca_df, aes_string(
-    x = paste0("PC", comp.x),
-    y = paste0("PC", comp.y),
-    color = col_of_interest,
-    text = "tooltip"
-  )) +
+  
+  # Add second variable to tooltip if present
+  if (!is.null(second_col_of_interest)) {
+    tooltip_text <- paste0(tooltip_text, "<br>", second_col_of_interest, ": ", pca_df[[second_col_of_interest]])
+  }
+  pca_df$tooltip <- tooltip_text
+  
+  # Create aesthetic mappings based on display preferences
+  if (is.null(second_col_of_interest)) {
+    # Single variable - use existing logic
+    plot_aes <- aes_string(
+      x = paste0("PC", comp.x),
+      y = paste0("PC", comp.y),
+      color = col_of_interest,
+      text = "tooltip"
+    )
+    plot_title <- paste0("PCA plot by ", col_of_interest, ": ", ome)
+  } else {
+    # Two variables - create appropriate aesthetic mapping
+    if (var1_display == "color" && var2_display == "shape") {
+      plot_aes <- aes_string(
+        x = paste0("PC", comp.x),
+        y = paste0("PC", comp.y),
+        color = col_of_interest,
+        shape = second_col_of_interest,
+        text = "tooltip"
+      )
+    } else if (var1_display == "shape" && var2_display == "color") {
+      plot_aes <- aes_string(
+        x = paste0("PC", comp.x),
+        y = paste0("PC", comp.y),
+        color = second_col_of_interest,
+        shape = col_of_interest,
+        text = "tooltip"
+      )
+    } else {
+      # Default fallback
+      plot_aes <- aes_string(
+        x = paste0("PC", comp.x),
+        y = paste0("PC", comp.y),
+        color = col_of_interest,
+        text = "tooltip"
+      )
+    }
+    plot_title <- paste0("PCA plot by ", col_of_interest, " and ", second_col_of_interest, ": ", ome)
+  }
+  
+  g <- ggplot(pca_df, plot_aes) +
     geom_point(size = 2) +
     geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
     geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
     theme_bw() +
     theme(text = element_text(size = 12)) +
-    color_definition +
-    ggtitle(paste0("PCA plot by ", col_of_interest, ": ", ome)) +
+    ggtitle(plot_title) +
     labs(
       x = paste0("PC", comp.x, " (", round(prop_vars[comp.x] * 100, 1), "%)"),
-      y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)"),
-      colour = col_of_interest
+      y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)")
     )
+  
+  # Apply color definition
+  if (!is.null(color_definition)) {
+    g <- g + color_definition
+  }
+  
+  # Add shape scale for more than 6 shapes
+  if (!is.null(second_col_of_interest)) {
+    # Get unique values for shape variable
+    shape_var <- if (var1_display == "shape") col_of_interest else second_col_of_interest
+    unique_shapes <- unique(pca_df[[shape_var]])
+    n_shapes <- length(unique_shapes)
+    
+    if (n_shapes > 6) {
+      # Define more shapes - using a combination of different point types
+      # R has 25 built-in shapes (0-25), but some are duplicates or not suitable
+      # We'll use a good selection of distinct shapes
+      available_shapes <- c(16, 17, 15, 18, 1, 2, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 19, 20, 21, 22, 23, 24, 25)
+      
+      if (n_shapes <= length(available_shapes)) {
+        shape_values <- available_shapes[1:n_shapes]
+        names(shape_values) <- unique_shapes
+        g <- g + scale_shape_manual(values = shape_values)
+      } else {
+        # If we still need more shapes, we can cycle through them
+        shape_values <- rep(available_shapes, ceiling(n_shapes / length(available_shapes)))[1:n_shapes]
+        names(shape_values) <- unique_shapes
+        g <- g + scale_shape_manual(values = shape_values)
+      }
+    }
+  }
+  
+  g
 }
 
 ## calculate PCA regression
