@@ -1,0 +1,5 @@
+columnName,experiment,condition
+sample_001,exp1,control
+sample_002,exp1,treatment
+sample_003,exp2,control
+sample_004,exp2,treatment

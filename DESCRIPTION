@@ -21,6 +21,8 @@ Imports:
     khroma,
     plotly (>= 4.10.1),
     RColorBrewer,
+    readr,
+    readxl,
     shinyalert,
     shinyBS,
     shinydashboard,

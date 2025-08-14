@@ -10,10 +10,10 @@ setupSidebarUI <- function(id = "setupSidebar") {
   
   tagList(
     # file input
-    fileInput(ns("gctFiles"), 
-              paste("Choose GCT file(s). All files should include the same samples."),
+    fileInput(ns("dataFiles"), 
+              paste("Choose data file(s). Supported formats: GCT, CSV, Excel. All files should include the same samples."),
               multiple = TRUE,
-              accept = ".gct"),
+              accept = c(".gct", ".csv", ".xlsx", ".xls")),
     hr(),
     
     # the main body of the sidebar, contents assigned in setupSidebarServer
@@ -65,12 +65,29 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # once files uploaded, display label assignment
     observeEvent(
-      eventExpr = input$gctFiles, 
+      eventExpr = input$dataFiles, 
       ignoreInit = TRUE,
       handlerExpr = {
         parameters_internal_reactive(NULL) # reset internal parameters
         GCTs_unprocessed_internal_reactive(NULL) # reset internal GCTs
-        labelAssignment()
+        
+        # Check if files are GCT format or CSV/Excel format
+        file_extensions <- tools::file_ext(tolower(input$dataFiles$name))
+        
+        if (all(file_extensions == "gct")) {
+          # All GCT files - use existing workflow
+          labelAssignment()
+        } else if (all(file_extensions %in% c("csv", "xlsx", "xls"))) {
+          # All CSV/Excel files - use new workflow
+          csvExcelWorkflow()
+        } else {
+          # Mixed file types - show error
+          shinyalert::shinyalert(
+            title = "Error",
+            text = "Please upload either GCT files only OR CSV/Excel files only. Mixed file types are not supported.",
+            type = "error"
+          )
+        }
       })
     
     # also display label assignment if user navigates back to it
@@ -82,7 +99,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # validate labels once submitted
     observeEvent(input$submitLabelsButton, {
       out <- my_shinyalert_tryCatch({
-        all_labels <- sapply(input$gctFiles$name, 
+        all_labels <- sapply(input$dataFiles$name, 
                              function(n) input[[paste0('Label_', n)]])
         validate_labels(all_labels)
       }, return.error = FALSE)
@@ -106,72 +123,91 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # current place in the next/back logic
       backNextLogic$place <- 1 
       
-      # maximum place (i.e. the total number of GCT files)
-      backNextLogic$maxPlace <- length(input$gctFiles$name) 
+      # maximum place (i.e. the total number of data files)
+      backNextLogic$maxPlace <- length(input$dataFiles$name) 
     }, ignoreInit = TRUE)
     
     # update GCT parameters with gct file paths and labels once labels are submitted
     observeEvent(labelsGO(), {
-      new_parameters <- list()
-      apply(input$gctFiles, 1, function(file) {
-        file <- as.list(file)
-        
-        # get the label using the same inputId notation as in labelSetupUI()
-        label <- input[[paste0('Label_', file$name)]] 
-        
-        # figure out which files were already parsed and have saved parameters
-        already_parsed_files <- sapply(parameters_internal_reactive(), 
-                                       function(l) l$gct_file_path)
-        
-        # use the old parameters if they exist
-        if (file$datapath %in% already_parsed_files) {
-          idx <- which(already_parsed_files == file$datapath)
-          new_parameters[[label]] <<- parameters_internal_reactive()[[idx]]
+      # Check if parameters are already set up (CSV/Excel case) or need label assignment (GCT case)
+      existing_params <- parameters_internal_reactive()
+      
+      if (!is.null(existing_params) && length(existing_params) > 0) {
+        # CSV/Excel case: parameters already have labels and structure, no need to rebuild
+        message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
+      } else {
+        # GCT case: build parameters from file uploads and user-provided labels
+        new_parameters <- list()
+        apply(input$dataFiles, 1, function(file) {
+          file <- as.list(file)
           
-          # otherwise use the defaults
-        } else {
-          new_parameters[[label]] <<- c(gct_file_path = file$datapath,
-                                        gct_file_name = file$name,
-                                        default_parameters)
-        }
-      })
-      parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
+          # get the label using the same inputId notation as in labelSetupUI()
+          label <- input[[paste0('Label_', file$name)]] 
+          
+          # figure out which files were already parsed and have saved parameters
+          already_parsed_files <- sapply(parameters_internal_reactive(), 
+                                         function(l) l$gct_file_path)
+          
+          # use the old parameters if they exist
+          if (file$datapath %in% already_parsed_files) {
+            idx <- which(already_parsed_files == file$datapath)
+            new_parameters[[label]] <<- parameters_internal_reactive()[[idx]]
+            
+            # otherwise use the defaults
+          } else {
+            new_parameters[[label]] <<- c(gct_file_path = file$datapath,
+                                          gct_file_name = file$name,
+                                          default_parameters)
+          }
+        })
+        parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
+      }
     }, ignoreInit = TRUE)
     
     # parse the GCTs for setup
     observeEvent(labelsGO(), {
       parameters <- parameters_internal_reactive()
-      parsed_file_paths <- sapply(GCTs_unprocessed_internal_reactive(), function(gct) gct@src)
-      GCTs <- my_shinyalert_tryCatch({
-        withProgress(
-          min = 0, 
-          max = length(parameters),
-          message = "Parsing GCTs...", 
-          expr = {
-            lapply(parameters, function(p) {
-              # check if the GCT has already been parsed
-              if (p$gct_file_path %in% parsed_file_paths) {
-                parsed_label = names(which(parsed_file_paths == p$gct_file_path))
-                stopifnot(length(parsed_label) == 1)
-                incProgress(amount = 1)
-                return(GCTs_unprocessed_internal_reactive()[[parsed_label]])
-                
-                # otherwise, parse the GCT
-              } else {
-                gct <- parse_gctx(p$gct_file_path)
-                incProgress(amount = 1)
-                return(gct)
-              }
-            })
-          })
-      }, return.error = NULL)
+      existing_gcts <- GCTs_unprocessed_internal_reactive()
       
-      if (!is.null(GCTs)) {
-        # update reactiveVal
-        GCTs_unprocessed_internal_reactive(GCTs) 
+      # Check if GCTs are already parsed/converted (CSV/Excel case) or need parsing (GCT case)
+      if (!is.null(existing_gcts) && length(existing_gcts) > 0) {
+        # CSV/Excel case: GCTs already converted and stored, just trigger UI update
+        message("Using existing CSV/Excel converted GCTs: ", paste(names(existing_gcts), collapse = ", "))
+        backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
+      } else {
+        # GCT case: need to parse GCT files from disk
+        parsed_file_paths <- sapply(GCTs_unprocessed_internal_reactive(), function(gct) gct@src)
+        GCTs <- my_shinyalert_tryCatch({
+          withProgress(
+            min = 0, 
+            max = length(parameters),
+            message = "Parsing GCTs...", 
+            expr = {
+              lapply(parameters, function(p) {
+                # check if the GCT has already been parsed
+                if (p$gct_file_path %in% parsed_file_paths) {
+                  parsed_label = names(which(parsed_file_paths == p$gct_file_path))
+                  stopifnot(length(parsed_label) == 1)
+                  incProgress(amount = 1)
+                  return(GCTs_unprocessed_internal_reactive()[[parsed_label]])
+                  
+                  # otherwise, parse the GCT
+                } else {
+                  gct <- parse_gctx(p$gct_file_path)
+                  incProgress(amount = 1)
+                  return(gct)
+                }
+              })
+            })
+        }, return.error = NULL)
         
-        # indicates if place or something about GCT files changed
-        backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
+        if (!is.null(GCTs)) {
+          # update reactiveVal
+          GCTs_unprocessed_internal_reactive(GCTs) 
+          
+          # indicates if place or something about GCT files changed
+          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
+        }
       }
     }, ignoreInit = TRUE, priority = -1)
     
@@ -455,7 +491,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # label assignment, has to be used in separate observeEvent() calls
     labelAssignment <- function() {
       output$sideBarMain <- renderUI({labelSetupUI(ns = ns, 
-                                                   gctFileNames = input$gctFiles$name)})
+                                                   dataFileNames = input$dataFiles$name)})
       output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), 
                                                    "Submit",
                                                    class = "btn btn-primary")})
@@ -467,6 +503,131 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         updateTextInput(inputId = paste0('Label_', filename), value = label)
       })
     }
+    
+    # CSV/Excel workflow function
+    csvExcelWorkflow <- function() {
+      # Extract column names from uploaded files to populate identifier selector
+      identifier_columns <- tryCatch({
+        all_columns <- c()
+        for (i in seq_len(nrow(input$dataFiles))) {
+          file_path <- input$dataFiles$datapath[i]
+          file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
+          
+          if (file_ext == "csv") {
+            data <- utils::read.csv(file_path, nrows = 1, stringsAsFactors = FALSE)
+            columns <- names(data)
+          } else if (file_ext %in% c("xlsx", "xls")) {
+            data <- readxl::read_excel(file_path, n_max = 1)
+            columns <- names(data)
+          } else {
+            columns <- c()
+          }
+          
+          all_columns <- c(all_columns, columns)
+        }
+        
+        # Return unique columns
+        unique(all_columns)
+      }, error = function(e) {
+        c() # Return empty vector if error
+      })
+      
+      output$sideBarMain <- renderUI({csvExcelSetupUI(ns = ns, 
+                                                      dataFiles = input$dataFiles,
+                                                      identifierColumns = identifier_columns)})
+      output$rightButton <- NULL
+      output$leftButton <- NULL
+    }
+    
+    # Reactive output to control process button visibility
+    output$expDesignFileUploaded <- reactive({
+      return(!is.null(input$expDesignFile))
+    })
+    outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
+    
+    # Download handler for experimental design template
+    output$downloadExpDesign <- downloadHandler(
+      filename = "experimentalDesign.csv",
+      content = function(file) {
+        tryCatch({
+          # Generate experimental design template using selected identifier column
+          identifier_col <- input$identifierColumn
+          template <- generateExperimentalDesignTemplate(input$dataFiles, 
+                                                        identifierColumn = identifier_col)
+          
+          # Write to file
+          utils::write.csv(template, file, row.names = FALSE)
+          
+        }, error = function(e) {
+          shinyalert::shinyalert(
+            title = "Error",
+            text = paste("Failed to generate experimental design template:", e$message),
+            type = "error"
+          )
+        })
+      }
+    )
+    
+    # Process CSV/Excel data when experimental design is uploaded
+    observeEvent(input$processCSVExcel, {
+      req(input$expDesignFile)
+      
+      tryCatch({
+        # Process CSV/Excel files with progress indication
+        withProgress(message = "Processing CSV/Excel files...", {
+          setProgress(0.2, detail = "Reading experimental design")
+          
+          # Read experimental design
+          exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
+          
+          setProgress(0.5, detail = "Converting data to analysis format")
+          
+          # Process CSV/Excel files with selected identifier column
+          identifier_col <- input$identifierColumn
+          csv_excel_result <- processCSVExcelWorkflow(input$dataFiles, exp_design, identifier_col)
+          
+          setProgress(0.8, detail = "Setting up analysis parameters")
+          
+          # Store converted GCT objects and parameters for later processing (same as GCT workflow)
+          GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
+          parameters_internal_reactive(csv_excel_result$parameters)
+          
+          # Set up back/next navigation logic for parameter setup
+          backNextLogic$place <- 1
+          backNextLogic$maxPlace <- length(csv_excel_result$GCTs)
+          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
+          
+          setProgress(1.0, detail = "Ready for parameter setup")
+        })
+        
+        # Show success message
+        shinyalert::shinyalert(
+          title = "Files Converted!",
+          text = paste("Successfully converted", length(csv_excel_result$GCTs), 
+                      "CSV/Excel file(s) to analysis format. Now configure analysis parameters..."),
+          type = "success",
+          timer = 3000,
+          showConfirmButton = FALSE
+        )
+        
+        # Trigger the standard parameter setup workflow (same as GCT files)
+        labelsGO(labelsGO() + 1)
+        
+      }, error = function(e) {
+        # Show detailed error message
+        error_msg <- paste("Failed to process CSV/Excel data:", e$message)
+        
+        # Log error for debugging
+        message("CSV/Excel Processing Error: ", error_msg)
+        
+        shinyalert::shinyalert(
+          title = "Processing Error",
+          text = error_msg,
+          type = "error",
+          html = TRUE
+        )
+      })
+    })
     
     # return GCTs and parameters together in one list
     return(list(GCTs_and_params = GCTs_and_params,

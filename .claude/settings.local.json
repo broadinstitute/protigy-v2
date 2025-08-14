@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(R:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
