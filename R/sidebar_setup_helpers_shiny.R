@@ -28,121 +28,82 @@ labelSetupUI <- function(ns, dataFileNames) {
 # function for CSV/Excel setup UI
 csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
   tagList(
-    h4("CSV/Excel Handler"),
-
-    # Show uploaded files
-    div(
-      style = "margin-bottom: 0px; padding: 15px;",
-      h5("Uploladed Data Files:"),
-      lapply(dataFiles$name, function(filename) {
-        div(
-          style = "margin: 5px 0; display: flex; align-items: center;",
-          icon("file", style = "color: #ffffff;
-               margin-left: 5px;"),
-          span(filename, style = "margin-left: 15px;
-               font-weight: 500;
-               word-break: break-word;
-               overflow-wrap: break-word;
-               max-width: 420px;
-               display: inline-block;")
-        )
-      })
-    ),
-
-    # Unique identifier column selector
-    conditionalPanel(
-      condition = "true", # Always show, but could be conditional based on file upload
-      div(
-        class = "csv-excel-step",
-        style = "margin-bottom: 10px; padding: 15px;",
-        h5("Select Unique Identifier Column",
-          style = "margin-top: 0; color: #5cb85c; font-weight: bold;"
-        ),
-        p("Choose the unique identifier column for your data.",
-          style = "word-wrap: break-word; overflow-wrap: break-word;"
-        ),
-        div(
-          style = "margin-bottom: 10px;",
-          if (!is.null(identifierColumns) && length(identifierColumns) > 0) {
-            add_css_attributes(
-              selectInput(ns("identifierColumn"),
-                "Identifier Column:",
-                choices = identifierColumns,
-                selected = identifierColumns[1]
-              ),
-              classes = "small-input"
-            )
-          } else {
-            p("Please upload data files to see available columns.", style = "font-style: italic; color: #666;")
-          }
-        )
-      )
-    ),
-    hr(),
-
-    # Download Template
-    div(
-      class = "csv-excel-step",
-      style = "margin-bottom: 10px; padding: 15px;",
-      h5("Download Experimental Design Template",
-        style = "margin-top: 0; color: #337ab7; font-weight: bold;"
+    h4(
+      "CSV/Excel File Handler"
       ),
-      div(
-        p("Click below to download the experimental design template specific to your data.",
-          style = "word-wrap: break-word; overflow-wrap: break-word; margin-bottom: 10px;")
-        ),
-      div(
-        style = "text-align: left;",
-        downloadButton(ns("downloadExpDesign"),
-          span("Download experimentalDesign.csv", style = "margin-left: 15px;"), 
+    
+    h5(
+      "Select Unique Idetnifier Column"
+    ),
+
+    # Select unique identifier
+    add_css_attributes(
+      selectInput(
+        ns("identifierColumn"), 
+        "Identifier Column:", 
+        choice = identifierColumns, 
+        selected = identifierColumns[1]
+      ), 
+      classes = "small-input"
+    ),
+
+    # Download experimental design template
+    h5("Download Experimental Design Template"), 
+    
+    p("Click below to download the experimental design template specific to your data."), 
+    
+    add_css_attributes(
+        downloadButton(
+          ns("downloadExpDesign"),
+          "Download experimentalDesign.csv", 
           class = "btn btn-primary",
-          icon = icon("download"),
-          style = "width: 100%; 
-          display: flex; 
-          align-items: center; 
-          justify-content: center; 
-          text-align: center; 
-          white-space: nowrap"
+          icon = icon("download")
+      ),
+      classes = "download-btn-primary"
+    ),
+    
+    # Upload experimental design file
+    h5("Upload Experimental Design"), 
+    
+    add_css_attributes(
+      fileInput(
+        ns("expDesignFile"), 
+        NULL, 
+        accept = ".csv", 
+        buttonLabel = "Browse", 
+        placeholder = "No file selected"
+      ), 
+      classes = "small-input"
+    ),
+    
+    conditionalPanel(
+      condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
+      
+      add_css_attributes(
+        actionButton(
+          ns("processCSVExcel"),
+          "Process Data & Continue",
+          class = "Start Analysis!",
+          icon = icon("cogs"),
+          style = "width: 80%; align-items: center;"
         )
       )
     ),
-
-    # Upload and Process
-    div(
-      class = "csv-excel-step",
-      style = "margin-bottom: 10px; padding: 15px; border-left: 4px solid #f0ad4e;
-                 border: 1px solid #e3e3e3; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);",
-      h5("Upload Completed Template",
-        style = "margin-top: 0; color: #f0ad4e; font-weight: bold;"
-      ),
-      p("Upload your customized experimental design file. Remember: only columns with metadata will be included in the analysis, and rows with all NA metadata will be excluded.",
-        style = "word-wrap: break-word; overflow-wrap: break-word;"
-      ),
-      div(
-        style = "margin-bottom: 0px;",
-        fileInput(ns("expDesignFile"),
-          "Upload completed experimentalDesign.csv file",
-          accept = ".csv",
-          buttonLabel = "Browse...",
-          placeholder = "No file selected"
-        )
-      ),
-
-      # Process button - only show when experimental design file is uploaded
-      conditionalPanel(
-        condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
-        div(
-          style = "margin-top: 0px;",
-          actionButton(ns("processCSVExcel"),
-            "Process Data & Continue",
-            class = "btn btn-success",
-            icon = icon("cogs"),
-            style = "width: 100%; word-wrap: break-word; white-space: normal;"
-          )
-        )
-      ),
+# 
+#       # Process button - only show when experimental design file is uploaded
+#       conditionalPanel(
+#         condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
+#         div(
+#           style = "margin-top: 0px;",
+#           actionButton(ns("processCSVExcel"),
+#             "Process Data & Continue",
+#             class = "btn btn-success",
+#             icon = icon("cogs"),
+#             style = "width: 100%; word-wrap: break-word; white-space: normal;"
+#           )
+#         )
+#       )
     )
-  )
 }
 
 # function containing setup elements for a single GCT file

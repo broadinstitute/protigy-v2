@@ -19,12 +19,22 @@ section.sidebar h4 {
   padding-left: 10px;
   margin-top: 0px;
 }
+section.sidebar h5 {
+  padding-left: 10px;
+  padding-top: 15px;
+  font-size: 12pt;
+}
 section.sidebar hr {
   margin-top: 10px;
   margin-bottom: 10px;
 }
+section.sidebar p {
+  padding-left: 10px;
+  padding-right: 10px;
+}
 section.sidebar {
   margin-top: 10px;
+  padding-left: 10px;
 }
 
 /* small inputs for sidebar: selectize inputs*/   
@@ -46,16 +56,44 @@ section.sidebar {
 
 /* small inputs for sidebar: textInput or similar inputs*/
 .small-input .form-control {
-  border-radius: 2px;
   font-size: 10pt;
+  border-radius: 2px;
   height: min-content;
   padding: 5px;
-  min-height: min-content;
+  justify-content: center;
+  align-items: center;
+}
+
+/* small inputs for file input name display */
+.small-input .btn-file {
+  font-size: 10pt;
+  padding: 5px 10px;
+  height: min-content;
+  border-radius: 2px;
+  vertical-align: middle;
+  justify-content: center;
+  align-items: center;
 }
 
 /* the labels for all inputs*/
 .small-input .control-label {
   font-weight: 400;
+}
+
+/* style for experimental design template download button */
+.download-btn-primary {
+  width: 80%;
+  margin: 0 auto; /* Centers the button horizontally */
+  display: block; /* Ensures margin auto works */
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 8;
+}
+
+/* space between icon and text */
+.download-btn-primary .fa {
+  margin-right: 15px; 
 }
 
 /* style for primary action button */

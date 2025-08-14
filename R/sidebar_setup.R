@@ -8,43 +8,26 @@ setupSidebarUI <- function(id = "setupSidebar") {
   # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
   ns <- NS(id) 
   
-  # tagList(
-  #   # file input
-  #   fileInput(ns("dataFiles"), 
-  #             paste("Choose data file(s). Supported formats: GCT, CSV, Excel. All files should include the same samples."),
-  #             multiple = TRUE,
-  #             accept = c(".gct", ".csv", ".xlsx", ".xls")),
-  #   hr(),
-  #   
-  #   # the main body of the sidebar, contents assigned in setupSidebarServer
-  #   uiOutput(ns('sideBarMain')),
-  #   
-  #   # navigation buttons on the bottom left/right of sidebar
-  #   fluidRow(
-  #     column(6, uiOutput(ns('leftButton'))),
-  #     column(6, uiOutput(ns('rightButton')))
-  #   )
-  # ) # end tagList
-  
-  # Fine-tuning formatting of initial file upload
-  tags$div(
-    style = "margin-bottom: 10px; padding: 15px; width: 100%", 
-    tagList(
-      # file input
-      fileInput(ns("dataFiles"), 
-                paste("Choose data file(s). Supported formats: GCT, CSV, Excel. All files should include the same samples."),
-                multiple = TRUE,
-                accept = c(".gct", ".csv", ".xlsx", ".xls")),
-      hr(),
-      
-      # the main body of the sidebar, contents assigned in setupSidebarServer
-      uiOutput(ns('sideBarMain')),
-      
-      # navigation buttons on the bottom left/right of sidebar
-      fluidRow(
-        column(6, uiOutput(ns('leftButton'))),
-        column(6, uiOutput(ns('rightButton')))
-      )
+  tagList(
+    add_css_attributes(
+      fileInput(
+        ns("dataFiles"),
+        "Upload data file(s). Supported formats: GCT/GCTX, CSV, Excel. All files should include the same samples.", 
+        multiple = TRUE, 
+        accept = c(".gct", ".gctx", ".csv", ".xlsx", ".xls")
+      ), 
+      classes = "small-input"
+    ), 
+    
+    hr(), 
+
+    # the main body of the sidebar, contents assigned in setupSidebarServer
+    uiOutput(ns('sideBarMain')),
+
+    # navigation buttons on the bottom left/right of sidebar
+    fluidRow(
+      column(6, uiOutput(ns('leftButton'))),
+      column(6, uiOutput(ns('rightButton')))
     )
   )
 }
