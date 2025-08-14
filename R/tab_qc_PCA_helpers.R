@@ -152,6 +152,32 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     g <- g + color_definition
   }
   
+  # Add shape scale for more than 6 shapes
+  if (!is.null(second_col_of_interest)) {
+    # Get unique values for shape variable
+    shape_var <- if (var1_display == "shape") col_of_interest else second_col_of_interest
+    unique_shapes <- unique(pca_df[[shape_var]])
+    n_shapes <- length(unique_shapes)
+    
+    if (n_shapes > 6) {
+      # Define more shapes - using a combination of different point types
+      # R has 25 built-in shapes (0-25), but some are duplicates or not suitable
+      # We'll use a good selection of distinct shapes
+      available_shapes <- c(16, 17, 15, 18, 1, 2, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 19, 20, 21, 22, 23, 24, 25)
+      
+      if (n_shapes <= length(available_shapes)) {
+        shape_values <- available_shapes[1:n_shapes]
+        names(shape_values) <- unique_shapes
+        g <- g + scale_shape_manual(values = shape_values)
+      } else {
+        # If we still need more shapes, we can cycle through them
+        shape_values <- rep(available_shapes, ceiling(n_shapes / length(available_shapes)))[1:n_shapes]
+        names(shape_values) <- unique_shapes
+        g <- g + scale_shape_manual(values = shape_values)
+      }
+    }
+  }
+  
   g
 }
 
