@@ -17,7 +17,7 @@ labelSetupUI <- function(ns, dataFileNames) {
         textInput(
           inputId = ns(paste0("Label_", file)),
           label = file,
-          placeholder = "Proteome or Prot"
+          value = "prot"
         ),
         classes = "small-input"
       )
@@ -54,7 +54,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
       condition = "true", # Always show, but could be conditional based on file upload
       div(
         class = "csv-excel-step",
-        style = "margin-bottom: 15px; padding: 15px;",
+        style = "margin-bottom: 10px; padding: 15px;",
         h5("Select Unique Identifier Column",
           style = "margin-top: 0; color: #5cb85c; font-weight: bold;"
         ),
@@ -83,7 +83,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
     # Download Template
     div(
       class = "csv-excel-step",
-      style = "margin-bottom: 15px; padding: 15px;",
+      style = "margin-bottom: 10px; padding: 15px;",
       h5("Download Experimental Design Template",
         style = "margin-top: 0; color: #337ab7; font-weight: bold;"
       ),
@@ -110,7 +110,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
     # Upload and Process
     div(
       class = "csv-excel-step",
-      style = "margin-bottom: 20px; padding: 15px; border-left: 4px solid #f0ad4e;
+      style = "margin-bottom: 10px; padding: 15px; border-left: 4px solid #f0ad4e;
                  border: 1px solid #e3e3e3; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);",
       h5("Upload Completed Template",
         style = "margin-top: 0; color: #f0ad4e; font-weight: bold;"
@@ -119,7 +119,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
         style = "word-wrap: break-word; overflow-wrap: break-word;"
       ),
       div(
-        style = "margin-bottom: 15px;",
+        style = "margin-bottom: 0px;",
         fileInput(ns("expDesignFile"),
           "Upload completed experimentalDesign.csv file",
           accept = ".csv",
@@ -132,7 +132,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
       conditionalPanel(
         condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
         div(
-          style = "margin-top: 10px;",
+          style = "margin-top: 0px;",
           actionButton(ns("processCSVExcel"),
             "Process Data & Continue",
             class = "btn btn-success",
