@@ -16,25 +16,23 @@ section.sidebar .shiny-input-container {
   font-size: 10pt;
 }
 section.sidebar h4 {
-  padding-left: 10px;
   margin-top: 0px;
+  text-align: center;
 }
 section.sidebar h5 {
-  padding-left: 10px;
   padding-top: 15px;
   font-size: 12pt;
+  text-align: center;
 }
 section.sidebar hr {
   margin-top: 10px;
   margin-bottom: 10px;
 }
 section.sidebar p {
-  padding-left: 10px;
-  padding-right: 10px;
+  text-align: center;
 }
 section.sidebar {
   margin-top: 10px;
-  padding-left: 10px;
 }
 
 /* small inputs for sidebar: selectize inputs*/   
@@ -58,26 +56,56 @@ section.sidebar {
 .small-input .form-control {
   font-size: 10pt;
   border-radius: 2px;
-  height: min-content;
-  padding: 5px;
-  justify-content: center;
-  align-items: center;
-}
-
-/* small inputs for file input name display */
-.small-input .btn-file {
-  font-size: 10pt;
-  padding: 5px 10px;
-  height: min-content;
-  border-radius: 2px;
+  /* Adjusting height and padding for better alignment and appearance */
+  height: 34px;
+  padding: 6px 12px;
   vertical-align: middle;
   justify-content: center;
   align-items: center;
 }
 
+/* New CSS block to center the file input uploader */
+.shiny-file-input-container {
+  width: 100%; /* Adjust width to make centering visible */
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
 /* the labels for all inputs*/
 .small-input .control-label {
   font-weight: 400;
+}
+
+/* Conditional identifier selector display */
+.identifier-selector-visible {
+  display: block;
+}
+
+.identifier-selector-hidden {
+  width: 90%;
+  margin: auto;
+  padding: 10px;
+  background-color: #f0f8ff;
+  border: 1px solid #d1ecf1;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.identifier-selector-hidden h5 {
+  color: #0c5460;
+  margin-top: 0px;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.identifier-selector-hidden p {
+  color: #0c5460;
+  margin-bottom: 15px;
+  font-size: 10pt;
 }
 
 /* style for experimental design template download button */
@@ -93,7 +121,7 @@ section.sidebar {
 
 /* space between icon and text */
 .download-btn-primary .fa {
-  margin-right: 15px; 
+  margin-right: 0px; 
 }
 
 /* style for primary action button */

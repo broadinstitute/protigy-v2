@@ -40,46 +40,121 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
   return(GCTs)
 }
 
-# Convert CSV/Excel data to GCT format
-# INPUT: data.frame from CSV/Excel, experimental design, file name, identifierColumn (optional)
-# OUTPUT: GCT object compatible with existing workflow
-convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn = NULL) {
-  # Determine which column contains the feature IDs
+# Determine the best identifier column for the data
+# INPUT: data.frame, optional user-specified identifier column
+# OUTPUT: list with identifier_column name and processed data
+determineIdentifierColumn <- function(data, identifierColumn = NULL) {
+  # If user specified an identifier column, validate and use it
   if (!is.null(identifierColumn) && identifierColumn %in% colnames(data)) {
-    # Use specified identifier column
-    feature_id_col <- which(colnames(data) == identifierColumn)
-    feature_ids <- data[[feature_id_col]]
-    
-    # Get all sample IDs from data (all columns except identifier column)
-    all_sample_ids <- colnames(data[, -feature_id_col, drop = FALSE])
-  } else {
-    # Default: use first column as feature IDs
-    feature_ids <- data[[1]]
-    
-    # Get all sample IDs from data (all columns except first)
-    all_sample_ids <- colnames(data[, -1, drop = FALSE])
+    return(list(
+      identifier_column = identifierColumn,
+      data = data,
+      method = "user_specified"
+    ))
   }
+  
+  # Check for PG.ProteinGroups column and process it
+  if ("PG.ProteinGroups" %in% colnames(data)) {
+    processed_data <- extractFirstProteinGroup(data)
+    return(list(
+      identifier_column = "firstProteinGroup",
+      data = processed_data,
+      method = "first_protein_group"
+    ))
+  }
+  
+  # If PG.ProteinGroups doesn't exist, use first column as fallback
+  # This will trigger user selection in the UI
+  return(list(
+    identifier_column = colnames(data)[1],
+    data = data,
+    method = "first_column_fallback"
+  ))
+}
+
+# Extract first protein group from PG.ProteinGroups column
+# INPUT: data.frame with PG.ProteinGroups column
+# OUTPUT: data.frame with new firstProteinGroup column
+extractFirstProteinGroup <- function(data) {
+  if (!"PG.ProteinGroups" %in% colnames(data)) {
+    stop("PG.ProteinGroups column not found in data")
+  }
+  
+  # Extract first protein group (everything before first semicolon)
+  protein_groups <- data$PG.ProteinGroups
+  first_groups <- sapply(protein_groups, function(x) {
+    if (is.na(x) || x == "") {
+      return(x)
+    }
+    # Split on semicolon and take first element, trim whitespace
+    first_group <- trimws(strsplit(as.character(x), ";")[[1]][1])
+    return(first_group)
+  }, USE.NAMES = FALSE)
+  
+  # Add new column to data
+  data$firstProteinGroup <- first_groups
+  return(data)
+}
+
+# Validate that identifier column has unique values
+# INPUT: data.frame, identifier column name
+# OUTPUT: TRUE if valid, throws error if duplicates found
+validateUniqueIdentifiers <- function(data, identifier_column) {
+  if (!identifier_column %in% colnames(data)) {
+    stop("Identifier column '", identifier_column, "' not found in data")
+  }
+  
+  identifier_values <- data[[identifier_column]]
+  
+  # Remove NA values for duplicate checking
+  non_na_values <- identifier_values[!is.na(identifier_values)]
+  
+  # Check for duplicates
+  if (any(duplicated(non_na_values))) {
+    duplicate_values <- non_na_values[duplicated(non_na_values)]
+    stop("Duplicate values found in identifier column '", identifier_column, "': ", 
+         paste(unique(duplicate_values), collapse = ", "))
+  }
+  
+  # Check for empty strings
+  empty_values <- sum(non_na_values == "", na.rm = TRUE)
+  if (empty_values > 0) {
+    stop("Empty values found in identifier column '", identifier_column, "' (", empty_values, " rows)")
+  }
+  
+  return(TRUE)
+}
+
+# Convert CSV/Excel data to GCT format
+convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn = NULL) {
+  
+  # Determine the best identifier column using robust logic
+  identifier_result <- determineIdentifierColumn(data, identifierColumn)
+  processed_data <- identifier_result$data
+  final_identifier_column <- identifier_result$identifier_column
+  
+  # Validate that the identifier column has unique values
+  validateUniqueIdentifiers(processed_data, final_identifier_column)
+  
+  # Get feature IDs from the determined identifier column
+  feature_id_col <- which(colnames(processed_data) == final_identifier_column)
+  feature_ids <- processed_data[[feature_id_col]]
+  
+  # Get all sample IDs from data (all columns except identifier column)
+  all_sample_ids <- colnames(processed_data[, -feature_id_col, drop = FALSE])
   
   # Filter to only experimental columns (those with valid metadata)
   experimental_sample_ids <- filterExperimentalColumns(all_sample_ids, experimentalDesign)
   
   # Check if we have any experimental columns
   if (length(experimental_sample_ids) == 0) {
-    stop("No experimental columns found with valid metadata (non-NA experiment and condition) for file: ", file_name)
+    stop("No experimental columns found with valid metadata for file: ", file_name)
   }
   
   # Extract data matrix using only experimental columns
-  if (!is.null(identifierColumn) && identifierColumn %in% colnames(data)) {
-    # Include identifier column and experimental columns
-    experimental_columns <- c(feature_id_col, which(colnames(data) %in% experimental_sample_ids))
-    filtered_data <- data[, experimental_columns, drop = FALSE]
-    data_matrix <- as.matrix(filtered_data[, -1, drop = FALSE]) # Remove identifier column from matrix
-  } else {
-    # Default logic: first column is identifier
-    experimental_columns <- c(1, which(colnames(data) %in% experimental_sample_ids))
-    filtered_data <- data[, experimental_columns, drop = FALSE]
-    data_matrix <- as.matrix(filtered_data[, -1, drop = FALSE]) # Remove first column from matrix
-  }
+  experimental_columns <- c(feature_id_col, which(colnames(processed_data) %in% experimental_sample_ids))
+  filtered_data <- processed_data[, experimental_columns, drop = FALSE]
+  data_matrix <- as.matrix(filtered_data[, -1, drop = FALSE]) # Remove identifier column from matrix
   rownames(data_matrix) <- feature_ids
   
   # Get final sample IDs (should be the experimental ones)

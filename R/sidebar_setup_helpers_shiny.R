@@ -26,59 +26,75 @@ labelSetupUI <- function(ns, dataFileNames) {
 }
 
 # function for CSV/Excel setup UI
-csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
+csvExcelSetupUI <- function(
+    ns, 
+    dataFiles, 
+    identifierColumns = NULL,
+    showIdentifierSelector = TRUE,
+    detectedIdentifier = NULL,
+    detectionMethod = NULL
+    ) {
   tagList(
     h4(
       "CSV/Excel File Handler"
-      ),
+    ),
     
-    h5(
-      "Select Unique Idetnifier Column"
-    ),
-
-    # Select unique identifier
-    add_css_attributes(
-      selectInput(
-        ns("identifierColumn"), 
-        "Identifier Column:", 
-        choice = identifierColumns, 
-        selected = identifierColumns[1]
-      ), 
-      classes = "small-input"
-    ),
+    # Conditionally show identifier selector only when needed
+    if (showIdentifierSelector) {
+      tagList(
+        h5("Define Identifier Column"),
+        p("Your data doesn't contain a 'PG.ProteinGroups' column. Please select which column to use as the unique identifier."),
+        add_css_attributes(
+          selectInput(
+            ns("identifierColumn"),
+            "Identifier Column:",
+            choices = identifierColumns,
+            selected = if(length(identifierColumns) > 0) identifierColumns[1] else NULL
+          ),
+          classes = "small-input identifier-selector-visible"
+        )
+      )
+    } else {
+      div(
+        class = "identifier-selector-hidden",
+        h5("Identifier Column Detected!"),
+        if (!is.null(detectedIdentifier)) {
+          p("Using identifier column: ", strong(detectedIdentifier))
+        } else {
+          p("Using automatic identifier detection (first protein group from PG.ProteinGroups).")
+        }
+      )
+    },
 
     # Download experimental design template
-    h5("Download Experimental Design Template"), 
-    
-    p("Click below to download the experimental design template specific to your data."), 
-    
+    h5("Download Experimental Design Template"),
+    p("Click below to download the experimental design template specific to your data."),
     add_css_attributes(
-        downloadButton(
-          ns("downloadExpDesign"),
-          "Download experimentalDesign.csv", 
-          class = "btn btn-primary",
-          icon = icon("download")
+      downloadButton(
+        ns("downloadExpDesign"),
+        "Download",
+        class = "btn btn-primary",
+        icon = icon("download")
       ),
       classes = "download-btn-primary"
     ),
-    
+
     # Upload experimental design file
-    h5("Upload Experimental Design"), 
-    
+    h5("Upload Experimental Design"),
     add_css_attributes(
       fileInput(
-        ns("expDesignFile"), 
-        NULL, 
-        accept = ".csv", 
-        buttonLabel = "Browse", 
+        ns("expDesignFile"),
+        NULL,
+        accept = ".csv",
+        buttonLabel = "Browse",
         placeholder = "No file selected"
-      ), 
-      classes = "small-input"
+      ),
+      classes = "small-input shiny-file-input-container"
     ),
     
+    # Once experimental design is uploaded, the user can start analysis
     conditionalPanel(
       condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
-      
       add_css_attributes(
         actionButton(
           ns("processCSVExcel"),
@@ -89,21 +105,7 @@ csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
         )
       )
     ),
-# 
-#       # Process button - only show when experimental design file is uploaded
-#       conditionalPanel(
-#         condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
-#         div(
-#           style = "margin-top: 0px;",
-#           actionButton(ns("processCSVExcel"),
-#             "Process Data & Continue",
-#             class = "btn btn-success",
-#             icon = icon("cogs"),
-#             style = "width: 100%; word-wrap: break-word; white-space: normal;"
-#           )
-#         )
-#       )
-    )
+  )
 }
 
 # function containing setup elements for a single GCT file

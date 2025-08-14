@@ -9,14 +9,19 @@ setupSidebarUI <- function(id = "setupSidebar") {
   ns <- NS(id) 
   
   tagList(
+    div(
+      h4("Upload data file(s)"), 
+      style = "margin-top: 20px;"
+    ),
+    
     add_css_attributes(
       fileInput(
         ns("dataFiles"),
-        "Upload data file(s). Supported formats: GCT/GCTX, CSV, Excel. All files should include the same samples.", 
+        "All files must include the same samples (Supports GCT/GCTX, CSV, Excel)", 
         multiple = TRUE, 
         accept = c(".gct", ".gctx", ".csv", ".xlsx", ".xls")
       ), 
-      classes = "small-input"
+      classes = "small-input shiny-file-input-container"
     ), 
     
     hr(), 
@@ -511,35 +516,55 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # CSV/Excel workflow function
     csvExcelWorkflow <- function() {
-      # Extract column names from uploaded files to populate identifier selector
-      identifier_columns <- tryCatch({
+      # Check if automatic identifier detection is possible
+      identifier_info <- tryCatch({
+        needs_user_selection <- FALSE
         all_columns <- c()
+        detected_identifier <- NULL
+        detection_method <- NULL
+        
         for (i in seq_len(nrow(input$dataFiles))) {
           file_path <- input$dataFiles$datapath[i]
           file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
           
           if (file_ext == "csv") {
-            data <- utils::read.csv(file_path, nrows = 1, stringsAsFactors = FALSE)
-            columns <- names(data)
+            data <- utils::read.csv(file_path, nrows = 5, stringsAsFactors = FALSE)
           } else if (file_ext %in% c("xlsx", "xls")) {
-            data <- readxl::read_excel(file_path, n_max = 1)
-            columns <- names(data)
+            data <- readxl::read_excel(file_path, n_max = 5)
           } else {
-            columns <- c()
+            next
           }
           
+          columns <- names(data)
           all_columns <- c(all_columns, columns)
+          
+          # Determine what identifier will be used
+          if ("PG.ProteinGroups" %in% columns) {
+            detected_identifier <- "firstProteinGroup (first protein group in PG.ProteinGroups)"
+            detection_method <- "first_protein_group"
+          } else {
+            needs_user_selection <- TRUE
+          }
         }
         
-        # Return unique columns
-        unique(all_columns)
+        list(
+          columns = unique(all_columns),
+          needs_user_selection = needs_user_selection,
+          detected_identifier = detected_identifier,
+          detection_method = detection_method
+        )
       }, error = function(e) {
-        c() # Return empty vector if error
+        list(columns = c(), needs_user_selection = TRUE, detected_identifier = NULL, detection_method = NULL)
       })
       
-      output$sideBarMain <- renderUI({csvExcelSetupUI(ns = ns, 
-                                                      dataFiles = input$dataFiles,
-                                                      identifierColumns = identifier_columns)})
+      output$sideBarMain <- renderUI({
+        csvExcelSetupUI(ns = ns, 
+                       dataFiles = input$dataFiles,
+                       identifierColumns = identifier_info$columns,
+                       showIdentifierSelector = identifier_info$needs_user_selection,
+                       detectedIdentifier = identifier_info$detected_identifier,
+                       detectionMethod = identifier_info$detection_method)
+      })
       output$rightButton <- NULL
       output$leftButton <- NULL
     }
