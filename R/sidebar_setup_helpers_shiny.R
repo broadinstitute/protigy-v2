@@ -10,65 +10,66 @@
 
 # function for label assignment UI
 labelSetupUI <- function(ns, dataFileNames) {
-  tagList(
-    h4("Assign labels"),
-    lapply(dataFileNames, function(file) {
-      add_css_attributes(
-        textInput(
-          inputId = ns(paste0("Label_", file)),
-          label = file,
-          value = "prot"
-        ),
-        classes = "small-input"
-      )
-    })
-  )
+  tagList(h4("Assign labels"), lapply(dataFileNames, function(file) {
+    add_css_attributes(textInput(
+      inputId = ns(paste0("Label_", file)),
+      label = file,
+      value = "prot"
+    ),
+    classes = "small-input")
+  }))
 }
 
 # function for CSV/Excel setup UI
-csvExcelSetupUI <- function(
-    ns, 
-    dataFiles, 
-    identifierColumns = NULL,
-    showIdentifierSelector = TRUE,
-    detectedIdentifier = NULL,
-    detectionMethod = NULL
-    ) {
+csvExcelSetupUI <- function(ns,
+                            dataFiles,
+                            identifierColumns = NULL,
+                            showIdentifierSelector = TRUE,
+                            detectedIdentifier = NULL,
+                            detectionMethod = NULL) {
   tagList(
-    h4(
-      "CSV/Excel File Handler"
-    ),
+    h4("CSV/Excel File Handler"),
     
     # Conditionally show identifier selector only when needed
     if (showIdentifierSelector) {
       tagList(
         h5("Define Identifier Column"),
-        p("Your data doesn't contain a 'PG.ProteinGroups' column. Please select which column to use as the unique identifier."),
+        p(
+          "Your data doesn't contain a 'PG.ProteinGroups' column. Please select which column to use as the unique identifier."
+        ),
         add_css_attributes(
           selectInput(
             ns("identifierColumn"),
             "Identifier Column:",
             choices = identifierColumns,
-            selected = if(length(identifierColumns) > 0) identifierColumns[1] else NULL
+            selected = if (length(identifierColumns) > 0)
+              identifierColumns[1]
+            else
+              NULL
           ),
+          style = "
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          ",
           classes = "small-input identifier-selector-visible"
         )
       )
     } else {
-      div(
-        class = "identifier-selector-hidden",
-        h5("Identifier Column Detected!"),
-        if (!is.null(detectedIdentifier)) {
-          p("Using identifier column: ", strong(detectedIdentifier))
-        } else {
-          p("Using automatic identifier detection (first protein group from PG.ProteinGroups).")
-        }
-      )
+      div(class = "identifier-selector-hidden", h5("Identifier Column Detected!"), if (!is.null(detectedIdentifier)) {
+        p("Using identifier column: ", strong(detectedIdentifier))
+      } else {
+        p(
+          "Using automatic identifier detection (first protein group from PG.ProteinGroups)."
+        )
+      })
     },
-
+    
     # Download experimental design template
     h5("Download Experimental Design Template"),
-    p("Click below to download the experimental design template specific to your data."),
+    p(
+      "Click below to download the experimental design template specific to your data."
+    ),
     add_css_attributes(
       downloadButton(
         ns("downloadExpDesign"),
@@ -78,7 +79,7 @@ csvExcelSetupUI <- function(
       ),
       classes = "download-btn-primary"
     ),
-
+    
     # Upload experimental design file
     h5("Upload Experimental Design"),
     add_css_attributes(
@@ -120,20 +121,18 @@ gctSetupUI <- function(ns,
                        GCTs) {
   # groups column choices pulled from cdesc
   groups_choices <- names(GCTs[[label]]@cdesc)
-
+  
   # find which groups are present in all omes
-  groups_choices_all_omes <- base::Reduce(
-    base::intersect,
-    lapply(GCTs, function(gct) names(gct@cdesc))
-  )
-
+  groups_choices_all_omes <- base::Reduce(base::intersect, lapply(GCTs, function(gct)
+    names(gct@cdesc)))
+  
   tagList(
     h4(
       "Setup for ",
       strong(span(label, style = "color:#a4dc84")),
       paste0(" (", current_place, "/", max_place, ")")
     ),
-
+    
     ## groups column selection
     add_css_attributes(
       selectInput(
@@ -148,7 +147,7 @@ gctSetupUI <- function(ns,
       ),
       classes = "small-input"
     ),
-
+    
     ## intensity data input
     add_css_attributes(
       selectInput(
@@ -159,7 +158,7 @@ gctSetupUI <- function(ns,
       ),
       classes = "small-input"
     ),
-
+    
     ## log transformation input
     add_css_attributes(
       selectInput(
@@ -170,7 +169,7 @@ gctSetupUI <- function(ns,
       ),
       classes = "small-input"
     ),
-
+    
     ## data normalization input
     add_css_attributes(
       selectInput(
@@ -181,7 +180,7 @@ gctSetupUI <- function(ns,
       ),
       classes = "small-input"
     ),
-
+    
     ## group-wise normalization
     conditionalPanel(
       condition = paste0("input['", label, "_data_normalization'] != 'None'"),
@@ -195,12 +194,16 @@ gctSetupUI <- function(ns,
       ),
       ns = ns
     ),
-
+    
     ## group-wise normalization column
     conditionalPanel(
       condition = paste0(
-        "(input['", label, "_data_normalization'] != 'None')",
-        " && (input['", label, "_group_normalization'])"
+        "(input['",
+        label,
+        "_data_normalization'] != 'None')",
+        " && (input['",
+        label,
+        "_group_normalization'])"
       ),
       add_css_attributes(
         selectInput(
@@ -217,7 +220,7 @@ gctSetupUI <- function(ns,
       ),
       ns = ns
     ),
-
+    
     ## max missing value input
     add_css_attributes(
       numericInput(
@@ -231,7 +234,7 @@ gctSetupUI <- function(ns,
       classes = "small-input",
       styles = "padding-bottom: 5px"
     ),
-
+    
     ## data filter input
     add_css_attributes(
       selectInput(
@@ -242,7 +245,7 @@ gctSetupUI <- function(ns,
       ),
       classes = "small-input"
     ),
-
+    
     ## percentile for standard deviation filter
     conditionalPanel(
       condition = paste0("input['", label, "_data_filter'] == 'StdDev'"),
@@ -258,7 +261,7 @@ gctSetupUI <- function(ns,
       ),
       ns = ns
     ),
-
+    
     ## apply to all checkbox
     if (max_place > 1) {
       # only shows up if the groups column selection is present in all -omes
@@ -266,16 +269,23 @@ gctSetupUI <- function(ns,
       # column is also present in all omes
       conditionalPanel(
         condition = paste0(
-          "['", paste(groups_choices_all_omes, collapse = "', '"),
-          "'].includes(input['", label, "_annotation_column']) ",
-          "&& (!input['", label, "_group_normalization'] || ",
-          "['", paste(groups_choices_all_omes, collapse = "', '"),
-          "'].includes(input['", label, "_group_normalization_column']))"
+          "['",
+          paste(groups_choices_all_omes, collapse = "', '"),
+          "'].includes(input['",
+          label,
+          "_annotation_column']) ",
+          "&& (!input['",
+          label,
+          "_group_normalization'] || ",
+          "['",
+          paste(groups_choices_all_omes, collapse = "', '"),
+          "'].includes(input['",
+          label,
+          "_group_normalization_column']))"
         ),
-        add_css_attributes(
-          checkboxInput(ns("applyToAll"), "Apply settings to all -omes"),
-          classes = "small-input"
-        ),
+        add_css_attributes(checkboxInput(
+          ns("applyToAll"), "Apply settings to all -omes"
+        ), classes = "small-input"),
         ns = ns
       )
     }
@@ -285,15 +295,11 @@ gctSetupUI <- function(ns,
 # function for advanced settings UI
 advancedSettingsUI <- function(ns, parameters) {
   labels <- names(parameters)
-
+  
   if (length(labels) > 1) {
-    tagList(
-      fluidRow(column(12, selectInput(ns("default_ome"),
-        "Default -ome",
-        choices = labels
-      ))),
-      hr()
-    )
+    tagList(fluidRow(column(
+      12, selectInput(ns("default_ome"), "Default -ome", choices = labels)
+    )), hr())
   }
 }
 
@@ -315,15 +321,17 @@ validate_labels <- function(all_labels) {
       stop(paste("Invalid label for", filename))
     }
     if (label == "multi_ome") {
-      stop("Invalid label for ", filename, ", 'multi_ome' is a reserved word.")
+      stop("Invalid label for ",
+           filename,
+           ", 'multi_ome' is a reserved word.")
     }
   }
-
+  
   # check that labels aren't repeated
   if (length(unique(all_labels)) != length(all_labels)) {
     stop("All labels must be unique")
   }
-
+  
   return(TRUE)
 }
 
