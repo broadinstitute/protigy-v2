@@ -21,15 +21,19 @@ labelSetupUI <- function(ns, dataFileNames) {
 }
 
 # function for CSV/Excel setup UI
-csvExcelSetupUI <- function(ns,
-                            dataFiles,
-                            identifierColumns = NULL,
-                            showIdentifierSelector = TRUE,
-                            detectedIdentifier = NULL,
-                            detectionMethod = NULL) {
+csvExcelSetupUI <- function(
+  ns,
+  dataFiles,
+  identifierColumns = NULL,
+  showIdentifierSelector = TRUE,
+  detectedIdentifier = NULL,
+  detectionMethod = NULL
+) {
   tagList(
-    h4("CSV/Excel File Handler"),
-    
+    h4(
+      "CSV/Excel File Handler"
+    ),
+
     # Conditionally show identifier selector only when needed
     if (showIdentifierSelector) {
       tagList(
@@ -42,10 +46,11 @@ csvExcelSetupUI <- function(ns,
             ns("identifierColumn"),
             "Identifier Column:",
             choices = identifierColumns,
-            selected = if (length(identifierColumns) > 0)
+            selected = if (length(identifierColumns) > 0) {
               identifierColumns[1]
-            else
+            } else {
               NULL
+            }
           ),
           style = "
           white-space: nowrap;
@@ -56,15 +61,97 @@ csvExcelSetupUI <- function(ns,
         )
       )
     } else {
-      div(class = "identifier-selector-hidden", h5("Identifier Column Detected!"), if (!is.null(detectedIdentifier)) {
-        p("Using identifier column: ", strong(detectedIdentifier))
-      } else {
-        p(
-          "Using automatic identifier detection (first protein group from PG.ProteinGroups)."
-        )
-      })
+      div(
+        class = "identifier-selector-hidden",
+        h5("Identifier Column Detected!"),
+        if (!is.null(detectedIdentifier)) {
+          p("Using identifier column: ", strong(detectedIdentifier))
+        } else {
+          p(
+            "Using automatic identifier detection (first protein group from PG.ProteinGroups)."
+          )
+        }
+      )
     },
-    
+
+    # Prompt user to import protein group-gene symbol mapping file
+    add_css_attributes(
+      checkboxInput(
+        ns("geneSymbolMapping"),
+        "Upload mapping reference to identifiers?"
+      )
+    ),
+
+    conditionalPanel(
+      condition = paste0("input['", ns("geneSymbolMapping"), "'] == true"), 
+      add_css_attributes(
+        fileInput(
+          ns("uploadMappingFile"),
+          "Upload gene symbol mapping reference (Supports CSV, Excel)",
+          multiple = FALSE,
+          accept = c(".csv", ".xlsx", ".xls")
+        ),
+        classes = "small-input shiny-file-input-container"
+      ),
+      
+      # Column selectors for mapping file (shown after file upload)
+      conditionalPanel(
+        condition = paste0("output['", ns("mappingFileUploaded"), "']"),
+        h5("Configure Gene Symbol Mapping"),
+        add_css_attributes(
+          selectInput(
+            ns("mappingProteinColumn"),
+            "Protein Group Column in Mapping File:",
+            choices = NULL
+          ),
+          classes = "small-input"
+        ),
+        add_css_attributes(
+          selectInput(
+            ns("mappingGeneColumn"),
+            "Gene Symbol Column in Mapping File:",
+            choices = NULL
+          ),
+          classes = "small-input"
+        ),
+        add_css_attributes(
+          actionButton(
+            ns("performMapping"),
+            "Map Gene Symbols",
+            class = "btn btn-primary",
+            icon = icon("link"),
+            style = "width: 80%; margin: 10px auto; display: block;"
+          )
+        ),
+        
+        # Display mapping results
+        conditionalPanel(
+          condition = paste0("output['", ns("mappingCompleted"), "']"),
+          div(
+            id = ns("mappingResults"),
+            style = "background-color: #f0f8ff; border: 1px solid #d1ecf1; border-radius: 4px; padding: 10px; margin: 10px 0;",
+            h5("Mapping Results", style = "color: #0c5460; margin-top: 0;"),
+            uiOutput(ns("mappingStatsOutput"))
+          ),
+          
+          # Choice to use gene symbols as identifier
+          h5("Use Gene Symbols as Identifier?"),
+          add_css_attributes(
+            radioButtons(
+              ns("useGeneSymbolAsIdentifier"),
+              NULL,
+              choices = list(
+                "Use gene symbols as identifier column" = "gene_symbol",
+                "Keep current identifier column" = "current"
+              ),
+              selected = "current"
+            ),
+            classes = "small-input"
+          )
+        )
+      )
+    ),
+
     # Download experimental design template
     h5("Download Experimental Design Template"),
     p(
@@ -92,7 +179,7 @@ csvExcelSetupUI <- function(ns,
       ),
       classes = "small-input shiny-file-input-container"
     ),
-    
+
     # Once experimental design is uploaded, the user can start analysis
     conditionalPanel(
       condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
@@ -112,13 +199,15 @@ csvExcelSetupUI <- function(ns,
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the
 # setupDefaults.yaml!
-gctSetupUI <- function(ns,
-                       label,
-                       parameter_choices,
-                       parameters,
-                       current_place,
-                       max_place,
-                       GCTs) {
+gctSetupUI <- function(
+  ns,
+  label,
+  parameter_choices,
+  parameters,
+  current_place,
+  max_place,
+  GCTs
+) {
   # groups column choices pulled from cdesc
   groups_choices <- names(GCTs[[label]]@cdesc)
   
@@ -297,9 +386,13 @@ advancedSettingsUI <- function(ns, parameters) {
   labels <- names(parameters)
   
   if (length(labels) > 1) {
-    tagList(fluidRow(column(
-      12, selectInput(ns("default_ome"), "Default -ome", choices = labels)
-    )), hr())
+    tagList(
+      fluidRow(column(
+        12,
+        selectInput(ns("default_ome"), "Default -ome", choices = labels)
+      )),
+      hr()
+    )
   }
 }
 

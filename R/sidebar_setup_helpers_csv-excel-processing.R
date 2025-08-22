@@ -4,9 +4,10 @@
 ################################################################################
 
 # Process CSV/Excel files with experimental design to create GCT objects
-# INPUT: list of data files, experimental design data.frame, identifierColumn (optional)
+# INPUT: list of data files, experimental design data.frame, identifierColumn (optional), gene mapping parameters (optional)
 # OUTPUT: list of GCT objects (same format as existing GCT workflow)
-processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn = NULL) {
+processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn = NULL, 
+                                mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
   GCTs <- list()
   
   # Process each file
@@ -26,7 +27,8 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
       }
       
       # Convert to GCT object
-      gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifierColumn)
+      gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifierColumn, 
+                             mappingFilePath, mappingProteinCol, mappingGeneCol)
       
       # Create a simple label from filename (remove extension)
       label <- tools::file_path_sans_ext(file_name)
@@ -126,7 +128,8 @@ validateUniqueIdentifiers <- function(data, identifier_column) {
 }
 
 # Convert CSV/Excel data to GCT format
-convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn = NULL) {
+convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn = NULL,
+                        mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
   
   # Determine the best identifier column using robust logic
   identifier_result <- determineIdentifierColumn(data, identifierColumn)
@@ -168,6 +171,50 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn =
   )
   rownames(rdesc) <- feature_ids
   
+  # Add gene mapping if mapping file is provided
+  if (!is.null(mappingFilePath) && !is.null(mappingProteinCol) && !is.null(mappingGeneCol)) {
+    tryCatch({
+      # Source the gene mapping functions if not already loaded
+      if (!exists("performGeneMapping")) {
+        source("R/sidebar_setup_helpers_gene-mapping.R")
+      }
+      
+      # Determine which column contains protein groups for mapping
+      working_protein_col <- final_identifier_column
+      if (identifier_result$method == "first_protein_group") {
+        # If we extracted first protein group, use original PG.ProteinGroups column
+        working_protein_col <- "PG.ProteinGroups"
+      }
+      
+      # Read mapping file
+      mapping_data <- readMappingFile(mappingFilePath)
+      
+      # Create temporary data frame with protein groups for mapping
+      temp_working_data <- data.frame(
+        protein_group = processed_data[[working_protein_col]],
+        stringsAsFactors = FALSE
+      )
+      
+      # Perform gene mapping
+      mapping_result <- performGeneMapping(
+        working_data = temp_working_data,
+        mapping_data = mapping_data,
+        working_protein_col = "protein_group",
+        mapping_protein_col = mappingProteinCol,
+        mapping_gene_col = mappingGeneCol
+      )
+      
+      # Add gene symbols to rdesc
+      rdesc$gene_symbol <- mapping_result$mapped_data$gene_symbol
+      
+      # Store mapping statistics for later use
+      attr(rdesc, "mapping_stats") <- mapping_result$mapping_stats
+      
+    }, error = function(e) {
+      warning("Gene mapping failed: ", e$message, ". Continuing without gene mapping.")
+    })
+  }
+  
   # Create cdesc (column descriptor) from experimental design
   cdesc <- createCdesc(sample_ids, experimentalDesign, file_name)
   
@@ -193,6 +240,7 @@ filterExperimentalColumns <- function(sample_ids, experimentalDesign) {
   
   if (length(metadata_columns) == 0) {
     # No metadata columns - treat all as non-experimental
+    warning("No metadata columns found in experimental design. No experimental columns will be included.")
     return(character(0))
   }
   
@@ -201,12 +249,45 @@ filterExperimentalColumns <- function(sample_ids, experimentalDesign) {
   valid_samples <- rep(FALSE, length(sample_ids))
   
   for (col in metadata_columns) {
-    col_valid <- !is.na(exp_design_matched[[col]]) & exp_design_matched[[col]] != ""
-    valid_samples <- valid_samples | col_valid
+    # Handle cases where exp_design_matched has NA rows (samples not in experimental design)
+    if (col %in% colnames(exp_design_matched)) {
+      col_values <- exp_design_matched[[col]]
+      # Check for valid values: not NA, not empty string, not just whitespace
+      col_valid <- !is.na(col_values) & 
+                  as.character(col_values) != "" & 
+                  trimws(as.character(col_values)) != ""
+      
+      # Handle NA rows in exp_design_matched (columns not found in experimental design)
+      col_valid[is.na(exp_design_matched$columnName)] <- FALSE
+      
+      valid_samples <- valid_samples | col_valid
+    }
+  }
+  
+  # Filter out samples that weren't found in experimental design
+  samples_found_in_design <- !is.na(exp_design_matched$columnName)
+  valid_samples <- valid_samples & samples_found_in_design
+  
+  valid_sample_ids <- sample_ids[valid_samples]
+  
+  # Provide informative feedback
+  if (length(valid_sample_ids) == 0) {
+    not_found <- sum(!samples_found_in_design)
+    no_metadata <- sum(samples_found_in_design & !valid_samples)
+    
+    error_msg <- "No valid experimental columns found."
+    if (not_found > 0) {
+      error_msg <- paste(error_msg, paste(not_found, "column(s) not found in experimental design."))
+    }
+    if (no_metadata > 0) {
+      error_msg <- paste(error_msg, paste(no_metadata, "column(s) have no valid metadata (all NA or empty)."))
+    }
+    
+    stop(error_msg, " Please check your experimental design file.")
   }
   
   # Return only the sample IDs that have valid metadata
-  return(sample_ids[valid_samples])
+  return(valid_sample_ids)
 }
 
 # Create column descriptor (cdesc) from experimental design
@@ -219,7 +300,8 @@ createCdesc <- function(sample_ids, experimentalDesign, file_name) {
   # Check for missing matches (this should not happen with filtered sample_ids)
   if (any(is.na(exp_design_matched$columnName))) {
     missing_samples <- sample_ids[is.na(exp_design_matched$columnName)]
-    stop("Sample IDs not found in experimental design: ", paste(missing_samples, collapse = ", "))
+    stop("Sample IDs not found in experimental design: ", paste(missing_samples, collapse = ", "), 
+         "\nThis should not happen if filterExperimentalColumns() was used correctly.")
   }
   
   # Get metadata columns (all columns except columnName)
@@ -233,7 +315,16 @@ createCdesc <- function(sample_ids, experimentalDesign, file_name) {
   
   # Add all metadata columns from experimental design
   for (col in metadata_columns) {
-    cdesc[[col]] <- exp_design_matched[[col]]
+    if (col %in% colnames(exp_design_matched)) {
+      # Clean up the metadata values
+      col_values <- exp_design_matched[[col]]
+      # Convert empty strings and whitespace-only strings to NA for consistency
+      col_values[trimws(as.character(col_values)) == ""] <- NA
+      cdesc[[col]] <- col_values
+    } else {
+      # Add column with NA values if not found (shouldn't happen normally)
+      cdesc[[col]] <- rep(NA, length(sample_ids))
+    }
   }
   
   rownames(cdesc) <- sample_ids
@@ -269,14 +360,16 @@ createCSVExcelParameters <- function(dataFiles) {
 }
 
 # Process CSV/Excel workflow to create objects compatible with existing GCT workflow
-# INPUT: data files, experimental design, identifierColumn (optional)
+# INPUT: data files, experimental design, identifierColumn (optional), gene mapping parameters (optional)
 # OUTPUT: list with GCTs and parameters (same format as GCT workflow)
-processCSVExcelWorkflow <- function(dataFiles, experimentalDesign, identifierColumn = NULL) {
+processCSVExcelWorkflow <- function(dataFiles, experimentalDesign, identifierColumn = NULL,
+                                   mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
   # Validate experimental design
   validateExperimentalDesign(experimentalDesign)
   
   # Process files to create GCT objects
-  GCTs <- processCSVExcelFiles(dataFiles, experimentalDesign, identifierColumn)
+  GCTs <- processCSVExcelFiles(dataFiles, experimentalDesign, identifierColumn,
+                              mappingFilePath, mappingProteinCol, mappingGeneCol)
   
   # Create parameters
   parameters <- createCSVExcelParameters(dataFiles)
