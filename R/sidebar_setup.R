@@ -71,9 +71,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
     
     
-    ### STEP 1: LABEL ASSIGNMENT ###
-    
-    # once files uploaded, display label assignment
+    ### Label Assignment ###
+    # More robust handling of different file formats 
+    # Once files uploaded, display label assignment
     observeEvent(
       eventExpr = input$dataFiles, 
       ignoreInit = TRUE,
@@ -569,11 +569,27 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       output$leftButton <- NULL
     }
     
+    # Reactive values for gene mapping
+    mappingFileData <- reactiveVal(NULL)
+    mappingStats <- reactiveVal(NULL)
+    
     # Reactive output to control process button visibility
     output$expDesignFileUploaded <- reactive({
       return(!is.null(input$expDesignFile))
     })
     outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
+    
+    # Reactive output to control mapping file uploaded visibility
+    output$mappingFileUploaded <- reactive({
+      return(!is.null(input$uploadMappingFile))
+    })
+    outputOptions(output, "mappingFileUploaded", suspendWhenHidden = FALSE)
+    
+    # Reactive output to control mapping completed visibility
+    output$mappingCompleted <- reactive({
+      return(!is.null(mappingStats()))
+    })
+    outputOptions(output, "mappingCompleted", suspendWhenHidden = FALSE)
     
     # Download handler for experimental design template
     output$downloadExpDesign <- downloadHandler(
@@ -598,6 +614,108 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       }
     )
     
+    # Handle mapping file upload
+    observeEvent(input$uploadMappingFile, {
+      req(input$uploadMappingFile)
+      
+      tryCatch({
+        # Read mapping file to get column names
+        if (!exists("readMappingFile")) {
+          source("R/sidebar_setup_helpers_gene-mapping.R")
+        }
+        mapping_data <- readMappingFile(input$uploadMappingFile$datapath)
+        mappingFileData(mapping_data)
+        
+        # Update column choices
+        column_choices <- colnames(mapping_data)
+        updateSelectInput(session, "mappingProteinColumn", choices = column_choices)
+        updateSelectInput(session, "mappingGeneColumn", choices = column_choices)
+        
+      }, error = function(e) {
+        shinyalert::shinyalert(
+          title = "Error",
+          text = paste("Failed to read mapping file:", e$message),
+          type = "error"
+        )
+        mappingFileData(NULL)
+      })
+    })
+    
+    # Handle gene mapping process
+    observeEvent(input$performMapping, {
+      req(mappingFileData(), input$mappingProteinColumn, input$mappingGeneColumn)
+      
+      tryCatch({
+        # Check if data files are uploaded
+        if (is.null(input$dataFiles)) {
+          shinyalert::shinyalert(
+            title = "No Data Files",
+            text = "Please upload data files before performing gene mapping.",
+            type = "warning"
+          )
+          return()
+        }
+        
+        # Perform test mapping on first data file to get statistics
+        file_path <- input$dataFiles$datapath[1]
+        file_ext <- tools::file_ext(tolower(input$dataFiles$name[1]))
+        
+        if (file_ext == "csv") {
+          test_data <- utils::read.csv(file_path, stringsAsFactors = FALSE)
+        } else if (file_ext %in% c("xlsx", "xls")) {
+          test_data <- readxl::read_excel(file_path)
+        }
+        
+        # Determine protein column in working data
+        if ("PG.ProteinGroups" %in% colnames(test_data)) {
+          working_protein_col <- "PG.ProteinGroups"
+        } else {
+          working_protein_col <- input$identifierColumn
+        }
+        
+        # Perform mapping to get statistics
+        mapping_result <- performGeneMapping(
+          working_data = test_data,
+          mapping_data = mappingFileData(),
+          working_protein_col = working_protein_col,
+          mapping_protein_col = input$mappingProteinColumn,
+          mapping_gene_col = input$mappingGeneColumn
+        )
+        
+        mappingStats(mapping_result$mapping_stats)
+        
+        shinyalert::shinyalert(
+          title = "Gene Mapping Completed!",
+          text = paste0("Successfully mapped ", mapping_result$mapping_stats$mapped, " out of ", 
+                       mapping_result$mapping_stats$total, " protein groups (", 
+                       mapping_result$mapping_stats$mapping_rate, "% success rate)."),
+          type = "success",
+          timer = 3000,
+          showConfirmButton = FALSE
+        )
+        
+      }, error = function(e) {
+        shinyalert::shinyalert(
+          title = "Mapping Error",
+          text = paste("Failed to perform gene mapping:", e$message),
+          type = "error"
+        )
+      })
+    })
+    
+    # Display mapping statistics
+    output$mappingStatsOutput <- renderUI({
+      req(mappingStats())
+      stats <- mappingStats()
+      
+      tagList(
+        p(paste("Total protein groups:", stats$total)),
+        p(paste("Successfully mapped:", stats$mapped)),
+        p(paste("Not mapped:", stats$unmapped)),
+        p(paste("Mapping success rate:", paste0(stats$mapping_rate, "%")))
+      )
+    })
+    
     # Process CSV/Excel data when experimental design is uploaded
     observeEvent(input$processCSVExcel, {
       req(input$expDesignFile)
@@ -612,15 +730,49 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           
           setProgress(0.5, detail = "Converting data to analysis format")
           
-          # Process CSV/Excel files with selected identifier column
+          # Process CSV/Excel files with selected identifier column and gene mapping
           identifier_col <- input$identifierColumn
-          csv_excel_result <- processCSVExcelWorkflow(input$dataFiles, exp_design, identifier_col)
+          
+          # Get mapping parameters if gene mapping is enabled
+          mapping_file_path <- NULL
+          mapping_protein_col <- NULL
+          mapping_gene_col <- NULL
+          
+          if (!is.null(input$geneSymbolMapping) && input$geneSymbolMapping && 
+              !is.null(input$uploadMappingFile) && !is.null(mappingStats())) {
+            mapping_file_path <- input$uploadMappingFile$datapath
+            mapping_protein_col <- input$mappingProteinColumn
+            mapping_gene_col <- input$mappingGeneColumn
+          }
+          
+          csv_excel_result <- processCSVExcelWorkflow(
+            dataFiles = input$dataFiles, 
+            experimentalDesign = exp_design, 
+            identifierColumn = identifier_col,
+            mappingFilePath = mapping_file_path,
+            mappingProteinCol = mapping_protein_col,
+            mappingGeneCol = mapping_gene_col
+          )
           
           setProgress(0.8, detail = "Setting up analysis parameters")
           
           # Store converted GCT objects and parameters for later processing (same as GCT workflow)
           GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
-          parameters_internal_reactive(csv_excel_result$parameters)
+          
+          # Modify parameters if user wants to use gene symbols as identifier
+          if (!is.null(input$useGeneSymbolAsIdentifier) && 
+              input$useGeneSymbolAsIdentifier == "gene_symbol" && 
+              !is.null(mapping_file_path)) {
+            
+            # Update parameters to use gene_symbol as annotation column
+            modified_parameters <- csv_excel_result$parameters
+            for (ome_name in names(modified_parameters)) {
+              modified_parameters[[ome_name]]$annotation_column <- "gene_symbol"
+            }
+            parameters_internal_reactive(modified_parameters)
+          } else {
+            parameters_internal_reactive(csv_excel_result$parameters)
+          }
           
           # Set up back/next navigation logic for parameter setup
           backNextLogic$place <- 1

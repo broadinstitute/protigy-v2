@@ -3,6 +3,84 @@
 # Functions for experimental design template generation and validation for CSV/Excel imports
 ################################################################################
 
+# Classify columns as experimental vs non-experimental
+# INPUT: vector of column names, identifier column to exclude
+# OUTPUT: list with experimental_columns and non_experimental_columns
+classifyColumns <- function(column_names, identifier_column = NULL) {
+  # Define patterns for non-experimental columns (case-insensitive)
+  non_experimental_patterns <- c(
+    "^id$", "^ids$", "^identifier", "^accession", "^acc$",
+    "^protein", "^gene", "^symbol", "^name$", "^names$",
+    "^description", "^desc", "^annotation", "^annot",
+    "^uniprot", "^swiss", "^refseq", "^ensembl",
+    "^sequence", "^seq", "^peptide", "^length", "^len$",
+    "^mw$", "^molecular", "^mass", "^weight", "^kda$",
+    "^coverage", "^cov$", "^score", "^confidence", "^conf$",
+    "^fdr$", "^qval", "^q\\.val", "^q_val", "^pval", "^p\\.val", "^p_val",
+    "^adj", "^padj", "^bh$", "^bonf", "^holm$",
+    "^fold", "^fc$", "^log.*fc", "^ratio", "^abundance",
+    "^intensity.*total", "^total.*intensity", "^sum.*intensity",
+    "^pg\\.", "^protein.*group", "^group", "^cluster",
+    "^ontology", "^go\\.", "^kegg", "^pathway", "^term$",
+    "^organism", "^species", "^taxonomy", "^tax$",
+    "^chromosome", "^chr$", "^position", "^pos$", "^coord",
+    "^strand", "^start$", "^end$", "^genomic"
+  )
+  
+  # Remove identifier column from consideration
+  if (!is.null(identifier_column) && identifier_column %in% column_names) {
+    column_names <- column_names[column_names != identifier_column]
+  }
+  
+  # Classify columns
+  non_experimental_columns <- c()
+  experimental_columns <- c()
+  
+  for (col_name in column_names) {
+    # Check if column matches any non-experimental pattern
+    is_non_experimental <- any(sapply(non_experimental_patterns, function(pattern) {
+      grepl(pattern, col_name, ignore.case = TRUE)
+    }))
+    
+    if (is_non_experimental) {
+      non_experimental_columns <- c(non_experimental_columns, col_name)
+    } else {
+      # Additional heuristics for experimental columns
+      # Look for patterns that suggest sample names or experimental conditions
+      
+      # Patterns that suggest experimental/sample columns
+      sample_patterns <- c(
+        "sample", "ctrl", "control", "treat", "rep", "replicate", 
+        "_[0-9]+$", "_rep", "_ctrl", "_treat", "_[a-z][0-9]$",
+        "^[a-z]+[0-9]+$", "^[a-z]+_[a-z0-9]+$", "^[a-z]+-[a-z0-9]+$"
+      )
+      
+      looks_like_sample <- any(sapply(sample_patterns, function(pattern) {
+        grepl(pattern, col_name, ignore.case = TRUE)
+      })) &&
+      nchar(col_name) <= 50 &&  # Reasonable sample name length
+      !grepl("\\.(txt|csv|xlsx?|pdf|doc|html)$", col_name, ignore.case = TRUE)
+      
+      # Additional check: if it looks like it could contain numerical data
+      # (not ending with descriptive suffixes)
+      not_descriptive <- !grepl("(name|desc|annotation|info|note|comment)$", col_name, ignore.case = TRUE)
+      
+      if (looks_like_sample || (not_descriptive && !grepl("^(id|identifier|accession)", col_name, ignore.case = TRUE))) {
+        experimental_columns <- c(experimental_columns, col_name)
+      } else {
+        # When in doubt, classify as non-experimental to be conservative
+        non_experimental_columns <- c(non_experimental_columns, col_name)
+      }
+    }
+  }
+  
+  return(list(
+    experimental_columns = experimental_columns,
+    non_experimental_columns = non_experimental_columns,
+    identifier_column = identifier_column
+  ))
+}
+
 # Generate experimental design template from uploaded CSV/Excel files
 # INPUT: list of data files (from fileInput), identifierColumn (column name to exclude)
 # OUTPUT: data.frame with columnName, experiment, condition columns
@@ -27,37 +105,56 @@ generateExperimentalDesignTemplate <- function(dataFiles, identifierColumn = NUL
         stop("Unsupported file format: ", file_ext)
       }
       
-      # Exclude the identifier column if specified
-      if (!is.null(identifierColumn) && identifierColumn %in% column_names) {
-        sample_columns <- column_names[column_names != identifierColumn]
-      } else {
-        sample_columns <- column_names
-      }
-      
-      all_column_names <- c(all_column_names, sample_columns)
+      # Add all column names for classification
+      all_column_names <- c(all_column_names, column_names)
       
     }, error = function(e) {
       warning("Failed to read file ", dataFiles$name[i], ": ", e$message)
     })
   }
   
-  # Remove duplicates and create template
+  # Remove duplicates and classify columns
   unique_columns <- unique(all_column_names)
   
   if (length(unique_columns) == 0) {
-    stop("No valid sample columns found in the uploaded files.")
+    stop("No valid columns found in the uploaded files.")
   }
   
-  # Create experimental design template with example metadata columns
+  # Classify columns into experimental vs non-experimental
+  classification <- classifyColumns(unique_columns, identifierColumn)
+  
+  experimental_columns <- classification$experimental_columns
+  non_experimental_columns <- classification$non_experimental_columns
+  
+  if (length(experimental_columns) == 0) {
+    # If no experimental columns detected, provide guidance
+    warning(paste(
+      "No experimental columns were automatically detected.",
+      "All columns appear to be metadata/descriptive.",
+      "Please verify your data file contains sample columns with numerical data.",
+      "Detected non-experimental columns:", paste(non_experimental_columns, collapse = ", ")
+    ))
+    
+    # Create a minimal template with just the first few columns that might be samples
+    # Let user override if needed
+    potential_samples <- head(non_experimental_columns, min(5, length(non_experimental_columns)))
+    experimental_columns <- potential_samples
+  }
+  
+  # Create experimental design template with only experimental columns
   # Users can modify, add, or remove these columns as needed
   template <- data.frame(
-    columnName = unique_columns,
-    experiment = rep(NA, length(unique_columns)),
-    condition = rep(NA, length(unique_columns)),
-    treatment = rep(NA, length(unique_columns)),
-    timepoint = rep(NA, length(unique_columns)),
+    columnName = experimental_columns,
+    experiment = rep(NA, length(experimental_columns)),
+    condition = rep(NA, length(experimental_columns)),
+    treatment = rep(NA, length(experimental_columns)),
+    timepoint = rep(NA, length(experimental_columns)),
     stringsAsFactors = FALSE
   )
+  
+  # Add attributes to provide feedback to user
+  attr(template, "classification") <- classification
+  attr(template, "excluded_columns") <- non_experimental_columns
   
   return(template)
 }
@@ -88,8 +185,14 @@ validateExperimentalDesign <- function(exp_design) {
   experimental_rows <- rep(FALSE, nrow(exp_design))
   
   for (col in metadata_columns) {
-    col_valid <- !is.na(exp_design[[col]]) & exp_design[[col]] != ""
-    experimental_rows <- experimental_rows | col_valid
+    if (col %in% colnames(exp_design)) {
+      col_values <- exp_design[[col]]
+      # Check for valid values: not NA, not empty string, not just whitespace
+      col_valid <- !is.na(col_values) & 
+                  as.character(col_values) != "" & 
+                  trimws(as.character(col_values)) != ""
+      experimental_rows <- experimental_rows | col_valid
+    }
   }
   
   if (!any(experimental_rows)) {
