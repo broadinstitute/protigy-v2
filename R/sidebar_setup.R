@@ -17,9 +17,9 @@ setupSidebarUI <- function(id = "setupSidebar") {
     add_css_attributes(
       fileInput(
         ns("dataFiles"),
-        "All files must include the same samples (Supports GCT/GCTX, CSV, Excel)", 
+        "All files must include the same samples (Supports GCT/GCTX, CSV, Excel, TSV)", 
         multiple = TRUE, 
-        accept = c(".gct", ".gctx", ".csv", ".xlsx", ".xls")
+        accept = c(".gct", ".gctx", ".csv", ".xlsx", ".xls", ".tsv")
       ), 
       classes = "small-input shiny-file-input-container"
     ), 
@@ -81,7 +81,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         parameters_internal_reactive(NULL) # reset internal parameters
         GCTs_unprocessed_internal_reactive(NULL) # reset internal GCTs
         
-        # Check if files are GCT format or CSV/Excel format
+        # Check if files are GCT, CSV/Excel, or TSV format
         file_extensions <- tools::file_ext(tolower(input$dataFiles$name))
         
         if (all(file_extensions == "gct")) {
@@ -90,11 +90,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         } else if (all(file_extensions %in% c("csv", "xlsx", "xls"))) {
           # All CSV/Excel files - use new workflow
           csvExcelWorkflow()
+        } else if (all(file_extensions == "tsv")) {
+          # All TSV files - use TSV workflow
+          tsvWorkflow()
         } else {
           # Mixed file types - show error
           shinyalert::shinyalert(
             title = "Error",
-            text = "Please upload either GCT files only OR CSV/Excel files only. Mixed file types are not supported.",
+            text = "Please upload files of the same type only: GCT files, CSV/Excel files, or TSV files. Mixed file types are not supported.",
             type = "error"
           )
         }
@@ -569,6 +572,261 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       output$leftButton <- NULL
     }
     
+    # TSV workflow function
+    tsvWorkflow <- function() {
+      output$sideBarMain <- renderUI({
+        tsvSetupUI(ns = ns, dataFiles = input$dataFiles)
+      })
+      output$rightButton <- NULL
+      output$leftButton <- NULL
+    }
+    
+    # Reactive values for TSV processing
+    conditionSetupData <- reactiveVal(NULL)
+    processedTSVData <- reactiveVal(NULL)
+    tsvMappingTables <- reactiveVal(NULL)
+    tsvIdentifierInfo <- reactiveVal(NULL)
+    
+    # Handle condition setup file upload for TSV workflow
+    observeEvent(input$conditionSetupFile, {
+      req(input$conditionSetupFile)
+      
+      tryCatch({
+        # Read and validate condition setup file
+        condition_setup <- readConditionSetup(input$conditionSetupFile$datapath)
+        conditionSetupData(condition_setup)
+        
+        # Process TSV files with condition setup
+        withProgress(message = "Processing TSV files...", {
+          setProgress(0.3, detail = "Analyzing TSV structure")
+          
+          tsv_result <- processTSVFiles(
+            dataFiles = input$dataFiles,
+            conditionSetup = condition_setup
+          )
+          
+          setProgress(0.7, detail = "Generating mapping tables")
+          
+          # Store results
+          processedTSVData(tsv_result$processed_data)
+          tsvMappingTables(tsv_result$mapping_tables)
+          tsvIdentifierInfo(tsv_result$identifier_info)
+          
+          # Update identifier column choices based on processed data
+          if (length(tsv_result$processed_data) > 0) {
+            first_dataset <- tsv_result$processed_data[[1]]
+            metadata_cols <- identifyMetadataColumns(first_dataset)
+            
+            # Get identifier information from the first dataset
+            first_label <- names(tsv_result$identifier_info)[1]
+            identifier_info <- tsv_result$identifier_info[[first_label]]
+            default_identifier <- identifier_info$identifier_column
+            
+            # Set default to "id" if it exists, otherwise use detected identifier
+            final_default <- if ("id" %in% metadata_cols) "id" else default_identifier
+            
+            updateSelectInput(session, "identifierColumn", choices = metadata_cols, selected = final_default)
+          }
+          
+          setProgress(1.0, detail = "Processing complete")
+        })
+        
+        # Show success message
+        shinyalert::shinyalert(
+          title = "TSV Processing Complete!",
+          text = "Successfully processed TSV files with condition setup. Review the mapping results below.",
+          type = "success",
+          timer = 3000,
+          showConfirmButton = FALSE
+        )
+        
+      }, error = function(e) {
+        error_msg <- paste("Failed to process TSV files:", e$message)
+        shinyalert::shinyalert(
+          title = "TSV Processing Error",
+          text = error_msg,
+          type = "error"
+        )
+      })
+    })
+    
+    # Reactive output to control condition setup file uploaded visibility
+    output$conditionSetupUploaded <- reactive({
+      return(!is.null(input$conditionSetupFile))
+    })
+    outputOptions(output, "conditionSetupUploaded", suspendWhenHidden = FALSE)
+    
+    # Generate processing summary output
+    output$processingSummaryOutput <- renderUI({
+      req(processedTSVData())
+      
+      # Calculate summary statistics across all processed files
+      total_files <- length(processedTSVData())
+      
+      # For now, show basic summary - could be enhanced with detailed stats
+      tagList(
+        p(strong("Files processed: "), total_files),
+        p(strong("Status: "), span("Ready for experimental design setup", style = "color: green;"))
+      )
+    })
+    
+    # Render identifier column selector for TSV workflow
+    output$identifierColumnSelector <- renderUI({
+      req(tsvIdentifierInfo(), processedTSVData())
+      
+      # Get identifier information from the first dataset
+      first_label <- names(tsvIdentifierInfo())[1]
+      identifier_info <- tsvIdentifierInfo()[[first_label]]
+      detected_identifier <- identifier_info$identifier_column
+      identifier_method <- identifier_info$identifier_method
+      
+      # Get all available columns for selection
+      first_dataset <- processedTSVData()[[1]]
+      metadata_cols <- identifyMetadataColumns(first_dataset)
+      
+      # Determine if we should show selector or detection message
+      show_selector <- identifier_method == "first_column_fallback"
+      
+      if (!show_selector) {
+        # Show detection message
+        tagList(
+          div(
+            class = "identifier-selector-hidden",
+            h5("Identifier Column Detected!"),
+            if (identifier_method == "first_protein_group") {
+              p("Using processed protein identifiers: ", strong("id"), 
+                " (extracted first protein group from PG.ProteinGroups)")
+            } else {
+              p("Using identifier column: ", strong(detected_identifier))
+            }
+          )
+        )
+      } else {
+        # Show selector
+        tagList(
+          h5("Define Identifier Column"),
+          p("Select the column to use as the unique identifier for rows:"),
+          add_css_attributes(
+            selectInput(
+              ns("identifierColumn"),
+              "Identifier Column:",
+              choices = metadata_cols,
+              selected = detected_identifier
+            ),
+            classes = "small-input identifier-selector-visible"
+          )
+        )
+      }
+    })
+    
+    # Process TSV data when experimental design is uploaded
+    observeEvent(input$processTSV, {
+      req(input$expDesignFile, processedTSVData())
+      
+      tryCatch({
+        # Process TSV files with experimental design
+        withProgress(message = "Converting TSV to analysis format...", {
+          setProgress(0.2, detail = "Reading experimental design")
+          
+          # Read experimental design
+          exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
+          
+          setProgress(0.5, detail = "Converting data to GCT format")
+          
+          # Convert processed TSV data to GCT format using CSV/Excel workflow
+          # Get identifier column - use detected default if input not available
+          identifier_col <- input$identifierColumn
+          if (is.null(identifier_col) && !is.null(tsvIdentifierInfo())) {
+            first_label <- names(tsvIdentifierInfo())[1]
+            identifier_info <- tsvIdentifierInfo()[[first_label]]
+            identifier_col <- identifier_info$identifier_column
+          }
+          
+          # Get mapping parameters if gene mapping is enabled
+          mapping_file_path <- NULL
+          mapping_protein_col <- NULL
+          mapping_gene_col <- NULL
+          
+          if (!is.null(input$geneSymbolMapping) && input$geneSymbolMapping && 
+              !is.null(input$uploadMappingFile) && !is.null(mappingStats())) {
+            mapping_file_path <- input$uploadMappingFile$datapath
+            mapping_protein_col <- input$mappingProteinColumn
+            mapping_gene_col <- input$mappingGeneColumn
+          }
+          
+          # Create a mock dataFiles structure for the processed TSV data
+          processed_data_list <- processedTSVData()
+          mock_data_files <- data.frame(
+            name = paste0(names(processed_data_list), ".csv"),
+            datapath = sapply(names(processed_data_list), function(name) {
+              temp_file <- tempfile(fileext = ".csv")
+              utils::write.csv(processed_data_list[[name]], temp_file, row.names = FALSE)
+              return(temp_file)
+            }),
+            stringsAsFactors = FALSE
+          )
+          
+          # Use CSV processing workflow for the converted data
+          tsv_result <- processCSVExcelWorkflow(
+            dataFiles = mock_data_files,
+            experimentalDesign = exp_design,
+            identifierColumn = identifier_col,
+            mappingFilePath = mapping_file_path,
+            mappingProteinCol = mapping_protein_col,
+            mappingGeneCol = mapping_gene_col
+          )
+          
+          setProgress(0.8, detail = "Setting up analysis parameters")
+          
+          # Store converted GCT objects and parameters (same as CSV/Excel workflow)
+          GCTs_unprocessed_internal_reactive(tsv_result$GCTs)
+          
+          # Modify parameters if user wants to use gene symbols as identifier
+          if (!is.null(input$useGeneSymbolAsIdentifier) && 
+              input$useGeneSymbolAsIdentifier == "gene_symbol" && 
+              !is.null(mapping_file_path)) {
+            
+            # Update parameters to use gene_symbol as annotation column
+            modified_parameters <- tsv_result$parameters
+            for (ome_name in names(modified_parameters)) {
+              modified_parameters[[ome_name]]$annotation_column <- "gene_symbol"
+            }
+            parameters_internal_reactive(modified_parameters)
+          } else {
+            parameters_internal_reactive(tsv_result$parameters)
+          }
+          
+          # Set up back/next navigation logic for parameter setup
+          backNextLogic$place <- 1
+          backNextLogic$maxPlace <- length(tsv_result$GCTs)
+          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
+          
+          setProgress(1.0, detail = "Ready for parameter setup")
+        })
+        
+        # Show success message
+        shinyalert::shinyalert(
+          title = "TSV Files Converted!",
+          text = paste("Successfully converted", length(processedTSVData()), 
+                      "TSV file(s) to analysis format. Now configure analysis parameters..."),
+          type = "success",
+          timer = 3000,
+          showConfirmButton = FALSE
+        )
+        
+        # Trigger the standard parameter setup workflow (same as GCT files)
+        labelsGO(labelsGO() + 1)
+        
+      }, error = function(e) {
+        error_msg <- paste("Failed to convert TSV data:", e$message)
+        shinyalert::shinyalert(
+          title = "TSV Conversion Error",
+          text = error_msg,
+          type = "error"
+        )
+      })
+    })
+    
     # Reactive values for gene mapping
     mappingFileData <- reactiveVal(NULL)
     mappingStats <- reactiveVal(NULL)
@@ -596,10 +854,29 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       filename = "experimentalDesign.csv",
       content = function(file) {
         tryCatch({
-          # Generate experimental design template using selected identifier column
-          identifier_col <- input$identifierColumn
-          template <- generateExperimentalDesignTemplate(input$dataFiles, 
-                                                        identifierColumn = identifier_col)
+          # Check if we're in TSV workflow (TSV files have been processed)
+          if (!is.null(processedTSVData()) && length(processedTSVData()) > 0) {
+            # TSV workflow: use processed TSV data
+            identifier_col <- input$identifierColumn
+            if (is.null(identifier_col) && !is.null(tsvIdentifierInfo())) {
+              # Use detected identifier if input not available
+              first_label <- names(tsvIdentifierInfo())[1]
+              identifier_info <- tsvIdentifierInfo()[[first_label]]
+              identifier_col <- identifier_info$identifier_column
+            }
+            
+            template <- generateExperimentalDesignTemplateForTSV(
+              processedTSVData = processedTSVData(), 
+              identifierColumn = identifier_col
+            )
+          } else {
+            # CSV/Excel workflow: use original files
+            identifier_col <- input$identifierColumn
+            template <- generateExperimentalDesignTemplate(
+              dataFiles = input$dataFiles, 
+              identifierColumn = identifier_col
+            )
+          }
           
           # Write to file
           utils::write.csv(template, file, row.names = FALSE)
@@ -608,6 +885,50 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           shinyalert::shinyalert(
             title = "Error",
             text = paste("Failed to generate experimental design template:", e$message),
+            type = "error"
+          )
+        })
+      }
+    )
+    
+    # Download handler for TSV mapping table
+    output$downloadMapping <- downloadHandler(
+      filename = function() {
+        paste0("tsv_column_mapping_", format(Sys.Date(), "%Y%m%d"), ".csv")
+      },
+      content = function(file) {
+        req(tsvMappingTables())
+        
+        tryCatch({
+          # Combine all mapping tables if multiple files were processed
+          mapping_tables <- tsvMappingTables()
+          
+          if (length(mapping_tables) == 1) {
+            # Single file case
+            combined_mapping <- mapping_tables[[1]]
+            combined_mapping$File <- names(mapping_tables)[1]
+          } else {
+            # Multiple files case - combine with file names
+            combined_mapping <- do.call(rbind, lapply(names(mapping_tables), function(file_name) {
+              mapping_table <- mapping_tables[[file_name]]
+              mapping_table$File <- file_name
+              return(mapping_table)
+            }))
+          }
+          
+          # Reorder columns to put File first if it exists
+          if ("File" %in% colnames(combined_mapping)) {
+            col_order <- c("File", setdiff(colnames(combined_mapping), "File"))
+            combined_mapping <- combined_mapping[, col_order, drop = FALSE]
+          }
+          
+          # Write to CSV file
+          utils::write.csv(combined_mapping, file, row.names = FALSE)
+          
+        }, error = function(e) {
+          shinyalert::shinyalert(
+            title = "Download Error",
+            text = paste("Failed to download mapping table:", e$message),
             type = "error"
           )
         })

@@ -196,6 +196,176 @@ csvExcelSetupUI <- function(
   )
 }
 
+# function for TSV setup UI
+tsvSetupUI <- function(ns, dataFiles) {
+  tagList(
+    h4("TSV File Handler"),
+    p("Let me help with processing TSV files!"), 
+    
+    # Upload condition setup file
+    h5("Upload Condition Setup File"),
+    p(
+      "TSV files require a condition setup file that maps run labels to experimental conditions."
+    ),
+    add_css_attributes(
+      fileInput(
+        ns("conditionSetupFile"),
+        "Condition Setup File (TSV format):",
+        multiple = FALSE,
+        accept = c(".tsv", ".txt", ".csv")
+      ),
+      classes = "small-input shiny-file-input-container"
+    ),
+    
+    # Processing information (shown after condition setup file is uploaded)
+    conditionalPanel(
+      condition = paste0("output['", ns("conditionSetupUploaded"), "']"),
+      
+      # Show processing results
+      div(
+        id = ns("processingResults"),
+        h5("Processing Summary"),
+        uiOutput(ns("processingSummaryOutput"))
+      ),
+      
+      # Download mapping table
+      h5("Column Mapping Results"),
+      p("Download the column transformation mapping table:"),
+      add_css_attributes(
+        downloadButton(
+          ns("downloadMapping"),
+          "Download Mapping Table",
+          class = "download-btn-primary",
+          icon = icon("download")
+        )
+      ),
+      
+      # Identifier column selection (dynamic based on detection)
+      uiOutput(ns("identifierColumnSelector")),
+      
+      # Gene mapping option (similar to CSV/Excel workflow)
+      add_css_attributes(
+        checkboxInput(
+          ns("geneSymbolMapping"),
+          "Upload mapping reference to identifiers?"
+        )
+      ),
+      
+      conditionalPanel(
+        condition = paste0("input['", ns("geneSymbolMapping"), "'] == true"), 
+        add_css_attributes(
+          fileInput(
+            ns("uploadMappingFile"),
+            "Upload gene symbol mapping reference (Supports CSV, Excel)",
+            multiple = FALSE,
+            accept = c(".csv", ".xlsx", ".xls")
+          ),
+          classes = "small-input shiny-file-input-container"
+        ),
+        
+        # Column selectors for mapping file (shown after file upload)
+        conditionalPanel(
+          condition = paste0("output['", ns("mappingFileUploaded"), "']"),
+          h5("Configure Gene Symbol Mapping"),
+          add_css_attributes(
+            selectInput(
+              ns("mappingProteinColumn"),
+              "Protein Group Column in Mapping File:",
+              choices = NULL
+            ),
+            classes = "small-input"
+          ),
+          add_css_attributes(
+            selectInput(
+              ns("mappingGeneColumn"),
+              "Gene Symbol Column in Mapping File:",
+              choices = NULL
+            ),
+            classes = "small-input"
+          ),
+          add_css_attributes(
+            actionButton(
+              ns("performMapping"),
+              "Map Gene Symbols",
+              class = "btn btn-primary",
+              icon = icon("link"),
+              style = "width: 80%; margin: 10px auto; display: block;"
+            )
+          ),
+          
+          # Display mapping results
+          conditionalPanel(
+            condition = paste0("output['", ns("mappingCompleted"), "']"),
+            div(
+              id = ns("mappingResults"),
+              style = "background-color: #f0f8ff; border: 1px solid #d1ecf1; border-radius: 4px; padding: 10px; margin: 10px 0;",
+              h5("Mapping Results", style = "color: #0c5460; margin-top: 0;"),
+              uiOutput(ns("mappingStatsOutput"))
+            ),
+            
+            # Choice to use gene symbols as identifier
+            h5("Use Gene Symbols as Identifier?"),
+            add_css_attributes(
+              radioButtons(
+                ns("useGeneSymbolAsIdentifier"),
+                NULL,
+                choices = list(
+                  "Use gene symbols as identifier column" = "gene_symbol",
+                  "Keep current identifier column" = "current"
+                ),
+                selected = "current"
+              ),
+              classes = "small-input"
+            )
+          )
+        )
+      ),
+      
+      # Download experimental design template
+      h5("Download Experimental Design Template"),
+      p(
+        "Click below to download the experimental design template specific to your processed data."
+      ),
+      add_css_attributes(
+        downloadButton(
+          ns("downloadExpDesign"),
+          "Download",
+          class = "btn btn-primary",
+          icon = icon("download")
+        ),
+        classes = "download-btn-primary"
+      ),
+      
+      # Upload experimental design file
+      h5("Upload Experimental Design"),
+      add_css_attributes(
+        fileInput(
+          ns("expDesignFile"),
+          NULL,
+          accept = ".csv",
+          buttonLabel = "Browse",
+          placeholder = "No file selected"
+        ),
+        classes = "small-input shiny-file-input-container"
+      ),
+      
+      # Process button (shown when experimental design is uploaded)
+      conditionalPanel(
+        condition = paste0("output['", ns("expDesignFileUploaded"), "']"),
+        add_css_attributes(
+          actionButton(
+            ns("processTSV"),
+            "Process Data & Continue",
+            class = "Start Analysis!",
+            icon = icon("cogs"),
+            style = "width: 80%; align-items: center;"
+          )
+        )
+      )
+    )
+  )
+}
+
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the
 # setupDefaults.yaml!

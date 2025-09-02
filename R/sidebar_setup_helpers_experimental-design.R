@@ -234,6 +234,76 @@ readExperimentalDesign <- function(file_path) {
   })
 }
 
+# Generate experimental design template from processed TSV data
+# INPUT: list of processed TSV data frames, identifierColumn (column name to exclude)
+# OUTPUT: data.frame with columnName, experiment, condition columns
+generateExperimentalDesignTemplateForTSV <- function(processedTSVData, identifierColumn = NULL) {
+  all_column_names <- c()
+  
+  # Extract column names from all processed TSV data frames
+  for (dataset_name in names(processedTSVData)) {
+    data <- processedTSVData[[dataset_name]]
+    column_names <- names(data)
+    
+    # Add all column names for classification
+    all_column_names <- c(all_column_names, column_names)
+  }
+  
+  # Remove duplicates and classify columns
+  unique_columns <- unique(all_column_names)
+  
+  if (length(unique_columns) == 0) {
+    stop("No valid columns found in the processed TSV data.")
+  }
+  
+  # Classify columns into experimental vs non-experimental
+  classification <- classifyColumns(unique_columns, identifierColumn)
+  
+  experimental_columns <- classification$experimental_columns
+  non_experimental_columns <- classification$non_experimental_columns
+  
+  if (length(experimental_columns) == 0) {
+    # For TSV files, after processing, the quantity columns should have been renamed to condition names
+    # If no experimental columns detected, it means all columns are metadata
+    # In this case, we should look for columns that were renamed from quantity columns
+    
+    # Get metadata columns that are NOT typical protein annotation columns
+    metadata_pattern <- "^(id|PG\\.ProteinGroups|PG\\.Genes|PG\\.FastaFiles|PG\\.ProteinNames|PG\\.ProteinDescriptions)"
+    potential_experimental <- non_experimental_columns[!grepl(metadata_pattern, non_experimental_columns, ignore.case = TRUE)]
+    
+    if (length(potential_experimental) > 0) {
+      experimental_columns <- potential_experimental
+      message("TSV processing: Using potentially experimental columns: ", paste(experimental_columns, collapse = ", "))
+    } else {
+      warning(paste(
+        "No experimental columns were detected in processed TSV data.",
+        "This may indicate an issue with TSV processing or condition setup mapping.",
+        "All columns:", paste(unique_columns, collapse = ", ")
+      ))
+      
+      # Create a minimal template with available columns excluding known metadata
+      experimental_columns <- head(unique_columns[!grepl("^(id|identifier)", unique_columns, ignore.case = TRUE)], 5)
+    }
+  }
+  
+  # Create experimental design template with only experimental columns
+  template <- data.frame(
+    columnName = experimental_columns,
+    experiment = rep(NA, length(experimental_columns)),
+    condition = rep(NA, length(experimental_columns)),
+    treatment = rep(NA, length(experimental_columns)),
+    timepoint = rep(NA, length(experimental_columns)),
+    stringsAsFactors = FALSE
+  )
+  
+  # Add attributes to provide feedback to user
+  attr(template, "classification") <- classification
+  attr(template, "excluded_columns") <- non_experimental_columns
+  attr(template, "data_source") <- "processed_tsv"
+  
+  return(template)
+}
+
 # Create downloadable experimental design template
 # INPUT: experimental design template data.frame
 # OUTPUT: temporary file path for download

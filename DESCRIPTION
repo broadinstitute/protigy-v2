@@ -17,6 +17,7 @@ Imports:
     cmapR,
     ComplexHeatmap,
     dplyr,
+    DT,
     ggplot2,
     khroma,
     plotly (>= 4.10.1),
