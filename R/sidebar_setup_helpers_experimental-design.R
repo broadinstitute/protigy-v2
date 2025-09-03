@@ -141,14 +141,15 @@ generateExperimentalDesignTemplate <- function(dataFiles, identifierColumn = NUL
     experimental_columns <- potential_samples
   }
   
-  # Create experimental design template with only experimental columns
-  # Users can modify, add, or remove these columns as needed
+  # Create experimental design template with all columns
+  # Include both experimental and non-experimental columns so user can see and modify all
+  all_template_columns <- c(experimental_columns, non_experimental_columns)
   template <- data.frame(
-    columnName = experimental_columns,
-    experiment = rep(NA, length(experimental_columns)),
-    condition = rep(NA, length(experimental_columns)),
-    treatment = rep(NA, length(experimental_columns)),
-    timepoint = rep(NA, length(experimental_columns)),
+    columnName = all_template_columns,
+    experiment = rep(NA, length(all_template_columns)),
+    condition = rep(NA, length(all_template_columns)),
+    treatment = rep(NA, length(all_template_columns)),
+    timepoint = rep(NA, length(all_template_columns)),
     stringsAsFactors = FALSE
   )
   
@@ -268,7 +269,7 @@ generateExperimentalDesignTemplateForTSV <- function(processedTSVData, identifie
     # In this case, we should look for columns that were renamed from quantity columns
     
     # Get metadata columns that are NOT typical protein annotation columns
-    metadata_pattern <- "^(id|PG\\.ProteinGroups|PG\\.Genes|PG\\.FastaFiles|PG\\.ProteinNames|PG\\.ProteinDescriptions)"
+    metadata_pattern <- "^(id|PG\\.ProteinGroups|PG\\.Genes|PG\\.FastaFiles|PG\\.ProteinNames|PG\\.ProteinDescriptions|PG\\.ProteinAccessions|PG\\.Organisms|PG\\.UniProtIds|PG\\.NrOfStrippedSequencesIdentified|PG\\.Meta|PG\\.BiologicalProcess|PG\\.MolecularFunction)"
     potential_experimental <- non_experimental_columns[!grepl(metadata_pattern, non_experimental_columns, ignore.case = TRUE)]
     
     if (length(potential_experimental) > 0) {
@@ -286,13 +287,15 @@ generateExperimentalDesignTemplateForTSV <- function(processedTSVData, identifie
     }
   }
   
-  # Create experimental design template with only experimental columns
+  # Create experimental design template with all columns
+  # Include both experimental and non-experimental columns so user can see and modify all
+  all_template_columns <- c(non_experimental_columns, experimental_columns)
   template <- data.frame(
-    columnName = experimental_columns,
-    experiment = rep(NA, length(experimental_columns)),
-    condition = rep(NA, length(experimental_columns)),
-    treatment = rep(NA, length(experimental_columns)),
-    timepoint = rep(NA, length(experimental_columns)),
+    columnName = all_template_columns,
+    experiment = rep(NA, length(all_template_columns)),
+    condition = rep(NA, length(all_template_columns)),
+    treatment = rep(NA, length(all_template_columns)),
+    timepoint = rep(NA, length(all_template_columns)),
     stringsAsFactors = FALSE
   )
   

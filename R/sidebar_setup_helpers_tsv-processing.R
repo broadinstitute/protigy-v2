@@ -3,8 +3,6 @@
 # Functions for processing TSV files, converting them to CSV format, and generating experimental design for user input 
 ################################################################################
 
-#' @importFrom DT datatable renderDataTable dataTableOutput
-
 # Process TSV files with condition setup and experimental design to create GCT objects ####
 # INPUT: raw TSV data and corresponding condition setup file from Spectronaut
 # OUTPUT: list of GCT objects (same format as existing GCT workflow)
@@ -43,7 +41,7 @@ processTSVFiles <- function(dataFiles, conditionSetup, identifierColumn = NULL) 
       # Store results
       label <- tools::file_path_sans_ext(file_name)
       processed_data_list[[label]] <- result$processed_data
-      mapping_tables[[label]] <- result$mapping_table
+      # mapping_tables[[label]] <- result$mapping_table
       identifier_info[[label]] <- list(
         identifier_column = result$identifier_column,
         identifier_method = result$identifier_method
@@ -56,7 +54,7 @@ processTSVFiles <- function(dataFiles, conditionSetup, identifierColumn = NULL) 
   
   return(list(
     processed_data = processed_data_list,
-    mapping_tables = mapping_tables,
+    # mapping_tables = mapping_tables,
     identifier_info = identifier_info
   ))
 }
@@ -74,24 +72,29 @@ validateConditionSetup <- function(conditionSetup) {
     # Fallback to check if R renamed whitespaces to dots
     run_label_col <- "Run.Label"
   } else {
-    stop("Condition setup file must have the required 'Run Label' column. ", 
-         "Available columns: ", paste(available_columns, collapse = ", "))
+    stop(
+      "Condition setup file must have the required `Run Label` column.", 
+      "Available columns: ", paste(available_columns, collapse = ", ")
+    )
   }
   
   # Condition/Label column for sample condition
-  condition_col <- if ("Condition" %in% available_columns) "Condition" else "Label"
-  
-  if (!condition_col %in% available_columns) {
-    stop("Condition setup file must have either 'Condition' or 'Label' column. ",
-         "Available columns: ", paste(available_columns, collapse = ", "))
+  if ("Condition" %in% available_columns) {
+    condition_col <- "Condition"
+  } else if ("Label" %in% available_columns) {
+    condition_col <- "Label"
+  } else {
+    stop(
+      "Condition setup file must have the required `Condition` or `Label` column.", 
+      "Available columns: ", paste(available_columns, collapse = ", ")
+    )
   }
   
   # Check for unique values
-  # Especially for Condition/Label column
   if (any(duplicated(conditionSetup[[run_label_col]]))) {
     stop("Duplicate values found in '", run_label_col, "' column of condition setup file")
   }
-  
+
   if (any(duplicated(conditionSetup[[condition_col]]))) {
     stop("Duplicate values found in '", condition_col, "' column of condition setup file")
   }
@@ -118,26 +121,29 @@ processSingleTSVFile <- function(data, conditionSetup, file_name, identifierColu
   # Detect quantity columns
   quantity_columns <- detectQuantityColumns(data)
   
+  # Filter for only non-experimental and quantity columns 
+  filtered_data <- filterTsvData(data, quantity_columns)
+
   # Rename quantity columns based on condition setup
-  result <- renameQuantityColumns(data, conditionSetup, quantity_columns, condition_col, run_label_col)
+  result <- renameQuantityColumns(filtered_data, conditionSetup, quantity_columns, condition_col, run_label_col)
   
   # Determine identifier column and process protein groups if available
   identifier_result <- determineIdentifierColumns(result$processed_data, identifierColumn)
   final_processed_data <- identifier_result$data
   
-  # Generate mapping table for display
-  mapping_table <- generateMappingTable(data, final_processed_data, file_name)
+  # # Generate mapping table for display
+  # mapping_table <- generateMappingTable(data, final_processed_data, file_name)
   
   return(list(
     processed_data = final_processed_data,
-    mapping_table = mapping_table,
+    # mapping_table = mapping_table,
     processing_summary = result$summary,
     identifier_column = identifier_result$identifier_column,
     identifier_method = identifier_result$method
   ))
 }
 
-# Detect quantity columns in TSV data ####
+# Detect PG.Quantity columns ####
 detectQuantityColumns <- function(data) {
   all_columns <- colnames(data)
   
@@ -149,12 +155,33 @@ detectQuantityColumns <- function(data) {
   quantity_columns <- grep(quantity_pattern, all_columns, value = TRUE)
   
   if (length(quantity_columns) == 0) {
-    stop("\nNo quantity columns found. Expected columns containing 'PG.Quantity'. Available columns: ", 
-         paste(all_columns, collapse = ", "))
+    stop(
+      "\nNo quantity columns found. Expected columns containing 'PG.Quantity'. Available columns: ", 
+      paste(all_columns, collapse = ", ")
+    )
   }
   
   message("\nDetected quantity columns: ", paste(quantity_columns, collapse = ", "))
   return(quantity_columns)
+}
+
+# Filter non-experimental and PG.Quantity columns ####
+filterTsvData <- function(data, quantity_columns) {
+  nonExperimental_columns <- identifyMetadataColumns(data)
+
+  # Combine non-experimental and quantity columns 
+  columns_to_keep <- c(nonExperimental_columns, quantity_columns)
+
+  # Debug: show what columns are being kept
+  message("\nColumns to keep: ", paste(columns_to_keep, collapse = ", "))
+
+  # Filter the dataframe to keep only these columns 
+  filtered_data <- data[, columns_to_keep, drop = FALSE]
+
+  # Debug: check dimensions for the filtered dataframe
+  message("\nFiltered data dimensions: ", nrow(filtered_data), " rows x ", ncol(filtered_data), " columns")
+
+  return(filtered_data)
 }
 
 # Rename quantity columns using condition setup mapping ####
@@ -164,22 +191,22 @@ renameQuantityColumns <- function(data, conditionSetup, quantity_columns, condit
   
   # Step 1: Create mapping from Run Label to Condition
   run_label_map <- setNames(conditionSetup[[condition_col]], conditionSetup[[run_label_col]])
-  message("Step 1: Created Run Label to Condition mapping with ", length(run_label_map), " entries")
+  message("Created Run Label to Condition mapping with ", length(run_label_map), " entries")
   message("Sample mappings: ", paste(names(run_label_map)[1:min(3, length(run_label_map))], 
                                     "->", run_label_map[1:min(3, length(run_label_map))], 
                                     collapse = "; "))
   
-  # Step 2: Identify quantity columns (already done, but confirm)
-  message("Step 2: Found ", length(quantity_columns), " quantity columns ending with '.PG.Quantity'")
-  message("Quantity columns: ", paste(quantity_columns[1:min(3, length(quantity_columns))], collapse = ", "), 
-          if(length(quantity_columns) > 3) "..." else "")
+  # # Step 2: Identify quantity columns (already done, but confirm)
+  # message("Step 2: Found ", length(quantity_columns), " quantity columns ending with '.PG.Quantity'")
+  # message("Quantity columns: ", paste(quantity_columns[1:min(3, length(quantity_columns))], collapse = ", "), 
+  #         if(length(quantity_columns) > 3) "..." else "")
   
   # Keep track of changes for the summary
   successful_renames <- list() # stores old_name -> new_name
   failed_renames <- c()
   
   # Step 3: Find corresponding Run Label and rename to Condition value
-  message("Step 3: Starting column renaming process...")
+  message("Starting column renaming process...")
   
   for (col_name in quantity_columns) {
     match_found <- FALSE
@@ -220,8 +247,8 @@ renameQuantityColumns <- function(data, conditionSetup, quantity_columns, condit
   }
   
   # Step 4: Keep metadata columns and renamed quantity columns
-  metadata_columns <- identifyMetadataColumns(data)
-  message("Step 4: Identified ", length(metadata_columns), " metadata columns")
+  metadata_columns <- identifyMetadataColumns(processed_data)
+  message("Identified ", length(metadata_columns), " metadata columns")
   message("Metadata columns: ", paste(metadata_columns[1:min(5, length(metadata_columns))], collapse = ", "),
           if(length(metadata_columns) > 5) "..." else "")
   
@@ -262,14 +289,21 @@ renameQuantityColumns <- function(data, conditionSetup, quantity_columns, condit
 
 # Identify metadata columns (non-quantity columns without Run Label patterns) ####
 identifyMetadataColumns <- function(data) {
-  # Since quant columns from Spectronaut always contains ".PG.", ".PEP.", ".EG." in suffix, all columns without these patterns in column name are deemed as metadata columns (e.g., PG.ProteinGroups)
   all_columns <- colnames(data)
-  
-  # Remove quantity columns (check for .PG., .PEP., or .EG. patterns)
-  quantity_pattern <- "\\.(PG|PEP|EG)\\."
-  non_quantity_columns <- grep(quantity_pattern, all_columns, value = TRUE, invert = TRUE)
-  
-  return(non_quantity_columns)
+
+  # Define pattern for non-experimental columns 
+  nonExperimental_patterns <- c(
+    "PG\\.ProteinGroups$", "PG\\.ProteinAccessions$", "PG\\.Genes$", "PG\\.Organisms$", "PG\\.ProteinDescriptions$", "PG\\.UniProtIds$", "PG\\.ProteinNames$", "PG\\.NrOfStrippedSequencesIdentified", "PG\\.Meta$", "PG\\.BiologicalProcess$", "PG\\.MolecularFunction$"
+  )
+
+  # Find non-experimental columns 
+  nonExperimental_columns <- c()
+  for (pattern in nonExperimental_patterns) {
+    matched_cols <- grep(pattern, all_columns, value = TRUE)
+    nonExperimental_columns <- c(nonExperimental_columns, matched_cols)
+  }
+
+  return(nonExperimental_columns)
 }
 
 # Generate mapping table showing before/after column transformations ####

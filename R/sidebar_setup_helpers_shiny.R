@@ -228,17 +228,17 @@ tsvSetupUI <- function(ns, dataFiles) {
         uiOutput(ns("processingSummaryOutput"))
       ),
       
-      # Download mapping table
-      h5("Column Mapping Results"),
-      p("Download the column transformation mapping table:"),
-      add_css_attributes(
-        downloadButton(
-          ns("downloadMapping"),
-          "Download Mapping Table",
-          class = "download-btn-primary",
-          icon = icon("download")
-        )
-      ),
+      # # Download mapping table
+      # h5("Column Mapping Results"),
+      # p("Download the column transformation mapping table:"),
+      # add_css_attributes(
+      #   downloadButton(
+      #     ns("downloadMapping"),
+      #     "Download Mapping Table",
+      #     class = "download-btn-primary",
+      #     icon = icon("download")
+      #   )
+      # ),
       
       # Identifier column selection (dynamic based on detection)
       uiOutput(ns("identifierColumnSelector")),
@@ -358,7 +358,7 @@ tsvSetupUI <- function(ns, dataFiles) {
             "Process Data & Continue",
             class = "Start Analysis!",
             icon = icon("cogs"),
-            style = "width: 80%; align-items: center;"
+            style = "width: 80%; align-items: center; margin: 0 auto;"
           )
         )
       )

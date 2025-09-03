@@ -1,5 +1,6 @@
 .DS_Store
 .Rhistory
+.RData
 test_data/
 rsconnect/
 .Rproj.user
