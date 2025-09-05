@@ -221,7 +221,7 @@ renameQuantityColumns <- function(data, conditionSetup, quantity_columns, condit
       # Check if the sanitized run label is a substring of the column name
       if (grepl(sanitized_run_label, col_name, fixed = TRUE)) {
         new_name <- run_label_map[[run_label]]
-        message("    ✓ Match found: '", run_label, "' (sanitized: '", sanitized_run_label, 
+        message("Match found: '", run_label, "' (sanitized: '", sanitized_run_label, 
                 "') -> renaming to '", new_name, "'")
         
         # Check for potential duplicate column names before renaming 
@@ -242,7 +242,7 @@ renameQuantityColumns <- function(data, conditionSetup, quantity_columns, condit
     
     if (!match_found) {
       failed_renames <- c(failed_renames, col_name)
-      message("    ✗ No match found for: ", col_name)
+      message("No match found for: ", col_name)
     }
   }
   
