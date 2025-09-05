@@ -1,69 +1,153 @@
-/* Remove space for the title in the navbar*/
+/* --- Global Layout & Header --- */
+
+/* Ensures padding and borders are included in the element's total width and height */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Remove space for the title in the navbar */
 .navbar-brand {
   display:none;
 }
 
-/* Add the settings icon in the shinydashboard header*/
+/* Icon when the sidebar is OPEN (default) */
 .main-header .sidebar-toggle:before {
-  content: "\2699";
+  content: "\261A";
+  display: inline-block;
+  transform: scale(2);
 }
 
-/* minimize padding between elements in sidebar*/
-section.sidebar .shiny-input-container {
-  padding: 0px 10px 0px 10px;
-  white-space: normal;
-  margin-bottom: 10px;
-  font-size: 10pt;
+/* Icon when the sidebar is CLOSED */
+body.sidebar-collapse .main-header .sidebar-toggle:before {
+  content: "\261B";
+  display: inline-block;
+  transform: scale(2);
 }
-section.sidebar h4 {
-  padding-left: 10px;
-  margin-top: 0px;
+
+/* for some reason dropdown-menu text defaults to white... so it's impossible to read */
+.dropdown-menu {
+  color: black;
 }
-section.sidebar hr {
-  margin-top: 10px;
-  margin-bottom: 10px;
-}
+
+
+/* --- Sidebar Styles --- */
+
+/* General sidebar container adjustment */
 section.sidebar {
   margin-top: 10px;
 }
 
-/* small inputs for sidebar: selectize inputs*/   
-.small-input .selectize-input {
-  height: min-content;
+/* Minimize padding between elements in sidebar*/
+section.sidebar .shiny-input-container {
+  padding: 0 10px 0 10px;
+  white-space: normal;
+  /* margin-bottom: 10px; */
   font-size: 10pt;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  padding-left: 10px;
-  padding-right: 10px;
-  min-height: min-content;
-  border-radius: 2px;
 }
 
-/* small inputs for sidebar: selectize inputs that use updateInput somewhere*/   
-.small-input .selectize-control {
-  padding: 0px;
+/* Headings */
+section.sidebar h4 {
+  margin-top: 0;
+  text-align: center;
 }
 
-/* small inputs for sidebar: textInput or similar inputs*/
-.small-input .form-control {
-  border-radius: 2px;
-  font-size: 10pt;
-  height: min-content;
-  padding: 5px;
-  min-height: min-content;
+section.sidebar h5 {
+  padding-top: 15px;
+  font-size: 12pt;
+  text-align: center;
 }
 
-/* the labels for all inputs*/
+section.sidebar hr {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+/* Center paragraph text in the side bar */
+section.sidebar p {
+  text-align: center;
+}
+
+
+/* --- Input Control Styles --- */
+
+/* General styles for labels */ 
 .small-input .control-label {
   font-weight: 400;
 }
 
-/* style for primary action button */
+/* Selectize inputs*/   
+.small-input .selectize-input {
+  white-space: normal;
+  height: min-content;
+  min-height: min-content;
+  font-size: 10pt;
+  padding: 5px 10px;
+  border-radius: 2px;
+}
+
+/* Selectize controls updated via server */   
+.small-input .selectize-control {
+  padding: 0;
+}
+
+/* textInput and similar inputs */
+.small-input .form-control {
+  font-size: 10pt;
+  border-radius: 2px;
+  height: 33.5px;
+  padding: 6px 12px;
+  vertical-align: middle;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Center the file input uploader button */
+.shiny-file-input-container {
+  width: 100%; 
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+/* Inline input elements */
+#inline .form-group { 
+  display: table-row;
+}
+
+#inline label{ 
+  display: table-cell; 
+  text-align: left; 
+  vertical-align: middle;
+  padding-right: 5px;
+}
+
+
+/* --- Button Styles --- */
+
+/* Primary action button */
 .btn-primary {
   color: white;
 }
 
-/* boxes without header */
+/* Sidebar template download button */
+.download-btn-primary {
+  color: white; 
+  width: 80%;
+  margin: 0 auto; 
+  display: block; 
+  align-items: center;
+  font-size: 12px;
+}
+
+/* Space between icon and text */
+.download-btn-primary .fa {
+  margin-right: 5px; 
+}
+
+
+/* --- Box and Tab Styles --- */
+
+/* Hide box header */
 .box-no-header > .box > .box-header {
   display: none;
 }
@@ -71,9 +155,9 @@ section.sidebar {
 /* boxes that have tabs at the top */
 .box-with-tabs > .box > .box-body > .tabbable > .nav-tabs {
   margin: -10px -10px 5px -10px;
-  padding: 10px 10px 0px 10px;
+  padding: 10px 10px 0 10px;
   background-color: rgb(91, 98, 104);
-  border-radius: 3px 3px 0px 0px;
+  border-radius: 3px 3px 0 0;
 }
 
 .box-with-tabs > .box > .box-body > .tabbable > .nav-tabs > li > a {
@@ -89,20 +173,36 @@ section.sidebar {
   color: #555;
 }
 
-/* for some reason dropdown-menu text defaults to white....so it's impossible to read */
-.dropdown-menu {
-  color: black;
+
+/* --- Custom Component Styles --- */
+
+/* Conditional identifier selector display */
+.identifier-selector-visible {
+  display: block;
+  white-space: normal;
+  height: auto;
+  padding-bottom: 8px;
 }
 
-/* inline shiny inputs */
-#inline label{ 
-  display: table-cell; 
-  text-align: left; 
-  vertical-align: middle;
-  padding-right: 5px;
+/* Define the appearance of box */
+.identifier-selector-hidden {
+  width: 90%;
+  margin: 15px auto;
+  padding: 10px;
+  background-color: #f0f8ff;
+  border: 1px solid #d1ecf1;
+  border-radius: 4px;
+  text-align: center;
 }
 
-#inline .form-group { 
-  display: table-row;
+.identifier-selector-hidden h5 {
+  color: #0c5460;
+  margin-bottom: 5px;
+  font-weight: bold;
 }
 
+.identifier-selector-hidden p {
+  color: #0c5460;
+  margin-bottom: 15px;
+  font-size: 10pt;
+}

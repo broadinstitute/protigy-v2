@@ -3,7 +3,11 @@
     "allow": [
       "Bash(R:*)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)"
     ],
     "deny": [],
     "ask": []

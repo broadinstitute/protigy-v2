@@ -10,7 +10,7 @@ app_UI <- function(request) {dashboardPage(
   dashboardHeader(title = 'Protigy v2.0'),
   
   shinydashboard::dashboardSidebar(
-    width = 350,
+    width = 325,
     setupSidebarUI()
   ),
   

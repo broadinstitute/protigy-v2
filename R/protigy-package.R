@@ -33,7 +33,6 @@
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom stats cor anova lm prcomp var complete.cases model.matrix
-#' @importFrom readr read_csv write_csv
-#' @importFrom readxl read_excel
+#' @importFrom DT datatable renderDataTable dataTableOutput
 ## usethis namespace: end
 NULL
