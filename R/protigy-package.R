@@ -3,7 +3,7 @@
 
 ## usethis namespace: start
 #' @export
-#' @import shiny
+#' @rawNamespace import(shiny, except=c(dataTableOutput, renderDataTable))
 #' @import ggplot2
 #' @import dplyr
 #' @import tidyr
