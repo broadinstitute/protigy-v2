@@ -1,5 +1,10 @@
 # Tests for GCT processing functions
 
+# Load test data
+data(brca_retrospective_v5.0_rnaseq_gct)
+data(brca_retrospective_v5.0_phosphoproteome_gct)
+data(brca_retrospective_v5.0_proteome_gct)
+
 test_that("validateGCT validates correct GCT structure", {
   # Test with valid GCT
   valid_gct <- brca_retrospective_v5.0_rnaseq_gct
@@ -75,7 +80,7 @@ test_that("perform_log_transformation handles zero values", {
   # Test log2 transformation with zeros
   result <- perform_log_transformation(test_data, "log2")
   expect_true(is.na(result$data.log.transform[1, 1])) # Zero becomes NA
-  expect_equal(result$data.log.transform[1, 2], log2(2)) # log2(2) = 1
+  expect_equal(result$data.log.transform[1, 2], log2(2))
 })
 
 test_that("perform_log_transformation handles negative values", {
@@ -143,7 +148,7 @@ test_that("perform_data_normalization handles group normalization", {
 })
 
 test_that("perform_data_normalization warns about single-element groups", {
-  # Create test data with single-element groups
+  # Create test data with single-element groups and proper dimnames
   test_data <- matrix(rnorm(20), nrow = 4, ncol = 5)
   rownames(test_data) <- paste0("gene_", 1:4)
   colnames(test_data) <- paste0("sample_", 1:5)

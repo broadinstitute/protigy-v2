@@ -15,6 +15,20 @@
 
 
 #############################################################################################
+# Helper function to safely set colnames on apply() results
+# Handles the case where apply() returns a vector instead of a matrix
+safe_set_colnames <- function(data.norm, original.data) {
+  if (is.matrix(data.norm)) {
+    colnames(data.norm) <- paste(colnames(original.data), sep='.')
+  } else {
+    # data.norm is a vector (single-row case), convert back to matrix
+    data.norm <- matrix(data.norm, nrow = 1, ncol = length(data.norm))
+    colnames(data.norm) <- paste(colnames(original.data), sep='.')
+    rownames(data.norm) <- rownames(original.data)
+  }
+  return(data.norm)
+}
+
 normalize.data  <- function(data, # a data matrix
                             method=c('Median',
                                      'Median (non-zero)',
@@ -89,6 +103,12 @@ normalize.data.helper <- function(data,
   
   data <- data.matrix(data)
   
+  # Check for single-row matrices - normalization doesn't make sense
+  if (nrow(data) == 1) {
+    warning("Single-row matrices cannot be meaningfully normalized column-wise. Returning data unchanged.")
+    return(data)
+  }
+  
   ## quantile
   if(method == 'Quantile'){
     data.norm <- normalize.quantiles(data)
@@ -102,7 +122,7 @@ normalize.data.helper <- function(data,
   if(method == 'Median'){
     
     data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
-    colnames(data.norm) <- paste( colnames(data), sep='.')
+    data.norm <- safe_set_colnames(data.norm, data)
     
     if(per_group){
       all_medians <- apply(data, 2, median, na.rm=T)
@@ -116,12 +136,12 @@ normalize.data.helper <- function(data,
     data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
     
     data.norm <- data.norm + median( all_medians, na.rm=T )
-    colnames(data.norm) <- paste( colnames(data), sep='.')
+    data.norm <- safe_set_colnames(data.norm, data)
   }
   ## median & MAD
   if(method == 'Median-MAD'){
     data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
-    colnames(data.norm) <- paste( colnames(data), sep='.')
+    data.norm <- safe_set_colnames(data.norm, data)
     
     if(per_group){
       all_medians <-  apply(data, 2, median, na.rm=T)
@@ -135,7 +155,7 @@ normalize.data.helper <- function(data,
     data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
     
     data.norm <- data.norm + median( all_medians, na.rm=T )
-    colnames(data.norm) <- paste( colnames(data), sep='.')
+    data.norm <- safe_set_colnames(data.norm, data)
     
   }
   
@@ -167,7 +187,7 @@ normalize.data.helper <- function(data,
   ## Upper quartile
   if(method == 'Upper-quartile'){
     data.norm <- apply(data, 2, function(x) x - quantile(x, c(0.75),na.rm=T))
-    colnames(data.norm) <- paste( colnames(data), sep='.')
+    data.norm <- safe_set_colnames(data.norm, data)
   }
   
   ## VSN - variance stabilizing normalization
