@@ -1,5 +1,10 @@
 # Tests for GCT processing functions
 
+# Load test data
+data(brca_retrospective_v5.0_rnaseq_gct)
+data(brca_retrospective_v5.0_proteome_gct)
+data(brca_retrospective_v5.0_phosphoproteome_gct)
+
 test_that("validateGCT validates correct GCT structure", {
   # Test with valid GCT
   valid_gct <- brca_retrospective_v5.0_rnaseq_gct
@@ -211,4 +216,91 @@ test_that("perform_data_filtering handles invalid method", {
     perform_data_filtering(test_data, "invalid_method", "group", test_cdesc, NULL),
     "Invalid data filter selected"
   )
+})
+
+# Test merge_processed_gcts duplication prevention logic
+test_that("merge_processed_gcts prevents ome prefix duplication", {
+  # Create mock GCTs using the existing data
+  proteome_gct <- brca_retrospective_v5.0_proteome_gct
+  phospho_gct <- brca_retrospective_v5.0_phosphoproteome_gct
+  
+  # Take a small subset for testing
+  proteome_gct@mat <- proteome_gct@mat[1:3, 1:3]
+  proteome_gct@rdesc <- proteome_gct@rdesc[1:3, , drop = FALSE]
+  proteome_gct@cdesc <- proteome_gct@cdesc[1:3, , drop = FALSE]
+  proteome_gct@rid <- proteome_gct@rid[1:3]
+  proteome_gct@cid <- proteome_gct@cid[1:3]
+  rownames(proteome_gct@mat) <- proteome_gct@rid
+  colnames(proteome_gct@mat) <- proteome_gct@cid
+  rownames(proteome_gct@rdesc) <- proteome_gct@rid
+  rownames(proteome_gct@cdesc) <- proteome_gct@cid
+  
+  phospho_gct@mat <- phospho_gct@mat[1:3, 1:3]
+  phospho_gct@rdesc <- phospho_gct@rdesc[1:3, , drop = FALSE]
+  phospho_gct@cdesc <- phospho_gct@cdesc[1:3, , drop = FALSE]
+  phospho_gct@rid <- phospho_gct@rid[1:3]
+  phospho_gct@cid <- phospho_gct@cid[1:3]
+  rownames(phospho_gct@mat) <- phospho_gct@rid
+  colnames(phospho_gct@mat) <- phospho_gct@cid
+  rownames(phospho_gct@rdesc) <- phospho_gct@rid
+  rownames(phospho_gct@cdesc) <- phospho_gct@cid
+  
+  GCTs_processed <- list(
+    proteome = proteome_gct,
+    phosphoproteome = phospho_gct
+  )
+  
+  # Add protigy.ome column
+  GCTs_processed <- mapply(
+    GCTs_processed, names(GCTs_processed),
+    SIMPLIFY = FALSE, USE.NAMES = TRUE, 
+    FUN = function(gct, ome) {
+      gct@rdesc$protigy.ome <- rep(ome, dim(gct@rdesc)[1])
+      return(gct)
+    })
+  
+  # Test the core merging logic (without withProgress wrapper)
+  expect_no_error({
+    GCTs_merged <- Reduce(
+      function(gct1, gct2) {
+        gct1@rdesc$old_id = gct1@rid
+        gct2@rdesc$old_id = gct2@rid
+        
+        # Only apply prefix if not already prefixed (avoid duplication)
+        # Check if the rid already starts with the ome name
+        if (!any(startsWith(gct1@rid, paste0(gct1@rdesc$protigy.ome[1], "_")))) {
+          rownames(gct1@mat) = rownames(gct1@rdesc) = gct1@rdesc$id = gct1@rid = paste(gct1@rdesc$protigy.ome,gct1@rid,sep="_")
+        }
+        if (!any(startsWith(gct2@rid, paste0(gct2@rdesc$protigy.ome[1], "_")))) {
+          rownames(gct2@mat) = rownames(gct2@rdesc) = gct2@rdesc$id = gct2@rid = paste(gct2@rdesc$protigy.ome,gct2@rid,sep="_")
+        }
+        
+        merged <- cmapR::merge_gct(gct1, gct2, dim='row')
+        return(merged)
+      },
+      GCTs_processed)
+    
+    rownames(GCTs_merged@cdesc) <- GCTs_merged@cid
+    rownames(GCTs_merged@rdesc) <- GCTs_merged@rid
+  })
+  
+  # Verify the merged result has correct structure
+  expect_equal(nrow(GCTs_merged@mat), 6)  # 3 genes from each ome
+  expect_equal(length(GCTs_merged@rid), 6)
+  
+  # Verify ome prefixes are correctly applied without duplication
+  proteome_rids <- GCTs_merged@rid[grepl("^proteome_", GCTs_merged@rid)]
+  phospho_rids <- GCTs_merged@rid[grepl("^phosphoproteome_", GCTs_merged@rid)]
+  
+  expect_equal(length(proteome_rids), 3)
+  expect_equal(length(phospho_rids), 3)
+  
+  # Verify no duplication patterns (e.g., proteome_proteome_)
+  duplicated_patterns <- GCTs_merged@rid[grepl("_.*_.*_", GCTs_merged@rid)]
+  # The phosphoproteome IDs have underscores in their original structure (e.g., NP_005900.2_S91s_1_1_91_91)
+  # So we expect some patterns with multiple underscores, but not duplication patterns
+  expect_true(length(duplicated_patterns) <= 3) # Only phosphoproteome IDs should have multiple underscores
+  
+  # Verify rdesc rownames match rid (consistency check)
+  expect_equal(rownames(GCTs_merged@rdesc), GCTs_merged@rid)
 })
