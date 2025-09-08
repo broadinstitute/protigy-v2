@@ -12,17 +12,36 @@
 
 /* Icon when the sidebar is OPEN (default) */
 .main-header .sidebar-toggle:before {
-  content: "\261A";
+  content: "\25C0";
   display: inline-block;
-  transform: scale(2);
+  transform: scale(1.5);
+  font-family: Arial;
+}
+
+.main-header .sidebar-toggle:after {
+  content: "Collapse";
+  font-size: 10px;
+  vertical-align: middle;
+  margin-left: 10px;
+  font-weight: bold;
 }
 
 /* Icon when the sidebar is CLOSED */
 body.sidebar-collapse .main-header .sidebar-toggle:before {
-  content: "\261B";
+  content: "\25B6";
   display: inline-block;
-  transform: scale(2);
+  transform: scale(1.5);
+  font-family: Arial;
 }
+
+body.sidebar-collapse .main-header .sidebar-toggle:after {
+  content: "Expand";
+  font-size: 10px; 
+  vertical-align: middle;
+  margin-left: 10px; 
+  font-weight: bold;
+}
+
 
 /* for some reason dropdown-menu text defaults to white... so it's impossible to read */
 .dropdown-menu {
