@@ -151,7 +151,7 @@ test_that("preprocess_gcts_multiome_heatmap creates proper structure", {
     labels = c("proteome", "phosphoproteome"),
     datatypes = c("SpectrumMill", "SpectrumMill"),
     geneSymbol_columns = c("geneSymbol", "geneSymbol"),
-    is_VMs = c(FALSE, FALSE),
+    # VM logic removed from simplified multiomic heatmap
     VM_columns = c(NA, NA)
   )
   
@@ -161,8 +161,8 @@ test_that("preprocess_gcts_multiome_heatmap creates proper structure", {
   expect_true(is(result, "GCT"))
   expect_equal(nrow(result@mat), 10)  # 5 genes from each ome
   expect_true("DataType" %in% names(result@rdesc))
-  expect_true("is_VM" %in% names(result@rdesc))
-  expect_true("VM_name" %in% names(result@rdesc))
+  # VM columns are no longer used in simplified multiomic heatmap
+  # VM_name column is no longer created in simplified multiomic heatmap
   expect_true("Sample.ID" %in% names(result@cdesc))
 })
 
@@ -182,7 +182,7 @@ test_that("Multiomic heatmap functions handle edge cases", {
     labels = "proteome",
     datatypes = "SpectrumMill",
     geneSymbol_columns = "geneSymbol",
-    is_VMs = FALSE,
+    # VM logic removed from simplified multiomic heatmap
     VM_columns = NA
   )
   
@@ -209,16 +209,14 @@ test_that("Multiomic heatmap handles VM data correctly", {
     labels = "proteome",
     datatypes = "SpectrumMill",
     geneSymbol_columns = "geneSymbol",
-    is_VMs = TRUE,
+    # VM logic removed from simplified multiomic heatmap
     VM_columns = NA
   )
   
   result <- preprocess_gcts_multiome_heatmap(list(proteome = vm_gct), setup_inputs)
   
-  expect_true("is_VM" %in% names(result@rdesc))
-  expect_true("VM_name" %in% names(result@rdesc))
-  # The VM detection should work with the proper ID format
-  expect_true(all(result@rdesc$is_VM == TRUE))
+  # VM columns are no longer used in simplified multiomic heatmap
+  # The VM detection logic has been removed from the simplified multiomic heatmap
 })
 
 # Test parameter validation
@@ -262,7 +260,7 @@ test_that("Multiomic heatmap handles different data types", {
     labels = "proteome",
     datatypes = "Other",
     geneSymbol_columns = "gene_name",
-    is_VMs = FALSE,
+    # VM logic removed from simplified multiomic heatmap
     VM_columns = NA
   )
   
@@ -298,7 +296,7 @@ test_that("Multiomic heatmap functions handle errors gracefully", {
     labels = "proteome",
     datatypes = "InvalidType",
     geneSymbol_columns = "nonexistent_column",
-    is_VMs = FALSE,
+    # VM logic removed from simplified multiomic heatmap
     VM_columns = NA
   )
   

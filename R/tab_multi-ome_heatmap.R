@@ -64,17 +64,16 @@ multiomeHeatmapTabServer <- function(
       names(GCTs_and_params()$GCTs)
     })
     
-    # Simplified setup UI since we use the merged GCT from setup
-    setup_ui <- renderUI({
-      tagList(
-        h4("Multi-Ome Heatmap Setup"),
-        p("This module uses the merged GCT created during the main setup process."),
-        p("The merged GCT contains all omes with proper sample alignment."),
-        hr(),
-        actionButton(ns("submit_setup"), "Proceed to Heatmap Options", 
-                    class = "btn btn-primary")
-      )
-    })
+            # Simplified setup UI since we use the merged GCT from setup
+            setup_ui <- renderUI({
+              tagList(
+                h4("Multi-Ome Heatmap Setup"),
+                p("This module uses the merged GCT created during the main setup process."),
+                hr(),
+                actionButton(ns("submit_setup"), "Proceed to Heatmap Options",
+                            class = "btn btn-primary")
+              )
+            })
     
     output$sidebar_content <- setup_ui
     

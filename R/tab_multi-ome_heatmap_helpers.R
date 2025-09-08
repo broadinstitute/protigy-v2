@@ -1,4 +1,4 @@
-## preprocess and merge GCT files
+## preprocess and merge GCT files (simplified version without VM logic)
 preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
   
   message("\nPreprocessing GCTs for multi-ome data viewer heatmap")
@@ -7,8 +7,6 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
   labels <- setup_inputs$labels
   datatypes <- setup_inputs$datatypes
   geneSymbol_columns <- setup_inputs$geneSymbol_columns
-  is_VMs <- setup_inputs$is_VMs
-  VM_columns <- setup_inputs$VM_columns
   
   # show progress in progress bar
   if (shiny::isRunning()) incProgress()
@@ -20,8 +18,6 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
     label <- labels[i]
     datatype <- datatypes[i]
     geneSymbol_column <- geneSymbol_columns[i]
-    is_VM <- is_VMs[i]
-    VM_column <- VM_columns[i]
     
     # get default gene symbol column for SpectrumMill
     if (datatype == 'SpectrumMill') {
@@ -34,36 +30,6 @@ preprocess_gcts_multiome_heatmap <- function(GCTs, setup_inputs) {
                             geneSymbol = rdesc[[geneSymbol_column]],
                             DataType = rep(label, dim(rdesc)[1]))
     rownames(rdesc_new) <- rdesc_new$ID
-    
-    ## add info for VM sites
-    # for SpectrumMill data
-    if (datatype == 'SpectrumMill') {
-      # search for VM name regexp in ID's, if its not there then its not a VM
-      is_VM <- any(grepl('_[[:upper:]][[:alnum:]]+[[:lower:]]_', gct@rid))
-      rdesc_new$is_VM <- rep(is_VM, dim(rdesc)[1])
-      
-      if (is_VM) {
-        rdesc_new$VM_name <- sapply(strsplit(gct@rid, split = '_'), 
-                                    function(x) x[grepl('^[[:upper:]][[:alnum:]]+[[:lower:]]', 
-                                                        gsub(' ', '', x))])
-      } else {
-        rdesc_new$VM_name <- rep('', dim(rdesc)[1])
-      }
-      
-      # for non-SpectrumMill data
-    } else {
-      rdesc_new$is_VM <- rep(is_VM, dim(rdesc)[1])
-      
-      # get VM names
-      if(is_VM) {
-        if (length(intersect(VM_column, names(rdesc))) == 0) {
-          warning(paste(VM_column, "not found in GCT rdesc"))
-        }
-        rdesc_new$VM_name <- rdesc[[VM_column]]
-      } else {
-        rdesc_new$VM_name <- rep('', dim(rdesc)[1])
-      }
-    }
     
     # make sure Sample.ID is in cdesc
     cdesc <- gct@cdesc
@@ -105,7 +71,6 @@ myComplexHeatmap <- function(
   # extract parameters
   genes.char <- params$genes.char
   zscore <- params$zscore
-  PTMsites <- params$PTMsites
   min.val <- params$min.val
   max.val <- params$max.val
   sort.after <- params$sort.after
@@ -117,52 +82,34 @@ myComplexHeatmap <- function(
   genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
   genes.vec <- genes.all$genes.vec
   
+  # Check if any genes were found
+  if (length(genes.vec) == 0) {
+    stop("No genes found in the dataset. Please check your gene list and try again.")
+  }
+  
   # extract rows for that gene
   genes.Table <- as.data.frame(merged_mat)[which(merged_rdesc$geneSymbol %in% genes.vec), ]
   row.anno <- merged_rdesc[which(merged_rdesc$geneSymbol %in% genes.vec), ]
   
   # generate heatmap table
-  # first 4 columns are: geneSymbol, ome, row_label, is_VM
+  # first 3 columns are: geneSymbol, ome, row_label
   # the rest of the columns are labeled by each sample, contain abundance data
-  # NOTE: if you ever edit this so that more/less then 4 columns are 
+  # NOTE: if you ever edit this so that more/less then 3 columns are 
   # description-type information, check to other lines where genes.Table is 
   # indexed to make sure unexpected errors don't occur
   genes.Table <- getHMTable(genes.Table, row.anno, params) 
-  genes.Table <- genes.Table[ ,c(1:4, order(names(genes.Table)[-(1:4)])+4)]
+  genes.Table <- genes.Table[ ,c(1:3, order(names(genes.Table)[-(1:3)])+3)]
   
   # re-order the omes
   genes.Table$ome <- factor(genes.Table$ome, ome.order)
   
-  # use only most variable VM sites (if requested)
-  if (PTMsites == "most variable" && any(genes.Table$is_VM)) {
-    genes.Table.VM <- genes.Table[genes.Table$is_VM, ]
-    
-    # calculate SD for all PTM sites
-    genes.Table.VM$SD <-
-      apply(genes.Table.VM[, -(1:4)], 1, function(x) sd(x, na.rm = TRUE))
-    
-    # select the maximum SD for each ome/gemeSymbol
-    genes.Table.VM <- genes.Table.VM %>%
-      group_by(.data$ome, .data$geneSymbol, .drop = TRUE) %>%
-      filter(.data$SD == max(.data$SD)) %>%
-      select(-.data$SD) %>%
-      ungroup()
-    
-    # add back to original table
-    genes.Table <- rbind(genes.Table[!genes.Table$is_VM, ], genes.Table.VM)
-    genes.Table <- as.data.frame(genes.Table)
-    
-    # get rownames back
-    rownames(genes.Table) <- make.unique(genes.Table$row_label)
-  }
-  
   # make matrix to feed into heatmap
   # z-score rows if requested
   if (zscore == "row") {
-    genes.Matrix <- t(apply(genes.Table[,-(1:4)], 1,
+    genes.Matrix <- t(apply(genes.Table[,-(1:3)], 1,
                             function(x)(x-mean(x, na.rm=T))/sd(x, na.rm=T)))
   } else {
-    genes.Matrix <- as.matrix(genes.Table[,-(1:4)])
+    genes.Matrix <- as.matrix(genes.Table[,-(1:3)])
   }
   rownames(genes.Matrix) <- make.unique(genes.Table$row_label)
   
@@ -215,8 +162,22 @@ myComplexHeatmap <- function(
   }
   
   # define color map for heatmap
-  col_fun_ratios <- colorRamp2(c(min.val, 0, max.val), 
-                               c("blue", "white", "red"))
+  # Handle case where min.val equals max.val (e.g., all zeros)
+  if (min.val == max.val) {
+    if (min.val == 0) {
+      # If all values are zero, create a simple color map
+      col_fun_ratios <- colorRamp2(c(-0.1, 0, 0.1), 
+                                   c("blue", "white", "red"))
+    } else {
+      # If all values are the same but not zero, create a range around that value
+      range_val <- abs(min.val) * 0.1 + 0.1  # Small range around the value
+      col_fun_ratios <- colorRamp2(c(min.val - range_val, min.val, min.val + range_val), 
+                                   c("blue", "white", "red"))
+    }
+  } else {
+    col_fun_ratios <- colorRamp2(c(min.val, 0, max.val), 
+                                 c("blue", "white", "red"))
+  }
   
   # make final heatmap for genes
   HM <- Heatmap(genes.Matrix,
@@ -284,20 +245,30 @@ extractGenes <- function(genes.char, table, GENEMAX){
 
 ## function to get the heatmap table
 getHMTable <- function(genes.Table, row.anno, params) {
-  # make row labels
-  row_labels <- paste(row.anno$geneSymbol, row.anno$DataType, row.anno$VM_name)
-  
+  # Get ome information - check if DataType column exists, if not use protigy.ome
+  if ("DataType" %in% names(row.anno)) {
+    data_type <- row.anno$DataType
+  } else if ("protigy.ome" %in% names(row.anno)) {
+    data_type <- row.anno$protigy.ome
+  } else {
+    data_type <- rep("Unknown", nrow(row.anno))
+  }
+
+  # Use the original feature IDs as row labels (these are the actual GCT row IDs)
+  # The row.anno comes from merged_rdesc, so rownames(row.anno) contains the original feature IDs
+  row_labels <- rownames(row.anno)
+
   # get omes
-  ome <- factor(row.anno$DataType)
-  
+  ome <- factor(data_type)
+
   # combine into one genes.Table
+  # Only 3 columns now: geneSymbol, ome, row_label
   genes.Table <- cbind(data.frame(geneSymbol = row.anno$geneSymbol,
                                   ome = ome,
-                                  row_label = row_labels,
-                                  is_VM = row.anno$is_VM),
+                                  row_label = row_labels),
                        genes.Table)
-  rownames(genes.Table) <- make.unique(genes.Table$row_label, sep= ' ')
-  
+  rownames(genes.Table) <- row_labels
+
   return (genes.Table)
 }
 
@@ -326,10 +297,20 @@ multiome_heatmap_custom_colors <- function(custom_colors, sample_anno) {
       # continuous colors
       } else {
         annot_values <- as.numeric(sample_anno[[annot_name]])
+        min_val <- min(annot_values, na.rm = TRUE)
+        max_val <- max(annot_values, na.rm = TRUE)
+        
+        # Handle case where all values are identical
+        if (min_val == max_val) {
+          # Create a small range around the value to avoid colorRamp2 error
+          range_val <- abs(min_val) * 0.1 + 0.1
+          breaks <- c(min_val - range_val, min_val, min_val + range_val)
+        } else {
+          breaks <- c(min_val, mean(annot_values, na.rm = TRUE), max_val)
+        }
+        
         color_function <- circlize::colorRamp2(
-          c(min(annot_values),
-            mean(annot_values),
-            max(annot_values)),
+          breaks,
           c(annot_colors$colors[which(annot_colors$vals == "low")],
             annot_colors$colors[which(annot_colors$vals == "mid")],
             annot_colors$colors[which(annot_colors$vals == "high")])

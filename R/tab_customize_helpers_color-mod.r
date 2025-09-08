@@ -325,10 +325,19 @@ set_annot_colors_continuous <- function( annot_table, # ====
       annots_color_list[[annot]]$vals <- NULL
       pal <- unname(palettes[[pal.index+1]]) # palette in khroma::color() structure
       # convert to add circlize::colorRamp2
-      annots_color_list[[annot]]$colors <- circlize::colorRamp2(seq(min(as.numeric(annot_table[[annot]]), na.rm = T), # breaks vector from min
-                                                                    max(as.numeric(annot_table[[annot]]), na.rm = T), # to max
-                                                                    length.out = attr(pal, "max")), # with max-colors number of elements
-                                                                pal(attr(pal, "max"))) # color-function
+      min_val <- min(as.numeric(annot_table[[annot]]), na.rm = T)
+      max_val <- max(as.numeric(annot_table[[annot]]), na.rm = T)
+      
+      # Handle case where all values are identical
+      if (min_val == max_val) {
+        # Create a small range around the value to avoid colorRamp2 error
+        range_val <- abs(min_val) * 0.1 + 0.1
+        breaks <- seq(min_val - range_val, min_val + range_val, length.out = attr(pal, "max"))
+      } else {
+        breaks <- seq(min_val, max_val, length.out = attr(pal, "max"))
+      }
+      
+      annots_color_list[[annot]]$colors <- circlize::colorRamp2(breaks, pal(attr(pal, "max")))
     } else {
       annots_color_list[[annot]]$vals <- names(palettes[[pal.index+1]]) # save names of color palette (i.e. low mid high)
       annots_color_list[[annot]]$colors <- unname(palettes[[pal.index+1]]) # choose color palette, re-indexing at 1, rather than at 0 
