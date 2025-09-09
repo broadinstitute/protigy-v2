@@ -25,6 +25,125 @@ labelSetupUI <- function(ns, dataFileNames) {
   )
 }
 
+# function for TSV setup UI
+tsvSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
+  tagList(
+    h4("TSV Handler"),
+
+    # Show uploaded files
+    div(
+      style = "margin-bottom: 0px; padding: 15px;",
+      h5("Uploaded TSV Data Files:"),
+      lapply(dataFiles$name, function(filename) {
+        div(
+          style = "margin: 5px 0; display: flex; align-items: center;",
+          icon("file", style = "color: #ffffff;
+               margin-left: 5px;"),
+          span(filename, style = "margin-left: 15px;
+               font-weight: 500;
+               word-break: break-word;
+               overflow-wrap: break-word;
+               max-width: 420px;
+               display: inline-block;")
+        )
+      })
+    ),
+
+    # Unique identifier column selector
+    conditionalPanel(
+      condition = "true", # Always show, but could be conditional based on file upload
+      div(
+        class = "tsv-step",
+        style = "margin-bottom: 10px; padding: 15px;",
+        h5("Select Unique Identifier Column",
+          style = "margin-top: 0; color: #5cb85c; font-weight: bold;"
+        ),
+        p("Choose the unique identifier column for your TSV data.",
+          style = "word-wrap: break-word; overflow-wrap: break-word;"
+        ),
+        div(
+          style = "margin-bottom: 10px;",
+          if (!is.null(identifierColumns) && length(identifierColumns) > 0) {
+            add_css_attributes(
+              selectInput(ns("identifierColumn"),
+                "Identifier Column:",
+                choices = identifierColumns,
+                selected = identifierColumns[1]
+              ),
+              classes = "small-input"
+            )
+          } else {
+            p("Please upload TSV data files to see available columns.", style = "font-style: italic; color: #666;")
+          }
+        )
+      )
+    ),
+    hr(),
+
+    # Download Template
+    div(
+      class = "tsv-step",
+      style = "margin-bottom: 10px; padding: 15px;",
+      h5("Download Experimental Design Template",
+        style = "margin-top: 0; color: #337ab7; font-weight: bold;"
+      ),
+      div(
+        p("Click below to download the experimental design template specific to your TSV data.",
+          style = "word-wrap: break-word; overflow-wrap: break-word; margin-bottom: 10px;")
+        ),
+      div(
+        style = "text-align: left;",
+        downloadButton(ns("downloadExpDesign"),
+          span("Download experimentalDesign.csv", style = "margin-left: 15px;"), 
+          class = "btn btn-primary",
+          icon = icon("download"),
+          style = "width: 100%; 
+          display: flex; 
+          align-items: center; 
+          justify-content: center; 
+          text-align: center; 
+          white-space: nowrap"
+        )
+      )
+    ),
+
+    # Upload and Process
+    div(
+      class = "tsv-step",
+      style = "margin-bottom: 10px; padding: 15px; border-left: 4px solid #f0ad4e;
+                 border: 1px solid #e3e3e3; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);",
+      h5("Upload Completed Template",
+        style = "margin-top: 0; color: #f0ad4e; font-weight: bold;"
+      ),
+      p("Upload your customized experimental design file. For TSV data, this replaces the need for a separate condition setup file.",
+        style = "word-wrap: break-word; overflow-wrap: break-word;"
+      ),
+      div(
+        style = "margin-bottom: 0px;",
+        fileInput(ns("expDesignFile"),
+          "Upload completed experimentalDesign.csv file",
+          accept = ".csv"
+        )
+      ),
+
+      # Process button - only show when experimental design file is uploaded
+      conditionalPanel(
+        condition = "output.expDesignFileUploaded",
+        ns = ns,
+        br(),
+        div(
+          style = "margin-top: 15px; text-align: center;",
+          actionButton(ns("processTSVData"),
+            "Process TSV Data",
+            class = "btn btn-success",
+            style = "font-weight: bold; padding: 10px 30px;"
+          )
+        )
+      )
+    )
+  )
+}
+
 # function for CSV/Excel setup UI
 csvExcelSetupUI <- function(ns, dataFiles, identifierColumns = NULL) {
   tagList(

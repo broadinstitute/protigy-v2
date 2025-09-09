@@ -32,9 +32,9 @@ setupSidebarUI <- function(id = "setupSidebar") {
     tagList(
       # file input
       fileInput(ns("dataFiles"), 
-                paste("Choose data file(s). Supported formats: GCT, CSV, Excel. All files should include the same samples."),
+                paste("Upload your data file(s). Recommend GCT, CSV, and Excel files; only single-file processing supported for TSV files."),
                 multiple = TRUE,
-                accept = c(".gct", ".csv", ".xlsx", ".xls")),
+                accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
       hr(),
       
       # the main body of the sidebar, contents assigned in setupSidebarServer
@@ -102,11 +102,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         } else if (all(file_extensions %in% c("csv", "xlsx", "xls"))) {
           # All CSV/Excel files - use new workflow
           csvExcelWorkflow()
+        } else if (all(file_extensions == "tsv")) {
+          # All TSV files - use TSV workflow
+          tsvWorkflow()
         } else {
           # Mixed file types - show error
           shinyalert::shinyalert(
             title = "Error",
-            text = "Please upload either GCT files only OR CSV/Excel files only. Mixed file types are not supported.",
+            text = "Please upload files of the same type only (GCT, CSV/Excel, or TSV). Mixed file types are not supported.",
             type = "error"
           )
         }
@@ -526,6 +529,35 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       })
     }
     
+    # TSV workflow function
+    tsvWorkflow <- function() {
+      # Extract column names from uploaded TSV files to populate identifier selector
+      identifier_columns <- tryCatch({
+        all_columns <- c()
+        for (i in seq_len(nrow(input$dataFiles))) {
+          file_path <- input$dataFiles$datapath[i]
+          file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
+          
+          if (file_ext == "tsv") {
+            data <- readr::read_delim(file_path, n_max = 1)
+            columns <- names(data)
+            all_columns <- c(all_columns, columns)
+          }
+        }
+        
+        # Return unique columns
+        unique(all_columns)
+      }, error = function(e) {
+        c() # Return empty vector if error
+      })
+      
+      output$sideBarMain <- renderUI({tsvSetupUI(ns = ns, 
+                                                dataFiles = input$dataFiles,
+                                                identifierColumns = identifier_columns)})
+      output$rightButton <- NULL
+      output$leftButton <- NULL
+    }
+
     # CSV/Excel workflow function
     csvExcelWorkflow <- function() {
       # Extract column names from uploaded files to populate identifier selector
@@ -590,6 +622,87 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       }
     )
     
+    # Process TSV data when experimental design is uploaded
+    observeEvent(input$processTSVData, {
+      req(input$expDesignFile)
+      
+      tryCatch({
+        # Process TSV files with progress indication
+        withProgress(message = "Processing TSV files...", {
+          setProgress(0.2, detail = "Reading experimental design")
+          
+          # Read experimental design
+          exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
+          
+          setProgress(0.4, detail = "Converting TSV data to analysis format")
+          
+          # Convert TSV data to CSV format with experimental design
+          identifier_col <- input$identifierColumn
+          processed_tsv_data <- list()
+          
+          for (i in seq_len(nrow(input$dataFiles))) {
+            file_path <- input$dataFiles$datapath[i]
+            file_name <- input$dataFiles$name[i]
+            
+            # Read TSV file
+            tsv_data <- readr::read_delim(file_path)
+            
+            # Convert TSV to format compatible with CSV workflow
+            csv_format_data <- convertTSVToCSVFormat(tsv_data, identifier_col)
+            
+            # Store processed data
+            label <- tools::file_path_sans_ext(file_name)
+            processed_tsv_data[[label]] <- csv_format_data
+          }
+          
+          setProgress(0.6, detail = "Processing with experimental design")
+          
+          # Create temporary files in CSV format and process using CSV workflow
+          temp_files <- data.frame(
+            name = paste0(names(processed_tsv_data), ".csv"),
+            datapath = character(length(processed_tsv_data)),
+            stringsAsFactors = FALSE
+          )
+          
+          for (i in seq_along(processed_tsv_data)) {
+            temp_file <- tempfile(fileext = ".csv")
+            utils::write.csv(processed_tsv_data[[i]], temp_file, row.names = FALSE)
+            temp_files$datapath[i] <- temp_file
+          }
+          
+          # Process using CSV/Excel workflow
+          tsv_result <- processCSVExcelWorkflow(temp_files, exp_design, identifier_col)
+          
+          setProgress(0.8, detail = "Setting up analysis parameters")
+          
+          # Store converted GCT objects and parameters
+          GCTs_unprocessed_internal_reactive(tsv_result$GCTs)
+          parameters_internal_reactive(tsv_result$parameters)
+          
+          # Set up back/next navigation logic
+          backNextLogic$place <- 1
+          backNextLogic$maxPlace <- length(tsv_result$GCTs)
+          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
+          
+          setProgress(1.0, detail = "Ready for parameter setup")
+        })
+        
+        # Success feedback
+        shinyalert::shinyalert(
+          title = "Success!",
+          text = "TSV data has been successfully processed and converted for analysis.",
+          type = "success"
+        )
+        
+      }, error = function(e) {
+        shinyalert::shinyalert(
+          title = "Processing Error",
+          text = paste("Failed to process TSV files:", e$message),
+          type = "error"
+        )
+      })
+    })
+
     # Process CSV/Excel data when experimental design is uploaded
     observeEvent(input$processCSVExcel, {
       req(input$expDesignFile)
