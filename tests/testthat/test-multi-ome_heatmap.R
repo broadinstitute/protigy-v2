@@ -207,31 +207,9 @@ test_that("merge_processed_gcts prevents ome prefix duplication", {
 })
 
 # Test the multiomic heatmap helper functions
-test_that("preprocess_gcts_multiome_heatmap creates proper structure", {
-  # Create mock GCTs
-  proteome_gct <- create_mock_gct(5, 4, "proteome")
-  phospho_gct <- create_mock_gct(5, 3, "phosphoproteome")
-  
-  GCTs <- list(proteome = proteome_gct, phosphoproteome = phospho_gct)
-  
-  setup_inputs <- list(
-    labels = c("proteome", "phosphoproteome"),
-    datatypes = c("SpectrumMill", "SpectrumMill"),
-    geneSymbol_columns = c("geneSymbol", "geneSymbol"),
-    # VM logic removed from simplified multiomic heatmap
-    VM_columns = c(NA, NA)
-  )
-  
-  # Test the preprocessing function
-  result <- preprocess_gcts_multiome_heatmap(GCTs, setup_inputs)
-  
-  expect_true(is(result, "GCT"))
-  expect_equal(nrow(result@mat), 10)  # 5 genes from each ome
-  expect_true("DataType" %in% names(result@rdesc))
-  # VM columns are no longer used in simplified multiomic heatmap
-  # VM_name column is no longer created in simplified multiomic heatmap
-  expect_true("Sample.ID" %in% names(result@cdesc))
-})
+# Note: preprocess_gcts_multiome_heatmap test removed
+# This function is no longer used since the multi-ome heatmap now uses
+# the merged GCT created during the main setup process
 
 # Test the ComplexHeatmap function - simplified test
 test_that("myComplexHeatmap function exists and can be called", {
@@ -240,51 +218,9 @@ test_that("myComplexHeatmap function exists and can be called", {
   expect_true(is.function(myComplexHeatmap))
 })
 
-# Test edge cases
-test_that("Multiomic heatmap functions handle edge cases", {
-  # Test with minimal data
-  minimal_gct <- create_mock_gct(2, 2, "proteome")
-  
-  setup_inputs <- list(
-    labels = "proteome",
-    datatypes = "SpectrumMill",
-    geneSymbol_columns = "geneSymbol",
-    # VM logic removed from simplified multiomic heatmap
-    VM_columns = NA
-  )
-  
-  # Should work with minimal data
-  result <- preprocess_gcts_multiome_heatmap(list(proteome = minimal_gct), setup_inputs)
-  
-  expect_true(is(result, "GCT"))
-  expect_equal(nrow(result@mat), 2)
-  expect_equal(ncol(result@mat), 2)
-})
-
-# Test with VM data
-test_that("Multiomic heatmap handles VM data correctly", {
-  # Create GCT with VM data - use proper VM ID format for SpectrumMill detection
-  vm_gct <- create_mock_gct(5, 4, "proteome")
-  # Use the correct VM ID format that matches the regex: _[[:upper:]][[:alnum:]]+[[:lower:]]_
-  # Pattern needs: _[UPPERCASE][ALNUM]+[lowercase]_
-  vm_gct@rid <- paste0("P12345_K", 1:5, "a_site")  # Format: P12345_K1a_site
-  rownames(vm_gct@mat) <- vm_gct@rid
-  rownames(vm_gct@rdesc) <- vm_gct@rid
-  vm_gct@rdesc$geneSymbol <- paste0("gene_", 1:5)  # Ensure geneSymbol exists
-  
-  setup_inputs <- list(
-    labels = "proteome",
-    datatypes = "SpectrumMill",
-    geneSymbol_columns = "geneSymbol",
-    # VM logic removed from simplified multiomic heatmap
-    VM_columns = NA
-  )
-  
-  result <- preprocess_gcts_multiome_heatmap(list(proteome = vm_gct), setup_inputs)
-  
-  # VM columns are no longer used in simplified multiomic heatmap
-  # The VM detection logic has been removed from the simplified multiomic heatmap
-})
+# Note: Edge case tests for preprocess_gcts_multiome_heatmap removed
+# This function is no longer used since the multi-ome heatmap now uses
+# the merged GCT created during the main setup process
 
 # Test parameter validation
 test_that("Multiomic heatmap validates parameters correctly", {
@@ -318,25 +254,9 @@ test_that("Multiomic heatmap validates parameters correctly", {
   })
 })
 
-# Test with different data types
-test_that("Multiomic heatmap handles different data types", {
-  # Test with "Other" data type
-  other_gct <- create_mock_gct(5, 4, "proteome")
-  
-  setup_inputs <- list(
-    labels = "proteome",
-    datatypes = "Other",
-    geneSymbol_columns = "gene_name",
-    # VM logic removed from simplified multiomic heatmap
-    VM_columns = NA
-  )
-  
-  result <- preprocess_gcts_multiome_heatmap(list(proteome = other_gct), setup_inputs)
-  
-  expect_true(is(result, "GCT"))
-  expect_equal(nrow(result@mat), 5)
-  expect_true("DataType" %in% names(result@rdesc))
-})
+# Note: Different data types test for preprocess_gcts_multiome_heatmap removed
+# This function is no longer used since the multi-ome heatmap now uses
+# the merged GCT created during the main setup process
 
 # Test color handling - simplified test
 test_that("Multiomic heatmap color functions exist", {
@@ -345,33 +265,9 @@ test_that("Multiomic heatmap color functions exist", {
   expect_true(is.function(multiome_heatmap_custom_colors))
 })
 
-# Test error handling
-test_that("Multiomic heatmap functions handle errors gracefully", {
-  # Test with NULL inputs
-  expect_error({
-    preprocess_gcts_multiome_heatmap(NULL, list())
-  })
-  
-  # Test with empty GCT list
-  expect_error({
-    preprocess_gcts_multiome_heatmap(list(), list())
-  })
-  
-  # Test with malformed setup inputs
-  gct <- create_mock_gct(5, 4, "proteome")
-  malformed_inputs <- list(
-    labels = "proteome",
-    datatypes = "InvalidType",
-    geneSymbol_columns = "nonexistent_column",
-    # VM logic removed from simplified multiomic heatmap
-    VM_columns = NA
-  )
-  
-  # Should handle gracefully or provide informative error
-  expect_error({
-    preprocess_gcts_multiome_heatmap(list(proteome = gct), malformed_inputs)
-  })
-})
+# Note: Error handling tests for preprocess_gcts_multiome_heatmap removed
+# This function is no longer used since the multi-ome heatmap now uses
+# the merged GCT created during the main setup process
 
 # Test the rewritten module logic
 test_that("Rewritten multiomic module uses merged GCT correctly", {
