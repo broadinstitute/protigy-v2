@@ -60,7 +60,7 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
   if (is.null(custom_color_map)) {
-    color_defintion <- NULL
+    color_definition <- NULL
   } else if (custom_color_map$is_discrete) {
     colors <- c(unlist(custom_color_map$colors),"gray50")
     names(colors) <- c(custom_color_map$vals,NA)

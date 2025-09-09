@@ -19,18 +19,12 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
     
     ## inputs to customize heatmap
     fluidRow(
-      column(4, radioButtons(ns('zscore'), 
+      column(6, radioButtons(ns('zscore'), 
                              label='Z-score', 
                              choices=c('row', 'none'), 
                              selected='row')),
       
-      column(4, 
-             radioButtons(ns('PTMsites'), 
-                          label='PTM sites', 
-                          choices=c('most variable', 'all'), 
-                          selected='most variable')),
-      column(4,
-             radioButtons(ns('show.sample.label'),
+      column(6, radioButtons(ns('show.sample.label'),
                           label = "Sample labels",
                           choices = c('show' = TRUE, 'hide' = FALSE),
                           selected = FALSE))
@@ -107,17 +101,24 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
       
       # update data ordering options
       observeEvent(setup_submit(), {
+        # Use protigy.ome column if available, otherwise fall back to DataType
+        ome_col <- if ("protigy.ome" %in% names(merged_rdesc())) {
+          merged_rdesc()$protigy.ome
+        } else if ("DataType" %in% names(merged_rdesc())) {
+          merged_rdesc()$DataType
+        } else {
+          "Unknown"
+        }
         updateOrderInput(
           session,
           inputId = 'ome.order',
-          items = sort(unique(merged_rdesc()$DataType)))
+          items = sort(unique(ome_col)))
       })
       
       
       ## get heatmap parameters
       HM.params <- reactive({list(genes.char = input$genes,
                                   zscore = input$zscore,
-                                  PTMsites = input$PTMsites,
                                   min.val = as.numeric(input$min.val),
                                   max.val = as.numeric(input$max.val),
                                   sort.after = input$sort.after,

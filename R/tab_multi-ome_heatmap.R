@@ -51,45 +51,51 @@ multiomeHeatmapTabServer <- function(
     # get namespace
     ns <- session$ns
     
-    # GCTs to use for analysis/visualization
-    GCTs <- reactive({
+    # Use the merged GCT from setup instead of creating a new one
+    GCTs_merged <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
-      
-      # for this module, want to overwrite gct's cdesc with the merged version
-      sapply(
-        GCTs_and_params()$GCTs,
-        simplify = FALSE,
-        FUN = function(gct) {
-          gct@cdesc <- GCTs_and_params()$GCTs_merged@cdesc
-          return(gct)
-        }
-      )
+      validate(need(GCTs_and_params()$GCTs_merged, "GCTs not yet merged"))
+      GCTs_and_params()$GCTs_merged
     })
     
     # vector of all omes
-    all_omes <- reactive(names(GCTs()))
+    all_omes <- reactive({
+      validate(need(GCTs_and_params(), "GCTs not yet processed"))
+      names(GCTs_and_params()$GCTs)
+    })
     
+            # Simplified setup UI since we use the merged GCT from setup
+            setup_ui <- renderUI({
+              tagList(
+                h4("Multi-Ome Heatmap Setup"),
+                p("This module uses the merged GCT created during the main setup process."),
+                hr(),
+                actionButton(ns("submit_setup"), "Proceed to Heatmap Options",
+                            class = "btn btn-primary")
+              )
+            })
     
-    ## Setup ##
-    setup_ui <- setup_multiomeHeatmapTabUI(id = ns("setup"))
-    output$sidebar_content <- renderUI({setup_ui})
-    setup_output <- setupmultiomeHeatmapTabServer(id = "setup", GCTs = GCTs)
-    gcts_merged <- setup_output$gcts_merged
-    setup_submit <- setup_output$submit
+    output$sidebar_content <- setup_ui
     
-    observeEvent(GCTs(), output$sidebar_content <- renderUI({setup_ui}))
+    # Create a simple submit reactive for compatibility
+    setup_submit <- reactive({
+      input$submit_setup
+    })
     
+    # Use the merged GCT directly from setup
     merged_rdesc <- reactive({
-      validate(need(gcts_merged(), "GCTs not processed for multi-ome heatmap"))
-      gcts_merged()@rdesc
+      validate(need(GCTs_merged(), "GCTs not yet processed"))
+      GCTs_merged()@rdesc
     })
+    
     sample_anno <- reactive({
-      validate(need(gcts_merged(), "GCTs not processed for multi-ome heatmap"))
-      gcts_merged()@cdesc
+      validate(need(GCTs_merged(), "GCTs not yet processed"))
+      GCTs_merged()@cdesc
     })
+    
     merged_mat <- reactive({
-      validate(need(gcts_merged(), "GCTs not processed for multi-ome heatmap"))
-      gcts_merged()@mat
+      validate(need(GCTs_merged(), "GCTs not yet processed"))
+      GCTs_merged()@mat
     })
     
     # gather colors from globals, edit to match ComplexHeatmap structure
@@ -108,16 +114,17 @@ multiomeHeatmapTabServer <- function(
       actionButton(ns("back"), "Back to setup")
     )})
     
-    # go to heatmap options
+    # go to heatmap options when setup is submitted
     observeEvent(setup_submit(), {
       output$sidebar_content <- options_ui
     })
     
     # go back to setup
     observeEvent(input$back, {
-      output$sidebar_content <- renderUI({setup_ui})
+      output$sidebar_content <- setup_ui
     })
     
+    # Get heatmap parameters
     HM.params <- options_multiomeHeatmapTabServer("options",
                                                   merged_rdesc = merged_rdesc,
                                                   sample_anno = sample_anno,
