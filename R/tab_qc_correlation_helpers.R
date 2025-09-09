@@ -124,25 +124,41 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
   corr <- cor(mat, use="pairwise.complete.obs", method=corr_method)
   
   # calculate the correlation for each subgroup
-  cor.group <- lapply(unique(annot$annot), function(x){
+  # First, identify groups with sufficient samples for correlation
+  group_counts <- table(annot$annot)
+  valid_groups <- names(group_counts)[group_counts > 1]
+  single_sample_groups <- names(group_counts)[group_counts == 1]
+  
+  # Warn user about groups with single samples
+  if(length(single_sample_groups) > 0) {
+    warning(paste("Groups with only one sample cannot be correlated and will be excluded:",
+                  paste(single_sample_groups, collapse = ", ")))
+  }
+  
+  # Only calculate correlations for groups with multiple samples
+  if(length(valid_groups) == 0) {
+    stop("No groups have more than one sample. Cannot calculate intra-group correlations.")
+  }
+  
+  cor.group <- lapply(valid_groups, function(x){
     cm.grp <- corr[annot$annot==x,annot$annot==x]
     cm.grp <- cm.grp[upper.tri(cm.grp, diag = FALSE)]
     return(cm.grp)
   })
-  names(cor.group) <- unique(annot$annot)
+  names(cor.group) <- valid_groups
   plot.data <- stack(cor.group)
   
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
   if (is.null(custom_color_map)) {
-    color_defintion <- NULL
+    fill_definition <- NULL
   } else if (custom_color_map$is_discrete) {
     colors <- c(unlist(custom_color_map$colors),"gray50")
     names(colors) <- c(custom_color_map$vals,"NA")
     fill_definition <- scale_fill_manual(values = colors)
   } else {
     group <- as.numeric(group)
-    fill_definition <- scale_colour_gradient2(
+    fill_definition <- scale_fill_gradient2(
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],
