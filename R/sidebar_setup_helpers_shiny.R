@@ -159,7 +159,7 @@ gctSetupUI <- function(ns,
                            "['", paste(groups_choices_all_omes, collapse = "', '"), 
                            "'].includes(input['", label, "_group_normalization_column']))"),
         add_css_attributes(
-          checkboxInput(ns('applyToAll'), 'Apply settings to all -omes'),
+          checkboxInput(ns('applyToAll'), 'Apply settings to all datasets'),
           classes = "small-input"),
         ns = ns
       )
@@ -175,7 +175,7 @@ advancedSettingsUI <- function(ns, parameters) {
   if (length(labels) > 1) {
     tagList(
       fluidRow(column(12, selectInput(ns('default_ome'),
-                                      "Default -ome",
+                                      "Default dataset",
                                       choices = labels))),
       hr()
     )
