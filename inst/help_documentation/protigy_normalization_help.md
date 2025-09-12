@@ -4,7 +4,7 @@ This section explains the data preprocessing options available in ProTIGY for no
 
 ## Intensity Data
 
-Check this box if you are using raw or log-transformed intensity data. **By default, ProTIGY assumes your data are ratio data unless this box is checked.** This setting will show only the relevant normalization methods and statistical tests appropriate for intensity data.
+Set this dropdown to "Yes" if you are using raw or log-transformed intensity data. **By default, ProTIGY assumes your data are ratio data unless this is set to "Yes".** This setting will show only the relevant normalization methods and statistical tests appropriate for intensity data.
 
 ## Log Transformation
 

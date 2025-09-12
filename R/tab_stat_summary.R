@@ -251,7 +251,8 @@ statSummary_Ome_Server <- function(id,
       tagList(
         h5("The following selections are applied to Volcano Plots as well"),
         selectInput(ns("select_stat"),"Choose stat:", choices= c("adj.p.val","nom.p.val"), selected = current_stat),
-        numericInput(ns("select_cutoff_text"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001)
+        numericInput(ns("select_cutoff_text"), "Choose cutoff:", min=0.001, max=1, value=current_cutoff, step=0.001),
+        checkboxInput(ns("apply_cutoff_all"), "Apply cutoff to all datasets", value = FALSE)
       )
     })
 
@@ -265,8 +266,67 @@ statSummary_Ome_Server <- function(id,
     # save selected cutoff to stat_params
     observeEvent(input$select_cutoff_text, {
       current <- stat_params()
-      current[[ome]]$cutoff <- input$select_cutoff_text
+      
+      if (input$apply_cutoff_all) {
+        # Apply cutoff to all datasets
+        for (dataset_name in names(current)) {
+          current[[dataset_name]]$cutoff <- input$select_cutoff_text
+        }
+      } else {
+        # Apply cutoff only to current dataset
+        current[[ome]]$cutoff <- input$select_cutoff_text
+      }
+      
       stat_params(current)
+    })
+    
+    # Handle apply cutoff to all datasets checkbox
+    original_cutoff_params <- reactiveVal(NULL)
+    
+    observeEvent(input$apply_cutoff_all, {
+      req(stat_params(), input$select_cutoff_text)
+      
+      current <- stat_params()
+      cutoff_value <- input$select_cutoff_text
+      
+      if (input$apply_cutoff_all) {
+        # Save original parameters before overwriting
+        if (is.null(original_cutoff_params())) {
+          original_cutoff_params(current)
+        }
+        
+        # Apply current cutoff to all datasets
+        for (dataset_name in names(current)) {
+          current[[dataset_name]]$cutoff <- cutoff_value
+        }
+        
+        stat_params(current)
+        showNotification("Applied cutoff to all datasets.", type = "message", duration = 3)
+      } else {
+        # Revert to original parameters if button unclicked
+        if (!is.null(original_cutoff_params())) {
+          stat_params(original_cutoff_params())
+          original_cutoff_params(NULL)
+          showNotification("Reverted to original cutoff for each dataset.", type = "message", duration = 3)
+        }
+      }
+    })
+    
+    # Monitor cutoff consistency and uncheck box if cutoffs become different
+    observe({
+      req(stat_params())
+      
+      current <- stat_params()
+      cutoffs <- sapply(current, function(x) x$cutoff)
+      
+      # Check if all cutoffs are the same
+      all_same <- length(unique(cutoffs)) == 1
+      
+      # If cutoffs are different and box is checked, uncheck it
+      if (!all_same && !is.null(input$apply_cutoff_all) && input$apply_cutoff_all) {
+        updateCheckboxInput(session, "apply_cutoff_all", value = FALSE)
+        original_cutoff_params(NULL)  # Clear saved parameters
+      }
     })
 
     
@@ -388,9 +448,20 @@ statSummary_Ome_Server <- function(id,
       numeric_cols <- sapply(df, is.numeric)
       df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
       
+      # Create descriptive label for significant features
+      if (test_type == "One-sample Moderated T-test") {
+        sig_label <- paste("Significant features (", input$pval_groups, ")")
+      } else if (test_type == "Two-sample Moderated T-test") {
+        sig_label <- paste("Significant features (", input$pval_contrasts, ")")
+      } else if (test_type == "Moderated F test") {
+        sig_label <- "Significant features (F-test)"
+      } else {
+        sig_label <- "Significant features"
+      }
+      
       #RETURN DATAFRAME#
       data.frame(
-        Description = c("Features tested", "Significant features"),
+        Description = c("Features tested", sig_label),
         Value = c(nrow(df_filtered), sum(significant))
       )
     })

@@ -18,13 +18,13 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 ### 📁 **Data Import & Export**
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
 - **Supported Formats**: GCT v1.3 format (TSV/CSV/Excel support coming soon)
-- **Export Options**: High-quality figures (PDF), Excel files, and analysis reports
+- **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
 
 ## Getting Started
 
 ### 1. **Upload Your Data**
 - Use the **Sidebar** to upload your dataset(s)
-- Upload multiple GCT files at the same time for multi-omics analysis (e.g., RNA-seq, proteome, phosphoproteome)
+- Upload one or more GCT files from the same experiment (e.g., different omes such as RNA-seq, proteome, phosphoproteome). Files should have overlapping samples but not all samples need to be in all files.
 - Currently supported format: GCT v1.3 files only
 - TSV/CSV/Excel support coming soon
 - You may change the default dataset anytime using the sidebar
@@ -43,8 +43,18 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 - View results across multiple Statistics subtabs
 
 ### 4. **Export Results**
-- Download high-quality figures and analysis reports
-- Export processed data in various formats
+- Export high-quality figures (PDF), data files (GCT), and statistical results (CSV). You can select which datasets and which modules to export using the dropdown menus.
+
+## UI Navigation
+
+### Multiple Dataset Tabs
+If multiple datasets are uploaded, there will be multiple tabs on each page allowing you to view the plots for each dataset separately. You can change the default dataset using the sidebar.
+
+### Plot Customization
+Many plots have a double cogwheel icon in the top right corner. Clicking this icon provides customization options for the plots. Your customization options will be saved and used for exports.
+
+### Changing Settings
+If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
 
 ## Need Help?
 

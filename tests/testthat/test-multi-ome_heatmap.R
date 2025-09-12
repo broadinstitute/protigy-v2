@@ -258,12 +258,9 @@ test_that("Multiomic heatmap validates parameters correctly", {
 # This function is no longer used since the multi-ome heatmap now uses
 # the merged GCT created during the main setup process
 
-# Test color handling - simplified test
-test_that("Multiomic heatmap color functions exist", {
-  # Test that color-related functions exist
-  expect_true(exists("multiome_heatmap_custom_colors"))
-  expect_true(is.function(multiome_heatmap_custom_colors))
-})
+# Note: Color function tests removed
+# The multiome_heatmap_custom_colors function is no longer used
+# Colors are now used directly from globals$colors$multi_ome
 
 # Note: Error handling tests for preprocess_gcts_multiome_heatmap removed
 # This function is no longer used since the multi-ome heatmap now uses

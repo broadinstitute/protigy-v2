@@ -98,10 +98,10 @@ multiomeHeatmapTabServer <- function(
       GCTs_merged()@mat
     })
     
-    # gather colors from globals, edit to match ComplexHeatmap structure
+    # gather colors from globals
     custom_colors <- reactive({
-      req(globals$colors$multi_ome, sample_anno())
-      multiome_heatmap_custom_colors(globals$colors$multi_ome, sample_anno())
+      req(globals$colors$multi_ome)
+      globals$colors$multi_ome
     })
     
 
@@ -128,7 +128,8 @@ multiomeHeatmapTabServer <- function(
     HM.params <- options_multiomeHeatmapTabServer("options",
                                                   merged_rdesc = merged_rdesc,
                                                   sample_anno = sample_anno,
-                                                  setup_submit = setup_submit)
+                                                  setup_submit = setup_submit,
+                                                  globals = globals)
     
     
     ## Generate Heatmap

@@ -11,7 +11,7 @@ setupSidebarUI <- function(id = "setupSidebar") {
   tagList(
     # file input
     fileInput(ns("gctFiles"), 
-              paste("Choose GCT file(s). Files should have overlapping samples but not all samples need to be in all files."),
+              paste("Choose GCT file(s)."),
               multiple = TRUE,
               accept = ".gct"),
     hr(),

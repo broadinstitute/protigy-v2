@@ -36,9 +36,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         tab <- as.data.frame(ome_data)
         
         #Add ID column to tab
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
-        colnames(tab)[1] <- id.col
+        # In GCT files, the "id" column is ALWAYS named "id"
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+          colnames(tab)[1] <- "id"
+        } else {
+          # If no "id" column exists, create it from row names
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+          colnames(tab)[1] <- "id"
+        }
         
         #Run test on only the chosen groups
         sample_names <- colnames(ome_data) 
@@ -97,12 +105,15 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         
         # Join all rdesc columns to the results 
         rdesc_df <- as.data.frame(rdesc)
-        rdesc_df[[id.col]] <- rownames(rdesc_df)  # Ensure ID column exists
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df,final.results, by = "id")
         
-        cat('\n-- modF.test exit --\n')
-        results_list[[ome_name]]<-final.results
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        
+        combined_results <- dplyr::left_join(rdesc_df,final.results, by = "id")
+        results_list[[ome_name]]<-combined_results
       }
     })
   }
@@ -184,8 +195,13 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         }
         # Join all rdesc columns to the results
         rdesc_df <- as.data.frame(rdesc)
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        
+        combined_results <- dplyr::left_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }
@@ -208,9 +224,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         tab <- as.data.frame(ome_data)
         
         #Add ID column to tab
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
-        colnames(tab)[1] <- id.col
+        # In GCT files, the "id" column is ALWAYS named "id"
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+          colnames(tab)[1] <- "id"
+        } else {
+          # If no "id" column exists, create it from row names
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+          colnames(tab)[1] <- "id"
+        }
 
         for (contrast_name in selected_contrasts){
           
@@ -233,7 +257,9 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           cat('\n-- modT.test.2class --\n')
 
           ## store group names
-          groups <- factor(groups, levels = c(group1, group2))
+          # For contrast "A / B", user expects fold change = A - B
+          # So we set levels as c(group2, group1) to get group1 - group2
+          groups <- factor(groups, levels = c(group2, group1))
           id <- tab.group[,id.col]
           data <- tab.group[, setdiff (colnames (tab.group), id.col)]
           
@@ -285,8 +311,12 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         }
         # Join all rdesc columns to the results
         rdesc_df <- as.data.frame(rdesc)
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        combined_results <- dplyr::left_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }

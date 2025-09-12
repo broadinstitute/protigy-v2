@@ -74,7 +74,7 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
 }
 
 ## server for heatmap options
-options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit) {
+options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals) {
   moduleServer(
     id,
     ## module function
@@ -92,10 +92,14 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
       
       # update selectInput for annotations
       observeEvent(setup_submit(), {
+        # Get default annotation for default ome
+        default_annotation <- globals$default_annotations[[globals$default_ome]]
+        
         updateSelectInput(
           session,
           inputId = "sort.after",
-          choices = setdiff(names(sample_anno()), 'Sample.ID'))
+          choices = setdiff(names(sample_anno()), 'Sample.ID'),
+          selected = default_annotation)
       })
       
       

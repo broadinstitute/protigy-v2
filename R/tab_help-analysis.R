@@ -26,6 +26,13 @@ helpAnalysisTabUI <- function(id = "helpTab") {
               system.file("help_documentation/protigy_statistics_help.md", 
                           package = "Protigy")
             )
+          ),
+          tabPanel(
+            "Multi-ome",
+            includeMarkdown(
+              system.file("help_documentation/protigy_multiome_help.md", 
+                          package = "Protigy")
+            )
           )
         ),
         width = 12,
