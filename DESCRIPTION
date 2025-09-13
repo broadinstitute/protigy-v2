@@ -52,7 +52,9 @@ Imports:
     shinyBS,
     glue,
     Matrix (>= 1.6-2),
-    shinyWidgets
+    shinyWidgets, 
+    janitor, 
+    snakecase
 Depends:
     R (>= 4.0.0),
     shiny

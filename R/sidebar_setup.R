@@ -30,9 +30,11 @@ setupSidebarUI <- function(id = "setupSidebar") {
   tags$div(
     style = "margin-bottom: 10px; padding: 15px; width: 100%", 
     tagList(
-      # file input
+      h4("Upload your data file(s)"), 
+
+      # File input
       fileInput(ns("dataFiles"), 
-                paste("Upload your data file(s). Recommend GCT, CSV, and Excel files; only single-file processing supported for TSV files."),
+                paste("Recommended formats are GCT, CSV, or Excel. TSV files can only be processed one at a time."),
                 multiple = TRUE,
                 accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
       hr(),
@@ -531,32 +533,62 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # TSV workflow function
     tsvWorkflow <- function() {
-      # Extract column names from uploaded TSV files to populate identifier selector
-      identifier_columns <- tryCatch({
-        all_columns <- c()
-        for (i in seq_len(nrow(input$dataFiles))) {
-          file_path <- input$dataFiles$datapath[i]
-          file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
-          
-          if (file_ext == "tsv") {
-            data <- readr::read_delim(file_path, n_max = 1)
-            columns <- names(data)
-            all_columns <- c(all_columns, columns)
-          }
-        }
-        
-        # Return unique columns
-        unique(all_columns)
-      }, error = function(e) {
-        c() # Return empty vector if error
-      })
-      
       output$sideBarMain <- renderUI({tsvSetupUI(ns = ns, 
                                                 dataFiles = input$dataFiles,
-                                                identifierColumns = identifier_columns)})
+                                                identifierColumns = NULL)}) # No longer pass identifier columns initially
       output$rightButton <- NULL
       output$leftButton <- NULL
     }
+    
+    # Generate identifier column selector after condition setup is uploaded
+    output$identifierColumnSelector <- renderUI({
+      req(input$conditionSetupFile)
+      
+      tryCatch({
+        # Read condition setup file
+        condition_setup <- readr::read_delim(input$conditionSetupFile$datapath) |> 
+          clean_names()
+        
+        # Process one TSV file to get processed column names
+        if (nrow(input$dataFiles) > 0) {
+          file_path <- input$dataFiles$datapath[1]
+          # message("DEBUG: Starting TSV data processing for identifier column selection...")
+          # message("DEBUG: Reading TSV file: ", input$dataFiles$name[1])
+          
+          tsv_data <- readr::read_delim(file_path) |> 
+            clean_names()
+          # message("DEBUG: Read TSV data: ", nrow(tsv_data), " rows x ", ncol(tsv_data), " columns")
+          # message("DEBUG: TSV column names: ", paste(colnames(tsv_data), collapse = ", "))
+          # message("DEBUG: Condition setup columns: ", paste(colnames(condition_setup), collapse = ", "))
+          
+          # Use existing TSV processing to get processed column names
+          # message("DEBUG: Calling processSingleTSVFile...")
+          result <- processSingleTSVFile(tsv_data, condition_setup, input$dataFiles$name[1])
+          processed_columns <- names(result$processed_data)
+          
+          # Filter for likely identifier columns (non-numeric, non-condition columns)
+          identifier_candidates <- c("id", processed_columns)
+          
+          if (length(identifier_candidates) == 0) {
+            identifier_candidates <- processed_columns
+          }
+          
+          add_css_attributes(
+            selectInput(ns("identifierColumn"),
+              "Identifier Column:",
+              choices = identifier_candidates,
+              selected = if("id" %in% identifier_candidates) "id" else identifier_candidates[1]
+            ),
+            classes = "small-input"
+          )
+        } else {
+          p("No TSV files to process.", style = "color: red;")
+        }
+        
+      }, error = function(e) {
+        p(paste("Error processing files:", e$message), style = "color: red;")
+      })
+    })
 
     # CSV/Excel workflow function
     csvExcelWorkflow <- function() {
@@ -593,21 +625,72 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       output$leftButton <- NULL
     }
     
-    # Reactive output to control process button visibility
+    # Reactive output to control process button visibility for CSV/Excel
     output$expDesignFileUploaded <- reactive({
       return(!is.null(input$expDesignFile))
     })
     outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
+    
+    # Reactive output to control TSV workflow visibility
+    output$conditionSetupUploaded <- reactive({
+      return(!is.null(input$conditionSetupFile))
+    })
+    outputOptions(output, "conditionSetupUploaded", suspendWhenHidden = FALSE)
+    
+    # Reactive output to control identifier column selector visibility
+    output$identifierColumnSelected <- reactive({
+      return(!is.null(input$conditionSetupFile) && !is.null(input$identifierColumn))
+    })
+    outputOptions(output, "identifierColumnSelected", suspendWhenHidden = FALSE)
+    
+    # Reactive output to control TSV process button (both files needed)
+    output$bothFilesUploaded <- reactive({
+      return(!is.null(input$conditionSetupFile) && !is.null(input$expDesignFile) && !is.null(input$identifierColumn))
+    })
+    outputOptions(output, "bothFilesUploaded", suspendWhenHidden = FALSE)
     
     # Download handler for experimental design template
     output$downloadExpDesign <- downloadHandler(
       filename = "experimentalDesign.csv",
       content = function(file) {
         tryCatch({
-          # Generate experimental design template using selected identifier column
           identifier_col <- input$identifierColumn
-          template <- generateExperimentalDesignTemplate(input$dataFiles, 
-                                                        identifierColumn = identifier_col)
+          
+          # Check if this is TSV workflow with condition setup file
+          if (!is.null(input$conditionSetupFile)) {
+            # TSV workflow: Generate experimental design from processed TSV data (renamed columns)
+            req(input$identifierColumn) # Make sure identifier column is selected
+            
+            # Read condition setup file
+            condition_setup <- readr::read_delim(input$conditionSetupFile$datapath) |> 
+                clean_names()
+            
+            # Process TSV data with condition setup to get renamed columns
+            if (nrow(input$dataFiles) > 0) {
+              file_path <- input$dataFiles$datapath[1]
+              tsv_data <- readr::read_delim(file_path, n_max = 10) |> 
+                clean_names()
+              
+              # Process TSV with condition setup to get renamed columns
+              result <- processSingleTSVFile(tsv_data, condition_setup, input$dataFiles$name[1], input$identifierColumn)
+              processed_columns <- names(result$processed_data)
+              
+              # Create experimental design template with renamed sample column names
+              template <- data.frame(
+                columnName = processed_columns,
+                experiment = rep(NA, length(processed_columns)),
+                condition = rep(NA, length(processed_columns)), 
+                replicate = rep(NA, length(processed_columns)),
+                stringsAsFactors = FALSE
+              )
+            } else {
+              stop("No TSV files available for processing")
+            }
+          } else {
+            # CSV/Excel workflow: Generate from original file columns
+            template <- generateExperimentalDesignTemplate(input$dataFiles, 
+                                                          identifierColumn = identifier_col)
+          }
           
           # Write to file
           utils::write.csv(template, file, row.names = FALSE)
@@ -622,83 +705,93 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       }
     )
     
-    # Process TSV data when experimental design is uploaded
+    # Process TSV data when both condition setup and experimental design are uploaded
     observeEvent(input$processTSVData, {
-      req(input$expDesignFile)
+      req(input$conditionSetupFile, input$expDesignFile)
       
       tryCatch({
         # Process TSV files with progress indication
         withProgress(message = "Processing TSV files...", {
+          setProgress(0.1, detail = "Reading condition setup file")
+          
+          # Read and validate condition setup file
+          condition_setup <- readConditionSetup(input$conditionSetupFile$datapath)
+          
           setProgress(0.2, detail = "Reading experimental design")
           
           # Read experimental design
           exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
           
-          setProgress(0.4, detail = "Converting TSV data to analysis format")
+          setProgress(0.4, detail = "Processing TSV data with condition setup")
           
-          # Convert TSV data to CSV format with experimental design
+          # Use proper TSV processing functions with condition setup
           identifier_col <- input$identifierColumn
-          processed_tsv_data <- list()
           
-          for (i in seq_len(nrow(input$dataFiles))) {
-            file_path <- input$dataFiles$datapath[i]
-            file_name <- input$dataFiles$name[i]
-            
-            # Read TSV file
-            tsv_data <- readr::read_delim(file_path)
-            
-            # Convert TSV to format compatible with CSV workflow
-            csv_format_data <- convertTSVToCSVFormat(tsv_data, identifier_col)
-            
-            # Store processed data
-            label <- tools::file_path_sans_ext(file_name)
-            processed_tsv_data[[label]] <- csv_format_data
-          }
+          # Process TSV files using the existing TSV processing functions
+          tsv_result <- processTSVFiles(
+            dataFiles = input$dataFiles,
+            conditionSetup = condition_setup,
+            identifierColumn = identifier_col
+          )
           
-          setProgress(0.6, detail = "Processing with experimental design")
+          setProgress(0.6, detail = "Converting to GCT format")
           
-          # Create temporary files in CSV format and process using CSV workflow
+          # Convert processed TSV data (with renamed columns) to GCT format using experimental design
+          # Create temporary files with the processed TSV data
           temp_files <- data.frame(
-            name = paste0(names(processed_tsv_data), ".csv"),
-            datapath = character(length(processed_tsv_data)),
+            name = paste0(names(tsv_result$processed_data), ".csv"),
+            datapath = character(length(tsv_result$processed_data)),
             stringsAsFactors = FALSE
           )
           
-          for (i in seq_along(processed_tsv_data)) {
+          for (i in seq_along(tsv_result$processed_data)) {
             temp_file <- tempfile(fileext = ".csv")
-            utils::write.csv(processed_tsv_data[[i]], temp_file, row.names = FALSE)
+            utils::write.csv(tsv_result$processed_data[[i]], temp_file, row.names = FALSE)
             temp_files$datapath[i] <- temp_file
           }
           
-          # Process using CSV/Excel workflow
-          tsv_result <- processCSVExcelWorkflow(temp_files, exp_design, identifier_col)
+          # Process using CSV/Excel workflow with the processed (renamed) TSV data
+          gct_result <- processCSVExcelWorkflow(temp_files, exp_design, identifier_col)
           
           setProgress(0.8, detail = "Setting up analysis parameters")
           
           # Store converted GCT objects and parameters
-          GCTs_unprocessed_internal_reactive(tsv_result$GCTs)
-          parameters_internal_reactive(tsv_result$parameters)
+          GCTs_unprocessed_internal_reactive(gct_result$GCTs)
+          parameters_internal_reactive(gct_result$parameters)
           
-          # Set up back/next navigation logic
+          # Set up back/next navigation logic for parameter setup
           backNextLogic$place <- 1
-          backNextLogic$maxPlace <- length(tsv_result$GCTs)
+          backNextLogic$maxPlace <- length(gct_result$GCTs)
           backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
           
           setProgress(1.0, detail = "Ready for parameter setup")
         })
         
-        # Success feedback
+        # Show success message
         shinyalert::shinyalert(
-          title = "Success!",
-          text = "TSV data has been successfully processed and converted for analysis.",
-          type = "success"
+          title = "TSV Processing Complete!",
+          text = paste("Successfully processed", length(input$dataFiles$name), 
+                      "TSV file(s) with condition setup. Now configure analysis parameters..."),
+          type = "success",
+          timer = 1000,
+          showConfirmButton = FALSE
         )
         
+        # Trigger the standard parameter setup workflow (same as GCT files)
+        labelsGO(labelsGO() + 1)
+        
       }, error = function(e) {
+        # Show detailed error message
+        error_msg <- paste("Failed to process TSV data:", e$message)
+        
+        # Log error for debugging
+        message("TSV Processing Error: ", error_msg)
+        
         shinyalert::shinyalert(
           title = "Processing Error",
-          text = paste("Failed to process TSV files:", e$message),
-          type = "error"
+          text = error_msg,
+          type = "error",
+          html = TRUE
         )
       })
     })

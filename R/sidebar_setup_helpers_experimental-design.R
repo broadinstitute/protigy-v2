@@ -49,8 +49,8 @@ generateExperimentalDesignTemplate <- function(dataFiles, identifierColumn = NUL
 # Validate experimental design template
 validateExperimentalDesign <- function(exp_design) {
   # Check that columnName column exists (this is the only required column)
-  if (!"column_name" %in% names(exp_design)) {
-    stop("Missing required column: column_name")
+  if (!"columnName" %in% names(exp_design)) {
+    stop("Missing required column: columnName")
   }
   
   # Check for empty string throughout the dataframe
@@ -67,7 +67,7 @@ validateExperimentalDesign <- function(exp_design) {
 readExperimentalDesign <- function(file_path) {
   tryCatch({
     # Try reading as CSV first
-    exp_design <- utils::read.csv(file_path, stringsAsFactors = FALSE)
+    exp_design <- readr::read_csv(file_path)
     
     # Validate the experimental design
     validateExperimentalDesign(exp_design)

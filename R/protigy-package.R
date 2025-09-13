@@ -14,6 +14,8 @@
 #' @import ggfortify
 #' @import cmapR
 #' @import shinyWidgets
+#' @import janitor
+#' @import snakecase
 #' @importFrom Matrix crossprod tcrossprod
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown

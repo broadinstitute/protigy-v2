@@ -68,10 +68,12 @@ section.sidebar .shiny-input-container {
 section.sidebar h4 {
   margin-top: 0;
   text-align: center;
+  font-weight: bold;
 }
 
 section.sidebar h5 {
   padding-top: 15px;
+  padding-bottom: 5px; 
   font-size: 12pt;
   text-align: center;
 }
@@ -120,12 +122,26 @@ section.sidebar p {
   align-items: center;
 }
 
-/* Center the file input uploader button */
-.shiny-file-input-container {
+/* File input selector button */
+.shiny-input-container .btn {
+  border-radius: 12px 12px 0 0; 
   width: 100%; 
   margin-left: auto;
   margin-right: auto;
   text-align: center;
+}
+
+/* File input output space */
+.shiny-input-container input[type="text"] {
+  border-radius:12px 12px 0 0;
+  width:100%;
+}
+
+/* File input progress bar */
+.shiny-file-input-progress {
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+  width: 100%;
 }
 
 /* Inline input elements */
