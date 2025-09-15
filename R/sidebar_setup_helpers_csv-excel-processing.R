@@ -19,7 +19,7 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
     tryCatch({
       # Read the data file
       if (file_ext == "csv") {
-        data <- utils::read.csv(file_path, stringsAsFactors = FALSE)
+        data <- readr::read_csv(file_path, stringsAsFactors = FALSE)
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {

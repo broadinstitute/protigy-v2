@@ -600,7 +600,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
           
           if (file_ext == "csv") {
-            data <- utils::read.csv(file_path, nrows = 1, stringsAsFactors = FALSE)
+            data <- readr::read_csv(file_path, nrows = 1, stringsAsFactors = FALSE)
             columns <- names(data)
           } else if (file_ext %in% c("xlsx", "xls")) {
             data <- readxl::read_excel(file_path, n_max = 1)
