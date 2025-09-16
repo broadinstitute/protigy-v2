@@ -20,14 +20,28 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 - **Supported Formats**: GCT v1.3 format (TSV/CSV/Excel support coming soon)
 - **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
 
+## UI Navigation
+
+### Sidebar Controls
+- Use the **Sidebar** to upload your dataset(s) and configure analysis settings
+- Click the **single cogwheel** icon next to the sidebar to close/open the sidebar
+- You may change the default dataset anytime using the sidebar
+
+### Multiple Dataset Tabs
+If multiple datasets are uploaded, there will be multiple tabs on each page allowing you to view the plots for each dataset separately. You can change the default dataset using the sidebar.
+
+### Plot Customization
+Many plots have a **double cogwheel** icon in the top right corner. Clicking this icon provides customization options for the plots. Your customization options will be saved and used for exports.
+
+### Changing Settings
+If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
+
 ## Getting Started
 
 ### 1. **Upload Your Data**
-- Use the **Sidebar** to upload your dataset(s)
 - Upload one or more GCT files from the same experiment (e.g., different omes such as RNA-seq, proteome, phosphoproteome). Files should have overlapping samples but not all samples need to be in all files.
 - Currently supported format: GCT v1.3 files only
 - TSV/CSV/Excel support coming soon
-- You may change the default dataset anytime using the sidebar
 
 ### 2. **Explore Your Data**
 - Use the **QC** tabs to examine data quality:
@@ -44,17 +58,6 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ### 4. **Export Results**
 - Export high-quality figures (PDF), data files (GCT), and statistical results (CSV). You can select which datasets and which modules to export using the dropdown menus.
-
-## UI Navigation
-
-### Multiple Dataset Tabs
-If multiple datasets are uploaded, there will be multiple tabs on each page allowing you to view the plots for each dataset separately. You can change the default dataset using the sidebar.
-
-### Plot Customization
-Many plots have a double cogwheel icon in the top right corner. Clicking this icon provides customization options for the plots. Your customization options will be saved and used for exports.
-
-### Changing Settings
-If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
 
 ## Need Help?
 

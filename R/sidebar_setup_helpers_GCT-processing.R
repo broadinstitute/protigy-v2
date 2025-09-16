@@ -183,7 +183,7 @@ processGCTs <- function(GCTs, parameters) {
   
   
   GCTs_merged <- my_shinyalert_tryCatch(
-    merge_processed_gcts(GCTs_processed),
+    merge_processed_gcts(GCTs_processed, parameters_updated),
     text.warning = "<b>Warning in merging GCTs:</b>",
     show.warning = TRUE,
     append.warning = TRUE,
@@ -366,19 +366,26 @@ validateGCT <- function(gct) {
 }
 
 # merge processed GCTs
-merge_processed_gcts <- function(GCTs_processed) {
+merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
   withProgress(message = "Merging GCTs", expr = {
     
-    # add a protigy.ome column to each gct's rdesc
+    # add a protigy.ome column to each gct's rdesc using dataset labels from parameters
     GCTs_processed <- mapply(
-      GCTs_processed, names(GCTs_processed),
+      GCTs_processed, names(GCTs_processed), parameters_updated,
       SIMPLIFY = FALSE, USE.NAMES = TRUE, 
-      FUN = function(gct, ome) {
-        # check if `protigy.ome` is a column in the current gct
-        if ("protigy.ome" %in% names(gct@rdesc) & any(gct@rdesc$protigy.ome != ome)) {
-          warning("`protigy.ome` column already exists and will be overwritten in ", ome)
+      FUN = function(gct, filename, params) {
+        # Get the dataset label from parameters
+        dataset_label <- params$dataset_label
+        if (is.null(dataset_label)) {
+          # Fallback to filename if no label is set
+          dataset_label <- filename
         }
-        gct@rdesc$protigy.ome <- rep(ome, dim(gct@rdesc)[1])
+        
+        # check if `protigy.ome` is a column in the current gct
+        if ("protigy.ome" %in% names(gct@rdesc) & any(gct@rdesc$protigy.ome != dataset_label)) {
+          warning("`protigy.ome` column already exists and will be overwritten in ", filename)
+        }
+        gct@rdesc$protigy.ome <- rep(dataset_label, dim(gct@rdesc)[1])
         return(gct)
       })
     

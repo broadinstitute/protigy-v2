@@ -64,13 +64,30 @@ multiomeHeatmapTabServer <- function(
       names(GCTs_and_params()$GCTs)
     })
     
-            # Simplified setup UI since we use the merged GCT from setup
+            # Setup UI with annotation selection
             setup_ui <- renderUI({
               tagList(
                 h4("Multi-Ome Heatmap Setup"),
                 p("This module uses the merged GCT created during the main setup process."),
                 hr(),
-                actionButton(ns("submit_setup"), "Proceed to Heatmap Options",
+                
+                # Annotation selection
+                pickerInput(
+                  ns("selected_annotations"),
+                  label = "Select annotations to display:",
+                  choices = available_annotations(),
+                  selected = initial_selected_annotations(),
+                  multiple = TRUE,
+                  options = pickerOptions(
+                    actionsBox = TRUE,
+                    selectAllText = "Select All",
+                    deselectAllText = "Deselect All",
+                    noneSelectedText = "No annotations selected"
+                  )
+                ),
+                
+                hr(),
+                actionButton(ns("submit_setup"), "Plot Heatmap",
                             class = "btn btn-primary")
               )
             })
@@ -80,6 +97,35 @@ multiomeHeatmapTabServer <- function(
     # Create a simple submit reactive for compatibility
     setup_submit <- reactive({
       input$submit_setup
+    })
+    
+    # Track which screen we're on
+    current_screen <- reactiveVal("setup")
+    
+    # Save selected annotations
+    saved_annotations <- reactiveVal(NULL)
+    
+    # Save all heatmap settings
+    saved_heatmap_settings <- reactiveVal(NULL)
+    
+    # Update screen when navigating
+    observeEvent(input$submit_setup, {
+      # Save current selections before moving to options
+      if (!is.null(input$selected_annotations)) {
+        saved_annotations(input$selected_annotations)
+      }
+      current_screen("options")
+    })
+    
+    # Save heatmap settings when they change
+    observeEvent(HM.params(), {
+      if (current_screen() == "options") {
+        saved_heatmap_settings(HM.params())
+      }
+    }, ignoreInit = TRUE)
+    
+    observeEvent(input$back, {
+      current_screen("setup")
     })
     
     # Use the merged GCT directly from setup
@@ -92,6 +138,36 @@ multiomeHeatmapTabServer <- function(
       validate(need(GCTs_merged(), "GCTs not yet processed"))
       GCTs_merged()@cdesc
     })
+    
+    # Available annotations (excluding Sample.ID)
+    available_annotations <- reactive({
+      validate(need(sample_anno(), "Sample annotations not available"))
+      # Exclude Sample.ID and any other system columns
+      system_cols <- c("Sample.ID")
+      setdiff(colnames(sample_anno()), system_cols)
+    })
+    
+    # Default annotation for default ome
+    default_annotation <- reactive({
+      if (is.null(globals$default_ome) || is.null(globals$default_annotations)) {
+        return(NULL)
+      }
+      default_annot <- globals$default_annotations[[globals$default_ome]]
+      if (is.null(default_annot)) {
+        return(NULL)
+      }
+      return(default_annot)
+    })
+    
+    # Get initial selected annotations (saved or default)
+    initial_selected_annotations <- reactive({
+      if (!is.null(saved_annotations())) {
+        return(saved_annotations())
+      } else {
+        return(default_annotation())
+      }
+    })
+    
     
     merged_mat <- reactive({
       validate(need(GCTs_merged(), "GCTs not yet processed"))
@@ -122,6 +198,15 @@ multiomeHeatmapTabServer <- function(
     # go back to setup
     observeEvent(input$back, {
       output$sidebar_content <- setup_ui
+      
+      # Update pickerInput to restore saved selections
+      if (!is.null(saved_annotations())) {
+        updatePickerInput(
+          session,
+          inputId = "selected_annotations",
+          selected = saved_annotations()
+        )
+      }
     })
     
     # Get heatmap parameters
@@ -129,7 +214,18 @@ multiomeHeatmapTabServer <- function(
                                                   merged_rdesc = merged_rdesc,
                                                   sample_anno = sample_anno,
                                                   setup_submit = setup_submit,
-                                                  globals = globals)
+                                                  globals = globals,
+                                                  selected_annotations = reactive({
+                                                    tryCatch({
+                                                      if (is.null(input$selected_annotations)) {
+                                                        return(NULL)
+                                                      }
+                                                      input$selected_annotations
+                                                    }, error = function(e) {
+                                                      return(NULL)
+                                                    })
+                                                  }),
+                                                  saved_settings = saved_heatmap_settings)
     
     
     ## Generate Heatmap
@@ -146,10 +242,21 @@ multiomeHeatmapTabServer <- function(
                        merged_mat = merged_mat(),
                        sample_anno = sample_anno(),
                        custom_colors = custom_colors(),
-                       GENEMAX = GENEMAX)
+                       GENEMAX = GENEMAX,
+                       selected_annotations = {
+                         if (is.null(input$selected_annotations)) {
+                           return(NULL)
+                         }
+                         input$selected_annotations
+                       })
     })
     
     HM <- reactive({
+      # Show blank plot when on setup screen
+      if (current_screen() == "setup") {
+        return(NULL)
+      }
+      
       validate(need(HM.out()$HM, "Heatmap not avaliable"))
       draw_multiome_HM(HM.out()$HM)
     })

@@ -5,7 +5,7 @@
 ## make complex heatmap
 ## calls global variables merged_rdesc, merged_mat, sample_anno
 myComplexHeatmap <- function(
-    params, GENEMAX, merged_rdesc, merged_mat, sample_anno, custom_colors) {
+    params, GENEMAX, merged_rdesc, merged_mat, sample_anno, custom_colors, selected_annotations = NULL) {
   
   # extract parameters
   genes.char <- params$genes.char
@@ -15,7 +15,9 @@ myComplexHeatmap <- function(
   sort.after <- params$sort.after
   show.sample.label <- params$show.sample.label
   ome.order <- params$ome.order
-  max.levels <- params$max.levels
+  max.levels <- if (is.null(params$max.levels)) 20 else params$max.levels  # Same as autodetect_continuous_nfactor_cutoff in setup
+  max_features_per_gene <- if (is.null(params$max_features_per_gene)) 5 else params$max_features_per_gene
+  cluster_columns <- if (is.null(params$cluster_columns)) TRUE else as.logical(params$cluster_columns)
   
   # extract genes
   genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
@@ -36,11 +38,52 @@ myComplexHeatmap <- function(
   # NOTE: if you ever edit this so that more/less then 3 columns are 
   # description-type information, check to other lines where genes.Table is 
   # indexed to make sure unexpected errors don't occur
-  genes.Table <- getHMTable(genes.Table, row.anno, params) 
+  genes.Table <- getHMTable(genes.Table, row.anno, params)
+  
+  # Filter features per gene per dataset by standard deviation if requested
+  if (max_features_per_gene < Inf && nrow(genes.Table) > 0) {
+    # Calculate standard deviation for each feature (using the abundance data columns)
+    abundance_cols <- 4:ncol(genes.Table)  # Skip first 3 columns (geneSymbol, ome, row_label)
+    feature_sd <- apply(genes.Table[, abundance_cols], 1, function(x) sd(x, na.rm = TRUE))
+    
+    # For each gene, filter per dataset (ome)
+    filtered_indices <- c()
+    for (gene in genes.vec) {
+      gene_indices <- which(genes.Table$geneSymbol == gene)
+      
+      # Get unique datasets (omes) for this gene
+      gene_omes <- unique(genes.Table$ome[gene_indices])
+      
+      for (ome in gene_omes) {
+        # Find features for this gene in this dataset
+        gene_ome_indices <- gene_indices[which(genes.Table$ome[gene_indices] == ome)]
+        
+        if (length(gene_ome_indices) > max_features_per_gene) {
+          # Get top N features by standard deviation for this gene in this dataset
+          gene_ome_sd <- feature_sd[gene_ome_indices]
+          top_indices <- gene_ome_indices[order(gene_ome_sd, decreasing = TRUE)[1:max_features_per_gene]]
+          filtered_indices <- c(filtered_indices, top_indices)
+        } else {
+          # Keep all features for this gene in this dataset if <= max_features_per_gene
+          filtered_indices <- c(filtered_indices, gene_ome_indices)
+        }
+      }
+    }
+    
+    # Apply filtering
+    genes.Table <- genes.Table[filtered_indices, , drop = FALSE]
+  } 
   genes.Table <- genes.Table[ ,c(1:3, order(names(genes.Table)[-(1:3)])+3)]
   
-  # re-order the omes
-  genes.Table$ome <- factor(genes.Table$ome, ome.order)
+  # Re-order the omes based on ome.order if provided
+  if (!is.null(ome.order) && length(ome.order) > 0) {
+    # Ensure ome.order only contains datasets that are actually present in genes.Table
+    available_omes <- unique(genes.Table$ome)
+    final_order <- ome.order[ome.order %in% available_omes]
+    
+    # Re-order the omes based on final order
+    genes.Table$ome <- factor(genes.Table$ome, final_order)
+  }
   
   # make matrix to feed into heatmap
   # z-score rows if requested
@@ -56,52 +99,99 @@ myComplexHeatmap <- function(
   ## make heatmap for annotations
   anno.fig <- sample_anno[order(sample_anno$Sample.ID), , drop = FALSE]
   rownames(anno.fig) <- anno.fig$Sample.ID
+  
+  # Filter annotations to only include samples that are in the matrix
+  matrix_samples <- colnames(genes.Matrix)
+  anno.fig <- anno.fig[rownames(anno.fig) %in% matrix_samples, , drop = FALSE]
+  
+  # Filter to only selected annotations (if provided)
+  if (!is.null(selected_annotations) && length(selected_annotations) > 0) {
+    # Keep Sample.ID and selected annotations
+    keep_cols <- c("Sample.ID", selected_annotations)
+    keep_cols <- keep_cols[keep_cols %in% colnames(anno.fig)]
+    anno.fig <- anno.fig[, keep_cols, drop = FALSE]
+  }
+  
+  # Remove Sample.ID column for heatmap display
   anno.fig <- anno.fig[, -(which(names(anno.fig) == "Sample.ID")), drop = FALSE]
 
   
   # get custom color palette and convert to ComplexHeatmap format
   anno.fig.color <- custom_colors[names(anno.fig)]
   
-  # Convert color structure to ComplexHeatmap format (simplified approach like correlation heatmap)
+  # Convert color structure to ComplexHeatmap format
   anno.fig.color <- mapply(function(color_obj, annot_name) {
     if (color_obj$is_discrete) {
-      # Convert discrete colors to named vector (like correlation heatmap)
-      colors <- c(unlist(color_obj$colors), "gray50")
-      names(colors) <- c(color_obj$vals, "NA")
-      return(colors)
+      # Convert discrete colors to named vector
+      names(color_obj$colors) <- color_obj$vals
+      return(color_obj$colors)
     } else {
-      # For continuous colors, return NULL and let ComplexHeatmap handle it
-      return(NULL)
+      # Convert continuous colors to function
+      annot_values <- suppressWarnings(as.numeric(sample_anno[[annot_name]]))
+      
+      # If conversion failed (all NAs), treat as discrete
+      if (all(is.na(annot_values))) {
+        unique_vals <- unique(sample_anno[[annot_name]][!is.na(sample_anno[[annot_name]])])
+        colors_vector <- rep(color_obj$colors[1], length(unique_vals))
+        names(colors_vector) <- unique_vals
+        return(colors_vector)
+      }
+      
+      min_val <- min(annot_values, na.rm = TRUE)
+      max_val <- max(annot_values, na.rm = TRUE)
+      
+      # Handle case where all values are identical
+      if (min_val == max_val) {
+        range_val <- abs(min_val) * 0.1 + 0.1
+        breaks <- c(min_val - range_val, min_val, min_val + range_val)
+      } else {
+        breaks <- c(min_val, mean(annot_values, na.rm = TRUE), max_val)
+      }
+      
+      # For continuous colors, use the low/mid/high colors from the color object
+      if ("low" %in% color_obj$vals && "mid" %in% color_obj$vals && "high" %in% color_obj$vals) {
+        low_idx <- which(color_obj$vals == "low")
+        mid_idx <- which(color_obj$vals == "mid")
+        high_idx <- which(color_obj$vals == "high")
+        colors_for_ramp <- c(color_obj$colors[low_idx], color_obj$colors[mid_idx], color_obj$colors[high_idx])
+      } else {
+        # Fallback: use first 3 colors or repeat as needed
+        if (length(color_obj$colors) >= 3) {
+          colors_for_ramp <- color_obj$colors[1:3]
+        } else {
+          colors_for_ramp <- c(color_obj$colors, rep(color_obj$colors[length(color_obj$colors)], 3 - length(color_obj$colors)))
+        }
+      }
+      
+      color_function <- circlize::colorRamp2(
+        breaks,
+        colors_for_ramp
+      )
+      return(color_function)
     }
   }, anno.fig.color, names(anno.fig.color), SIMPLIFY = FALSE)
   
-  # Separate discrete and continuous annotations
-  discrete_anno <- names(which(sapply(anno.fig.color, function(anno_colors) {
-    !is.null(anno_colors) && length(anno_colors) <= max.levels
-  })))
-  
-  continuous_anno <- names(which(sapply(custom_colors[names(anno.fig)], function(color_obj) {
-    !color_obj$is_discrete
-  })))
-  
-  # Keep discrete annotations with custom colors
-  anno.fig.color <- anno.fig.color[discrete_anno]
-  anno.fig_discrete <- anno.fig[, discrete_anno, drop = FALSE]
-  
-  # Keep continuous annotations - convert to numeric for proper continuous scaling
-  anno.fig_continuous <- anno.fig[, continuous_anno, drop = FALSE]
-  if (ncol(anno.fig_continuous) > 0) {
-    # Convert continuous columns to numeric
-    for (col in colnames(anno.fig_continuous)) {
-      anno.fig_continuous[[col]] <- suppressWarnings(as.numeric(as.character(anno.fig_continuous[[col]])))
+  # filter for only annotations that are continuous or less than max.levels 
+  if (length(anno.fig.color) > 0) {
+    # Check if sapply returns any results
+    anno_checks <- sapply(anno.fig.color, function(anno_colors) {
+      is.function(anno_colors) | length(anno_colors) <= max.levels
+    })
+    
+    # Only proceed if we have valid results
+    if (length(anno_checks) > 0 && is.logical(anno_checks) && any(!is.na(anno_checks))) {
+      anno.keep <- names(which(anno_checks))
+      anno.fig.color <- anno.fig.color[anno.keep]
+      anno.fig <- anno.fig[, anno.keep, drop = FALSE]
+    } else {
+      # No valid annotations
+      anno.fig.color <- list()
+      anno.fig <- anno.fig[, character(0), drop = FALSE]
     }
-  }
-  
-  # Combine both types
-  if (ncol(anno.fig_continuous) > 0) {
-    anno.fig <- cbind(anno.fig_discrete, anno.fig_continuous)
   } else {
-    anno.fig <- anno.fig_discrete
+    # No annotations available
+    anno.fig.color <- list()
+    anno.fig <- anno.fig[, character(0), drop = FALSE]
   }
   
   if (dim(anno.fig)[2] == 0) {
@@ -123,61 +213,8 @@ myComplexHeatmap <- function(
     anno.fig.new[, -(1:4)] <- t(anno.fig)
     final.Table <- rbind(anno.fig.new, genes.Table)
     
-    # Create color mapping for all annotations
-    all_colors <- list()
-    
-    # Add discrete colors
-    for (col_name in discrete_anno) {
-      all_colors[[col_name]] <- anno.fig.color[[col_name]]
-    }
-    
-    # Add continuous colors (create colorRamp2 functions)
-    for (col_name in continuous_anno) {
-      # Get the color object for this annotation
-      color_obj <- custom_colors[[col_name]]
-      
-      # Get the actual data range for this annotation
-      annot_values <- suppressWarnings(as.numeric(anno.fig[[col_name]]))
-      min_val <- min(annot_values, na.rm = TRUE)
-      max_val <- max(annot_values, na.rm = TRUE)
-      
-      # Create colorRamp2 function using the proper low/mid/high colors
-      if (length(color_obj$colors) >= 3 && "low" %in% color_obj$vals && "mid" %in% color_obj$vals && "high" %in% color_obj$vals) {
-        # Use the low/mid/high colors from the color object
-        low_idx <- which(color_obj$vals == "low")
-        mid_idx <- which(color_obj$vals == "mid")
-        high_idx <- which(color_obj$vals == "high")
-        
-        # Handle case where all values are identical
-        if (min_val == max_val) {
-          range_val <- abs(min_val) * 0.1 + 0.1
-          breaks <- c(min_val - range_val, min_val, min_val + range_val)
-        } else {
-          breaks <- c(min_val, mean(annot_values, na.rm = TRUE), max_val)
-        }
-        
-        color_func <- circlize::colorRamp2(
-          breaks,
-          c(color_obj$colors[low_idx], color_obj$colors[mid_idx], color_obj$colors[high_idx])
-        )
-        all_colors[[col_name]] <- color_func
-      } else {
-        # Fallback: use first and last colors
-        if (length(color_obj$colors) >= 2) {
-          color_func <- circlize::colorRamp2(
-            c(min_val, max_val),
-            c(color_obj$colors[1], color_obj$colors[length(color_obj$colors)])
-          )
-          all_colors[[col_name]] <- color_func
-        } else {
-          # Final fallback: use default colors
-          all_colors[[col_name]] <- NULL
-        }
-      }
-    }
-    
     HM.anno <- HeatmapAnnotation(df = anno.fig,
-                                 col = all_colors,
+                                 col = anno.fig.color,
                                  show_legend = T,
                                  show_annotation_name = T,
                                  annotation_name_side = "left",
@@ -207,30 +244,88 @@ myComplexHeatmap <- function(
   }
   
   
-  # make final heatmap for genes
-  HM <- Heatmap(genes.Matrix,
-                col = col_fun_ratios,
-                column_title = "Sample",
-                row_title_rot = 0,
-                row_order = order(genes.Table$ome, genes.Table$row_label),
-                cluster_rows = F,
-                cluster_columns = F,
-                row_split = genes.Table$geneSymbol,
-                column_split = column.to.sort, 
-                top_annotation = HM.anno,
-                show_row_names = T,
-                show_column_names = show.sample.label,
-                name = 'relative abundance',
-                height = unit(0.5, 'cm') * nrow(genes.Matrix),
-                column_names_side = "top",
-                column_names_rot = 45,
-                column_names_gp = gpar(fontsize = 10),
-                column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
-                heatmap_legend_param = list(direction='horizontal',
-                                            max_width = 350,
-                                            legend_width = unit(4, 'cm')))
+  # Determine column clustering and ordering
+  if (isTRUE(cluster_columns) && !is.null(column.to.sort)) {
+    # Check if data is suitable for clustering (no all-identical values, no NA/NaN/Inf)
+    data_for_clustering <- genes.Matrix
+    has_variation <- any(apply(data_for_clustering, 2, function(x) {
+      !all(is.na(x)) && length(unique(x[!is.na(x)])) > 1
+    }))
+    
+    if (has_variation && !any(is.infinite(data_for_clustering))) {
+      # Cluster columns within each group
+      cluster_columns_param <- TRUE
+      column_order_param <- NULL  # ComplexHeatmap will cluster within groups defined by column_split
+    } else {
+      # Data not suitable for clustering - disable clustering
+      cluster_columns_param <- FALSE
+      column_order_param <- NULL
+      
+      # Print warning message
+      if (!has_variation) {
+        warning("Column clustering disabled: Data contains no variation (all identical values)")
+      } else if (any(is.infinite(data_for_clustering))) {
+        warning("Column clustering disabled: Data contains infinite values")
+      }
+    }
+  } else {
+    # No clustering - use original order
+    cluster_columns_param <- FALSE
+    column_order_param <- NULL
+  }
   
-  return(list(HM=HM, Table=final.Table))
+  # make final heatmap for genes
+  HM <- tryCatch({
+    Heatmap(genes.Matrix,
+            col = col_fun_ratios,
+            column_title = "Sample",
+            row_title_rot = 0,
+            row_order = order(genes.Table$ome, genes.Table$row_label),
+            cluster_rows = F,
+            cluster_columns = cluster_columns_param,
+            column_order = column_order_param,
+            row_split = genes.Table$geneSymbol,
+            column_split = column.to.sort, 
+            top_annotation = HM.anno,
+            show_row_names = T,
+            show_column_names = show.sample.label,
+            name = 'relative abundance',
+            height = unit(0.5, 'cm') * nrow(genes.Matrix),
+            column_names_side = "top",
+            column_names_rot = 45,
+            column_names_gp = gpar(fontsize = 10),
+            column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
+            heatmap_legend_param = list(direction='horizontal',
+                                        max_width = 350,
+                                        legend_width = unit(4, 'cm')))
+  }, error = function(e) {
+    warning("Heatmap creation failed, attempting without clustering: ", e$message)
+    # Try again without clustering but preserve column grouping
+    Heatmap(genes.Matrix,
+            col = col_fun_ratios,
+            column_title = "Sample",
+            row_title_rot = 0,
+            row_order = order(genes.Table$ome, genes.Table$row_label),
+            cluster_rows = F,
+            cluster_columns = FALSE,
+            column_order = column_order_param,
+            row_split = genes.Table$geneSymbol,
+            column_split = column.to.sort, 
+            top_annotation = HM.anno,
+            show_row_names = T,
+            show_column_names = show.sample.label,
+            name = 'relative abundance',
+            height = unit(0.5, 'cm') * nrow(genes.Matrix),
+            column_names_side = "top",
+            column_names_rot = 45,
+            column_names_gp = gpar(fontsize = 10),
+            column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
+            heatmap_legend_param = list(direction='horizontal',
+                                        max_width = 350,
+                                        legend_width = unit(4, 'cm')))
+  })
+  
+  return(list(HM=HM, Table=final.Table, cluster_columns=cluster_columns_param))
 }
 
 ## function to extract gene names from a string input

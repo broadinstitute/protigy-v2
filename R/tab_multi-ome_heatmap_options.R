@@ -30,6 +30,13 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
                           selected = FALSE))
     ), # end fluidRow
     
+    ## inputs for clustering
+    fluidRow(
+      column(12, checkboxInput(ns('cluster_columns'),
+                              label = "Cluster columns",
+                              value = TRUE))
+    ), # end fluidRow
+    
     fluidRow(
       column(6, textInput(ns('min.val'), 
                           label='min', 
@@ -41,6 +48,17 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
                           width='80%'))
     ), #end fluidRow
     
+    ## inputs for feature filtering
+    fluidRow(
+      column(12, numericInput(ns('max_features_per_gene'), 
+                             label='Max features per gene per dataset (by std dev)', 
+                             value=5, 
+                             min=1, 
+                             max=50,
+                             step=1,
+                             width='100%'))
+    ), #end fluidRow
+    
     ## inputs for sorting
     fluidRow(
       column(12, selectizeInput(ns('sort.after'), 'Sort by', 
@@ -48,33 +66,28 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
                                 multiple=FALSE))  
     ), #end fluidRow
     
-    ## inputs for max levels in an annotation column
-    tags$div(
-      numericInput(
-        ns('max.levels'),
-        label = "Maximum number of levels:",
-        value = 5,
-        step = 1,
-        min = 1
-      ),
-      id = "inline",
-      style = "margin-bottom: 15px;"
-    ),
     
-    ## inputs for order
-    fluidRow(column(12, strong("Data order (drag and drop to re-order)"), br(), orderInput(
-      label = "",
-      items = list(),
-      inputId = ns('ome.order'),
-      class = "btn-group-vertical",
-      width = '150px'
-    )))
+    ## inputs for dataset order
+    fluidRow(
+      column(12,
+        strong("Dataset order"),
+        br(),
+        p("Drag to reorder"),
+        orderInput(
+          label = "",
+          items = list(),
+          inputId = ns('ome.order'),
+          class = "btn-group-vertical",
+          width = '100%'
+        )
+      )
+    )
     
   ) # end tagList
 }
 
 ## server for heatmap options
-options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals) {
+options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals, selected_annotations = NULL, saved_settings = NULL) {
   moduleServer(
     id,
     ## module function
@@ -82,10 +95,18 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
       
       # update selectizeInput for genes
       observeEvent(setup_submit(), {
+        # Get saved genes or use empty selection
+        saved_genes <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
+          saved_settings()$genes.char
+        } else {
+          NULL
+        }
+        
         updateSelectizeInput(
           session,
           inputId = "genes",
           choices = sort(unique(merged_rdesc()$geneSymbol)),
+          selected = saved_genes,
           server = T)
       })
       
@@ -95,15 +116,29 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         # Get default annotation for default ome
         default_annotation <- globals$default_annotations[[globals$default_ome]]
         
+        # Use selected annotations if available, otherwise all annotations
+        available_choices <- if (!is.null(selected_annotations) && !is.null(selected_annotations())) {
+          selected_annotations()
+        } else {
+          setdiff(names(sample_anno()), 'Sample.ID')
+        }
+        
+        # Get saved sort selection or use default
+        saved_sort <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
+          saved_settings()$sort.after
+        } else {
+          default_annotation
+        }
+        
         updateSelectInput(
           session,
           inputId = "sort.after",
-          choices = setdiff(names(sample_anno()), 'Sample.ID'),
-          selected = default_annotation)
+          choices = available_choices,
+          selected = saved_sort)
       })
       
       
-      # update data ordering options
+      # update dataset ordering options
       observeEvent(setup_submit(), {
         # Use protigy.ome column if available, otherwise fall back to DataType
         ome_col <- if ("protigy.ome" %in% names(merged_rdesc())) {
@@ -113,10 +148,89 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         } else {
           "Unknown"
         }
+        
+        # Get unique datasets
+        available_datasets <- sort(unique(ome_col))
+        
+        # Get saved order or use default order
+        saved_order <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
+          saved_settings()$ome.order
+        } else {
+          available_datasets
+        }
+        
+        # Ensure saved order only includes available datasets
+        final_order <- saved_order[saved_order %in% available_datasets]
+        
+        # Add any new datasets to the end
+        new_datasets <- setdiff(available_datasets, final_order)
+        final_order <- c(final_order, new_datasets)
+        
         updateOrderInput(
           session,
           inputId = 'ome.order',
-          items = sort(unique(ome_col)))
+          items = final_order
+        )
+      })
+      
+      # Restore other settings when options screen loads
+      observeEvent(setup_submit(), {
+        if (!is.null(saved_settings) && !is.null(saved_settings())) {
+          settings <- saved_settings()
+          
+          # Restore zscore setting
+          if (!is.null(settings$zscore)) {
+            updateRadioButtons(
+              session,
+              inputId = "zscore",
+              selected = settings$zscore
+            )
+          }
+          
+          # Restore min/max values
+          if (!is.null(settings$min.val)) {
+            updateTextInput(
+              session,
+              inputId = "min.val",
+              value = as.character(settings$min.val)
+            )
+          }
+          
+          if (!is.null(settings$max.val)) {
+            updateTextInput(
+              session,
+              inputId = "max.val",
+              value = as.character(settings$max.val)
+            )
+          }
+          
+          # Restore sample label setting
+          if (!is.null(settings$show.sample.label)) {
+            updateRadioButtons(
+              session,
+              inputId = "show.sample.label",
+              selected = if (settings$show.sample.label) "show" else "hide"
+            )
+          }
+          
+          # Restore column clustering setting
+          if (!is.null(settings$cluster_columns)) {
+            updateCheckboxInput(
+              session,
+              inputId = "cluster_columns",
+              value = settings$cluster_columns
+            )
+          }
+          
+          # Restore max features per gene setting
+          if (!is.null(settings$max_features_per_gene)) {
+            updateNumericInput(
+              session,
+              inputId = "max_features_per_gene",
+              value = settings$max_features_per_gene
+            )
+          }
+        }
       })
       
       
@@ -128,7 +242,8 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
                                   sort.after = input$sort.after,
                                   show.sample.label = input$show.sample.label,
                                   ome.order = input$ome.order,
-                                  max.levels = input$max.levels)})
+                                  max_features_per_gene = input$max_features_per_gene,
+                                  cluster_columns = input$cluster_columns)})
       
       
       
