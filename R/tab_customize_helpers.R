@@ -5,7 +5,7 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
   custom_colors <- list()
   
   # start by making custom colors for the merged GCT
-  custom_colors$multi_ome <- set_annot_colors(GCTs_merged@cdesc)
+  custom_colors$multi_ome <- set_annot_colors(GCTs_merged@cdesc, autodetect_continuous_nfactor_cutoff = 20)
   
   # then, loop through each ome
   # pull colors from merged first, then make unique colors if you can't find them
@@ -39,7 +39,7 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
         # theoretically this shouldn't happen, but just in case
         warning(ome, ": column '", col, "' could not be found in the merged GCT. ",
                 "Generating new colors.")
-        return(set_annot_colors(GCTs[[ome]]@cdesc[, col, drop = FALSE])[[1]])
+        return(set_annot_colors(GCTs[[ome]]@cdesc[, col, drop = FALSE], autodetect_continuous_nfactor_cutoff = 20)[[1]])
       }
     )
     

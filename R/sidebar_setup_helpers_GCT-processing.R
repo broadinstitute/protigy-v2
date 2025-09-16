@@ -482,6 +482,38 @@ merge_processed_gcts <- function(GCTs_processed) {
         dplyr::select(-.data[[col]])
     }
     
+    # Add missing columns logic
+    # Find columns that exist in some datasets but not in the merged cdesc
+    all_unique_columns <- unique(unlist(lapply(GCTs_processed, function(gct) names(gct@cdesc))))
+    missing_columns <- setdiff(all_unique_columns, names(GCTs_merged@cdesc))
+    
+    if (length(missing_columns) > 0) {
+      message("Adding missing columns to merged GCT: ", paste(missing_columns, collapse = ", "))
+      
+      # Add missing columns to the merged cdesc
+      for (col in missing_columns) {
+        # Find which datasets have this column
+        omes_with_col <- names(which(
+          sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
+        ))
+        
+        # For samples that don't have this column, fill with NA
+        # For samples that do have this column, use their values
+        all_samples <- rownames(GCTs_merged@cdesc)
+        new_column <- rep(NA, length(all_samples))
+        names(new_column) <- all_samples
+        
+        # Fill in values from datasets that have this column
+        for (ome in omes_with_col) {
+          samples_in_ome <- GCTs_processed[[ome]]@cid
+          new_column[samples_in_ome] <- GCTs_processed[[ome]]@cdesc[samples_in_ome, col]
+        }
+        
+        # Add the column to merged cdesc
+        GCTs_merged@cdesc[[col]] <- new_column
+      }
+    }
+    
     setProgress(1)
     
   })

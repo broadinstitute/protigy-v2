@@ -13,6 +13,7 @@
 # bg.col- color of non significant points
 
 plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params, stat_results, sig.col='darkred', bg.col='gray',gene_symbol_col = "geneSymbol"){
+  
   cat('\n-- plotVolcano --\n')
   
   req(stat_params())
