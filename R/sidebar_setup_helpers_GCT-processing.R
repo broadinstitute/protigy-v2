@@ -183,7 +183,7 @@ processGCTs <- function(GCTs, parameters) {
   
   
   GCTs_merged <- my_shinyalert_tryCatch(
-    merge_processed_gcts(GCTs_processed),
+    merge_processed_gcts(GCTs_processed, parameters_updated),
     text.warning = "<b>Warning in merging GCTs:</b>",
     show.warning = TRUE,
     append.warning = TRUE,
@@ -366,19 +366,26 @@ validateGCT <- function(gct) {
 }
 
 # merge processed GCTs
-merge_processed_gcts <- function(GCTs_processed) {
+merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
   withProgress(message = "Merging GCTs", expr = {
     
-    # add a protigy.ome column to each gct's rdesc
+    # add a protigy.ome column to each gct's rdesc using dataset labels from parameters
     GCTs_processed <- mapply(
-      GCTs_processed, names(GCTs_processed),
+      GCTs_processed, names(GCTs_processed), parameters_updated,
       SIMPLIFY = FALSE, USE.NAMES = TRUE, 
-      FUN = function(gct, ome) {
-        # check if `protigy.ome` is a column in the current gct
-        if ("protigy.ome" %in% names(gct@rdesc) & any(gct@rdesc$protigy.ome != ome)) {
-          warning("`protigy.ome` column already exists and will be overwritten in ", ome)
+      FUN = function(gct, filename, params) {
+        # Get the dataset label from parameters
+        dataset_label <- params$dataset_label
+        if (is.null(dataset_label)) {
+          # Fallback to filename if no label is set
+          dataset_label <- filename
         }
-        gct@rdesc$protigy.ome <- rep(ome, dim(gct@rdesc)[1])
+        
+        # check if `protigy.ome` is a column in the current gct
+        if ("protigy.ome" %in% names(gct@rdesc) & any(gct@rdesc$protigy.ome != dataset_label)) {
+          warning("`protigy.ome` column already exists and will be overwritten in ", filename)
+        }
+        gct@rdesc$protigy.ome <- rep(dataset_label, dim(gct@rdesc)[1])
         return(gct)
       })
     
@@ -480,6 +487,38 @@ merge_processed_gcts <- function(GCTs_processed) {
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
         dplyr::mutate(new_columns, .after = .data[[col]]) %>% 
         dplyr::select(-.data[[col]])
+    }
+    
+    # Add missing columns logic
+    # Find columns that exist in some datasets but not in the merged cdesc
+    all_unique_columns <- unique(unlist(lapply(GCTs_processed, function(gct) names(gct@cdesc))))
+    missing_columns <- setdiff(all_unique_columns, names(GCTs_merged@cdesc))
+    
+    if (length(missing_columns) > 0) {
+      message("Adding missing columns to merged GCT: ", paste(missing_columns, collapse = ", "))
+      
+      # Add missing columns to the merged cdesc
+      for (col in missing_columns) {
+        # Find which datasets have this column
+        omes_with_col <- names(which(
+          sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
+        ))
+        
+        # For samples that don't have this column, fill with NA
+        # For samples that do have this column, use their values
+        all_samples <- rownames(GCTs_merged@cdesc)
+        new_column <- rep(NA, length(all_samples))
+        names(new_column) <- all_samples
+        
+        # Fill in values from datasets that have this column
+        for (ome in omes_with_col) {
+          samples_in_ome <- GCTs_processed[[ome]]@cid
+          new_column[samples_in_ome] <- GCTs_processed[[ome]]@cdesc[samples_in_ome, col]
+        }
+        
+        # Add the column to merged cdesc
+        GCTs_merged@cdesc[[col]] <- new_column
+      }
     }
     
     setProgress(1)

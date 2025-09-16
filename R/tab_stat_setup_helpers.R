@@ -24,6 +24,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
   #Mod F Test
   ################################################################################
   if(test == 'Moderated F test'){
+    cat('\n-- modF.test --\n')
     withProgress(message='moderated F-test', value=0, {
       results_list <- list()  # store results by ome
       for (ome_name in chosen_omes) {
@@ -36,9 +37,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         tab <- as.data.frame(ome_data)
         
         #Add ID column to tab
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
-        colnames(tab)[1] <- id.col
+        # In GCT files, the "id" column is ALWAYS named "id"
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+          colnames(tab)[1] <- "id"
+        } else {
+          # If no "id" column exists, create it from row names
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+          colnames(tab)[1] <- "id"
+        }
         
         #Run test on only the chosen groups
         sample_names <- colnames(ome_data) 
@@ -53,7 +62,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         #MOD F LOGIC
         id <- tab.group[,id.col]
         data <- tab.group[, setdiff (colnames (tab.group), id.col)]
-        cat('\n-- modF.test --\n')
         
         f <- factor (groups)
         if (length(levels(f)) < 2) {
@@ -97,20 +105,25 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         
         # Join all rdesc columns to the results 
         rdesc_df <- as.data.frame(rdesc)
-        rdesc_df[[id.col]] <- rownames(rdesc_df)  # Ensure ID column exists
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df,final.results, by = "id")
         
-        cat('\n-- modF.test exit --\n')
-        results_list[[ome_name]]<-final.results
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        
+        combined_results <- dplyr::left_join(rdesc_df,final.results, by = "id")
+        results_list[[ome_name]]<-combined_results
       }
     })
+    cat('\n-- modF.test exit --\n')
   }
   
   ################################################################################
   #One sample Mod T Test
   ################################################################################
   if(test == 'One-sample Moderated T-test'){
+    cat('\n-- one-sample moderated T-test --\n')
     withProgress(message='one-sample moderated T-test', value=0, {
       results_list <- list()  # store results by ome
       
@@ -139,7 +152,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           tab.group <- cbind(tab[[id.col]], tab[, samples_to_keep])
           colnames(tab.group)[1] <- id.col
 
-          cat('\n-- modT.test --\n')
           id <- tab.group[, id.col]
           data <- tab.group[, setdiff (colnames (tab.group), id.col)]
           
@@ -169,7 +181,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           mod.t <- data.frame ( cbind (data.frame (id=id), mod.t.result), stringsAsFactors=F )
           rownames(mod.t) <- id
           
-          cat('\n-- modT.test exit --/n')
           
           # Keep only id + renamed stats
           mod.t.sub <- mod.t[, c("id", grep(paste0("\\.", group_name, "$"), colnames(mod.t), value = TRUE))]
@@ -184,18 +195,25 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         }
         # Join all rdesc columns to the results
         rdesc_df <- as.data.frame(rdesc)
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        
+        combined_results <- dplyr::left_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }
     })
+    cat('\n-- one-sample moderated T-test exit --\n')
   }
   
   ################################################################################
   #Two sample Mod T Test
   ################################################################################
   if(test == 'Two-sample Moderated T-test'){
+    cat('\n-- two-sample moderated T-test --\n')
     withProgress(message='two-sample moderated T-test', value=0, {
       results_list <- list()
       
@@ -208,9 +226,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         tab <- as.data.frame(ome_data)
         
         #Add ID column to tab
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
-        colnames(tab)[1] <- id.col
+        # In GCT files, the "id" column is ALWAYS named "id"
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+          colnames(tab)[1] <- "id"
+        } else {
+          # If no "id" column exists, create it from row names
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+          colnames(tab)[1] <- "id"
+        }
 
         for (contrast_name in selected_contrasts){
           
@@ -230,10 +256,11 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           colnames(tab.group)[1] <- id.col
 
           #MOD T LOGIC- TWO SAMPLE
-          cat('\n-- modT.test.2class --\n')
 
           ## store group names
-          groups <- factor(groups, levels = c(group1, group2))
+          # For contrast "A / B", user expects fold change = A - B
+          # So we set levels as c(group2, group1) to get group1 - group2
+          groups <- factor(groups, levels = c(group2, group1))
           id <- tab.group[,id.col]
           data <- tab.group[, setdiff (colnames (tab.group), id.col)]
           
@@ -273,7 +300,6 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           final.results <- data.frame ( cbind (data.frame (id=id), mod.t.result), stringsAsFactors=F )
           rownames(final.results) <- id
           
-          cat('\n-- modT.test.2class exit--\n')
           
           # Merge into the combined table for this ome
           if (is.null(combined_results)) {
@@ -285,12 +311,17 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
         }
         # Join all rdesc columns to the results
         rdesc_df <- as.data.frame(rdesc)
-        colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-        combined_results <- dplyr::right_join(rdesc_df, combined_results, by = "id")
+        # Since we now correctly use "id" as the ID column, no renaming needed
+        # Just ensure the "id" column exists in rdesc_df
+        if (!"id" %in% colnames(rdesc_df)) {
+          rdesc_df$id <- rownames(rdesc_df)
+        }
+        combined_results <- dplyr::left_join(rdesc_df, combined_results, by = "id")
         
         results_list[[ome_name]]<-combined_results
       }
     })
+    cat('\n-- two-sample moderated T-test exit --\n')
   }
   
   #Return the final results table from the chosen test

@@ -144,7 +144,7 @@ templateSingleOme_Tab_Server <- function(id = "templateSingleOmeTab",
       )
     }) # end renderUI
     
-    # update selected tab based on default -ome
+    # update selected tab based on default dataset
     observe({
       updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
