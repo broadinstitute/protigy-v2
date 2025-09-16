@@ -87,15 +87,30 @@ plot_pval_histogram <- function(pvals, title, xlabel, stat_params, stat_results,
     if (stat_choice == "nom.p.val") {
       x_cutoff <- cutoff_val
     } else {
+      # When plotting nominal p-values with adjusted p-value cutoff:
+      # Find the maximum nominal p-value among features that pass the adjusted p-value cutoff
+      # This corresponds to the logic used in the volcano plot
       passing.id <- which(df$adj.P.Val < cutoff_val)
-      x_cutoff <- if (length(passing.id) > 0) max(df$P.Value[passing.id], na.rm = TRUE) else Inf
+      if (length(passing.id) > 0) {
+        x_cutoff <- max(df$P.Value[passing.id], na.rm = TRUE)
+      } else {
+        # If no features pass the adjusted p-value cutoff, use the cutoff value itself
+        x_cutoff <- cutoff_val
+      }
     }
   } else if (pval_type == "adj.P.Val") {
     if (stat_choice == "adj.p.val") {
       x_cutoff <- cutoff_val
     } else {
+      # When plotting adjusted p-values with nominal p-value cutoff:
+      # Find the minimum adjusted p-value among features that pass the nominal p-value cutoff
       passing.id <- which(df$P.Value < cutoff_val)
-      x_cutoff <- if (length(passing.id) > 0) max(df$adj.P.Val[passing.id], na.rm = TRUE) else Inf
+      if (length(passing.id) > 0) {
+        x_cutoff <- min(df$adj.P.Val[passing.id], na.rm = TRUE)
+      } else {
+        # If no features pass the nominal p-value cutoff, use the cutoff value itself
+        x_cutoff <- cutoff_val
+      }
     }
   }
   

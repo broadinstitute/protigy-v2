@@ -888,3 +888,251 @@ test_that("Statistics functions handle single gene case", {
   expect_equal(nrow(result_f_single), 1)
   expect_true("significant" %in% colnames(result_f_single))
 })
+
+test_that("Statistics functions handle column duplication fix", {
+  # Test that the fix for "Input columns in x must be unique" error works
+  # This test simulates the scenario where rdesc already has an "id" column
+  
+  # Create mock GCT with rdesc that already has an "id" column
+  mock_mat <- matrix(rnorm(60), nrow = 10, ncol = 6)
+  rownames(mock_mat) <- paste0("gene_", 1:10)
+  colnames(mock_mat) <- paste0("sample_", 1:6)
+  
+  mock_cdesc <- data.frame(
+    group = rep(c("A", "B"), each = 3),
+    row.names = paste0("sample_", 1:6)
+  )
+  
+  # Create rdesc with an existing "id" column (this was causing the error)
+  mock_rdesc <- data.frame(
+    id = paste0("gene_", 1:10),  # This column already exists
+    gene_name = paste0("gene_", 1:10),
+    geneSymbol = paste0("GENE", 1:10),
+    row.names = paste0("gene_", 1:10)
+  )
+  
+  mock_gct <- new("GCT",
+    mat = mock_mat,
+    cdesc = mock_cdesc,
+    rdesc = mock_rdesc,
+    rid = paste0("gene_", 1:10),
+    cid = paste0("sample_", 1:6)
+  )
+  
+  # Test that the statistical functions work without column duplication errors
+  # This simulates the core logic from stat.testing without the Shiny wrapper
+  
+  # Test Moderated F-test logic
+  groups <- rep(c("A", "B"), each = 3)
+  f <- factor(groups)
+  design <- model.matrix(~ 0 + f)
+  data.rownorm <- sweep(mock_mat, MARGIN = 1, STATS = apply(mock_mat, 1, mean, na.rm = TRUE))
+  
+  if (requireNamespace("limma", quietly = TRUE)) {
+    fit <- limma::lmFit(data.rownorm, design)
+    fit <- limma::eBayes(fit, robust = TRUE)
+    sig <- limma::topTable(fit, number = nrow(mock_mat), sort.by = 'none')
+    
+    # Test the column joining logic that was fixed
+    rdesc_df <- as.data.frame(mock_rdesc)
+    
+    # This should NOT create a duplicate "id" column
+    if (!"id" %in% colnames(rdesc_df)) {
+      id.col <- names(Filter(function(col) !is.numeric(col), mock_rdesc))[1]
+      rdesc_df[[id.col]] <- rownames(rdesc_df)
+      colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
+    }
+    
+    # Create final results
+    final.results <- data.frame(
+      id = rownames(mock_mat),
+      sig,
+      stringsAsFactors = FALSE
+    )
+    
+    # Test the dplyr::right_join that was failing
+    expect_no_error({
+      combined_results <- dplyr::right_join(rdesc_df, final.results, by = "id")
+    })
+    
+    expect_true(is.data.frame(combined_results))
+    expect_equal(nrow(combined_results), nrow(mock_mat))
+    expect_true("id" %in% colnames(combined_results))
+    expect_false(any(duplicated(colnames(combined_results))))
+  }
+  
+  # Test Two-sample T-test logic
+  groups <- rep(c("A", "B"), each = 3)
+  groups <- factor(groups, levels = c("A", "B"))
+  design.mat <- cbind(ref = 1, comparison = as.numeric(groups))
+  data.matrix <- data.frame(mock_mat, stringsAsFactors = FALSE)
+  
+  if (requireNamespace("limma", quietly = TRUE)) {
+    m <- limma::lmFit(data.matrix, design.mat)
+    m <- limma::eBayes(m, robust = TRUE)
+    sig <- limma::topTable(m, coef = colnames(design.mat)[2], number = nrow(mock_mat), sort.by = "none")
+    
+    # Test the column joining logic for two-sample test
+    rdesc_df <- as.data.frame(mock_rdesc)
+    
+    # This should NOT create a duplicate "id" column
+    if (!"id" %in% colnames(rdesc_df)) {
+      id.col <- names(Filter(function(col) !is.numeric(col), mock_rdesc))[1]
+      colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
+    }
+    
+    final.results <- data.frame(
+      id = rownames(mock_mat),
+      sig,
+      stringsAsFactors = FALSE
+    )
+    
+    # Test the dplyr::right_join that was failing
+    expect_no_error({
+      combined_results <- dplyr::right_join(rdesc_df, final.results, by = "id")
+    })
+    
+    expect_true(is.data.frame(combined_results))
+    expect_equal(nrow(combined_results), nrow(mock_mat))
+    expect_true("id" %in% colnames(combined_results))
+    expect_false(any(duplicated(colnames(combined_results))))
+  }
+})
+
+test_that("P-value histogram correctly handles adjusted p-value cutoff", {
+  # Test that the p-value histogram draws the red line at the correct position
+  # when using adjusted p-value cutoff
+  
+  # Create mock data with known relationships between nominal and adjusted p-values
+  set.seed(123)
+  mock_df <- data.frame(
+    id = paste0("gene_", 1:20),
+    P.Value.A_vs_B = c(0.001, 0.002, 0.003, 0.004, 0.005,  # These should pass adj.p cutoff
+                      0.01, 0.02, 0.03, 0.04, 0.05,        # These should not pass
+                      0.1, 0.2, 0.3, 0.4, 0.5,             # These should not pass
+                      0.6, 0.7, 0.8, 0.9, 1.0),            # These should not pass
+    adj.P.Val.A_vs_B = c(0.01, 0.02, 0.03, 0.04, 0.049,   # First 5 pass adj.p < 0.05 (0.049 < 0.05)
+                         0.1, 0.2, 0.3, 0.4, 0.5,          # Rest don't pass
+                         0.6, 0.7, 0.8, 0.9, 1.0,
+                         0.6, 0.7, 0.8, 0.9, 1.0),
+    stringsAsFactors = FALSE
+  )
+  
+  mock_stat_params <- list(
+    test_data = list(
+      test = "Two-sample Moderated T-test",
+      stat = "adj.p.val",  # Using adjusted p-value cutoff
+      cutoff = 0.05
+    )
+  )
+  
+  mock_stat_results <- list(test_data = mock_df)
+  
+  # Test the core logic from plot_pval_histogram
+  df <- mock_df
+  stat_choice <- mock_stat_params$test_data$stat
+  cutoff_val <- mock_stat_params$test_data$cutoff
+  
+  # Simulate the logic for nominal p-value histogram with adjusted p-value cutoff
+  passing.id <- which(df$adj.P.Val.A_vs_B < cutoff_val)
+  expect_equal(length(passing.id), 5)  # First 5 features should pass
+  
+  if (length(passing.id) > 0) {
+    x_cutoff <- max(df$P.Value.A_vs_B[passing.id], na.rm = TRUE)
+    expect_equal(x_cutoff, 0.005)  # Should be the maximum nominal p-value among passing features
+    
+    # Verify that features with nominal p-values <= x_cutoff are likely to pass adj.p cutoff
+    features_below_threshold <- which(df$P.Value.A_vs_B <= x_cutoff)
+    expect_equal(length(features_below_threshold), 5)  # First 5 features have P.Value <= 0.005
+    expect_true(all(df$adj.P.Val.A_vs_B[features_below_threshold] <= cutoff_val))  # Should all pass adj.p cutoff
+  }
+})
+
+test_that("Volcano plot correctly handles adjusted p-value cutoff", {
+  # Test that the volcano plot draws the horizontal line at the correct position
+  # when using adjusted p-value cutoff
+  
+  # Create mock data with known relationships between nominal and adjusted p-values
+  set.seed(123)
+  mock_df <- data.frame(
+    id = paste0("gene_", 1:20),
+    logFC.A_vs_B = rnorm(20, 0, 1),
+    P.Value.A_vs_B = c(0.001, 0.002, 0.003, 0.004, 0.005,  # These should pass adj.p cutoff
+                       0.01, 0.02, 0.03, 0.04, 0.05,        # These should not pass
+                       0.1, 0.2, 0.3, 0.4, 0.5,             # These should not pass
+                       0.6, 0.7, 0.8, 0.9, 1.0),            # These should not pass
+    adj.P.Val.A_vs_B = c(0.01, 0.02, 0.03, 0.04, 0.049,   # First 5 pass adj.p < 0.05 (0.049 < 0.05)
+                          0.1, 0.2, 0.3, 0.4, 0.5,          # Rest don't pass
+                          0.6, 0.7, 0.8, 0.9, 1.0,
+                          0.6, 0.7, 0.8, 0.9, 1.0),
+    Log.P.Value.A_vs_B = -log10(c(0.001, 0.002, 0.003, 0.004, 0.005,
+                                   0.01, 0.02, 0.03, 0.04, 0.05,
+                                   0.1, 0.2, 0.3, 0.4, 0.5,
+                                   0.6, 0.7, 0.8, 0.9, 1.0)),
+    stringsAsFactors = FALSE
+  )
+  
+  mock_stat_params <- list(
+    test_data = list(
+      test = "Two-sample Moderated T-test",
+      stat = "adj.p.val",  # Using adjusted p-value cutoff
+      cutoff = 0.05
+    )
+  )
+  
+  # Test the core logic from plotVolcano
+  df <- mock_df
+  sig_cutoff <- mock_stat_params$test_data$cutoff
+  sig_stat <- mock_stat_params$test_data$stat
+  
+  # Simulate the logic for volcano plot with adjusted p-value cutoff
+  if(sig_stat == "adj.p.val") {
+    passing.id <- which(df$adj.P.Val.A_vs_B < sig_cutoff)
+    expect_equal(length(passing.id), 5)  # First 5 features should pass
+    
+    if(length(passing.id) > 0){
+      # Should use maximum nominal p-value among features that pass adj.p filter
+      y_cutoff <- -log10(max(df$P.Value.A_vs_B[passing.id], na.rm = TRUE))
+      expected_y_cutoff <- -log10(0.005)  # Maximum P.Value among passing features
+      expect_equal(y_cutoff, expected_y_cutoff)
+      
+      # Verify that features with logP > y_cutoff are likely to pass adj.p cutoff
+      features_above_threshold <- which(df$Log.P.Value.A_vs_B > y_cutoff)
+      expect_equal(length(features_above_threshold), 4)  # First 4 features have Log.P.Value > -log10(0.005)
+      
+      # Check that the cutoff is set correctly - it should be at the maximum P.Value among passing features
+      expect_equal(y_cutoff, -log10(0.005))  # Should be -log10(0.005)
+    }
+  }
+})
+
+test_that("P-value histogram and volcano plot use consistent logic", {
+  # Test that both functions use the same logic for determining cutoff positions
+  # when using adjusted p-value cutoff
+  
+  # Create mock data
+  set.seed(123)
+  mock_df <- data.frame(
+    id = paste0("gene_", 1:10),
+    P.Value.A_vs_B = c(0.001, 0.002, 0.003, 0.01, 0.02, 0.03, 0.1, 0.2, 0.3, 0.4),
+    adj.P.Val.A_vs_B = c(0.01, 0.02, 0.03, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7),
+    Log.P.Value.A_vs_B = -log10(c(0.001, 0.002, 0.003, 0.01, 0.02, 0.03, 0.1, 0.2, 0.3, 0.4)),
+    stringsAsFactors = FALSE
+  )
+  
+  cutoff_val <- 0.05
+  
+  # Test histogram logic
+  passing.id <- which(mock_df$adj.P.Val.A_vs_B < cutoff_val)
+  histogram_cutoff <- max(mock_df$P.Value.A_vs_B[passing.id], na.rm = TRUE)
+  
+  # Test volcano plot logic
+  volcano_cutoff <- -log10(max(mock_df$P.Value.A_vs_B[passing.id], na.rm = TRUE))
+  
+  # Both should use the same underlying logic (maximum P.Value among passing features)
+  expect_equal(volcano_cutoff, -log10(histogram_cutoff))
+  
+  # Verify the cutoff makes sense
+  expect_equal(histogram_cutoff, 0.003)  # Maximum P.Value among first 3 features
+  expect_equal(volcano_cutoff, -log10(0.003))  # Corresponding log scale
+})

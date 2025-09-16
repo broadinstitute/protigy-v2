@@ -60,9 +60,9 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
   # make plot
   
   # if type=norm but no normalization, make an empty ggplot with appropriate title
-  if(type=="norm" & parameters$data_normalization=="None" & parameters$max_missing==100 & parameters$data_filter=="None"){
+  if(type=="norm" & parameters$data_normalization=="None"){
     g <- ggplot() + theme_void() +
-      ggtitle(paste("No normalization or filtering performed for",ome)) +
+      ggtitle(paste("No normalization was performed for",ome)) +
       theme(text= element_text(size=14))
   } else{
     g <- ggplot(data = stats,    #base boxplot with calculated stats

@@ -134,7 +134,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
     original_stat_param <- reactiveVal(NULL)
     
     observeEvent(input$apply_all, {
-      req(selected_ome(), stat_param(), all_omes(), default_annotations(), default_annotation_column())
+      # Check if required reactive values are available
+      if (is.null(selected_ome()) || is.null(stat_param()) || is.null(all_omes()) || 
+          is.null(default_annotations()) || is.null(default_annotation_column())) {
+        showNotification("Please wait for the application to fully load before using 'Apply to all datasets'.", type = "warning", duration = 3)
+        updateCheckboxInput(session, "apply_all", value = FALSE)
+        return()
+      }
       
       current <- stat_param()
       ome_source <- selected_ome()
@@ -163,6 +169,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
             }
             stat_param(current)
             showNotification("Applied current dataset's parameters to all datasets.", type = "message", duration = 3)
+          } else {
+            showNotification("No parameters set for current dataset. Please configure parameters first.", type = "warning", duration = 3)
+            updateCheckboxInput(session, "apply_all", value = FALSE)
           }
       } else {
         # Revert to original parameters if button unclicked
