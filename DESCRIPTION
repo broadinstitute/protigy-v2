@@ -54,7 +54,8 @@ Imports:
     Matrix (>= 1.6-2),
     shinyWidgets, 
     janitor, 
-    snakecase
+    snakecase,
+    shinyjs
 Depends:
     R (>= 4.0.0),
     shiny

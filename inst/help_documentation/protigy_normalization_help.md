@@ -1,6 +1,28 @@
-# Normalization and Filtering
+# Dataset Setup
 
-This section explains the data preprocessing options available in ProTIGY for normalizing and filtering your dataset before statistical analysis.
+This section explains the data preprocessing options available in ProTIGY for setting up your dataset before analysis.
+
+## Analysis Annotation Column
+
+This is the default annotation column used for all analysis in ProTIGY. This column contains sample metadata that will be used for grouping and analysis throughout the workflow.
+
+- **Purpose**: Provides consistent sample grouping for statistical analysis and visualization
+- **Usage**: Used for sample grouping in plots, statistical tests, and analysis results
+- **Content**: Contains sample metadata such as tumor type (tumor vs NAT), treatment group (drug A, B, C), time point, etc.
+
+## Gene Symbol Column
+
+If your dataset contains gene symbol information, you can specify which column contains the gene symbols:
+
+- **Default**: If a column named "geneSymbol" exists, it will be automatically selected
+- **Custom**: You can select any other column from your dataset's row metadata (rdesc) to use as gene symbols
+- **None**: If no gene symbol column is available, select "None"
+
+**Note**: If you select a column other than "geneSymbol", that column will be renamed to "geneSymbol" for downstream analysis. If a "geneSymbol" column already exists, it will be preserved as "geneSymbol_original".
+
+## Data Preprocessing Options
+
+The following sections explain the data preprocessing options available for normalizing and filtering your dataset before statistical analysis.
 
 ## Intensity Data
 

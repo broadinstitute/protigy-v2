@@ -32,8 +32,19 @@ gctSetupUI <- function(ns,
                        current_place, 
                        max_place,
                        GCTs) {
-  # groups column choices pulled from cdesc
-  groups_choices <- names(GCTs[[label]]@cdesc)
+  # groups column choices pulled from cdesc, excluding ID columns (unique character data)
+  all_cdesc_columns <- names(GCTs[[label]]@cdesc)
+  
+  # Get columns that have unique character values (these are ID columns and should be excluded)
+  unique_columns <- getUniqueColumns(GCTs[[label]]@cdesc)
+  
+  # Filter out ID columns (unique character columns) from annotation choices
+  groups_choices <- all_cdesc_columns[!all_cdesc_columns %in% unique_columns]
+  
+  # If no suitable annotation columns remain, use Sample.ID as fallback
+  if (length(groups_choices) == 0) {
+    groups_choices <- "Sample.ID"
+  }
   
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
@@ -54,6 +65,18 @@ gctSetupUI <- function(ns,
             is.null(parameters[[label]]$annotation_column),
             groups_choices[1],
             parameters[[label]]$annotation_column)),
+        classes = "small-input"),
+    
+    ## gene symbol column selection
+    add_css_attributes(
+        selectInput(
+          ns(paste0(label, '_gene_symbol_column')),
+          "Gene symbol column",
+          choices = c("None", names(GCTs[[label]]@rdesc)),
+          selected = ifelse(
+            is.null(parameters[[label]]$gene_symbol_column) || parameters[[label]]$gene_symbol_column == "None",
+            ifelse("geneSymbol" %in% names(GCTs[[label]]@rdesc), "geneSymbol", "None"),
+            parameters[[label]]$gene_symbol_column)),
         classes = "small-input"),
     
     ## intensity data input

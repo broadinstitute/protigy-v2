@@ -34,7 +34,7 @@ setupSidebarUI <- function(id = "setupSidebar") {
 
       # File input
       fileInput(ns("dataFiles"), 
-                paste("Recommended formats are GCT, CSV, or Excel. TSV files can only be processed one at a time."),
+                paste("GCT, CSV, TSV, or Excel"),
                 multiple = TRUE,
                 accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
       hr(),
@@ -79,6 +79,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # initialize reactiveVal to indicate when labels & gcts are validated + submitted
     labelsGO <- reactiveVal(0)
     gctsGO <- reactiveVal(0)
+    csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
@@ -101,17 +102,26 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         if (all(file_extensions == "gct")) {
           # All GCT files - use existing workflow
           labelAssignment()
-        } else if (all(file_extensions %in% c("csv", "xlsx", "xls"))) {
-          # All CSV/Excel files - use new workflow
+        } else if (all(file_extensions %in% c("csv", "xlsx", "xls", "tsv"))) {
+          # All CSV/Excel/TSV files - use same workflow
           csvExcelWorkflow()
-        } else if (all(file_extensions == "tsv")) {
-          # All TSV files - use TSV workflow
-          tsvWorkflow()
+          
+          # Automatically switch to CSV/TSV/Excel Processing help tab
+          updateTabsetPanel(session = parent, 
+                           inputId = "navbar-tabs", 
+                           selected = "Help-Analysis")
+          
+          # Switch to the CSV/TSV/Excel Processing tab within the help section
+          shinyjs::runjs("
+            setTimeout(function() {
+              $('a[data-value=\"CSV/TSV/Excel Processing\"]').click();
+            }, 100);
+          ")
         } else {
           # Mixed file types - show error
           shinyalert::shinyalert(
             title = "Error",
-            text = "Please upload files of the same type only (GCT, CSV/Excel, or TSV). Mixed file types are not supported.",
+            text = "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.",
             type = "error"
           )
         }
@@ -500,7 +510,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # get the list of all parameters names to update
       parameter_names <- c(names(default_parameters),
                            'annotation_column',
-                           'group_normalization_column')
+                           'group_normalization_column',
+                           'gene_symbol_column')
       
       # assign new user selections
       # NOTE: there are fields in `new_parameters` that aren't updated here, 
@@ -518,7 +529,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # label assignment, has to be used in separate observeEvent() calls
     labelAssignment <- function() {
       output$sideBarMain <- renderUI({labelSetupUI(ns = ns, 
-                                                   dataFileNames = input$dataFiles$name)})
+                                                   gctFileNames = input$dataFiles$name)})
       output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), 
                                                    "Submit",
                                                    class = "btn btn-primary")})
@@ -531,99 +542,195 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       })
     }
     
-    # TSV workflow function
-    tsvWorkflow <- function() {
-      output$sideBarMain <- renderUI({tsvSetupUI(ns = ns, 
-                                                dataFiles = input$dataFiles,
-                                                identifierColumns = NULL)}) # No longer pass identifier columns initially
-      output$rightButton <- NULL
-      output$leftButton <- NULL
+
+    # CSV/Excel/TSV workflow function - starts with label assignment (same as GCT workflow)
+    csvExcelWorkflow <- function() {
+      csvExcelLabelAssignment()
     }
     
-    # Generate identifier column selector after condition setup is uploaded
-    output$identifierColumnSelector <- renderUI({
-      req(input$conditionSetupFile)
+    # Label assignment for CSV/Excel/TSV files (same pattern as GCT workflow)
+    csvExcelLabelAssignment <- function() {
+      output$sideBarMain <- renderUI({csvExcelLabelSetupUI(ns = ns, 
+                                                           dataFileNames = input$dataFiles$name)})
+      output$rightButton <- renderUI({actionButton(ns("submitCSVExcelLabelsButton"), 
+                                                   "Next",
+                                                   class = "btn btn-primary")})
+      output$leftButton <- NULL
       
-      tryCatch({
-        # Read condition setup file
-        condition_setup <- readr::read_delim(input$conditionSetupFile$datapath) |> 
-          clean_names()
-        
-        # Process one TSV file to get processed column names
-        if (nrow(input$dataFiles) > 0) {
-          file_path <- input$dataFiles$datapath[1]
-          # message("DEBUG: Starting TSV data processing for identifier column selection...")
-          # message("DEBUG: Reading TSV file: ", input$dataFiles$name[1])
-          
-          tsv_data <- readr::read_delim(file_path) |> 
-            clean_names()
-          # message("DEBUG: Read TSV data: ", nrow(tsv_data), " rows x ", ncol(tsv_data), " columns")
-          # message("DEBUG: TSV column names: ", paste(colnames(tsv_data), collapse = ", "))
-          # message("DEBUG: Condition setup columns: ", paste(colnames(condition_setup), collapse = ", "))
-          
-          # Use existing TSV processing to get processed column names
-          # message("DEBUG: Calling processSingleTSVFile...")
-          result <- processSingleTSVFile(tsv_data, condition_setup, input$dataFiles$name[1])
-          processed_columns <- names(result$processed_data)
-          
-          # Filter for likely identifier columns (non-numeric, non-condition columns)
-          identifier_candidates <- c("id", processed_columns)
-          
-          if (length(identifier_candidates) == 0) {
-            identifier_candidates <- processed_columns
-          }
-          
-          add_css_attributes(
-            selectInput(ns("identifierColumn"),
-              "Identifier Column:",
-              choices = identifier_candidates,
-              selected = if("id" %in% identifier_candidates) "id" else identifier_candidates[1]
-            ),
-            classes = "small-input"
-          )
-        } else {
-          p("No TSV files to process.", style = "color: red;")
-        }
-        
-      }, error = function(e) {
-        p(paste("Error processing files:", e$message), style = "color: red;")
+      # Update with saved labels if they exist (same as GCT workflow)
+      lapply(names(parameters_internal_reactive()), function(label) {
+        filename <- parameters_internal_reactive()[[label]]$gct_file_name
+        updateTextInput(inputId = paste0('CSVExcelLabel_', filename), value = label)
       })
+    }
+    
+    # Handle CSV/Excel/TSV label submission
+    observeEvent(input$submitCSVExcelLabelsButton, {
+      # Collect labels from input fields
+      labels <- sapply(input$dataFiles$name, function(file) {
+        input[[paste0('CSVExcelLabel_', file)]]
+      })
+      
+      # Validate labels
+      if (any(labels == "")) {
+        shinyalert::shinyalert(
+          title = "Error",
+          text = "Please provide labels for all files.",
+          type = "error"
+        )
+        return()
+      }
+      
+      # Check for duplicate labels
+      if (length(unique(labels)) != length(labels)) {
+        shinyalert::shinyalert(
+          title = "Error", 
+          text = "Please provide unique labels for each file.",
+          type = "error"
+        )
+        return()
+      }
+      
+      # Store labels in parameters_internal_reactive (same as GCT workflow)
+      for (i in seq_along(labels)) {
+        filename <- input$dataFiles$name[i]
+        label <- labels[i]
+        parameters_internal_reactive(c(
+          parameters_internal_reactive(),
+          setNames(list(list(gct_file_name = filename)), label)
+        ))
+      }
+      
+      # Move to identifier column selection
+      csvExcelIdentifierSelection(labels)
     })
-
-    # CSV/Excel workflow function
-    csvExcelWorkflow <- function() {
-      # Extract column names from uploaded files to populate identifier selector
-      identifier_columns <- tryCatch({
-        all_columns <- c()
+    
+    # Identifier column selection step
+    csvExcelIdentifierSelection <- function(labels) {
+      output$sideBarMain <- renderUI({csvExcelIdentifierSetupUI(ns = ns, 
+                                                               dataFiles = input$dataFiles,
+                                                               labels = labels)})
+      output$rightButton <- renderUI({actionButton(ns("submitCSVExcelIdentifiersButton"), 
+                                                   "Next",
+                                                   class = "btn btn-primary")})
+      output$leftButton <- renderUI({actionButton(ns("backToCSVExcelLabelsButton"), 
+                                                  "Back",
+                                                  icon = icon("chevron-left"),
+                                                  class = "btn btn-default")})
+      
+      # Update with saved identifier columns if they exist
+      stored_identifiers <- csvExcel_identifier_columns_reactive()
+      if (!is.null(stored_identifiers)) {
+        for (i in seq_along(stored_identifiers)) {
+          updateSelectInput(inputId = paste0("identifierColumn_", i), 
+                           selected = stored_identifiers[i])
+        }
+      }
+    }
+    
+    # Handle identifier column submission
+    observeEvent(input$submitCSVExcelIdentifiersButton, {
+      # Collect identifier columns for each file
+      identifier_columns <- sapply(seq_len(nrow(input$dataFiles)), function(i) {
+        input[[paste0("identifierColumn_", i)]]
+      })
+      
+      # Validate identifier columns
+      if (any(is.null(identifier_columns)) || any(identifier_columns == "")) {
+        shinyalert::shinyalert(
+          title = "Error",
+          text = "Please select identifier columns for all datasets.",
+          type = "error"
+        )
+        return()
+      }
+      
+      # Store identifier columns for later retrieval
+      csvExcel_identifier_columns_reactive(identifier_columns)
+      
+      # Move to experimental design setup
+      csvExcelExpDesignSetup(identifier_columns)
+    })
+    
+    # Experimental design setup step
+    csvExcelExpDesignSetup <- function(identifier_columns) {
+      
+      output$sideBarMain <- renderUI({csvExcelExpDesignSetupUI(ns = ns, 
+                                                      dataFiles = input$dataFiles,
+                                                              labels = sapply(input$dataFiles$name, function(file) {
+                                                                input[[paste0('CSVExcelLabel_', file)]]
+                                                              }))})
+      output$rightButton <- NULL
+      output$leftButton <- renderUI({actionButton(ns("backToCSVExcelIdentifiersButton"), 
+                                                  "Back",
+                                                  icon = icon("chevron-left"),
+                                                  class = "btn btn-default")})
+    }
+    
+    # Handle back navigation
+    observeEvent(input$backToCSVExcelLabelsButton, {
+      csvExcelLabelAssignment()
+    })
+    
+    observeEvent(input$backToCSVExcelIdentifiersButton, {
+      labels <- sapply(input$dataFiles$name, function(file) {
+        input[[paste0('CSVExcelLabel_', file)]]
+      })
+      csvExcelIdentifierSelection(labels)
+    })
+    
+    # Create a reactive to store sample names for template generation
+    template_sample_names <- reactive({
+      req(input$dataFiles)
+      
+        tryCatch({
+        all_samples <- c()
         for (i in seq_len(nrow(input$dataFiles))) {
           file_path <- input$dataFiles$datapath[i]
           file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
           
           if (file_ext == "csv") {
-            data <- readr::read_csv(file_path, nrows = 1, stringsAsFactors = FALSE)
-            columns <- names(data)
+            data <- readr::read_csv(file_path, n_max = 1, show_col_types = FALSE)
+            samples <- names(data)
+          } else if (file_ext == "tsv") {
+            data <- readr::read_tsv(file_path, n_max = 1, show_col_types = FALSE)
+            samples <- names(data)
           } else if (file_ext %in% c("xlsx", "xls")) {
             data <- readxl::read_excel(file_path, n_max = 1)
-            columns <- names(data)
-          } else {
-            columns <- c()
+            samples <- names(data)
+            } else {
+            samples <- c()
           }
           
-          all_columns <- c(all_columns, columns)
+          all_samples <- c(all_samples, samples)
         }
         
-        # Return unique columns
-        unique(all_columns)
-      }, error = function(e) {
-        c() # Return empty vector if error
+        # Get unique sample names
+        unique(all_samples)
+        }, error = function(e) {
+        c("Sample1", "Sample2", "Sample3") # Fallback template
       })
-      
-      output$sideBarMain <- renderUI({csvExcelSetupUI(ns = ns, 
-                                                      dataFiles = input$dataFiles,
-                                                      identifierColumns = identifier_columns)})
-      output$rightButton <- NULL
-      output$leftButton <- NULL
-    }
+    })
+    
+    # Download handler for experimental design template
+    output$downloadExpDesignTemplate <- downloadHandler(
+      filename = "experimental_design_template.csv",
+      content = function(file) {
+        # Get sample names from reactive
+        sample_names <- template_sample_names()
+        
+        # Create template data frame with columnName, Experiment, and Group columns
+        template_df <- data.frame(
+          columnName = sample_names,
+          Experiment = rep("", length(sample_names)),
+          Group = rep("", length(sample_names)),
+            stringsAsFactors = FALSE
+          )
+          
+        # Write the template to file
+        write.csv(template_df, file, row.names = FALSE)
+      }
+    )
     
     # Reactive output to control process button visibility for CSV/Excel
     output$expDesignFileUploaded <- reactive({
@@ -631,170 +738,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     })
     outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
     
-    # Reactive output to control TSV workflow visibility
-    output$conditionSetupUploaded <- reactive({
-      return(!is.null(input$conditionSetupFile))
-    })
-    outputOptions(output, "conditionSetupUploaded", suspendWhenHidden = FALSE)
     
-    # Reactive output to control identifier column selector visibility
-    output$identifierColumnSelected <- reactive({
-      return(!is.null(input$conditionSetupFile) && !is.null(input$identifierColumn))
-    })
-    outputOptions(output, "identifierColumnSelected", suspendWhenHidden = FALSE)
     
-    # Reactive output to control TSV process button (both files needed)
-    output$bothFilesUploaded <- reactive({
-      return(!is.null(input$conditionSetupFile) && !is.null(input$expDesignFile) && !is.null(input$identifierColumn))
-    })
-    outputOptions(output, "bothFilesUploaded", suspendWhenHidden = FALSE)
-    
-    # Download handler for experimental design template
-    output$downloadExpDesign <- downloadHandler(
-      filename = "experimentalDesign.csv",
-      content = function(file) {
-        tryCatch({
-          identifier_col <- input$identifierColumn
-          
-          # Check if this is TSV workflow with condition setup file
-          if (!is.null(input$conditionSetupFile)) {
-            # TSV workflow: Generate experimental design from processed TSV data (renamed columns)
-            req(input$identifierColumn) # Make sure identifier column is selected
-            
-            # Read condition setup file
-            condition_setup <- readr::read_delim(input$conditionSetupFile$datapath) |> 
-                clean_names()
-            
-            # Process TSV data with condition setup to get renamed columns
-            if (nrow(input$dataFiles) > 0) {
-              file_path <- input$dataFiles$datapath[1]
-              tsv_data <- readr::read_delim(file_path, n_max = 10) |> 
-                clean_names()
-              
-              # Process TSV with condition setup to get renamed columns
-              result <- processSingleTSVFile(tsv_data, condition_setup, input$dataFiles$name[1], input$identifierColumn)
-              processed_columns <- names(result$processed_data)
-              
-              # Create experimental design template with renamed sample column names
-              template <- data.frame(
-                columnName = processed_columns,
-                experiment = rep(NA, length(processed_columns)),
-                condition = rep(NA, length(processed_columns)), 
-                replicate = rep(NA, length(processed_columns)),
-                stringsAsFactors = FALSE
-              )
-            } else {
-              stop("No TSV files available for processing")
-            }
-          } else {
-            # CSV/Excel workflow: Generate from original file columns
-            template <- generateExperimentalDesignTemplate(input$dataFiles, 
-                                                          identifierColumn = identifier_col)
-          }
-          
-          # Write to file
-          utils::write.csv(template, file, row.names = FALSE)
-          
-        }, error = function(e) {
-          shinyalert::shinyalert(
-            title = "Error",
-            text = paste("Failed to generate experimental design template:", e$message),
-            type = "error"
-          )
-        })
-      }
-    )
-    
-    # Process TSV data when both condition setup and experimental design are uploaded
-    observeEvent(input$processTSVData, {
-      req(input$conditionSetupFile, input$expDesignFile)
-      
-      tryCatch({
-        # Process TSV files with progress indication
-        withProgress(message = "Processing TSV files...", {
-          setProgress(0.1, detail = "Reading condition setup file")
-          
-          # Read and validate condition setup file
-          condition_setup <- readConditionSetup(input$conditionSetupFile$datapath)
-          
-          setProgress(0.2, detail = "Reading experimental design")
-          
-          # Read experimental design
-          exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
-          
-          setProgress(0.4, detail = "Processing TSV data with condition setup")
-          
-          # Use proper TSV processing functions with condition setup
-          identifier_col <- input$identifierColumn
-          
-          # Process TSV files using the existing TSV processing functions
-          tsv_result <- processTSVFiles(
-            dataFiles = input$dataFiles,
-            conditionSetup = condition_setup,
-            identifierColumn = identifier_col
-          )
-          
-          setProgress(0.6, detail = "Converting to GCT format")
-          
-          # Convert processed TSV data (with renamed columns) to GCT format using experimental design
-          # Create temporary files with the processed TSV data
-          temp_files <- data.frame(
-            name = paste0(names(tsv_result$processed_data), ".csv"),
-            datapath = character(length(tsv_result$processed_data)),
-            stringsAsFactors = FALSE
-          )
-          
-          for (i in seq_along(tsv_result$processed_data)) {
-            temp_file <- tempfile(fileext = ".csv")
-            utils::write.csv(tsv_result$processed_data[[i]], temp_file, row.names = FALSE)
-            temp_files$datapath[i] <- temp_file
-          }
-          
-          # Process using CSV/Excel workflow with the processed (renamed) TSV data
-          gct_result <- processCSVExcelWorkflow(temp_files, exp_design, identifier_col)
-          
-          setProgress(0.8, detail = "Setting up analysis parameters")
-          
-          # Store converted GCT objects and parameters
-          GCTs_unprocessed_internal_reactive(gct_result$GCTs)
-          parameters_internal_reactive(gct_result$parameters)
-          
-          # Set up back/next navigation logic for parameter setup
-          backNextLogic$place <- 1
-          backNextLogic$maxPlace <- length(gct_result$GCTs)
-          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
-          
-          setProgress(1.0, detail = "Ready for parameter setup")
-        })
-        
-        # Show success message
-        shinyalert::shinyalert(
-          title = "TSV Processing Complete!",
-          text = paste("Successfully processed", length(input$dataFiles$name), 
-                      "TSV file(s) with condition setup. Now configure analysis parameters..."),
-          type = "success",
-          timer = 1000,
-          showConfirmButton = FALSE
-        )
-        
-        # Trigger the standard parameter setup workflow (same as GCT files)
-        labelsGO(labelsGO() + 1)
-        
-      }, error = function(e) {
-        # Show detailed error message
-        error_msg <- paste("Failed to process TSV data:", e$message)
-        
-        # Log error for debugging
-        message("TSV Processing Error: ", error_msg)
-        
-        shinyalert::shinyalert(
-          title = "Processing Error",
-          text = error_msg,
-          type = "error",
-          html = TRUE
-        )
-      })
-    })
 
     # Process CSV/Excel data when experimental design is uploaded
     observeEvent(input$processCSVExcel, {
@@ -810,9 +755,20 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           
           setProgress(0.5, detail = "Converting data to analysis format")
           
-          # Process CSV/Excel files with selected identifier column
-          identifier_col <- input$identifierColumn
-          csv_excel_result <- processCSVExcelWorkflow(input$dataFiles, exp_design, identifier_col)
+          # Process CSV/Excel files with per-dataset identifier columns
+          identifier_columns <- csvExcel_identifier_columns_reactive()
+          
+          # Validate identifier columns
+          if (is.null(identifier_columns) || any(identifier_columns == "")) {
+            stop("Please select identifier columns for all datasets.")
+          }
+          
+          # Get labels from input fields
+          labels <- sapply(input$dataFiles$name, function(file) {
+            input[[paste0('CSVExcelLabel_', file)]]
+          })
+          
+          csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(input$dataFiles, exp_design, identifier_columns, labels)
           
           setProgress(0.8, detail = "Setting up analysis parameters")
           
@@ -837,6 +793,18 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           timer = 3000,
           showConfirmButton = FALSE
         )
+        
+        # Automatically switch to Dataset Setup help tab
+        updateTabsetPanel(session = parent, 
+                         inputId = "navbar-tabs", 
+                         selected = "Help-Analysis")
+        
+        # Switch to the Dataset Setup tab within the help section
+        shinyjs::runjs("
+          setTimeout(function() {
+            $('a[data-value=\"Dataset Setup\"]').click();
+          }, 100);
+        ")
         
         # Trigger the standard parameter setup workflow (same as GCT files)
         labelsGO(labelsGO() + 1)

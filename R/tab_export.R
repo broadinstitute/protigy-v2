@@ -70,7 +70,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
           )
         ),
         
-        downloadButton(ns("download"), label = "Download")
+        downloadButton(ns("download"), label = "Download", class = "btn btn-primary")
       )
     })
     

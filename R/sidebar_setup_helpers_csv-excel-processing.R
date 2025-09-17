@@ -3,11 +3,203 @@
 # Functions for processing CSV/Excel files and converting them to GCT format
 ################################################################################
 
-# Process CSV/Excel files with experimental design to create GCT objects
-# INPUT: list of data files, experimental design data.frame, identifierColumn (optional), gene mapping parameters (optional)
+# UI function for CSV/Excel/TSV label assignment (same pattern as GCT workflow)
+csvExcelLabelSetupUI <- function(ns, dataFileNames) {
+  tagList(
+    h4('Assign labels'),
+    lapply(dataFileNames, function(file) {
+      add_css_attributes(
+        textInput(inputId = ns(paste0('CSVExcelLabel_', file)),
+                  label = file,
+                  placeholder = "Proteome, Phosphoproteome, etc."),
+        classes = "small-input")
+    })
+  )
+}
+
+# UI function for CSV/Excel/TSV identifier column selection (per dataset)
+csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels) {
+  tagList(
+    h4('Select ID column'),
+    
+    lapply(seq_len(nrow(dataFiles)), function(i) {
+      file_name <- dataFiles$name[i]
+      file_path <- dataFiles$datapath[i]
+      file_ext <- tools::file_ext(tolower(file_name))
+      label <- labels[i]
+      
+      # Read data and find unique columns for this file
+      unique_columns <- tryCatch({
+        # Check if file exists and is readable
+        if (!file.exists(file_path)) {
+          stop("File does not exist: ", file_path)
+        }
+        
+        # Read the full data (not just column names)
+        if (file_ext == "csv") {
+          data <- readr::read_csv(file_path, show_col_types = FALSE)
+        } else if (file_ext == "tsv") {
+          data <- readr::read_tsv(file_path, show_col_types = FALSE)
+        } else if (file_ext %in% c("xlsx", "xls")) {
+          data <- readxl::read_excel(file_path)
+        } else {
+          stop("Unsupported file format: ", file_ext)
+        }
+        
+        # Find columns with unique values
+        getUniqueColumns(data)
+      }, error = function(e) {
+        message("Error reading data from ", file_name, " (", file_path, "): ", e$message)
+        character(0)
+      })
+      
+      if (length(unique_columns) > 0) {
+        div(
+          h5(paste("Dataset:", label)),
+          p(paste("File:", file_name)),
+          div(
+            class = "small-input",
+            selectInput(
+              inputId = ns(paste0("identifierColumn_", i)),
+              label = "Select identifier column:",
+              choices = unique_columns,
+              selected = unique_columns[1]
+            )
+          ),
+          hr()
+        )
+      } else {
+        div(
+          h5(paste("Dataset:", label)),
+          p(paste("File:", file_name)),
+          p(paste("No suitable identifier columns found in", file_name, ". All columns are either numeric, contain duplicate values, or are empty. Please check your file and ensure at least one character column has unique values."), style = "color: red;"),
+          hr()
+        )
+      }
+    })
+  )
+}
+
+# UI function for experimental design template download and upload
+csvExcelExpDesignSetupUI <- function(ns, dataFiles, labels) {
+  tagList(
+    h4('Experimental Design'),
+    
+    # Template download section
+    div(
+      style = "font-weight: bold; font-size: 16px; margin-bottom: 10px;",
+      'Download Template'
+    ),
+    p('Download a template experimental design file that you can fill in with your sample information.'),
+    
+    div(
+      class = "small-input",
+      downloadButton(
+        outputId = ns("downloadExpDesignTemplate"),
+        label = "Download Template",
+        class = "btn btn-primary"
+      )
+    ),
+    
+    hr(),
+    
+    # Experimental design upload section
+    div(
+      style = "font-weight: bold; font-size: 16px; margin-bottom: 10px;",
+      'Upload Experimental Design'
+    ),
+    p('Upload your completed experimental design file (CSV, TSV, or Excel format).'),
+    
+    fileInput(
+      inputId = ns("expDesignFile"),
+      label = "Choose experimental design file:",
+      accept = c(".csv", ".tsv", ".xlsx", ".xls"),
+      placeholder = "No file selected"
+    ),
+    
+    hr(),
+    
+    # Process button (will be shown when experimental design is uploaded)
+    div(
+      id = ns("processButtonContainer"),
+      style = "display: none;",
+      actionButton(
+        inputId = ns("processCSVExcel"),
+        label = "Process Files",
+        class = "btn btn-primary"
+      )
+    ),
+    
+    # JavaScript to show/hide process button based on file upload
+    tags$script(HTML(paste0("
+      $(document).on('change', '#", ns("expDesignFile"), "', function() {
+        if (this.files.length > 0) {
+          $('#", ns("processButtonContainer"), "').show();
+        } else {
+          $('#", ns("processButtonContainer"), "').hide();
+        }
+      });
+    ")))
+  )
+}
+
+# Process CSV/Excel/TSV files with per-dataset identifier columns
+# INPUT: list of data files, experimental design data.frame, identifierColumns (vector per dataset)
 # OUTPUT: list of GCT objects (same format as existing GCT workflow)
-processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn = NULL, 
-                                mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
+processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experimentalDesign, identifierColumns, labels) {
+  GCTs <- list()
+  parameters <- list()
+  
+  # Process each file with its specific identifier column
+  for (i in seq_len(nrow(dataFiles))) {
+    file_path <- dataFiles$datapath[i]
+    file_name <- dataFiles$name[i]
+    file_ext <- tools::file_ext(tolower(file_name))
+    identifier_col <- identifierColumns[i]
+    label <- labels[i]  # Use user-assigned label
+    
+    tryCatch({
+      # Read the data file
+      if (file_ext == "csv") {
+        data <- readr::read_csv(file_path)
+      } else if (file_ext == "tsv") {
+        data <- readr::read_tsv(file_path)
+      } else if (file_ext %in% c("xlsx", "xls")) {
+        data <- readxl::read_excel(file_path)
+      } else {
+        stop("Unsupported file format: ", file_ext)
+      }
+      
+      # Convert to GCT object with specific identifier column
+      gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifier_col)
+      
+      # Use user-assigned label
+      GCTs[[label]] <- gct_obj
+      
+      # Create parameters for this dataset (similar to GCT workflow)
+      # Read default parameters from YAML
+      default_parameters <- yaml::read_yaml(
+        system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy')
+      )
+      
+      parameters[[label]] <- c(
+        gct_file_path = file_path,
+        gct_file_name = file_name,
+        default_parameters
+      )
+      
+    }, error = function(e) {
+      stop("Failed to process file ", file_name, ": ", e$message)
+    })
+  }
+  
+  return(list(GCTs = GCTs, parameters = parameters))
+}
+
+# Process CSV/Excel/TSV files with experimental design to create GCT objects
+# INPUT: list of data files, experimental design data.frame, identifierColumn (optional)
+# OUTPUT: list of GCT objects (same format as existing GCT workflow)
+processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn = NULL) {
   GCTs <- list()
   
   # Process each file
@@ -19,7 +211,9 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
     tryCatch({
       # Read the data file
       if (file_ext == "csv") {
-        data <- readr::read_csv(file_path, stringsAsFactors = FALSE)
+        data <- readr::read_csv(file_path)
+      } else if (file_ext == "tsv") {
+        data <- readr::read_tsv(file_path)
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {
@@ -27,8 +221,7 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
       }
       
       # Convert to GCT object
-      gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifierColumn, 
-                             mappingFilePath, mappingProteinCol, mappingGeneCol)
+      gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifierColumn)
       
       # Create a simple label from filename (remove extension)
       label <- tools::file_path_sans_ext(file_name)
@@ -42,61 +235,43 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
   return(GCTs)
 }
 
-# Determine the best identifier column for the data
-# INPUT: data.frame, optional user-specified identifier column
-# OUTPUT: list with identifier_column name and processed data
-determineIdentifierColumn <- function(data, identifierColumn = NULL) {
-  # If user specified an identifier column, validate and use it
-  if (!is.null(identifierColumn) && identifierColumn %in% colnames(data)) {
-    return(list(
-      identifier_column = identifierColumn,
-      data = data,
-      method = "user_specified"
-    ))
+# Check which columns have unique values and are character type (suitable as identifier columns)
+# INPUT: data.frame
+# OUTPUT: character vector of column names with unique character values
+getUniqueColumns <- function(data) {
+  unique_columns <- character(0)
+  
+  for (col_name in colnames(data)) {
+    # Get non-NA values
+    values <- data[[col_name]]
+    non_na_values <- values[!is.na(values)]
+    
+    # Check if column is character type and has unique values
+    if (length(non_na_values) > 0 && 
+        is.character(non_na_values) && 
+        length(non_na_values) == length(unique(non_na_values))) {
+      unique_columns <- c(unique_columns, col_name)
+    }
   }
   
-  # Check for PG.ProteinGroups column and process it
-  if ("PG.ProteinGroups" %in% colnames(data)) {
-    processed_data <- extractFirstProteinGroup(data)
-    return(list(
-      identifier_column = "firstProteinGroup",
-      data = processed_data,
-      method = "first_protein_group"
-    ))
-  }
-  
-  # If PG.ProteinGroups doesn't exist, use first column as fallback
-  # This will trigger user selection in the UI
-  return(list(
-    identifier_column = colnames(data)[1],
-    data = data,
-    method = "first_column_fallback"
-  ))
+  return(unique_columns)
 }
 
-# Extract first protein group from PG.ProteinGroups column
-# INPUT: data.frame with PG.ProteinGroups column
-# OUTPUT: data.frame with new firstProteinGroup column
-extractFirstProteinGroup <- function(data) {
-  if (!"PG.ProteinGroups" %in% colnames(data)) {
-    stop("PG.ProteinGroups column not found in data")
+# Validate that the user-specified identifier column exists and is valid
+# INPUT: data.frame, user-specified identifier column
+# OUTPUT: validated identifier column name
+validateIdentifierColumn <- function(data, identifierColumn) {
+  if (is.null(identifierColumn) || identifierColumn == "") {
+    stop("Identifier column must be specified")
   }
   
-  # Extract first protein group (everything before first semicolon)
-  protein_groups <- data$PG.ProteinGroups
-  first_groups <- sapply(protein_groups, function(x) {
-    if (is.na(x) || x == "") {
-      return(x)
-    }
-    # Split on semicolon and take first element, trim whitespace
-    first_group <- trimws(strsplit(as.character(x), ";")[[1]][1])
-    return(first_group)
-  }, USE.NAMES = FALSE)
+  if (!identifierColumn %in% colnames(data)) {
+    stop("Identifier column '", identifierColumn, "' not found in data")
+  }
   
-  # Add new column to data
-  data$firstProteinGroup <- first_groups
-  return(data)
+  return(identifierColumn)
 }
+
 
 # Validate that identifier column has unique values
 # INPUT: data.frame, identifier column name
@@ -128,26 +303,25 @@ validateUniqueIdentifiers <- function(data, identifier_column) {
 }
 
 # Convert CSV/Excel data to GCT format
-convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn = NULL,
-                        mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
+convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) {
   
-  # Determine the best identifier column using robust logic
-  identifier_result <- determineIdentifierColumn(data, identifierColumn)
-  processed_data <- identifier_result$data
-  final_identifier_column <- identifier_result$identifier_column
+  # Validate that the identifier column exists and is valid
+  final_identifier_column <- validateIdentifierColumn(data, identifierColumn)
   
   # Validate that the identifier column has unique values
-  validateUniqueIdentifiers(processed_data, final_identifier_column)
+  validateUniqueIdentifiers(data, final_identifier_column)
   
   # Get feature IDs from the determined identifier column
-  feature_id_col <- which(colnames(processed_data) == final_identifier_column)
-  feature_ids <- processed_data[[feature_id_col]]
+  feature_id_col <- which(colnames(data) == final_identifier_column)
+  feature_ids <- data[[feature_id_col]]
   
   # Get all sample IDs from data (all columns except identifier column)
-  all_sample_ids <- colnames(processed_data[, -feature_id_col, drop = FALSE])
+  all_sample_ids <- colnames(data[, -feature_id_col, drop = FALSE])
   
-  # Filter to only experimental columns (those with valid metadata)
-  experimental_sample_ids <- filterExperimentalColumns(all_sample_ids, experimentalDesign)
+  # Identify columns that should be moved to rdesc vs kept as samples
+  column_classification <- classifyColumns(all_sample_ids, experimentalDesign)
+  experimental_sample_ids <- column_classification$sample_columns
+  rdesc_columns <- column_classification$rdesc_columns
   
   # Check if we have any experimental columns
   if (length(experimental_sample_ids) == 0) {
@@ -155,15 +329,15 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn =
   }
   
   # Extract data matrix using only experimental columns
-  experimental_columns <- c(feature_id_col, which(colnames(processed_data) %in% experimental_sample_ids))
-  filtered_data <- processed_data[, experimental_columns, drop = FALSE]
+  experimental_columns <- c(feature_id_col, which(colnames(data) %in% experimental_sample_ids))
+  filtered_data <- data[, experimental_columns, drop = FALSE]
   data_matrix <- as.matrix(filtered_data[, -1, drop = FALSE]) # Remove identifier column from matrix
   rownames(data_matrix) <- feature_ids
   
   # Get final sample IDs (should be the experimental ones)
   sample_ids <- colnames(data_matrix)
   
-  # Create rdesc (row descriptor) - minimal version
+  # Create rdesc (row descriptor) - start with identifier column
   rdesc <- data.frame(
     id = feature_ids,
     id.description = feature_ids,
@@ -171,49 +345,14 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn =
   )
   rownames(rdesc) <- feature_ids
   
-  # Add gene mapping if mapping file is provided
-  if (!is.null(mappingFilePath) && !is.null(mappingProteinCol) && !is.null(mappingGeneCol)) {
-    tryCatch({
-      # Source the gene mapping functions if not already loaded
-      if (!exists("performGeneMapping")) {
-        source("R/sidebar_setup_helpers_gene-mapping.R")
-      }
-      
-      # Determine which column contains protein groups for mapping
-      working_protein_col <- final_identifier_column
-      if (identifier_result$method == "first_protein_group") {
-        # If we extracted first protein group, use original PG.ProteinGroups column
-        working_protein_col <- "PG.ProteinGroups"
-      }
-      
-      # Read mapping file
-      mapping_data <- readMappingFile(mappingFilePath)
-      
-      # Create temporary data frame with protein groups for mapping
-      temp_working_data <- data.frame(
-        protein_group = processed_data[[working_protein_col]],
-        stringsAsFactors = FALSE
-      )
-      
-      # Perform gene mapping
-      mapping_result <- performGeneMapping(
-        working_data = temp_working_data,
-        mapping_data = mapping_data,
-        working_protein_col = "protein_group",
-        mapping_protein_col = mappingProteinCol,
-        mapping_gene_col = mappingGeneCol
-      )
-      
-      # Add gene symbols to rdesc
-      rdesc$gene_symbol <- mapping_result$mapped_data$gene_symbol
-      
-      # Store mapping statistics for later use
-      attr(rdesc, "mapping_stats") <- mapping_result$mapping_stats
-      
-    }, error = function(e) {
-      warning("Gene mapping failed: ", e$message, ". Continuing without gene mapping.")
-    })
+  # Add rdesc columns (metadata columns that should be in rdesc)
+  if (length(rdesc_columns) > 0) {
+    rdesc_data <- data[, c(feature_id_col, which(colnames(data) %in% rdesc_columns)), drop = FALSE]
+    for (col in rdesc_columns) {
+      rdesc[[col]] <- rdesc_data[[col]]
+    }
   }
+  
   
   # Create cdesc (column descriptor) from experimental design
   cdesc <- createCdesc(sample_ids, experimentalDesign, file_name)
@@ -226,6 +365,53 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn =
   )
   
   return(gct_obj)
+}
+
+# Classify columns as either sample columns or rdesc columns based on experimental design
+# INPUT: sample IDs from data file, experimental design
+# OUTPUT: list with sample_columns and rdesc_columns vectors
+classifyColumns <- function(sample_ids, experimentalDesign) {
+  sample_columns <- character(0)
+  rdesc_columns <- character(0)
+  
+  for (col_name in sample_ids) {
+    # Check if column exists in experimental design
+    exp_design_row <- experimentalDesign[experimentalDesign$columnName == col_name, ]
+    
+    if (nrow(exp_design_row) == 0) {
+      # Case 1: columnName is missing from experimental design file
+      # This column should be moved to rdesc
+      rdesc_columns <- c(rdesc_columns, col_name)
+    } else {
+      # Case 2: columnName is present in experimental design
+      # Check if all metadata entries are blank/NA
+      metadata_columns <- setdiff(names(experimentalDesign), "columnName")
+      
+      if (length(metadata_columns) == 0) {
+        # No metadata columns - treat as sample
+        sample_columns <- c(sample_columns, col_name)
+      } else {
+        # Check if all metadata values are NA/blank
+        all_metadata_values <- exp_design_row[, metadata_columns, drop = FALSE]
+        all_blank <- all(is.na(all_metadata_values) | 
+                        as.character(all_metadata_values) == "" | 
+                        trimws(as.character(all_metadata_values)) == "")
+        
+        if (all_blank) {
+          # All metadata entries are blank/NA - move to rdesc
+          rdesc_columns <- c(rdesc_columns, col_name)
+        } else {
+          # Has valid metadata - treat as sample
+          sample_columns <- c(sample_columns, col_name)
+        }
+      }
+    }
+  }
+  
+  return(list(
+    sample_columns = sample_columns,
+    rdesc_columns = rdesc_columns
+  ))
 }
 
 # Filter experimental columns based on experimental design metadata
@@ -360,16 +546,14 @@ createCSVExcelParameters <- function(dataFiles) {
 }
 
 # Process CSV/Excel workflow to create objects compatible with existing GCT workflow
-# INPUT: data files, experimental design, identifierColumn (optional), gene mapping parameters (optional)
+# INPUT: data files, experimental design, identifierColumn (optional)
 # OUTPUT: list with GCTs and parameters (same format as GCT workflow)
-processCSVExcelWorkflow <- function(dataFiles, experimentalDesign, identifierColumn = NULL,
-                                   mappingFilePath = NULL, mappingProteinCol = NULL, mappingGeneCol = NULL) {
+processCSVExcelWorkflow <- function(dataFiles, experimentalDesign, identifierColumn = NULL) {
   # Validate experimental design
   validateExperimentalDesign(experimentalDesign)
   
   # Process files to create GCT objects
-  GCTs <- processCSVExcelFiles(dataFiles, experimentalDesign, identifierColumn,
-                              mappingFilePath, mappingProteinCol, mappingGeneCol)
+  GCTs <- processCSVExcelFiles(dataFiles, experimentalDesign, identifierColumn)
   
   # Create parameters
   parameters <- createCSVExcelParameters(dataFiles)

@@ -48,6 +48,25 @@ transformGCTs <- function(GCTs, parameters) {
                 params$data_filter_sd_pct <- NULL
               }
               
+              ## handle gene symbol column selection
+              gene_symbol_col <- params$gene_symbol_column
+              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # Check if geneSymbol already exists and warn user
+                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
+                  # Preserve original geneSymbol column
+                  rdesc$geneSymbol_original <- rdesc$geneSymbol
+                }
+                
+                # Rename the selected column to geneSymbol
+                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                
+                # Remove the original column if it's not already geneSymbol
+                if (gene_symbol_col != "geneSymbol") {
+                  rdesc[[gene_symbol_col]] <- NULL
+                }
+              }
+              
               incProgress(1, detail = "log transformation")
               
               ## log transformation
@@ -113,6 +132,25 @@ processGCTs <- function(GCTs, parameters) {
               }
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
+              }
+              
+              ## handle gene symbol column selection
+              gene_symbol_col <- params$gene_symbol_column
+              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # Check if geneSymbol already exists and warn user
+                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
+                  # Preserve original geneSymbol column
+                  rdesc$geneSymbol_original <- rdesc$geneSymbol
+                }
+                
+                # Rename the selected column to geneSymbol
+                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                
+                # Remove the original column if it's not already geneSymbol
+                if (gene_symbol_col != "geneSymbol") {
+                  rdesc[[gene_symbol_col]] <- NULL
+                }
               }
               
               incProgress(1, detail = "log transformation")

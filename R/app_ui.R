@@ -10,13 +10,14 @@ app_UI <- function(request) {dashboardPage(
   dashboardHeader(title = paste0('ProTIGY v', packageVersion('Protigy'))),
   
   shinydashboard::dashboardSidebar(
-    width = 350,
     setupSidebarUI()
   ),
   
   dashboardBody(
     # include custom CSS
     includeCSS(system.file("custom.css", package = "Protigy")),
+    # include shinyjs
+    shinyjs::useShinyjs(),
   
     navbarPage(
       title = '',
