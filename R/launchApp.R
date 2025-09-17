@@ -6,6 +6,10 @@ launchApp <- function() {
   shinyApp(
     ui = app_UI, 
     server = app_server,
-    onStart = app_onStart
+    onStart = app_onStart,
+    options = list(
+      width = 3000,    # Width in pixels
+      height = 900     # Height in pixels
+    )
   )
 }

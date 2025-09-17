@@ -17,10 +17,13 @@ Imports:
     cmapR,
     ComplexHeatmap,
     dplyr,
+    DT,
     ggplot2,
     khroma,
     plotly (>= 4.10.1),
     RColorBrewer,
+    readr,
+    readxl,
     shinyalert,
     shinyBS,
     shinydashboard,
@@ -49,7 +52,10 @@ Imports:
     shinyBS,
     glue,
     Matrix (>= 1.6-2),
-    shinyWidgets
+    shinyWidgets, 
+    janitor, 
+    snakecase,
+    shinyjs
 Depends:
     R (>= 4.0.0),
     shiny

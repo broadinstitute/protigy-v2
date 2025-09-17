@@ -14,7 +14,14 @@ helpAnalysisTabUI <- function(id = "helpTab") {
           id = ns("analysisHelpTabs"),
           type = "tabs",
           tabPanel(
-            "Normalization & Filtering",
+            "CSV/TSV/Excel Processing",
+            includeMarkdown(
+              system.file("help_documentation/protigy_csv_excel_processing_help.md", 
+                          package = "Protigy")
+            )
+          ),
+          tabPanel(
+            "Dataset Setup",
             includeMarkdown(
               system.file("help_documentation/protigy_normalization_help.md", 
                           package = "Protigy")

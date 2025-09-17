@@ -221,10 +221,25 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
         stat_param(current)
       }
       
+      # Get intensity parameter for this ome
+      intensity_param <- parameters()[[ome]]$intensity_data
+      
+      # Define test choices - exclude One-sample t-test for intensity data
+      test_choices <- c("None", "Two-sample Moderated T-test", "Moderated F test")
+      if (is.null(intensity_param) || intensity_param != "Yes") {
+        test_choices <- c("None", "One-sample Moderated T-test", "Two-sample Moderated T-test", "Moderated F test")
+      }
+      
+      # If current test is One-sample and intensity is Yes, reset to None
+      if (current[[ome]]$test == "One-sample Moderated T-test" && !is.null(intensity_param) && intensity_param == "Yes") {
+        current[[ome]]$test <- "None"
+        stat_param(current)
+      }
+      
       selectInput(ns("select_test"), 
                   "Select test:", 
-                  choices= c("None","One-sample Moderated T-test","Two-sample Moderated T-test","Moderated F test"), 
-                  selected= current[[ome]]$test
+                  choices = test_choices, 
+                  selected = current[[ome]]$test
       )
     })
     

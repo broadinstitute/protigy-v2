@@ -16,6 +16,8 @@ app_UI <- function(request) {dashboardPage(
   dashboardBody(
     # include custom CSS
     includeCSS(system.file("custom.css", package = "Protigy")),
+    # include shinyjs
+    shinyjs::useShinyjs(),
   
     navbarPage(
       title = '',

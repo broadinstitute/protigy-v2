@@ -3,9 +3,37 @@
   display:none;
 }
 
-/* Add the settings icon in the shinydashboard header*/
+
+/* Icon when the sidebar is OPEN (default) */
 .main-header .sidebar-toggle:before {
-  content: "\2699";
+  content: "\25C0";
+  display: inline-block;
+  font-family: Arial;
+}
+
+.main-header .sidebar-toggle:after {
+  content: "Collapse";
+  font-size: 10px;
+  vertical-align: middle;
+  margin-left: 5px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+/* Icon when the sidebar is CLOSED */
+body.sidebar-collapse .main-header .sidebar-toggle:before {
+  content: "\25B6";
+  display: inline-block;
+  font-family: Arial;
+}
+
+body.sidebar-collapse .main-header .sidebar-toggle:after {
+  content: "Expand";
+  font-size: 10px; 
+  vertical-align: middle;
+  margin-left: 5px; 
+  font-weight: bold;
+  letter-spacing: 1px;
 }
 
 /* minimize padding between elements in sidebar*/
@@ -16,7 +44,6 @@ section.sidebar .shiny-input-container {
   font-size: 10pt;
 }
 section.sidebar h4 {
-  padding-left: 10px;
   margin-top: 0px;
 }
 section.sidebar hr {
@@ -63,6 +90,25 @@ section.sidebar {
   color: white;
 }
 
+/* style for primary download button */
+.btn-primary.download-button {
+  color: white !important;
+}
+
+.download-button {
+  color: white !important;
+}
+
+/* Force white text on all download buttons */
+a[download] {
+  color: white !important;
+}
+
+/* Target download buttons specifically */
+.btn[download] {
+  color: white !important;
+}
+
 /* boxes without header */
 .box-no-header > .box > .box-header {
   display: none;
@@ -105,4 +151,3 @@ section.sidebar {
 #inline .form-group { 
   display: table-row;
 }
-
