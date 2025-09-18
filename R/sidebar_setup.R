@@ -150,6 +150,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       updateTabsetPanel(session = parent, 
                         inputId = "navbar-tabs", 
                         selected = "Help-Analysis")
+      
+      # Switch to the Dataset Setup tab within the help section
+      shinyjs::runjs("
+        setTimeout(function() {
+          $('a[data-value=\"Dataset Setup\"]').click();
+        }, 100);
+      ")
     }, ignoreInit = TRUE)
     
     

@@ -6,9 +6,11 @@
 
 /* Icon when the sidebar is OPEN (default) */
 .main-header .sidebar-toggle:before {
-  content: "\25C0";
+  content: "<";
   display: inline-block;
   font-family: Arial;
+  font-weight: bold;
+  font-size: 14px;
 }
 
 .main-header .sidebar-toggle:after {
@@ -22,9 +24,11 @@
 
 /* Icon when the sidebar is CLOSED */
 body.sidebar-collapse .main-header .sidebar-toggle:before {
-  content: "\25B6";
+  content: ">";
   display: inline-block;
   font-family: Arial;
+  font-weight: bold;
+  font-size: 14px;
 }
 
 body.sidebar-collapse .main-header .sidebar-toggle:after {

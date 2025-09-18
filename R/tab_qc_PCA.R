@@ -253,9 +253,6 @@ QCPCA_Ome_Server <- function(id,
                     input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
                     input$qc_PCA_var1_display, input$qc_PCA_var2_display, color_map()), 
       valueExpr = {
-        req(GCT_processed(), default_annotation_column(), color_map())
-        # Ensure all PCA inputs are properly initialized
-        req(input$qc_PCA_PC1, input$qc_PCA_PC2, cancelOutput = TRUE)
         
         # get annotation column
         if (!is.null(input$qc_PCA_annotation)) {
@@ -304,8 +301,8 @@ QCPCA_Ome_Server <- function(id,
                             col_of_interest = annot_column,
                             ome = ome,
                             custom_color_map = annot_color_map,
-                            comp.x = as.numeric(input$qc_PCA_PC1),
-                            comp.y = as.numeric(input$qc_PCA_PC2),
+                            comp.x = as.numeric(ifelse(is.null(input$qc_PCA_PC1), 1, input$qc_PCA_PC1)),
+                            comp.y = as.numeric(ifelse(is.null(input$qc_PCA_PC2), 2, input$qc_PCA_PC2)),
                             second_col_of_interest = second_annot_column,
                             var1_display = var1_display,
                             var2_display = var2_display)

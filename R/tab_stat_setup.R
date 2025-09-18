@@ -50,7 +50,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           column(3,
                  selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
                  textOutput(ns("annotation_col")),
-                 checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE),
+                 if (length(ome_names) > 1) {
+                   checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
+                 },
                  actionButton(ns("run_test_button"),"Run Test")
           ),
           column(3,

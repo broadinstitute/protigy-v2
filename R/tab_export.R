@@ -70,7 +70,32 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
           )
         ),
         
-        downloadButton(ns("download"), label = "Download", class = "btn btn-primary")
+        downloadButton(ns("download"), label = "Download", class = "btn btn-primary"),
+        
+        br(),
+        br(),
+        
+        # Documentation section
+        div(
+          class = "well",
+          h4("Export Documentation"),
+          
+          h5("What Gets Exported:"),
+          tags$ul(
+            tags$li(strong("summary_exports:"), "Original and processed GCT datasets, overview plots (PDF)"),
+            tags$li(strong("QCBoxplot_exports:"), "Boxplots before and after normalization (PDF)"),
+            tags$li(strong("QCProfilePlots_exports:"), "Profile plots before and after normalization (PDF)"),
+            tags$li(strong("QCCorrelation_exports:"), "Correlation heatmaps and boxplots (PDF)"),
+            tags$li(strong("QCPCA_exports:"), "PCA plots and regression plots (PDF)"),
+            tags$li(strong("multiomeHeatmap_exports:"), "Multi-omics heatmaps (PDF)"),
+            tags$li(strong("statSummary_exports:"), "P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
+            tags$li(strong("statPlot_exports:"), "Volcano plots (PDF)")
+          ),
+          
+          h5("Instructions:"),
+          p("1. Select datasets and tabs to export"),
+          p("2. Click 'Download' to get a ZIP file with organized folders")
+        )
       )
     })
     
@@ -168,7 +193,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
                 success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
                 
               }, error = function(c) {
-                warning("Export failed for ", p_name, ".")
+                warning("Export failed for ", p_name, ": ", c$message)
                 
                 # add to errored exports list
                 error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))

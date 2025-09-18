@@ -248,7 +248,8 @@ myComplexHeatmap <- function(
   if (isTRUE(cluster_columns) && !is.null(column.to.sort)) {
     # Check if data is suitable for clustering (no all-identical values, no NA/NaN/Inf)
     data_for_clustering <- genes.Matrix
-    has_variation <- any(apply(data_for_clustering, 2, function(x) {
+    # For column clustering, check if there's variation across columns (not rows)
+    has_variation <- any(apply(data_for_clustering, 1, function(x) {
       !all(is.na(x)) && length(unique(x[!is.na(x)])) > 1
     }))
     
