@@ -7,7 +7,6 @@
 ################################################################################
 # Shiny functions (UI and server)
 ################################################################################
-source("R/tab_stat_summary_helpers.R")
 # UI for the statSummary tab
 # contains the structure for the big tabbed box with omes
 statSummary_Tab_UI <- function(id = "statSummaryTab") {

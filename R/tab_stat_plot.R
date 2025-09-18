@@ -8,7 +8,6 @@
 # Shiny functions (UI and server)
 ################################################################################
 
-source("R/tab_stat_plot_helpers.R")
 
 # UI for the statPlot tab
 # contains the structure for the big tabbed box with omes

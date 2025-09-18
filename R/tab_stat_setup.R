@@ -8,7 +8,6 @@
 # Shiny functions (UI and server)
 ################################################################################
 
-source("R/tab_stat_setup_helpers.R")
 
 # UI for the statSetup tab
 statSetup_Tab_UI <- function(id = "statSetupTab") {
