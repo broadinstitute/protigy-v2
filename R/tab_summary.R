@@ -312,26 +312,28 @@ summaryOmeServer <- function(id, ome,
     
     ## COMPILE PLOTS AND FILES FOR EXPORT ##
     quant_features_plot_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("quantified_features_", ome, ".pdf"), 
         plot = quant_features_plot_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     
     missing_value_distribution_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("missing_value_distribution_", ome, ".pdf"), 
         plot = missing_value_distribution_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     

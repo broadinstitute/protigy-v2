@@ -72,7 +72,7 @@ summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
   names(color_key) <- paste0(missing_val_cutoff, "%")
   
   # generate plot
-  gg <- ggplot(missing_val_df, text = "HELLO") +
+  gg <- ggplot(missing_val_df) +
     stat_ecdf(aes(missing), geom = "step", pad = FALSE, linewidth = 0.5) + 
     geom_vline(
       aes(xintercept = missing_val_cutoff, 

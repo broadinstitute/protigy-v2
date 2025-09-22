@@ -80,21 +80,23 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
           class = "well",
           h4("Export Documentation"),
           
-          h5("What Gets Exported:"),
+          h5(strong("What Gets Exported:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
           tags$ul(
-            tags$li(strong("summary_exports:"), "Original and processed GCT datasets, overview plots (PDF)"),
-            tags$li(strong("QCBoxplot_exports:"), "Boxplots before and after normalization (PDF)"),
-            tags$li(strong("QCProfilePlots_exports:"), "Profile plots before and after normalization (PDF)"),
-            tags$li(strong("QCCorrelation_exports:"), "Correlation heatmaps and boxplots (PDF)"),
-            tags$li(strong("QCPCA_exports:"), "PCA plots and regression plots (PDF)"),
-            tags$li(strong("multiomeHeatmap_exports:"), "Multi-omics heatmaps (PDF)"),
-            tags$li(strong("statSummary_exports:"), "P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
-            tags$li(strong("statPlot_exports:"), "Volcano plots (PDF)")
+            tags$li("summary_exports: Original and processed GCT datasets, overview plots (PDF)"),
+            tags$li("QCBoxplot_exports: Boxplots before and after normalization (PDF)"),
+            tags$li("QCProfilePlots_exports: Profile plots before and after normalization (PDF)"),
+            tags$li("QCCorrelation_exports: Correlation heatmaps and boxplots (PDF)"),
+            tags$li("QCPCA_exports: PCA plots and regression plots (PDF)"),
+            tags$li("multiomeHeatmap_exports: Multi-omics heatmaps (PDF)"),
+            tags$li("statSummary_exports: P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
+            tags$li("statPlot_exports: Volcano plots (PDF)")
           ),
           
-          h5("Instructions:"),
-          p("1. Select datasets and tabs to export"),
-          p("2. Click 'Download' to get a ZIP file with organized folders")
+          h5(strong("Instructions:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
+          tags$ol(
+            tags$li("Select datasets and tabs to export"),
+            tags$li("Click 'Download' to get a ZIP file with organized folders")
+          )
         )
       )
     })

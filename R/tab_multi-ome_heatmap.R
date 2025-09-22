@@ -279,10 +279,11 @@ multiomeHeatmapTabServer <- function(
     multiome_heatmap_export_function <- function(dir_path) {
       req(HM.out()$HM)
       
-      
+      # Use special dimensions for multi-ome heatmap
+      pdf_params <- get_pdf_params("multiome_heatmap")
       pdf(file = file.path(dir_path, "multiome-heatmap.pdf"),
-          width = 1400/72,
-          height = (plot_height() + 48)/72)
+          width = pdf_params$width,
+          height = pdf_params$height)
       draw_multiome_HM(HM.out()$HM)
       dev.off()
     }

@@ -245,7 +245,8 @@ statPlot_Ome_Server <- function(id,
       pdf_path <- file.path(dir_name, pdf_filename)
       
       # Start PDF device
-      pdf(pdf_path, width = 10, height = 6)
+      pdf_params <- get_pdf_params()
+      pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       
       if (test == "One-sample Moderated T-test") {
         groups <- stat_params()[[ome]]$groups

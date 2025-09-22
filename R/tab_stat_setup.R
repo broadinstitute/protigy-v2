@@ -37,15 +37,6 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       ome_names <- names(GCTs())
       
       tagList(
-        # Warning about log transformation - only show after GCTs are processed
-        div(
-          style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 20px; border-radius: 0 4px 4px 0;",
-          icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
-          strong("Note: ", style = "color: #495057;"),
-          "Statistical tests require log-transformed data. Please ensure your data have been log-transformed.",
-          style = "color: #495057;"
-        ),
-        
         fluidRow(
           column(3,
                  selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
@@ -62,6 +53,39 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           column(3,
                  uiOutput(ns("select_contrast_ui"))
           )
+        ),
+        
+        br(),
+        
+        # Documentation section
+        div(
+          class = "well",
+          h4("Statistical Testing Documentation"),
+          
+          # Important note about log transformation
+          div(
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
+            icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+            strong("Note: ", style = "color: #495057;"),
+            "Statistical tests require log-transformed data. Please ensure your data have been log-transformed.",
+            style = "color: #495057;"
+          ),
+          
+          h5(strong("Available Tests:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
+          tags$ul(
+            tags$li("None: Default option - no statistical testing performed on this dataset"),
+            tags$li("One-sample Moderated T-test: Compare each feature to a reference value (typically 0) - only meaningful for ratio data"),
+            tags$li("Two-sample Moderated T-test: Compare two groups of samples"),
+            tags$li("F-test: Compare multiple groups of samples (one-way ANOVA)")
+          ),
+          
+          h5(strong("Instructions:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
+          tags$ol(
+            tags$li("Select datasets and test type (or 'None' to skip testing)"),
+            tags$li("Choose groups or contrasts for comparison"),
+            tags$li("Click 'Run Test' to perform statistical analysis")
+          ),
+          p(strong("Note:"), " Use 'Apply to all datasets' checkbox to apply the same test settings to multiple datasets")
         )
       )
     })

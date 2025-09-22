@@ -264,26 +264,28 @@ QCBoxplots_Ome_Server <- function(id,
     
     
     qc_boxplot_org_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_boxplot_org_", ome, ".pdf"), 
         plot = qc_boxplot_org_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     
     qc_boxplot_norm_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_boxplot_norm_", ome, ".pdf"), 
         plot = qc_boxplot_norm_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     

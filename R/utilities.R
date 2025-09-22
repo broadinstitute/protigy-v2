@@ -124,5 +124,49 @@ scale_font_size <- function(dimension, max.size=14, scale.factor=50) {
   return(min(max.size,floor(max.size*scale.factor/dimension)))
 }
 
+# Load plot export dimensions from configuration
+# Returns a list with width, height, and units for plot exports
+get_plot_export_dimensions <- function(plot_type = "default") {
+  # Load default parameters
+  default_params <- yaml::read_yaml(
+    system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy')
+  )
+  
+  if (plot_type == "multiome_heatmap") {
+    # Use special dimensions for multi-ome heatmap
+    return(list(
+      width = default_params$multiome_heatmap_width,
+      height = default_params$multiome_heatmap_height,
+      units = default_params$multiome_heatmap_units
+    ))
+  } else {
+    # Use default dimensions for all other plots
+    return(list(
+      width = default_params$plot_export_width,
+      height = default_params$plot_export_height,
+      units = default_params$plot_export_units
+    ))
+  }
+}
+
+# Helper function to create ggsave parameters for plot exports
+get_ggsave_params <- function(plot_type = "default") {
+  dims <- get_plot_export_dimensions(plot_type)
+  return(list(
+    width = dims$width,
+    height = dims$height,
+    units = dims$units
+  ))
+}
+
+# Helper function to create pdf() parameters for plot exports
+get_pdf_params <- function(plot_type = "default") {
+  dims <- get_plot_export_dimensions(plot_type)
+  return(list(
+    width = dims$width,
+    height = dims$height
+  ))
+}
+
 
 

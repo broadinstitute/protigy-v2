@@ -354,26 +354,28 @@ QCPCA_Ome_Server <- function(id,
     
     
     qc_PCA_plot_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_PCA_plot_", ome, ".pdf"), 
         plot = qc_PCA_plot_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     
     qc_PCA_reg_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_PCA_reg_", ome, ".pdf"), 
         plot = qc_PCA_reg_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     

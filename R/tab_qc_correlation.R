@@ -279,14 +279,15 @@ QCCorrelation_Ome_Server <- function(id,
     }
     
     qc_corr_boxplot_export_function <- function(dir_name) {
+      ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_corr_boxplot_", ome, ".pdf"), 
         plot = qc_corr_boxplot_reactive(), 
         device = 'pdf',
         path = dir_name,
-        width = 10,
-        height = 6, 
-        units = "in"
+        width = ggsave_params$width,
+        height = ggsave_params$height, 
+        units = ggsave_params$units
       )
     }
     
