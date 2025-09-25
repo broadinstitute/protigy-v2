@@ -42,11 +42,11 @@ create_mock_stat_results <- function() {
       id = paste0("gene_", 1:20),
       gene_name = paste0("gene_", 1:20),
       geneSymbol = paste0("GENE", 1:20),
-      logFC.A_vs_B = rnorm(20, 0, 1),
-      P.Value.A_vs_B = runif(20, 0, 1),
-      adj.P.Val.A_vs_B = runif(20, 0, 1),
-      Log.P.Value.A_vs_B = -log10(runif(20, 0, 1)),
-      significant.A_vs_B = sample(c(TRUE, FALSE), 20, replace = TRUE),
+      logFC.A_over_B = rnorm(20, 0, 1),
+      P.Value.A_over_B = runif(20, 0, 1),
+      adj.P.Val.A_over_B = runif(20, 0, 1),
+      Log.P.Value.A_over_B = -log10(runif(20, 0, 1)),
+      significant.A_over_B = sample(c(TRUE, FALSE), 20, replace = TRUE),
       stringsAsFactors = FALSE
     )
   )
@@ -388,7 +388,7 @@ test_volcano_plot <- function(df, test_type, volcano_groups = NULL, volcano_cont
     pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
   } else if (test_type == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     logfc_pattern <- paste0("logFC.*", contrast_name)
     logP_pattern <- paste0("Log\\.P\\.Value.*", contrast_name)
     adjP_pattern <- paste0("adj\\.P\\.Val.*", contrast_name)
@@ -796,11 +796,11 @@ test_that("Volcano plot handles edge cases", {
     id = paste0("gene_", 1:5),
     gene_name = paste0("gene_", 1:5),
     geneSymbol = paste0("GENE", 1:5),
-    logFC.A_vs_B = c(0, 1, -1, 10, -10),  # Including extreme values
-    P.Value.A_vs_B = c(0.001, 0.01, 0.1, 0.5, 0.9),
-    adj.P.Val.A_vs_B = c(0.01, 0.05, 0.2, 0.6, 0.95),
-    Log.P.Value.A_vs_B = c(3, 2, 1, 0.3, 0.05),
-    significant.A_vs_B = c(TRUE, TRUE, FALSE, FALSE, FALSE),
+    logFC.A_over_B = c(0, 1, -1, 10, -10),  # Including extreme values
+    P.Value.A_over_B = c(0.001, 0.01, 0.1, 0.5, 0.9),
+    adj.P.Val.A_over_B = c(0.01, 0.05, 0.2, 0.6, 0.95),
+    Log.P.Value.A_over_B = c(3, 2, 1, 0.3, 0.05),
+    significant.A_over_B = c(TRUE, TRUE, FALSE, FALSE, FALSE),
     stringsAsFactors = FALSE
   )
   
@@ -828,11 +828,11 @@ test_that("Volcano plot handles missing data gracefully", {
     id = paste0("gene_", 1:5),
     gene_name = paste0("gene_", 1:5),
     geneSymbol = paste0("GENE", 1:5),
-    logFC.A_vs_B = c(1, 0.5, -1, 2, -2),
-    P.Value.A_vs_B = c(0.01, 0.05, 0.1, 0.1, 0.2),
-    adj.P.Val.A_vs_B = c(0.05, 0.1, 0.1, 0.15, 0.25),
-    Log.P.Value.A_vs_B = c(2, 1.3, 1, 1, 0.7),
-    significant.A_vs_B = c(TRUE, FALSE, FALSE, FALSE, FALSE),
+    logFC.A_over_B = c(1, 0.5, -1, 2, -2),
+    P.Value.A_over_B = c(0.01, 0.05, 0.1, 0.1, 0.2),
+    adj.P.Val.A_over_B = c(0.05, 0.1, 0.1, 0.15, 0.25),
+    Log.P.Value.A_over_B = c(2, 1.3, 1, 1, 0.7),
+    significant.A_over_B = c(TRUE, FALSE, FALSE, FALSE, FALSE),
     stringsAsFactors = FALSE
   )
   
