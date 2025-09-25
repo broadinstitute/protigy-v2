@@ -2,6 +2,10 @@
 
 This section explains how to process CSV, TSV, and Excel files in ProTIGY. These file formats require additional setup steps compared to GCT files, including label assignment, identifier column selection, and experimental design upload.
 
+## Important: File Upload Requirements
+
+**All files must be uploaded at the same time from the same directory.** ProTIGY requires all files to be selected together in a single upload session. You cannot upload files separately or from different directories.
+
 ## Workflow Overview
 
 After assigning labels (see General Help), the CSV/TSV/Excel processing workflow consists of three main steps:

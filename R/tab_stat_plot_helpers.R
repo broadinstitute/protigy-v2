@@ -25,7 +25,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     logfc_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "logFC.", ")")
   } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     logfc_pattern <- paste0("logFC.*", contrast_name)
   } 
   
@@ -38,7 +38,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     logP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "Log.P.Value.", ")")
   } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     logP_pattern  <- paste0("Log\\.P\\.Value.*", contrast_name)
   } 
   
@@ -51,7 +51,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
   } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     adjP_pattern  <- paste0("adj\\.P\\.Val.*", contrast_name)
   } 
   
@@ -63,7 +63,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
   } else if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     pval_pattern  <- paste0("P\\.value.*", contrast_name)
   }
 

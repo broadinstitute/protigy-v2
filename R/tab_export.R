@@ -128,14 +128,6 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
       filename = "protigy_exports.zip",
       content = function(file) {
         
-        # show a notification that exports are downloading
-        id <- showNotification(
-          "Compiling exports...", 
-          duration = NULL, 
-          closeButton = FALSE
-        )
-        on.exit(removeNotification(id), add = TRUE)
-        
         # directory name where all exports will be saved
         dir_name <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(file))
         zip_dir <- tempdir(check = T)
@@ -161,8 +153,26 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         success_exports <- c()
         error_exports <- c()
         
-        # loop through selected tabs
-        lapply(selected_tabs, function(tab_name) {
+        # Calculate total number of exports for progress tracking
+        total_exports <- 0
+        for (tab_name in selected_tabs) {
+          if (is.reactive(exports[[tab_name]])) {
+            exports_all_omes <- exports[[tab_name]]()
+          } else {
+            exports_all_omes <- exports[[tab_name]]
+          }
+          for (ome in intersect(selected_omes, names(exports_all_omes))) {
+            exports_this_ome <- exports_all_omes[[ome]]
+            total_exports <- total_exports + length(exports_this_ome)
+          }
+        }
+        
+        # Use withProgress for progress tracking
+        withProgress(message = "Compiling exports...", value = 0, {
+          current_export <- 0
+          
+          # loop through selected tabs
+          lapply(selected_tabs, function(tab_name) {
           
           if (is.reactive(exports[[tab_name]])) {
             exports_all_omes <- exports[[tab_name]]()
@@ -187,6 +197,11 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
                 p <- p()
               }
               
+              # Update progress
+              current_export <<- current_export + 1
+              progress_text <- paste0("Exporting ", tab_name, " - ", ome, " (", current_export, "/", total_exports, ")")
+              incProgress(1/total_exports, detail = progress_text)
+              
               tryCatch({
                 # save the plot using the p() function
                 p(exports_in_tab_path)
@@ -203,7 +218,12 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
               
             }
           })
-        })
+          })
+          
+          # Update progress for zipping
+          incProgress(0.1, detail = "Creating zip file...")
+          
+        }) # End withProgress
         
         # zip the outputs
         zip::zip(file, file.path(dir_name, list.files(exports_dir)), 

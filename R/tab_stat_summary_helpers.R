@@ -30,7 +30,7 @@ get_pvals <- function(ome, stat_params, stat_results, group, contrast, pval_type
     pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", pval_type, ")")
   } else if (test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(contrast, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     pattern <- paste0("(?i)", pval_type, "\\.", contrast_name)
     
     # groups <- unlist(strsplit(contrast, " / "))
@@ -56,7 +56,7 @@ plot_pval_histogram <- function(pvals, title, xlabel, stat_params, stat_results,
     adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
   } else if (stat_params[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(contrast, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     adjP_pattern  <- paste0("adj\\.P\\.Val.*", contrast_name)
   } else if (stat_params[[ome]]$test == "Moderated F test") {
     adjP_pattern <- "(?i)adj\\.P\\.Val"
@@ -71,7 +71,7 @@ plot_pval_histogram <- function(pvals, title, xlabel, stat_params, stat_results,
     pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
   } else if (stat_params[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(contrast, " / "))
-    contrast_name <- paste0(groups[1], "_vs_", groups[2])
+    contrast_name <- paste0(groups[1], "_over_", groups[2])
     pval_pattern  <- paste0("P\\.value.*", contrast_name)
   } else if (stat_params[[ome]]$test == "Moderated F test") {
     pval_pattern <- "(?i)P\\.Value"

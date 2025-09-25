@@ -40,6 +40,7 @@ If you need to change settings such as normalization/filtering or the default an
 
 ### 1. **Upload Your Data**
 - Upload one or more files from the same experiment (e.g., different omes such as RNA-seq, prot, phos). Files should have overlapping samples but not all samples need to be in all files.
+- **Important**: All files must be uploaded at the same time from the same directory. ProTIGY requires all files to be selected together in a single upload session.
 
 **Supported Formats:**
 - **GCT**: Gene Cluster Text format (`.gct`) - v1.3 format

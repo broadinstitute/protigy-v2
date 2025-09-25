@@ -238,6 +238,12 @@ statPlot_Ome_Server <- function(id,
     ## COMPILE EXPORTS ##
     volcano_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
+      
+      # Skip export if test doesn't support volcano plots
+      if (is.null(test) || test == "None" || test == "Moderated F test") {
+        return()
+      }
+      
       df <- stat_results()[[ome]]
       
       # Create a single PDF file for all plots from this ome

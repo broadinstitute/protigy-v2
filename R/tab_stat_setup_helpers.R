@@ -242,7 +242,7 @@ stat.testing <- function (test, annotation_col, chosen_omes, gct, chosen_groups,
           
           group1 <- contrast_name[1]  
           group2 <- contrast_name[2]  
-          contrast_name <- paste0(group1, "_vs_", group2)
+          contrast_name <- paste0(group1, "_over_", group2)
   
           incProgress(1 / (length(chosen_omes) * length(selected_contrasts)), detail = paste("Processing", ome_name, "-", contrast_name))
           sample_names <- colnames(ome_data)

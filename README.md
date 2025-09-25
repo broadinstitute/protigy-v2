@@ -1,5 +1,7 @@
 # ProTIGY - Proteogenomics Toolset for Integrative Data Analysis
 
+![ProTIGY Workflow](inst/doc_images/workflow_diagram.png)
+
 ProTIGY is a Shiny application that supports datasets organized as a matrix with features (proteins, genes, transcripts) measured across samples (experimental conditions, replicates). ProTIGY can analyze various omics data types including proteomics, post-translational modifications (PTMs), RNA-seq, metabolomics, and other quantitative molecular datasets. ProTIGY allows you to upload and process multiple data types from the same experiment simultaneously (e.g., RNA-seq, proteome, and phosphoproteome data from the same samples), enabling integrated multi-omics analysis.
 
 ## Key Features

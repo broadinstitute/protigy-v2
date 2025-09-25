@@ -44,7 +44,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
                  if (length(ome_names) > 1) {
                    checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
                  },
-                 actionButton(ns("run_test_button"),"Run Test")
+                 actionButton(ns("run_test_button"),"Run Test", class = "btn btn-primary")
           ),
           column(3,
                  uiOutput(ns("select_test")),

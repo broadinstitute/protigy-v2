@@ -217,10 +217,18 @@ statSummary_Ome_Server <- function(id,
           ),
           
           # P.val histogram box
-          fluidRow(shinydashboardPlus::box(
+          shinydashboardPlus::box(
             fluidRow(
-              column(6, plotlyOutput(ns("adj_pval_hist_plot"))),
-              column(6, plotlyOutput(ns("nom_pval_hist_plot")))
+              column(6, 
+                div(style = "overflow-x: auto; width: 100%;",
+                  plotlyOutput(ns("adj_pval_hist_plot"), height = "400px")
+                )
+              ),
+              column(6, 
+                div(style = "overflow-x: auto; width: 100%;",
+                  plotlyOutput(ns("nom_pval_hist_plot"), height = "400px")
+                )
+              )
             ),
             sidebar = boxSidebar(
               uiOutput(ns("pval_hist_sidebar_contents")),
@@ -234,7 +242,7 @@ statSummary_Ome_Server <- function(id,
             title = "P.value Histogram",
             headerBorder = TRUE,
             solidHeader = TRUE
-          ))
+          )
           
         ) # end fluidRow
       )
@@ -330,12 +338,33 @@ statSummary_Ome_Server <- function(id,
 
     
     ## WORKFLOW INFO #######################################################
-    output$workflow_table <- renderTable(
+    output$workflow_table <- renderTable({
+      test_type <- stat_params()[[ome]]$test
+      
+      # Base parameters
+      descriptions <- c("Test", "Cutoff", "Stat")
+      counts <- c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+      
+      # Add groups or contrasts based on test type
+      if (test_type == "One-sample Moderated T-test") {
+        groups <- stat_params()[[ome]]$groups
+        descriptions <- c(descriptions, "Groups")
+        counts <- c(counts, paste(groups, collapse = ", "))
+      } else if (test_type == "Two-sample Moderated T-test") {
+        contrasts <- stat_params()[[ome]]$contrasts
+        descriptions <- c(descriptions, "Contrasts")
+        counts <- c(counts, paste(contrasts, collapse = ", "))
+      } else if (test_type == "Moderated F test") {
+        groups <- stat_params()[[ome]]$groups
+        descriptions <- c(descriptions, "Groups")
+        counts <- c(counts, paste(groups, collapse = ", "))
+      }
+      
       data.frame(
-        Description = c("Test", "Cutoff", "Stat"),
-        Count = c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+        Description = descriptions,
+        Count = counts
       )
-    )
+    })
     
     ## P.VALUE HISTOGRAM #######################################################
     #Sidebar
@@ -408,66 +437,129 @@ statSummary_Ome_Server <- function(id,
       sig_cutoff <- stat_params()[[ome]]$cutoff
       sig_stat <- stat_params()[[ome]]$stat
       
-      #get pval and adj pval column#
-      if (test_type == "One-sample Moderated T-test") {
-        req(input$pval_groups)
-        keyword <- input$pval_groups
-        adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val)")
-        pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*P\\.Value)")
-      } else if (test_type == "Two-sample Moderated T-test") {
-        req(input$pval_contrasts)
-        groups <- unlist(strsplit(as.character(input$pval_contrasts), " / "))
-        adjP_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*adj\\.P\\.Val)")
-        pval_pattern <- paste0("(?i)(?=.*", groups[1], ")(?=.*", groups[2], ")(?=.*P\\.Value)")
-      } else if (test_type == "Moderated F test"){
-        adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
-        pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
-      } 
-      
-      adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-      pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-      
-      #check for missing columns
-      req(!is.na(adjP_col), !is.na(pval_col))
-      
-      adj.P.Val <- as.numeric(df[[adjP_col]])
-      P.Value <- as.numeric(df[[pval_col]])
-      
-      #calculate significance#
-      significant <- rep(FALSE, length(P.Value))
-      if (sig_stat == "adj.p.val") {
-        significant <- adj.P.Val < sig_cutoff
-      } else if (sig_stat == "nom.p.val") {
-        significant <- P.Value < sig_cutoff
-      }
-      
-      significant <- significant[!is.na(significant)]
-      
       # Filter to only rows with at least one non-NA numeric value
       numeric_cols <- sapply(df, is.numeric)
       df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
       
-      # Create descriptive label for significant features
+      # Create results dataframe starting with features tested
+      results_df <- data.frame(
+        Description = "Features tested",
+        Value = nrow(df_filtered),
+        stringsAsFactors = FALSE
+      )
+      
       if (test_type == "One-sample Moderated T-test") {
-        sig_label <- paste("Significant features (", input$pval_groups, ")")
+        # Find all adj.P.Val columns for all groups
+        adjP_cols <- grep("(?i)(?=.*adj\\.P\\.Val)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
+        pval_cols <- grep("(?i)(?=.*P\\.Value)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
+        
+        # Count significant features for each group individually
+        for (i in seq_along(adjP_cols)) {
+          adj.P.Val <- as.numeric(df[[adjP_cols[i]]])
+          P.Value <- as.numeric(df[[pval_cols[i]]])
+          
+          significant <- rep(FALSE, length(P.Value))
+          if (sig_stat == "adj.p.val") {
+            significant <- adj.P.Val < sig_cutoff
+          } else if (sig_stat == "nom.p.val") {
+            significant <- P.Value < sig_cutoff
+          }
+          
+          significant <- significant[!is.na(significant)]
+          sig_count <- sum(significant)
+          
+          # Extract group name from column name (remove adj.P.Val or P.Value suffix)
+          group_name <- gsub("(?i)(\\.adj\\.P\\.Val|\\.P\\.Value)$", "", adjP_cols[i], perl = TRUE)
+          
+          # Remove any remaining prefixes like "adj.P.Val." or "P.Value."
+          group_name <- gsub("^(adj\\.P\\.Val\\.|P\\.Value\\.)", "", group_name, perl = TRUE)
+          
+          # Add to results
+          results_df <- rbind(results_df, data.frame(
+            Description = paste0("Significant features (", group_name, ")"),
+            Value = sig_count,
+            stringsAsFactors = FALSE
+          ))
+        }
+        
       } else if (test_type == "Two-sample Moderated T-test") {
-        sig_label <- paste("Significant features (", input$pval_contrasts, ")")
+        # Find all adj.P.Val columns for all contrasts
+        adjP_cols <- grep("(?i)(?=.*adj\\.P\\.Val)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
+        pval_cols <- grep("(?i)(?=.*P\\.Value)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
+        
+        # Count significant features for each contrast individually
+        for (i in seq_along(adjP_cols)) {
+          adj.P.Val <- as.numeric(df[[adjP_cols[i]]])
+          P.Value <- as.numeric(df[[pval_cols[i]]])
+          
+          significant <- rep(FALSE, length(P.Value))
+          if (sig_stat == "adj.p.val") {
+            significant <- adj.P.Val < sig_cutoff
+          } else if (sig_stat == "nom.p.val") {
+            significant <- P.Value < sig_cutoff
+          }
+          
+          significant <- significant[!is.na(significant)]
+          sig_count <- sum(significant)
+          
+          # Extract contrast name from column name (remove adj.P.Val or P.Value suffix)
+          contrast_name <- gsub("(?i)(\\.adj\\.P\\.Val|\\.P\\.Value)$", "", adjP_cols[i], perl = TRUE)
+          
+          # Convert _over_ syntax to / for display
+          contrast_name <- gsub("_over_", "/", contrast_name)
+          
+          # Remove any remaining prefixes like "adj.P.Val." or "P.Value."
+          contrast_name <- gsub("^(adj\\.P\\.Val\\.|P\\.Value\\.)", "", contrast_name, perl = TRUE)
+          
+          # Add to results
+          results_df <- rbind(results_df, data.frame(
+            Description = paste0("Significant features (", contrast_name, ")"),
+            Value = sig_count,
+            stringsAsFactors = FALSE
+          ))
+        }
+        
       } else if (test_type == "Moderated F test") {
-        sig_label <- "Significant features (F-test)"
-      } else {
-        sig_label <- "Significant features"
+        # For F-test, there's only one p-value column
+        adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
+        pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
+        
+        adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+        pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+        
+        req(!is.na(adjP_col), !is.na(pval_col))
+        
+        adj.P.Val <- as.numeric(df[[adjP_col]])
+        P.Value <- as.numeric(df[[pval_col]])
+        
+        significant <- rep(FALSE, length(P.Value))
+        if (sig_stat == "adj.p.val") {
+          significant <- adj.P.Val < sig_cutoff
+        } else if (sig_stat == "nom.p.val") {
+          significant <- P.Value < sig_cutoff
+        }
+        
+        significant <- significant[!is.na(significant)]
+        sig_count <- sum(significant)
+        
+        # Add to results
+        results_df <- rbind(results_df, data.frame(
+          Description = "Significant features (F-test)",
+          Value = sig_count,
+          stringsAsFactors = FALSE
+        ))
       }
       
       #RETURN DATAFRAME#
-      data.frame(
-        Description = c("Features tested", sig_label),
-        Value = c(nrow(df_filtered), sum(significant))
-      )
+      results_df
     })
     
     ## COMPILE EXPORTS #######################################################
     adj_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
+      if (is.null(test) || test == "None") {
+        return()
+      }
       df <- stat_results()[[ome]]
       
       # Create a single PDF file for all adjusted p-value histogram plots from this ome
@@ -514,6 +606,9 @@ statSummary_Ome_Server <- function(id,
     
     nom_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
+      if (is.null(test) || test == "None") {
+        return()
+      }
       df <- stat_results()[[ome]]
       
       # Create a single PDF file for all nominal p-value histogram plots from this ome
@@ -559,12 +654,10 @@ statSummary_Ome_Server <- function(id,
     }
     
     stat_results_export_function <- function(dir_name) {
-      # Check if test is not "None" before exporting
       test <- stat_params()[[ome]]$test
-      if (test == "None" || is.null(test)) {
-        return() # Don't export anything if no test was run
+      if (is.null(test) || test == "None") {
+        return()
       }
-      
       #CSV table of all results (only if test is run)
       write.csv(
         stat_results()[[ome]],
@@ -585,9 +678,33 @@ statSummary_Ome_Server <- function(id,
     }
     
     workflow_parameters_export_function <- function(dir_name) {
+      test_type <- stat_params()[[ome]]$test
+      if (is.null(test_type) || test_type == "None") {
+        return()
+      }
+      
+      # Base parameters
+      params <- c("Test", "Cutoff", "Stat")
+      values <- c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+      
+      # Add groups or contrasts based on test type
+      if (test_type == "One-sample Moderated T-test") {
+        groups <- stat_params()[[ome]]$groups
+        params <- c(params, "Groups")
+        values <- c(values, paste(groups, collapse = ", "))
+      } else if (test_type == "Two-sample Moderated T-test") {
+        contrasts <- stat_params()[[ome]]$contrasts
+        params <- c(params, "Contrasts")
+        values <- c(values, paste(contrasts, collapse = ", "))
+      } else if (test_type == "Moderated F test") {
+        groups <- stat_params()[[ome]]$groups
+        params <- c(params, "Groups")
+        values <- c(values, paste(groups, collapse = ", "))
+      }
+      
       df <- data.frame(
-        Parameter = c("Test", "Cutoff", "Stat"),
-        Value = c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+        Parameter = params,
+        Value = values
       )
       
       write.table(
@@ -598,7 +715,6 @@ statSummary_Ome_Server <- function(id,
         row.names = FALSE
       )
     }
-    
     
     return(list(
       adj_pval_hist_plot = adj_pval_hist_plot_export_function,
