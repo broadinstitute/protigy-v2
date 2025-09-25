@@ -9,4 +9,4 @@
 rsconnect/
 
 # Documentation images
-inst/doc_images/workflow_diagram.png
+# inst/doc_images/workflow_diagram.png  # Commented out so image appears on GitHub
