@@ -258,7 +258,58 @@ multiomeHeatmapTabServer <- function(
       }
       
       validate(need(HM.out()$HM, "Heatmap not avaliable"))
-      draw_multiome_HM(HM.out()$HM)
+      
+      # Try to draw the heatmap with error handling
+      tryCatch({
+        draw_multiome_HM(HM.out()$HM)
+      }, error = function(e) {
+        warning("Heatmap drawing failed, attempting without clustering: ", e$message)
+        
+        # Show warning popup about clustering failure
+        showModal(modalDialog(
+          title = "Clustering Failed",
+          "Heatmap clustering failed. Visualization will proceed without clustering.",
+          easyClose = TRUE,
+          footer = modalButton("OK")
+        ))
+        
+        # Second attempt: try to regenerate heatmap without clustering
+        tryCatch({
+          # Get the parameters and regenerate without clustering
+          params <- HM.params()
+          params$cluster_columns <- FALSE
+          
+          HM_no_cluster <- myComplexHeatmap(params = params,
+                                           merged_rdesc = merged_rdesc(),
+                                           merged_mat = merged_mat(),
+                                           sample_anno = sample_anno(),
+                                           custom_colors = custom_colors(),
+                                           GENEMAX = GENEMAX,
+                                           selected_annotations = {
+                                             if (is.null(input$selected_annotations)) {
+                                               return(NULL)
+                                             }
+                                             input$selected_annotations
+                                           })
+          
+          draw_multiome_HM(HM_no_cluster$HM)
+        }, error = function(e2) {
+          warning("Heatmap generation failed completely: ", e2$message)
+          
+          # Show popup warning
+          showModal(modalDialog(
+            title = "Heatmap Generation Failed",
+            "Generating the heatmap failed. Please try selecting features with less missing values.",
+            easyClose = TRUE,
+            footer = modalButton("OK")
+          ))
+          
+          # Return a blank plot
+          plot.new()
+          text(0.5, 0.5, "Heatmap generation failed\nTry selecting features with less missing values", 
+               cex = 1.2, adj = 0.5)
+        })
+      })
     })
     HM.Table <- reactive(HM.out()$Table)
     
