@@ -41,6 +41,9 @@ gctSetupUI <- function(ns,
   # Filter out ID columns (unique character columns) from annotation choices
   groups_choices <- all_cdesc_columns[!all_cdesc_columns %in% unique_columns]
   
+  # Further filter to only discrete columns for analysis annotation
+  groups_choices <- groups_choices[sapply(GCTs[[label]]@cdesc[groups_choices], is.discrete)]
+  
   # If no suitable annotation columns remain, use Sample.ID as fallback
   if (length(groups_choices) == 0) {
     groups_choices <- "Sample.ID"

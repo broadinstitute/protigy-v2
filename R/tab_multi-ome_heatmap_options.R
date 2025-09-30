@@ -117,11 +117,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         default_annotation <- globals$default_annotations[[globals$default_ome]]
         
         # Use selected annotations if available, otherwise all annotations
-        available_choices <- if (!is.null(selected_annotations) && !is.null(selected_annotations())) {
+        all_annotations <- if (!is.null(selected_annotations) && !is.null(selected_annotations())) {
           selected_annotations()
         } else {
           setdiff(names(sample_anno()), 'Sample.ID')
         }
+        
+        # Filter to only discrete categories for grouping/sorting
+        # Filter annotations to only discrete ones for grouping
+        available_choices <- all_annotations[sapply(sample_anno()[all_annotations], is.discrete)]
         
         # Get saved sort selection or use default
         saved_sort <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
