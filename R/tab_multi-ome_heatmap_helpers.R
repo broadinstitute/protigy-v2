@@ -40,6 +40,18 @@ myComplexHeatmap <- function(
   # indexed to make sure unexpected errors don't occur
   genes.Table <- getHMTable(genes.Table, row.anno, params)
   
+  # Filter datasets based on selected_datasets if provided
+  selected_datasets <- params$selected_datasets
+  if (!is.null(selected_datasets) && length(selected_datasets) > 0) {
+    # Filter to only include selected datasets
+    genes.Table <- genes.Table[genes.Table$ome %in% selected_datasets, , drop = FALSE]
+    
+    # Check if any data remains after filtering
+    if (nrow(genes.Table) == 0) {
+      stop("No data available for the selected datasets. Please select different datasets or check your gene list.")
+    }
+  }
+  
   # Filter features per gene per dataset by standard deviation if requested
   if (max_features_per_gene < Inf && nrow(genes.Table) > 0) {
     # Calculate standard deviation for each feature (using the abundance data columns)

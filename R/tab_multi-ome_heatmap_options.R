@@ -67,12 +67,34 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
     ), #end fluidRow
     
     
+    ## inputs for dataset selection
+    fluidRow(
+      column(12,
+        strong("Select datasets to include"),
+        br(),
+        p("Choose which datasets to display in the heatmap"),
+        pickerInput(
+          ns('selected_datasets'),
+          label = "",
+          choices = list(),
+          selected = list(),
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No datasets selected"
+          )
+        )
+      )
+    ),
+    
     ## inputs for dataset order
     fluidRow(
       column(12,
         strong("Dataset order"),
         br(),
-        p("Drag to reorder"),
+        p("Drag to reorder selected datasets"),
         orderInput(
           label = "",
           items = list(),
@@ -142,7 +164,7 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
       })
       
       
-      # update dataset ordering options
+      # update dataset selection and ordering options
       observeEvent(setup_submit(), {
         # Use protigy.ome column if available, otherwise fall back to DataType
         ome_col <- if ("protigy.ome" %in% names(merged_rdesc())) {
@@ -156,18 +178,48 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         # Get unique datasets
         available_datasets <- sort(unique(ome_col))
         
+        # Update dataset selection picker
+        updatePickerInput(
+          session,
+          inputId = 'selected_datasets',
+          choices = available_datasets,
+          selected = if (!is.null(saved_settings) && !is.null(saved_settings()) && !is.null(saved_settings()$selected_datasets)) {
+            saved_settings()$selected_datasets
+          } else {
+            available_datasets  # Select all by default
+          }
+        )
+        
+        # Update dataset ordering based on selected datasets
+        updateDatasetOrdering()
+      })
+      
+      # Function to update dataset ordering based on selected datasets
+      updateDatasetOrdering <- function() {
+        selected_datasets <- input$selected_datasets
+        
+        if (is.null(selected_datasets) || length(selected_datasets) == 0) {
+          # If no datasets selected, show empty order input
+          updateOrderInput(
+            session,
+            inputId = 'ome.order',
+            items = list()
+          )
+          return()
+        }
+        
         # Get saved order or use default order
         saved_order <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
           saved_settings()$ome.order
         } else {
-          available_datasets
+          selected_datasets
         }
         
-        # Ensure saved order only includes available datasets
-        final_order <- saved_order[saved_order %in% available_datasets]
+        # Ensure saved order only includes currently selected datasets
+        final_order <- saved_order[saved_order %in% selected_datasets]
         
-        # Add any new datasets to the end
-        new_datasets <- setdiff(available_datasets, final_order)
+        # Add any newly selected datasets to the end
+        new_datasets <- setdiff(selected_datasets, final_order)
         final_order <- c(final_order, new_datasets)
         
         updateOrderInput(
@@ -175,6 +227,11 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
           inputId = 'ome.order',
           items = final_order
         )
+      }
+      
+      # Update ordering when dataset selection changes
+      observeEvent(input$selected_datasets, {
+        updateDatasetOrdering()
       })
       
       # Restore other settings when options screen loads
@@ -246,6 +303,7 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
                                   sort.after = input$sort.after,
                                   show.sample.label = input$show.sample.label,
                                   ome.order = input$ome.order,
+                                  selected_datasets = input$selected_datasets,
                                   max_features_per_gene = input$max_features_per_gene,
                                   cluster_columns = input$cluster_columns)})
       
