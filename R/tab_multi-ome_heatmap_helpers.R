@@ -18,6 +18,7 @@ myComplexHeatmap <- function(
   max.levels <- if (is.null(params$max.levels)) 20 else params$max.levels  # Same as autodetect_continuous_nfactor_cutoff in setup
   max_features_per_gene <- if (is.null(params$max_features_per_gene)) 5 else params$max_features_per_gene
   cluster_columns <- if (is.null(params$cluster_columns)) TRUE else as.logical(params$cluster_columns)
+  cluster_rows <- if (is.null(params$cluster_rows)) FALSE else as.logical(params$cluster_rows)
   
   # extract genes
   genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
@@ -256,6 +257,18 @@ myComplexHeatmap <- function(
   }
   
   
+  # Determine row clustering and ordering
+  if (isTRUE(cluster_rows)) {
+    # For row clustering, we want to cluster within each gene group
+    # ComplexHeatmap will handle this automatically when cluster_rows = TRUE and row_split is used
+    cluster_rows_param <- TRUE
+    row_order_param <- NULL  # Let ComplexHeatmap determine the order
+  } else {
+    # No row clustering - use original order (by ome, then by row_label)
+    cluster_rows_param <- FALSE
+    row_order_param <- order(genes.Table$ome, genes.Table$row_label)
+  }
+  
   # Determine column clustering and ordering
   if (isTRUE(cluster_columns) && !is.null(column.to.sort)) {
     # Check if data is suitable for clustering (no all-identical values, no NA/NaN/Inf)
@@ -292,8 +305,8 @@ myComplexHeatmap <- function(
                 col = col_fun_ratios,
                 column_title = "Sample",
                 row_title_rot = 0,
-                row_order = order(genes.Table$ome, genes.Table$row_label),
-                cluster_rows = F,
+                row_order = row_order_param,
+                cluster_rows = cluster_rows_param,
                 cluster_columns = cluster_columns_param,
                 column_order = column_order_param,
                 row_split = genes.Table$geneSymbol,
@@ -312,7 +325,7 @@ myComplexHeatmap <- function(
                                             max_width = 350,
                                             legend_width = unit(4, 'cm')))
   
-  return(list(HM=HM, Table=final.Table, cluster_columns=cluster_columns_param))
+  return(list(HM=HM, Table=final.Table, cluster_columns=cluster_columns_param, cluster_rows=cluster_rows_param))
 }
 
 ## function to extract gene names from a string input

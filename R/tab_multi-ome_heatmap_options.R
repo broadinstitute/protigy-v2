@@ -32,9 +32,12 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
     
     ## inputs for clustering
     fluidRow(
-      column(12, checkboxInput(ns('cluster_columns'),
+      column(6, checkboxInput(ns('cluster_columns'),
                               label = "Cluster columns",
-                              value = TRUE))
+                              value = TRUE)),
+      column(6, checkboxInput(ns('cluster_rows'),
+                              label = "Cluster rows by gene",
+                              value = FALSE))
     ), # end fluidRow
     
     fluidRow(
@@ -283,6 +286,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
             )
           }
           
+          # Restore row clustering setting
+          if (!is.null(settings$cluster_rows)) {
+            updateCheckboxInput(
+              session,
+              inputId = "cluster_rows",
+              value = settings$cluster_rows
+            )
+          }
+          
           # Restore max features per gene setting
           if (!is.null(settings$max_features_per_gene)) {
             updateNumericInput(
@@ -305,7 +317,8 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
                                   ome.order = input$ome.order,
                                   selected_datasets = input$selected_datasets,
                                   max_features_per_gene = input$max_features_per_gene,
-                                  cluster_columns = input$cluster_columns)})
+                                  cluster_columns = input$cluster_columns,
+                                  cluster_rows = input$cluster_rows)})
       
       
       

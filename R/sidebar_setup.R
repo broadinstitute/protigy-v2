@@ -752,84 +752,76 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     observeEvent(input$processCSVExcel, {
       req(input$expDesignFile)
       
-      tryCatch({
-        # Process CSV/Excel files with progress indication
-        withProgress(message = "Processing CSV/Excel files...", {
-          setProgress(0.2, detail = "Reading experimental design")
-          
-          # Read experimental design
-          exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
-          
-          setProgress(0.5, detail = "Converting data to analysis format")
-          
-          # Process CSV/Excel files with per-dataset identifier columns
-          identifier_columns <- csvExcel_identifier_columns_reactive()
-          
-          # Validate identifier columns
-          if (is.null(identifier_columns) || any(identifier_columns == "")) {
-            stop("Please select identifier columns for all datasets.")
-          }
-          
-          # Get labels from input fields
-          labels <- sapply(input$dataFiles$name, function(file) {
-            input[[paste0('CSVExcelLabel_', file)]]
+      my_shinyalert_tryCatch(
+        text.error = "<b>CSV/Excel Processing Error:</b>",
+        append.error = TRUE,
+        show.error = TRUE,
+        return.error = NULL,
+        expr = {
+          # Process CSV/Excel files with progress indication
+          withProgress(message = "Processing CSV/Excel files...", {
+            setProgress(0.2, detail = "Reading experimental design")
+            
+            # Read experimental design
+            exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
+            
+            setProgress(0.5, detail = "Converting data to analysis format")
+            
+            # Process CSV/Excel files with per-dataset identifier columns
+            identifier_columns <- csvExcel_identifier_columns_reactive()
+            
+            # Validate identifier columns
+            if (is.null(identifier_columns) || any(identifier_columns == "")) {
+              stop("Please select identifier columns for all datasets.")
+            }
+            
+            # Get labels from input fields
+            labels <- sapply(input$dataFiles$name, function(file) {
+              input[[paste0('CSVExcelLabel_', file)]]
+            })
+            
+            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(input$dataFiles, exp_design, identifier_columns, labels)
+            
+            setProgress(0.8, detail = "Setting up analysis parameters")
+            
+            # Store converted GCT objects and parameters for later processing (same as GCT workflow)
+            GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
+            parameters_internal_reactive(csv_excel_result$parameters)
+            
+            # Set up back/next navigation logic for parameter setup
+            backNextLogic$place <- 1
+            backNextLogic$maxPlace <- length(csv_excel_result$GCTs)
+            backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
+            
+            setProgress(1.0, detail = "Ready for parameter setup")
           })
           
-          csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(input$dataFiles, exp_design, identifier_columns, labels)
+          # Show success message
+          shinyalert::shinyalert(
+            title = "Files Converted!",
+            text = paste("Successfully converted", length(csv_excel_result$GCTs), 
+                        "CSV/Excel file(s) to analysis format. Now configure analysis parameters..."),
+            type = "success",
+            timer = 3000,
+            showConfirmButton = FALSE
+          )
           
-          setProgress(0.8, detail = "Setting up analysis parameters")
+          # Automatically switch to Dataset Setup help tab
+          updateTabsetPanel(session = parent, 
+                           inputId = "navbar-tabs", 
+                           selected = "Help-Analysis")
           
-          # Store converted GCT objects and parameters for later processing (same as GCT workflow)
-          GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
-          parameters_internal_reactive(csv_excel_result$parameters)
+          # Switch to the Dataset Setup tab within the help section
+          shinyjs::runjs("
+            setTimeout(function() {
+              $('a[data-value=\"Dataset Setup\"]').click();
+            }, 100);
+          ")
           
-          # Set up back/next navigation logic for parameter setup
-          backNextLogic$place <- 1
-          backNextLogic$maxPlace <- length(csv_excel_result$GCTs)
-          backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
-          
-          setProgress(1.0, detail = "Ready for parameter setup")
-        })
-        
-        # Show success message
-        shinyalert::shinyalert(
-          title = "Files Converted!",
-          text = paste("Successfully converted", length(csv_excel_result$GCTs), 
-                      "CSV/Excel file(s) to analysis format. Now configure analysis parameters..."),
-          type = "success",
-          timer = 3000,
-          showConfirmButton = FALSE
-        )
-        
-        # Automatically switch to Dataset Setup help tab
-        updateTabsetPanel(session = parent, 
-                         inputId = "navbar-tabs", 
-                         selected = "Help-Analysis")
-        
-        # Switch to the Dataset Setup tab within the help section
-        shinyjs::runjs("
-          setTimeout(function() {
-            $('a[data-value=\"Dataset Setup\"]').click();
-          }, 100);
-        ")
-        
-        # Trigger the standard parameter setup workflow (same as GCT files)
-        labelsGO(labelsGO() + 1)
-        
-      }, error = function(e) {
-        # Show detailed error message
-        error_msg <- paste("Failed to process CSV/Excel data:", e$message)
-        
-        # Log error for debugging
-        message("CSV/Excel Processing Error: ", error_msg)
-        
-        shinyalert::shinyalert(
-          title = "Processing Error",
-          text = error_msg,
-          type = "error",
-          html = TRUE
-        )
-      })
+          # Trigger the standard parameter setup workflow (same as GCT files)
+          labelsGO(labelsGO() + 1)
+        }
+      )
     })
     
     # return GCTs and parameters together in one list
