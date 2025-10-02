@@ -112,7 +112,7 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
 }
 
 ## server for heatmap options
-options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals, selected_annotations = NULL, saved_settings = NULL) {
+options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals, selected_annotations = NULL, saved_settings = NULL, clustering_state = NULL) {
   moduleServer(
     id,
     ## module function
@@ -306,6 +306,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         }
       })
       
+      # Update checkboxes when clustering is auto-disabled
+      if (!is.null(clustering_state)) {
+        observeEvent(clustering_state$auto_disabled, {
+          if (clustering_state$auto_disabled) {
+            updateCheckboxInput(session, "cluster_columns", value = FALSE)
+            updateCheckboxInput(session, "cluster_rows", value = FALSE)
+          }
+        })
+      }
       
       ## get heatmap parameters
       HM.params <- reactive({list(genes.char = input$genes,
