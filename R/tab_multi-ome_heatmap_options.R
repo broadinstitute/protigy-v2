@@ -36,7 +36,7 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
                               label = "Cluster columns",
                               value = TRUE)),
       column(6, checkboxInput(ns('cluster_rows'),
-                              label = "Cluster rows by gene",
+                              label = "Cluster rows",
                               value = FALSE))
     ), # end fluidRow
     

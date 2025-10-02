@@ -184,3 +184,144 @@ test_that("my_shinyalert_tryCatch handles custom messages", {
     )
   )
 })
+
+# Tests for is.discrete and is.continuous utility functions
+
+test_that("is.discrete correctly identifies discrete data", {
+  # Test discrete character data
+  expect_true(is.discrete(c("A", "B", "A", "C")))
+  expect_true(is.discrete(c("Treatment", "Control", "Treatment")))
+  
+  # Test discrete factor data
+  expect_true(is.discrete(factor(c("A", "B", "A", "C"))))
+  
+  # Test discrete numeric data with few unique values
+  expect_true(is.discrete(c(1, 2, 1, 3, 2)))
+  expect_true(is.discrete(c(0, 1, 0, 1, 0)))
+})
+
+test_that("is.discrete correctly identifies continuous data", {
+  # Test continuous numeric data with many unique values
+  continuous_data <- seq(1, 100, by = 0.1)
+  expect_false(is.discrete(continuous_data))
+  
+  # Test continuous numeric data with many unique values (above cutoff)
+  continuous_data_25 <- seq(1, 25, by = 1)
+  expect_false(is.discrete(continuous_data_25, nfactor_cutoff = 20))
+  
+  # Test numeric data that looks continuous
+  expect_false(is.discrete(c(1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1)))
+})
+
+test_that("is.discrete handles NA values correctly", {
+  # Test with NA values
+  expect_true(is.discrete(c("A", "B", NA, "A")))
+  expect_true(is.discrete(c(1, 2, NA, 1)))
+  
+  # Test with common NA patterns
+  expect_true(is.discrete(c("A", "B", "NA", "A")))
+  expect_true(is.discrete(c("A", "B", "n/a", "A")))
+  expect_true(is.discrete(c("A", "B", "unknown", "A")))
+  expect_true(is.discrete(c("A", "B", "", "A")))
+})
+
+test_that("is.discrete respects nfactor_cutoff parameter", {
+  # Test with default cutoff (20)
+  data_15_unique <- rep(1:15, each = 2)
+  expect_true(is.discrete(data_15_unique))
+  
+  # Test with custom cutoff
+  expect_false(is.discrete(data_15_unique, nfactor_cutoff = 10))
+  expect_true(is.discrete(data_15_unique, nfactor_cutoff = 20))
+})
+
+test_that("is.continuous correctly identifies continuous data", {
+  # Test continuous numeric data
+  continuous_data <- seq(1, 100, by = 0.1)
+  expect_true(is.continuous(continuous_data))
+  
+  # Test continuous numeric data with many unique values
+  continuous_data_25 <- seq(1, 25, by = 1)
+  expect_true(is.continuous(continuous_data_25, nfactor_cutoff = 20))
+})
+
+test_that("is.continuous correctly identifies discrete data", {
+  # Test discrete character data
+  expect_false(is.continuous(c("A", "B", "A", "C")))
+  expect_false(is.continuous(c("Treatment", "Control", "Treatment")))
+  
+  # Test discrete factor data
+  expect_false(is.continuous(factor(c("A", "B", "A", "C"))))
+  
+  # Test discrete numeric data with few unique values
+  expect_false(is.continuous(c(1, 2, 1, 3, 2)))
+  expect_false(is.continuous(c(0, 1, 0, 1, 0)))
+})
+
+test_that("is.continuous handles NA values correctly", {
+  # Test with NA values
+  expect_false(is.continuous(c("A", "B", NA, "A")))
+  expect_false(is.continuous(c(1, 2, NA, 1)))
+  
+  # Test with common NA patterns
+  expect_false(is.continuous(c("A", "B", "NA", "A")))
+  expect_false(is.continuous(c("A", "B", "n/a", "A")))
+  expect_false(is.continuous(c("A", "B", "unknown", "A")))
+  expect_false(is.continuous(c("A", "B", "", "A")))
+})
+
+test_that("is.continuous respects nfactor_cutoff parameter", {
+  # Test with default cutoff (10)
+  data_15_unique <- rep(1:15, each = 2)
+  expect_true(is.continuous(data_15_unique))
+  
+  # Test with custom cutoff
+  expect_false(is.continuous(data_15_unique, nfactor_cutoff = 20))
+  expect_true(is.continuous(data_15_unique, nfactor_cutoff = 10))
+})
+
+test_that("is.discrete and is.continuous are complementary", {
+  # Test that they return opposite results for the same data
+  test_data <- c("A", "B", "A", "C")
+  expect_equal(is.discrete(test_data), !is.continuous(test_data))
+  
+  test_data_numeric <- c(1, 2, 1, 3, 2)
+  expect_equal(is.discrete(test_data_numeric), !is.continuous(test_data_numeric))
+  
+  test_data_continuous <- seq(1, 100, by = 0.1)
+  expect_equal(is.discrete(test_data_continuous), !is.continuous(test_data_continuous))
+})
+
+test_that("is.discrete handles edge cases", {
+  # Test empty vector
+  expect_true(is.discrete(character(0)))
+  expect_true(is.discrete(numeric(0)))
+  
+  # Test single value
+  expect_true(is.discrete("A"))
+  expect_true(is.discrete(1))
+  
+  # Test all NA values
+  expect_true(is.discrete(c(NA, NA, NA)))
+  expect_true(is.discrete(c("NA", "NA", "NA")))
+  
+  # Test mixed numeric and character (should be treated as discrete)
+  expect_true(is.discrete(c("1", "2", "1", "3")))
+})
+
+test_that("is.continuous handles edge cases", {
+  # Test empty vector
+  expect_false(is.continuous(character(0)))
+  expect_false(is.continuous(numeric(0)))
+  
+  # Test single value
+  expect_false(is.continuous("A"))
+  expect_false(is.continuous(1))
+  
+  # Test all NA values
+  expect_false(is.continuous(c(NA, NA, NA)))
+  expect_false(is.continuous(c("NA", "NA", "NA")))
+  
+  # Test mixed numeric and character (should be treated as discrete)
+  expect_false(is.continuous(c("1", "2", "1", "3")))
+})
