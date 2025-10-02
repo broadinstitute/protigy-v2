@@ -9,6 +9,10 @@ This is the default annotation column used for all analysis in ProTIGY. This col
 - **Purpose**: Provides consistent sample grouping for statistical analysis and visualization
 - **Usage**: Used for sample grouping in plots, statistical tests, and analysis results
 - **Content**: Contains sample metadata such as tumor type (tumor vs NAT), treatment group (drug A, B, C), time point, etc.
+- **Important**: This column must contain **discrete/categorical data** (e.g., treatment groups, cell lines, conditions). Continuous variables are not suitable for sample grouping and will not be available for selection. Instead, convert continuous variables to discrete categories:
+  - **Age**: Convert continuous age to age bins (e.g., "Young", "Middle-aged", "Elderly")
+  - **Time**: Convert continuous time to discrete time points (e.g., "Day 0", "Day 7", "Day 14")
+  - **Measurements**: Convert continuous measurements to categories (e.g., "Low", "Medium", "High")
 
 ## Gene Symbol Column
 

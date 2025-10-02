@@ -159,13 +159,53 @@ get_ggsave_params <- function(plot_type = "default") {
   ))
 }
 
-# Helper function to create pdf() parameters for plot exports
-get_pdf_params <- function(plot_type = "default") {
-  dims <- get_plot_export_dimensions(plot_type)
-  return(list(
-    width = dims$width,
-    height = dims$height
-  ))
+# Helper function to determine if an annotation column contains discrete data
+# This is used across multiple modules for filtering annotations
+is.discrete <- function(annot_col, nfactor_cutoff = 20) {
+  if (is.factor(annot_col)) {
+    annot_vals <- levels(annot_col)
+  } else {
+    annot_vals <- sort(unique(annot_col))
+  }
+  annot_vals[is.na(annot_vals)] <- "NA"
+  
+  # Count NAs (common NA patterns)
+  na_patterns <- c("^na$", "^n.a.$", "^n/a$", "^unknown$", "^$")
+  n_na <- sum(unlist(sapply(na_patterns, function(pattern) {
+    grepl(pattern, annot_vals, ignore.case = TRUE)
+  })))
+  
+  # Check if numeric and has many unique values
+  all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$"
+  is_numeric <- sum(!grepl(all_numbers_regex, annot_vals), na.rm = TRUE) <= n_na
+  
+  # If has many unique numeric values, consider continuous (not discrete)
+  if ((length(annot_vals) - n_na) > nfactor_cutoff && is_numeric) {
+    return(FALSE) # continuous
+  }
+  return(TRUE) # discrete
+}
+
+# Helper function to determine if an annotation column contains continuous data
+# This is the inverse of is.discrete and used in color customization
+is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$", "^unknown$", "^$"), nfactor_cutoff = 10) {
+  if (is.factor(annot_col)) {
+    annot_vals <- levels(annot_col)
+  } else {
+    annot_vals <- sort(unique(annot_col))
+  }
+  annot_vals[is.na(annot_vals)] <- "NA"
+  
+  n_na <- sum(unlist(sapply(na_annot_vals, function(pattern) {
+    grepl(pattern, annot_vals, ignore.case = TRUE)
+  })))
+  
+  all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$"
+  if ((length(annot_vals) - n_na) > nfactor_cutoff && 
+      sum(!grepl(all_numbers_regex, annot_vals), na.rm = TRUE) <= n_na) {
+    return(TRUE) # continuous
+  }
+  return(FALSE) # discrete
 }
 
 
