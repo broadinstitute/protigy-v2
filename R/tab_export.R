@@ -202,19 +202,24 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
               progress_text <- paste0("Exporting ", tab_name, " - ", ome, " (", current_export, "/", total_exports, ")")
               incProgress(1/total_exports, detail = progress_text)
               
-              tryCatch({
-                # save the plot using the p() function
-                p(exports_in_tab_path)
-                
-                # add to successful exports list
-                success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
-                
-              }, error = function(c) {
-                warning("Export failed for ", p_name, ": ", c$message)
-                
-                # add to errored exports list
+              my_shinyalert_tryCatch(
+                text.error = paste0("<b>Export Failed for ", p_name, ":</b>"),
+                append.error = TRUE,
+                show.error = FALSE,  # Don't show popup for individual export failures
+                return.error = NULL,
+                expr = {
+                  # save the plot using the p() function
+                  p(exports_in_tab_path)
+                  
+                  # add to successful exports list
+                  success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+                }
+              )
+              
+              # If the above failed, add to error list (my_shinyalert_tryCatch handles the error silently)
+              if (!file.exists(exports_in_tab_path)) {
                 error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
-              })
+              }
               
             }
           })

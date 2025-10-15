@@ -45,6 +45,14 @@ multiomeHeatmapTabServer <- function(
     GENEMAX = 20) {
   ## module function
   moduleServer(id, function (input, output, session) {
+    
+    # Track clustering state to handle automatic disabling
+    clustering_state <- reactiveValues(
+      cluster_columns = TRUE,
+      cluster_rows = FALSE,
+      auto_disabled = FALSE,
+      force_unchecked = FALSE  # New flag to force checkboxes to stay unchecked
+    )
       
     ## GATHERING INPUTS ##
     
@@ -225,8 +233,16 @@ multiomeHeatmapTabServer <- function(
                                                       return(NULL)
                                                     })
                                                   }),
-                                                  saved_settings = saved_heatmap_settings)
+                                                  saved_settings = saved_heatmap_settings,
+                                                  clustering_state = clustering_state)
     
+    # Reset auto-disabled flag when user manually changes clustering
+    observeEvent(c(input$cluster_columns, input$cluster_rows), {
+      if (clustering_state$auto_disabled) {
+        clustering_state$auto_disabled <- FALSE
+        clustering_state$force_unchecked <- FALSE  # Allow checkboxes to work normally again
+      }
+    }, ignoreInit = TRUE)
     
     ## Generate Heatmap
     HM.out <- reactive({
@@ -258,7 +274,45 @@ multiomeHeatmapTabServer <- function(
       }
       
       validate(need(HM.out()$HM, "Heatmap not avaliable"))
-      draw_multiome_HM(HM.out()$HM)
+      
+      # Try to draw the heatmap with error handling
+      tryCatch({
+        draw_multiome_HM(HM.out()$HM)
+      }, error = function(e) {
+        # First attempt failed, try without clustering
+        my_shinyalert_tryCatch(
+          text.warning = "<b>Clustering Failed:</b> Heatmap clustering failed. Visualization will proceed without row and column clustering.",
+          show.warning = TRUE,
+          text.error = "<b>Heatmap Generation Failed:</b> Generating the heatmap failed. Please try selecting features with less missing values.",
+          show.error = TRUE,
+          return.error = NULL,
+          expr = {
+            # Set auto-disabled flag to update checkboxes
+            clustering_state$auto_disabled <- TRUE
+            clustering_state$force_unchecked <- TRUE  # Force checkboxes to stay unchecked
+            
+            # Get the parameters and regenerate without clustering
+            params <- HM.params()
+            params$cluster_columns <- FALSE
+            params$cluster_rows <- FALSE
+            
+            HM_no_cluster <- myComplexHeatmap(params = params,
+                                             merged_rdesc = merged_rdesc(),
+                                             merged_mat = merged_mat(),
+                                             sample_anno = sample_anno(),
+                                             custom_colors = custom_colors(),
+                                             GENEMAX = GENEMAX,
+                                             selected_annotations = {
+                                               if (is.null(input$selected_annotations)) {
+                                                 return(NULL)
+                                               }
+                                               input$selected_annotations
+                                             })
+            
+            draw_multiome_HM(HM_no_cluster$HM)
+          }
+        )
+      })
     })
     HM.Table <- reactive(HM.out()$Table)
     

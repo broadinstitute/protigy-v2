@@ -523,26 +523,29 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
           
           # Run test  
           stat.results <- NULL
-          tryCatch({
-            # Get intensity parameter from the processing parameters
-            intensity_param <- parameters()[[ome]]$intensity
-            if (is.null(intensity_param)) {
-              intensity_param <- FALSE  # Default fallback if not specified
+          my_shinyalert_tryCatch(
+            text.error = paste0("<b>Statistical Test Failed for ", ome, ":</b>"),
+            append.error = TRUE,
+            show.error = TRUE,
+            return.error = NULL,
+            expr = {
+              # Get intensity parameter from the processing parameters
+              intensity_param <- parameters()[[ome]]$intensity
+              if (is.null(intensity_param)) {
+                intensity_param <- FALSE  # Default fallback if not specified
+              }
+              
+              stat.results <- stat.testing(
+                test = test,
+                annotation_col = annotation_col,
+                chosen_omes = ome,
+                gct = gcts,
+                chosen_groups = groups,
+                selected_contrasts = contrasts_list,
+                intensity = intensity_param
+              )
             }
-            
-            stat.results <- stat.testing(
-              test = test,
-              annotation_col = annotation_col,
-              chosen_omes = ome,
-              gct = gcts,
-              chosen_groups = groups,
-              selected_contrasts = contrasts_list,
-              intensity = intensity_param
-            )
-          }, error = function(e) {
-            showNotification(paste("Test failed for ome", ome, ":", e$message), type = "error")
-            stat.results <<- NULL
-          })
+          )
             
           # Save results for that ome into test_results list  
           if (!is.null(stat.results)) {

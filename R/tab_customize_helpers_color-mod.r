@@ -61,24 +61,6 @@ set_annot_colors <- function( annot_table,
     if (!is.null(continuous_columns)) { 
       warning("The 'autodetect_continuous' parameter is set to TRUE, but continuous columns were manually selected with the 'continuous_columns' parameter. Autodetection will be skipped.")
     } else {
-      # utility function to determine if an annotation column contains continuous data (i.e. )
-      is.continuous <- function ( annot_col, na_annot_vals, nfactor_cutoff=10 ) {
-        if (is.factor(annot_col)) {
-          annot_vals = levels(annot_col) # take values from levels, do not re-sort
-        } else annot_vals = sort(unique(annot_col)) # find and sort unique annotations (sorting prevents different color assignments based on order-of-appearance)
-        annot_vals[is.na( annot_vals )] <- "NA" # set literal NA to a string "NA"
-        
-        n_na = sum(na.rm = TRUE, # sum number of NAs detected:
-                   unlist(sapply(na_annot_vals, # for each possible type of na_annot_vals
-                                 function(na_vals) { grepl(na_vals, annot_vals, ignore.case=TRUE) }))) # check if it appears in our annotation-values
-        
-        all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$" # regex to match all possible numeric strings, including scientific notation
-        if ( (length(annot_vals)-n_na) > nfactor_cutoff && # if we have more than nfactor_cutoff unique (non-na) annotation-values
-             sum(!grepl(all_numbers_regex, annot_vals), na.rm=TRUE) <= n_na ) # AND have all numeric data
-          return(TRUE) # assume continuous
-        return(FALSE) # otherwise, assume discrete
-      }
-      
       continuous_columns_idx = which(unname(sapply( annot_table_discrete, simplify=TRUE, # get column indices
                                                     function(annot_col) { is.continuous(annot_col, na_annot_vals, autodetect_continuous_nfactor_cutoff) }))) # of continuous columns
       

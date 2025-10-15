@@ -18,6 +18,7 @@ myComplexHeatmap <- function(
   max.levels <- if (is.null(params$max.levels)) 20 else params$max.levels  # Same as autodetect_continuous_nfactor_cutoff in setup
   max_features_per_gene <- if (is.null(params$max_features_per_gene)) 5 else params$max_features_per_gene
   cluster_columns <- if (is.null(params$cluster_columns)) TRUE else as.logical(params$cluster_columns)
+  cluster_rows <- if (is.null(params$cluster_rows)) FALSE else as.logical(params$cluster_rows)
   
   # extract genes
   genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
@@ -39,6 +40,18 @@ myComplexHeatmap <- function(
   # description-type information, check to other lines where genes.Table is 
   # indexed to make sure unexpected errors don't occur
   genes.Table <- getHMTable(genes.Table, row.anno, params)
+  
+  # Filter datasets based on selected_datasets if provided
+  selected_datasets <- params$selected_datasets
+  if (!is.null(selected_datasets) && length(selected_datasets) > 0) {
+    # Filter to only include selected datasets
+    genes.Table <- genes.Table[genes.Table$ome %in% selected_datasets, , drop = FALSE]
+    
+    # Check if any data remains after filtering
+    if (nrow(genes.Table) == 0) {
+      stop("No data available for the selected datasets. Please select different datasets or check your gene list.")
+    }
+  }
   
   # Filter features per gene per dataset by standard deviation if requested
   if (max_features_per_gene < Inf && nrow(genes.Table) > 0) {
@@ -244,6 +257,18 @@ myComplexHeatmap <- function(
   }
   
   
+  # Determine row clustering and ordering
+  if (isTRUE(cluster_rows)) {
+    # For row clustering, we want to cluster within each gene group
+    # ComplexHeatmap will handle this automatically when cluster_rows = TRUE and row_split is used
+    cluster_rows_param <- TRUE
+    row_order_param <- NULL  # Let ComplexHeatmap determine the order
+  } else {
+    # No row clustering - use original order (by ome, then by row_label)
+    cluster_rows_param <- FALSE
+    row_order_param <- order(genes.Table$ome, genes.Table$row_label)
+  }
+  
   # Determine column clustering and ordering
   if (isTRUE(cluster_columns) && !is.null(column.to.sort)) {
     # Check if data is suitable for clustering (no all-identical values, no NA/NaN/Inf)
@@ -276,59 +301,31 @@ myComplexHeatmap <- function(
   }
   
   # make final heatmap for genes
-  HM <- tryCatch({
-    Heatmap(genes.Matrix,
-            col = col_fun_ratios,
-            column_title = "Sample",
-            row_title_rot = 0,
-            row_order = order(genes.Table$ome, genes.Table$row_label),
-            cluster_rows = F,
-            cluster_columns = cluster_columns_param,
-            column_order = column_order_param,
-            row_split = genes.Table$geneSymbol,
-            column_split = column.to.sort, 
-            top_annotation = HM.anno,
-            show_row_names = T,
-            show_column_names = show.sample.label,
-            name = 'relative abundance',
-            height = unit(0.5, 'cm') * nrow(genes.Matrix),
-            column_names_side = "top",
-            column_names_rot = 45,
-            column_names_gp = gpar(fontsize = 10),
-            row_names_gp = gpar(fontsize = 8),
-            column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
-            heatmap_legend_param = list(direction='horizontal',
-                                        max_width = 350,
-                                        legend_width = unit(4, 'cm')))
-  }, error = function(e) {
-    warning("Heatmap creation failed, attempting without clustering: ", e$message)
-    # Try again without clustering but preserve column grouping
-    Heatmap(genes.Matrix,
-            col = col_fun_ratios,
-            column_title = "Sample",
-            row_title_rot = 0,
-            row_order = order(genes.Table$ome, genes.Table$row_label),
-            cluster_rows = F,
-            cluster_columns = FALSE,
-            column_order = column_order_param,
-            row_split = genes.Table$geneSymbol,
-            column_split = column.to.sort, 
-            top_annotation = HM.anno,
-            show_row_names = T,
-            show_column_names = show.sample.label,
-            name = 'relative abundance',
-            height = unit(0.5, 'cm') * nrow(genes.Matrix),
-            column_names_side = "top",
-            column_names_rot = 45,
-            column_names_gp = gpar(fontsize = 10),
-            row_names_gp = gpar(fontsize = 8),
-            column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
-            heatmap_legend_param = list(direction='horizontal',
-                                        max_width = 350,
-                                        legend_width = unit(4, 'cm')))
-  })
+  HM <- Heatmap(genes.Matrix,
+                col = col_fun_ratios,
+                column_title = "Sample",
+                row_title_rot = 0,
+                row_order = row_order_param,
+                cluster_rows = cluster_rows_param,
+                cluster_columns = cluster_columns_param,
+                column_order = column_order_param,
+                row_split = genes.Table$geneSymbol,
+                column_split = column.to.sort, 
+                top_annotation = HM.anno,
+                show_row_names = T,
+                show_column_names = show.sample.label,
+                name = 'relative abundance',
+                height = unit(0.5, 'cm') * nrow(genes.Matrix),
+                column_names_side = "top",
+                column_names_rot = 45,
+                column_names_gp = gpar(fontsize = 10),
+                row_names_gp = gpar(fontsize = 8),
+                column_gap = if (is.numeric(column.to.sort)) {unit(0, "mm")} else {unit(1, "mm")},
+                heatmap_legend_param = list(direction='horizontal',
+                                            max_width = 350,
+                                            legend_width = unit(4, 'cm')))
   
-  return(list(HM=HM, Table=final.Table, cluster_columns=cluster_columns_param))
+  return(list(HM=HM, Table=final.Table, cluster_columns=cluster_columns_param, cluster_rows=cluster_rows_param))
 }
 
 ## function to extract gene names from a string input

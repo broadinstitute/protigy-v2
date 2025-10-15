@@ -32,9 +32,12 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
     
     ## inputs for clustering
     fluidRow(
-      column(12, checkboxInput(ns('cluster_columns'),
+      column(6, checkboxInput(ns('cluster_columns'),
                               label = "Cluster columns",
-                              value = TRUE))
+                              value = TRUE)),
+      column(6, checkboxInput(ns('cluster_rows'),
+                              label = "Cluster rows",
+                              value = FALSE))
     ), # end fluidRow
     
     fluidRow(
@@ -67,12 +70,34 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
     ), #end fluidRow
     
     
+    ## inputs for dataset selection
+    fluidRow(
+      column(12,
+        strong("Select datasets to include"),
+        br(),
+        p("Choose which datasets to display in the heatmap"),
+        pickerInput(
+          ns('selected_datasets'),
+          label = "",
+          choices = list(),
+          selected = list(),
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No datasets selected"
+          )
+        )
+      )
+    ),
+    
     ## inputs for dataset order
     fluidRow(
       column(12,
         strong("Dataset order"),
         br(),
-        p("Drag to reorder"),
+        p("Drag to reorder selected datasets"),
         orderInput(
           label = "",
           items = list(),
@@ -87,7 +112,7 @@ options_multiomeHeatmapTabUI <- function(id, GENEMAX) {
 }
 
 ## server for heatmap options
-options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals, selected_annotations = NULL, saved_settings = NULL) {
+options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setup_submit, globals, selected_annotations = NULL, saved_settings = NULL, clustering_state = NULL) {
   moduleServer(
     id,
     ## module function
@@ -117,11 +142,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         default_annotation <- globals$default_annotations[[globals$default_ome]]
         
         # Use selected annotations if available, otherwise all annotations
-        available_choices <- if (!is.null(selected_annotations) && !is.null(selected_annotations())) {
+        all_annotations <- if (!is.null(selected_annotations) && !is.null(selected_annotations())) {
           selected_annotations()
         } else {
           setdiff(names(sample_anno()), 'Sample.ID')
         }
+        
+        # Filter to only discrete categories for grouping/sorting
+        # Filter annotations to only discrete ones for grouping
+        available_choices <- all_annotations[sapply(sample_anno()[all_annotations], is.discrete)]
         
         # Get saved sort selection or use default
         saved_sort <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
@@ -138,7 +167,7 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
       })
       
       
-      # update dataset ordering options
+      # update dataset selection and ordering options
       observeEvent(setup_submit(), {
         # Use protigy.ome column if available, otherwise fall back to DataType
         ome_col <- if ("protigy.ome" %in% names(merged_rdesc())) {
@@ -152,18 +181,48 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         # Get unique datasets
         available_datasets <- sort(unique(ome_col))
         
+        # Update dataset selection picker
+        updatePickerInput(
+          session,
+          inputId = 'selected_datasets',
+          choices = available_datasets,
+          selected = if (!is.null(saved_settings) && !is.null(saved_settings()) && !is.null(saved_settings()$selected_datasets)) {
+            saved_settings()$selected_datasets
+          } else {
+            available_datasets  # Select all by default
+          }
+        )
+        
+        # Update dataset ordering based on selected datasets
+        updateDatasetOrdering()
+      })
+      
+      # Function to update dataset ordering based on selected datasets
+      updateDatasetOrdering <- function() {
+        selected_datasets <- input$selected_datasets
+        
+        if (is.null(selected_datasets) || length(selected_datasets) == 0) {
+          # If no datasets selected, show empty order input
+          updateOrderInput(
+            session,
+            inputId = 'ome.order',
+            items = list()
+          )
+          return()
+        }
+        
         # Get saved order or use default order
         saved_order <- if (!is.null(saved_settings) && !is.null(saved_settings())) {
           saved_settings()$ome.order
         } else {
-          available_datasets
+          selected_datasets
         }
         
-        # Ensure saved order only includes available datasets
-        final_order <- saved_order[saved_order %in% available_datasets]
+        # Ensure saved order only includes currently selected datasets
+        final_order <- saved_order[saved_order %in% selected_datasets]
         
-        # Add any new datasets to the end
-        new_datasets <- setdiff(available_datasets, final_order)
+        # Add any newly selected datasets to the end
+        new_datasets <- setdiff(selected_datasets, final_order)
         final_order <- c(final_order, new_datasets)
         
         updateOrderInput(
@@ -171,6 +230,11 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
           inputId = 'ome.order',
           items = final_order
         )
+      }
+      
+      # Update ordering when dataset selection changes
+      observeEvent(input$selected_datasets, {
+        updateDatasetOrdering()
       })
       
       # Restore other settings when options screen loads
@@ -222,6 +286,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
             )
           }
           
+          # Restore row clustering setting
+          if (!is.null(settings$cluster_rows)) {
+            updateCheckboxInput(
+              session,
+              inputId = "cluster_rows",
+              value = settings$cluster_rows
+            )
+          }
+          
           # Restore max features per gene setting
           if (!is.null(settings$max_features_per_gene)) {
             updateNumericInput(
@@ -233,6 +306,15 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         }
       })
       
+      # Update checkboxes when clustering is auto-disabled
+      if (!is.null(clustering_state)) {
+        observeEvent(clustering_state$auto_disabled, {
+          if (clustering_state$auto_disabled) {
+            updateCheckboxInput(session, "cluster_columns", value = FALSE)
+            updateCheckboxInput(session, "cluster_rows", value = FALSE)
+          }
+        })
+      }
       
       ## get heatmap parameters
       HM.params <- reactive({list(genes.char = input$genes,
@@ -242,8 +324,10 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
                                   sort.after = input$sort.after,
                                   show.sample.label = input$show.sample.label,
                                   ome.order = input$ome.order,
+                                  selected_datasets = input$selected_datasets,
                                   max_features_per_gene = input$max_features_per_gene,
-                                  cluster_columns = input$cluster_columns)})
+                                  cluster_columns = input$cluster_columns,
+                                  cluster_rows = input$cluster_rows)})
       
       
       
