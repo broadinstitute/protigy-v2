@@ -24,7 +24,7 @@ statSetup_Tab_UI <- function(id = "statSetupTab") {
 
 # server for the statSetup tab
 # contains the structure for the big tabbed box with omes
-statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
+statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, parent = NULL){
   ## module function
   moduleServer(id, function (input, output, session) {
     
@@ -812,14 +812,22 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
         }
         
         stat_results(test_results)
-        
+
         # Check if tests completed successfully and switch to Summary tab
         if (length(test_results) > 0) {
-          # Show success notification with clear navigation instructions
+          # Show success notification
           showNotification(
-            "Statistical testing completed successfully! Please navigate to Statistics > Summary tab to view your results.", 
-            type = "default", 
-            duration = NULL
+            "Statistical testing completed successfully! Switching to Summary tab...",
+            type = "default",
+            duration = 5  # Auto-dismiss after 5 seconds
+          )
+
+          # Auto-navigate to Statistics > Summary tab
+          # Use parent session parameter to update main navbar
+          updateNavbarPage(
+            session = parent,
+            inputId = "navbar-tabs",
+            selected = "Statistics-Summary"
           )
         }
     })

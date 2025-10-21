@@ -63,7 +63,8 @@ app_server <- function(input, output, session) {
   ## Statistics Setup module
   stat_setup_output <- statSetup_Tab_Server(
     GCTs_and_params = GCTs_and_params,
-    globals = globals
+    globals = globals,
+    parent = session
   )
   
   ## Statistics Summary module
