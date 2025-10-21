@@ -38,19 +38,23 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
       
       tagList(
         fluidRow(
-          column(3,
-                 selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
-                 textOutput(ns("annotation_col")),
-                 if (length(ome_names) > 1) {
-                   checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
-                 },
-                 actionButton(ns("run_test_button"),"Run Test", class = "btn btn-primary")
+          column(2,
+                 div(class = "stat-setup-controls",
+                     selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
+                     textOutput(ns("annotation_col")),
+                     if (length(ome_names) > 1) {
+                       checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
+                     },
+                     actionButton(ns("run_test_button"),"Run Test", class = "btn btn-primary")
+                 )
           ),
-          column(3,
-                 uiOutput(ns("select_test")),
-                 uiOutput(ns("select_groups_ui"))
+          column(2,
+                 div(class = "stat-setup-controls",
+                     uiOutput(ns("select_test")),
+                     uiOutput(ns("select_groups_ui"))
+                 )
           ),
-          column(3,
+          column(8,
                  uiOutput(ns("select_contrast_ui"))
           )
         ),
@@ -339,45 +343,298 @@ statSetup_Tab_Server <- function(id = "statSetupTab",GCTs_and_params, globals){
     
 ################################################################################
 ######CONTRAST SELECTION########################################################
-    #saving the selected contrasts to stat_param
-    observeEvent(input$select_contrasts, {
+    # Dropdown selector is not so efficient for experiments with a large number of possible contrast combinations
+    # A checklist will nevertheless overflow the screen with poor readability 
+    # Here, a matrix selector is implemented to overcome the issue 
+
+    # Reactive to track contrast selection view mode (matrix or list)
+    contrast_view_mode <- reactiveVal("matrix")
+
+    # Observer for view mode toggle
+    # Matrix view is default for > 10 groups
+    # List view is default for =< 10 groups - enhanced dropdown selector with search function
+    # A smart control detector (beta) is implemented to auto-identify control groups (e.g., control, WT, etc.)
+    observeEvent(input$contrast_view_toggle, {
+      contrast_view_mode(input$contrast_view_toggle)
+    })
+
+    # Quick select buttons
+    # Smart control detector (beta)
+    observeEvent(input$contrast_quick_all_pairwise, {
       req(selected_ome())
       current <- stat_param()
       ome <- selected_ome()
 
-      current[[ome]]$contrasts <- input$select_contrasts
+      if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
+        all_contrasts <- generate_all_pairwise(current[[ome]]$groups, bidirectional = TRUE)
+        current[[ome]]$contrasts <- all_contrasts
+        stat_param(current)
+      }
+    })
+
+    observeEvent(input$contrast_quick_all_vs_control, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+
+      if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
+        control_group <- detect_control_group(current[[ome]]$groups)
+        control_contrasts <- generate_all_vs_reference(
+          current[[ome]]$groups,
+          control_group,
+          bidirectional = TRUE
+        )
+        current[[ome]]$contrasts <- control_contrasts
+        stat_param(current)
+
+        showNotification(
+          paste0("Selected all contrasts vs '", control_group, "'"),
+          type = "message",
+          duration = 3
+        )
+      }
+    })
+
+    # Quick sequential selection automatically generates contrasts between consecutive groups in a sequence 
+    # For example, if the groups are ordered as ["Control", "Treatment_1", "Treatment_2", "Treatment_3"], "quick sequential" would automatically create: Control vs. Treatment_1, Treatment_1 vs. Treatment_2, Treatment_2 vs. Treatment_3, and their bidirectional counterparts 
+    # This is useful for time-seeries or ordered experimental designs 
+    observeEvent(input$contrast_quick_sequential, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+
+      if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
+        sequential_contrasts <- generate_sequential_pairs(
+          current[[ome]]$groups,
+          bidirectional = TRUE
+        )
+        current[[ome]]$contrasts <- sequential_contrasts
+        stat_param(current)
+      }
+    })
+
+    # Clear all selections
+    observeEvent(input$contrast_quick_clear, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+
+      current[[ome]]$contrasts <- character(0)
       stat_param(current)
     })
-    
-    #displaying the contrast choices
+
+    # Handle matrix cell clicks
+    observeEvent(input$contrast_matrix_click, {
+      req(selected_ome(), input$contrast_matrix_click)
+      current <- stat_param()
+      ome <- selected_ome()
+
+      clicked_contrast <- input$contrast_matrix_click
+
+      if (is.null(current[[ome]]$contrasts)) {
+        current[[ome]]$contrasts <- character(0)
+      }
+
+      # Toggle selection
+      if (clicked_contrast %in% current[[ome]]$contrasts) {
+        current[[ome]]$contrasts <- setdiff(current[[ome]]$contrasts, clicked_contrast)
+      } else {
+        current[[ome]]$contrasts <- c(current[[ome]]$contrasts, clicked_contrast)
+      }
+
+      stat_param(current)
+    })
+
+    # Handle pickerInput selection (list view)
+    observeEvent(input$select_contrasts_list, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+
+      current[[ome]]$contrasts <- input$select_contrasts_list
+      stat_param(current)
+    })
+
+    # Handle remove contrast from summary panel
+    observeEvent(input$remove_contrast, {
+      req(selected_ome(), input$remove_contrast)
+      current <- stat_param()
+      ome <- selected_ome()
+
+      contrast_to_remove <- input$remove_contrast
+      current[[ome]]$contrasts <- setdiff(current[[ome]]$contrasts, contrast_to_remove)
+      stat_param(current)
+    })
+
+    # Display contrast choices
     output$select_contrast_ui <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
-      
+
       req(current[[ome]]$test=="Two-sample Moderated T-test")
-      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) stop("need at least 2 groups to perform two-sample t-test")
-      
-      pairwise_contrasts <- combn(current[[ome]]$groups, 2, simplify = FALSE)
+      if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) {
+        return(div(
+          style = "color: #d9534f; padding: 10px; background-color: #f2dede; border: 1px solid #ebccd1; border-radius: 4px;",
+          icon("exclamation-triangle"),
+          " Need at least 2 groups to perform two-sample t-test"
+        ))
+      }
+
+      groups <- current[[ome]]$groups
+      n_groups <- length(groups)
+
+      # Generate all possible contrasts
+      pairwise_contrasts <- combn(groups, 2, simplify = FALSE)
       all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-      labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
-      
+      all_contrast_labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+
+      # Initialize contrasts if not set
       if (is.null(current[[ome]]$contrasts)) {
-        current[[ome]]$contrasts <- labels
+        current[[ome]]$contrasts <- all_contrast_labels
         stat_param(current)
       }
-      
-      pickerInput(
-        ns("select_contrasts"), 
-        "Select contrasts:", 
-        choices = labels, 
-        selected = current[[ome]]$contrasts,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          selectAllText = "Select All",
-          deselectAllText = "Deselect All",
-          noneSelectedText = "No contrasts selected"
+
+      selected_contrasts <- current[[ome]]$contrasts
+
+      # Determine default view mode based on number of groups
+      default_mode <- if (n_groups > 10) "matrix" else "list"
+      if (is.null(contrast_view_mode()) || contrast_view_mode() == "") {
+        contrast_view_mode(default_mode)
+      }
+
+      tagList(
+        div(
+          class = "contrast-selection-container",
+
+          # Quick select buttons
+          div(
+            class = "contrast-quick-buttons",
+            h5("Quick Select:", style = "margin: 0 10px 0 0; display: inline-block;"),
+            actionButton(
+              ns("contrast_quick_all_pairwise"),
+              "All Pairwise",
+              class = "btn-sm btn-default",
+              icon = icon("th")
+            ),
+            actionButton(
+              ns("contrast_quick_all_vs_control"),
+              "All vs Control",
+              class = "btn-sm btn-default",
+              icon = icon("bullseye")
+            ),
+            actionButton(
+              ns("contrast_quick_sequential"),
+              "Sequential Pairs",
+              class = "btn-sm btn-default",
+              icon = icon("arrow-right")
+            ),
+            actionButton(
+              ns("contrast_quick_clear"),
+              "Clear All",
+              class = "btn-sm btn-warning",
+              icon = icon("times")
+            )
+          ),
+
+          # View mode toggle
+          div(
+            class = "contrast-view-toggle",
+            radioButtons(
+              ns("contrast_view_toggle"),
+              label = NULL,
+              choices = c("Matrix View" = "matrix", "List View" = "list"),
+              selected = contrast_view_mode(),
+              inline = TRUE
+            )
+          ),
+
+          # Matrix or List view
+          uiOutput(ns("contrast_selection_view")),
+
+          # Selected contrasts summary
+          uiOutput(ns("selected_contrasts_summary"))
         )
+      )
+    })
+
+    # Render the appropriate selection view
+    output$contrast_selection_view <- renderUI({
+      current <- stat_param()
+      ome <- selected_ome()
+      req(current[[ome]]$groups)
+
+      groups <- current[[ome]]$groups
+      selected_contrasts <- current[[ome]]$contrasts %||% character(0)
+
+      if (contrast_view_mode() == "matrix") {
+        # Matrix view
+        render_contrast_matrix(groups, selected_contrasts, ns)
+      } else {
+        # List view
+        pairwise_contrasts <- combn(groups, 2, simplify = FALSE)
+        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+        all_labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+
+        pickerInput(
+          ns("select_contrasts_list"),
+          label = "Select contrasts:",
+          choices = all_labels,
+          selected = selected_contrasts,
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            liveSearch = TRUE,
+            liveSearchPlaceholder = "Search contrasts...",
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No contrasts selected",
+            virtualScroll = if (length(all_labels) > 50) 50 else FALSE,
+            size = 10
+          ),
+          width = "100%"
+        )
+      }
+    })
+
+    # Render selected contrasts summary
+    output$selected_contrasts_summary <- renderUI({
+      current <- stat_param()
+      ome <- selected_ome()
+      req(current[[ome]]$groups)
+
+      selected_contrasts <- current[[ome]]$contrasts %||% character(0)
+      n_total <- length(generate_all_pairwise(current[[ome]]$groups, bidirectional = TRUE))
+      n_selected <- length(selected_contrasts)
+
+      if (n_selected == 0) {
+        return(div(
+          class = "selected-contrasts-panel",
+          div(class = "selected-contrasts-empty", "No contrasts selected")
+        ))
+      }
+
+      # Create contrast badges
+      contrast_badges <- lapply(selected_contrasts, function(contrast) {
+        tags$span(
+          class = "contrast-badge",
+          contrast,
+          tags$span(
+            class = "remove-btn",
+            onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
+                            ns("remove_contrast"), contrast),
+            "×"
+          )
+        )
+      })
+
+      div(
+        class = "selected-contrasts-panel",
+        div(
+          class = "panel-header",
+          "Selected Contrasts ",
+          span(class = "contrast-count", paste0("(", n_selected, " of ", n_total, ")"))
+        ),
+        div(contrast_badges)
       )
     })
 
