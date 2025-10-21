@@ -159,6 +159,11 @@ get_ggsave_params <- function(plot_type = "default") {
   ))
 }
 
+# Alias for backward compatibility
+get_pdf_params <- function(plot_type = "default") {
+  get_plot_export_dimensions(plot_type)
+}
+
 # Helper function to determine if an annotation column contains discrete data
 # This is used across multiple modules for filtering annotations
 is.discrete <- function(annot_col, nfactor_cutoff = 20) {
