@@ -10,12 +10,16 @@
 
 # function for label assignment UI
 labelSetupUI <- function(ns, gctFileNames) {
+  # Set default value to "proteome" if only one file
+  default_value <- if(length(gctFileNames) == 1) "proteome" else ""
+
   tagList(
     h4('Assign labels'),
     lapply(gctFileNames, function(file) {
       add_css_attributes(
         textInput(inputId = ns(paste0('Label_', file)),
                   label = file,
+                  value = default_value,
                   placeholder = "Proteome or Prot"),
         classes = "small-input")
     })
@@ -84,21 +88,22 @@ gctSetupUI <- function(ns,
     
     ## intensity data input
     add_css_attributes(
-      selectInput(
+      checkboxInput(
         ns(paste0(label, '_intensity_data')),
-        'Intensity data',
-        choices = parameter_choices$intensity_data,
-        selected = parameters[[label]]$intensity_data),
-      classes = "small-input"),
-    
+        label = 'Intensity data',
+        value = parameters[[label]]$intensity_data == "Yes"),
+      classes = "small-input",
+      styles = "padding-top: 10px"),
+
     ## log transformation input
     add_css_attributes(
-      selectInput(
+      radioButtons(
         ns(paste0(label, '_log_transformation')),
         label = 'Log-transformation',
         choices = parameter_choices$log_transformation,
         selected = parameters[[label]]$log_transformation),
-      classes = "small-input"),
+      classes = "small-input",
+      styles = "padding-bottom: 10px"),
     
     ## data normalization input
     add_css_attributes(

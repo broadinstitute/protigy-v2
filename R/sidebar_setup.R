@@ -298,15 +298,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # update parameter choices when intensity data is toggled
     current_intensity <- reactive({
       label <- names(parameters_internal_reactive())[isolate(backNextLogic$place)]
-      input[[paste0(label, '_intensity_data')]]})
+      checkbox_value <- input[[paste0(label, '_intensity_data')]]
+      # Convert checkbox boolean to "Yes"/"No" string
+      if (is.logical(checkbox_value)) {
+        if (checkbox_value) "Yes" else "No"
+      } else {
+        checkbox_value  # Fallback for old string values
+      }
+    })
     observeEvent(current_intensity(), {
       # first, collect all the current inputs
       collectInputs()
-      
+
       # gather current label and parameters
       label = names(parameters_internal_reactive())[backNextLogic$place]
       parameters = parameters_internal_reactive()[[label]]
-      
+
       # indicator for intensity data (check out the yaml format)
       ind = paste0("intensity_data_", tolower(current_intensity()))
       
@@ -502,7 +509,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # get the current label
       all_labels <- names(parameters_internal_reactive())
       current_label <- all_labels[backNextLogic$place]
-      
+
       # select labels for assignment
       applyToAll <- ifelse(is.null(input$applyToAll), FALSE, input$applyToAll)
       if (applyToAll) {
@@ -510,27 +517,34 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       } else {
         assignment_labels <- current_label # just the current label
       }
-      
+
       # get the current parameters
       new_parameters <- parameters_internal_reactive()
-      
+
       # get the list of all parameters names to update
       parameter_names <- c(names(default_parameters),
                            'annotation_column',
                            'group_normalization_column',
                            'gene_symbol_column')
-      
+
       # assign new user selections
-      # NOTE: there are fields in `new_parameters` that aren't updated here, 
+      # NOTE: there are fields in `new_parameters` that aren't updated here,
       # which means you can't easily forgo the for loop for an apply equivalent
       for (label in assignment_labels) {
         for (param in parameter_names) {
-          new_parameters[[label]][[param]] <- input[[paste0(current_label, '_', param)]]
+          input_value <- input[[paste0(current_label, '_', param)]]
+
+          # Convert intensity_data checkbox boolean to "Yes"/"No" string
+          if (param == "intensity_data" && is.logical(input_value)) {
+            input_value <- if (input_value) "Yes" else "No"
+          }
+
+          new_parameters[[label]][[param]] <- input_value
         }
       }
-      
+
       # assign reactiveVal
-      parameters_internal_reactive(new_parameters) 
+      parameters_internal_reactive(new_parameters)
     }
     
     # label assignment, has to be used in separate observeEvent() calls
