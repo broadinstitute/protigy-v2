@@ -66,12 +66,12 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
       theme(text= element_text(size=14))
   } else{
     g <- ggplot(data = stats,    #base boxplot with calculated stats
-                aes(x = .data$sample,  
+                aes(x = .data$sample,
                     ymin = .data$ymin,
                     lower = .data$lower,
                     middle = .data$middle,
                     upper = .data$upper,
-                    ymax = .data$ymax), show.legend = FALSE) +
+                    ymax = .data$ymax)) +
       geom_tufteboxplot(stat="identity",aes(colour=.data$annot), show.legend = FALSE) + #convert to tufte boxplot
       geom_point(size = 1, aes(y = .data$middle, colour = .data$annot))+ #make the median point bigger (and fixes the legend too!)
       geom_point(data=outliers, aes(x=.data$sample, y=.data$values), inherit.aes=FALSE, size=0.1, pch=1, show.legend = FALSE) + #add outliers
