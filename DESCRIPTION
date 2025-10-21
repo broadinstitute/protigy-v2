@@ -51,11 +51,12 @@ Imports:
     shinyWidgets,
     shinyBS,
     glue,
-    Matrix (>= 1.6-2),
-    shinyWidgets, 
-    janitor, 
+    Matrix,
+    janitor,
     snakecase,
-    shinyjs
+    shinyjs,
+    future,
+    furrr
 Depends:
     R (>= 4.0.0),
     shiny
