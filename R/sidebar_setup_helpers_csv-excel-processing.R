@@ -5,16 +5,12 @@
 
 # UI function for CSV/Excel/TSV label assignment (same pattern as GCT workflow)
 csvExcelLabelSetupUI <- function(ns, dataFileNames) {
-  # Set default value to "proteome" if only one file
-  default_value <- if(length(dataFileNames) == 1) "proteome" else ""
-
   tagList(
     h4('Assign labels'),
     lapply(dataFileNames, function(file) {
       add_css_attributes(
         textInput(inputId = ns(paste0('CSVExcelLabel_', file)),
                   label = file,
-                  value = default_value,
                   placeholder = "Proteome, Phosphoproteome, etc."),
         classes = "small-input")
     })

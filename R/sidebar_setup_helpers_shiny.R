@@ -10,16 +10,12 @@
 
 # function for label assignment UI
 labelSetupUI <- function(ns, gctFileNames) {
-  # Set default value to "proteome" if only one file
-  default_value <- if(length(gctFileNames) == 1) "proteome" else ""
-
   tagList(
     h4('Assign labels'),
     lapply(gctFileNames, function(file) {
       add_css_attributes(
         textInput(inputId = ns(paste0('Label_', file)),
                   label = file,
-                  value = default_value,
                   placeholder = "Proteome or Prot"),
         classes = "small-input")
     })
