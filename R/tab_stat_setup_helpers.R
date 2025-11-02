@@ -105,10 +105,11 @@ stat.testing <- function(
               eBayes(fit, trend = TRUE, robust = TRUE)
             },
             error = function(e) {
-              shinyalert(
+              showNotification(
                 "Setting intensity-trend failed. Performing with trend=FALSE. This usually occurs when the distribution of detected features is not uniform across samples. Please evaluate your data and consider re-running analysis with a stricter missing value filter.",
                 type = "warning",
-                immediate = T
+                duration = NULL,
+                closeButton = TRUE
               )
               eBayes(fit, trend = FALSE, robust = TRUE)
             }
@@ -155,6 +156,73 @@ stat.testing <- function(
           avg,
           na.rm = T
         )
+
+        # POST-HOC PAIRWISE CONTRASTS (if selected_contrasts provided)
+        if (!is.null(selected_contrasts) && length(selected_contrasts) > 0) {
+          # Build contrast matrix for post-hoc tests
+          # selected_contrasts is a list of character vectors c(group1, group2)
+          n_contrasts <- length(selected_contrasts)
+          contrast_strings <- character(n_contrasts)
+          contrast_names <- character(n_contrasts)
+
+          for (i in seq_along(selected_contrasts)) {
+            contrast_pair <- selected_contrasts[[i]]
+            group1 <- contrast_pair[1]
+            group2 <- contrast_pair[2]
+            # Use backticks to handle special characters in group names
+            contrast_strings[i] <- paste0("`f", group1, "` - `f", group2, "`")
+            contrast_names[i] <- paste0(group1, "_over_", group2)
+          }
+
+          # Create contrast matrix using do.call for better performance and safety
+          contrast_list <- setNames(as.list(contrast_strings), contrast_names)
+          contrast_matrix <- do.call(
+            limma::makeContrasts,
+            c(contrast_list, list(levels = design))
+          )
+
+          # Fit contrasts (using original fit object with row-centered data)
+          fit2 <- contrasts.fit(fit, contrast_matrix)
+          fit2 <- eBayes(fit2, robust = TRUE)
+
+          # Extract results for each contrast
+          posthoc_results_list <- vector("list", n_contrasts)
+
+          for (i in seq_along(contrast_names)) {
+            contrast_name <- contrast_names[i]
+
+            # Extract pre-computed statistics directly from fit2 object
+            contrast_results <- data.frame(
+              logFC = fit2$coefficients[, i],
+              AveExpr = fit2$Amean,
+              t = fit2$t[, i],
+              P.Value = fit2$p.value[, i],
+              adj.P.Val = p.adjust(fit2$p.value[, i], method = "BH"),
+              B = fit2$lods[, i],
+              stringsAsFactors = FALSE
+            )
+
+            # Vectorized calculation of derived columns
+            contrast_results$significant <- if (use.adj.pvalue) {
+              contrast_results$adj.P.Val <= p.value.alpha
+            } else {
+              contrast_results$P.Value <= p.value.alpha
+            }
+            contrast_results$Log.P.Value <- -log10(contrast_results$P.Value)
+            contrast_results$sign.logP <- contrast_results$Log.P.Value * sign(contrast_results$logFC)
+
+            # Rename columns with contrast name
+            colnames(contrast_results) <- paste(colnames(contrast_results), contrast_name, sep = '.')
+
+            posthoc_results_list[[i]] <- contrast_results
+          }
+
+          # Combine all post-hoc contrasts
+          posthoc_combined <- do.call(cbind, posthoc_results_list)
+
+          # Combine omnibus F-test results with post-hoc results
+          final.results <- cbind(final.results, posthoc_combined)
+        }
 
         # Join all rdesc columns to the results
         rdesc_df <- as.data.frame(rdesc)
@@ -386,10 +454,11 @@ stat.testing <- function(
               eBayes(fit2, trend = TRUE, robust = TRUE)
             },
             error = function(e) {
-              shinyalert(
+              showNotification(
                 "Setting intensity-trend failed. Performing with trend=FALSE. This usually occurs when the distribution of detected features is not uniform across samples. Please evaluate your data and consider re-running analysis with a stricter missing value filter.",
                 type = "warning",
-                immediate = T
+                duration = NULL,
+                closeButton = TRUE
               )
               eBayes(fit2, trend = FALSE, robust = TRUE)
             }

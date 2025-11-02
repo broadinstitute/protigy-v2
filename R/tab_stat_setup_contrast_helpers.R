@@ -243,3 +243,134 @@ render_contrast_matrix <- function(groups, selected_contrasts, ns) {
     )
   )
 }
+
+
+#' Generate contrasts for all groups vs multiple reference groups
+#'
+#' @param groups Character vector of group names
+#' @param reference_groups Character vector of reference group names
+#' @param bidirectional Logical, if TRUE includes both directions (default FALSE)
+#' @return Character vector of contrasts in "Group / Reference" format
+#'
+#' @details Generates contrasts comparing each non-reference group to each
+#' reference group. Useful when multiple control groups are specified.
+generate_all_vs_multiple_references <- function(groups, reference_groups, bidirectional = FALSE) {
+  if (length(groups) < 2 || length(reference_groups) == 0) return(character(0))
+
+  # Ensure all reference groups are in groups
+  reference_groups <- intersect(reference_groups, groups)
+  if (length(reference_groups) == 0) return(character(0))
+
+  # Get all groups except references
+  other_groups <- setdiff(groups, reference_groups)
+  if (length(other_groups) == 0) return(character(0))
+
+  # Generate "Other / Reference" contrasts for each reference
+  contrasts <- character(0)
+  for (ref in reference_groups) {
+    for (g in other_groups) {
+      contrasts <- c(contrasts, paste(g, "/", ref))
+      if (bidirectional) {
+        contrasts <- c(contrasts, paste(ref, "/", g))
+      }
+    }
+  }
+
+  return(contrasts)
+}
+
+
+#' Render group selection matrix UI for one-sample t-test
+#'
+#' @param groups Character vector of group names
+#' @param selected_groups Character vector of currently selected groups
+#' @param ns Namespace function from Shiny module
+#' @return Shiny HTML tags for the group selection interface
+#'
+#' @details Creates a badge/button interface where users can click to toggle
+#' group selection. Simpler than contrast matrix since no pairwise comparisons.
+render_group_selection_matrix <- function(groups, selected_groups, ns) {
+  if (length(groups) == 0) {
+    return(div(class = "group-selection-empty", "No groups available"))
+  }
+
+  # Create group badge buttons
+  group_badges <- lapply(groups, function(group) {
+    is_selected <- group %in% selected_groups
+
+    tags$span(
+      class = paste0(
+        "group-selection-badge",
+        if (is_selected) " selected" else ""
+      ),
+      `data-group` = group,
+      onclick = sprintf(
+        "Shiny.setInputValue('%s', '%s', {priority: 'event'})",
+        ns("group_matrix_click"),
+        gsub("'", "\\\\'", group)  # Escape single quotes
+      ),
+      group
+    )
+  })
+
+  div(
+    class = "group-selection-container",
+    div(
+      style = "text-align: center; margin-bottom: 10px; color: #666; font-size: 12px;",
+      icon("info-circle"),
+      " Click groups to select which to test against reference value (0)"
+    ),
+    div(
+      class = "group-selection-grid",
+      group_badges
+    )
+  )
+}
+
+
+#' Render control group selector UI
+#'
+#' @param groups Character vector of group names
+#' @param selected_controls Character vector of currently selected control groups
+#' @param ns Namespace function from Shiny module
+#' @return Shiny HTML tags for the control group selector
+#'
+#' @details Creates a badge/button interface for selecting one or more control
+#' groups. Used with "All vs Control" quick select button.
+render_control_group_selector <- function(groups, selected_controls, ns) {
+  if (length(groups) == 0) {
+    return(div(class = "control-group-empty", "No groups available"))
+  }
+
+  # Create control group badge buttons
+  control_badges <- lapply(groups, function(group) {
+    is_selected <- group %in% selected_controls
+
+    tags$span(
+      class = paste0(
+        "control-group-badge",
+        if (is_selected) " selected" else ""
+      ),
+      `data-group` = group,
+      onclick = sprintf(
+        "Shiny.setInputValue('%s', '%s', {priority: 'event'})",
+        ns("control_group_click"),
+        gsub("'", "\\\\'", group)  # Escape single quotes
+      ),
+      group
+    )
+  })
+
+  div(
+    class = "control-group-selector",
+    div(
+      style = "margin-bottom: 10px; color: #666; font-size: 12px;",
+      icon("hand-pointer"),
+      " Click to select control group(s):"
+    ),
+    div(
+      class = "control-group-grid",
+      control_badges
+    )
+  )
+}

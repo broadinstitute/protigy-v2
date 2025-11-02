@@ -97,6 +97,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     ## GATHERING INPUTS ##
     stat_param <- reactiveVal(list())
     stat_results <- reactiveVal(list())
+    manual_control_groups <- reactiveVal(character(0))
+    use_manual_controls <- reactiveVal(FALSE)
+    group_view_mode <- reactiveVal("list")  # For one-sample t-test group selection
     
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
@@ -310,37 +313,155 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       current <- stat_param()
       ome <- selected_ome()
       req(cdesc(), default_annotation_column(),selected_ome(), stat_param())
-      
+
       # Only show groups if a test other than "None" is selected
       if (is.null(current[[ome]]$test) || current[[ome]]$test == "None") {
         return(NULL)  # Don't show anything if no test or "None" test
       }
-      
+
       choices<- unique(cdesc()[[default_annotation_column()]])
       choices <- choices[!is.na(choices)]
-      
+
       if (is.null(current[[ome]]$groups)) {
-        current[[ome]]$groups <- choices 
+        current[[ome]]$groups <- choices
         stat_param(current)
       }
-      
-      pickerInput(
-        ns("select_groups"), 
-        "Select groups:", 
-        choices = choices, 
-        selected = current[[ome]]$groups,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          selectAllText = "Select All",
-          deselectAllText = "Deselect All",
-          noneSelectedText = "No groups selected"
-        )
-      )
-    })
-    
 
-    
+      # For one-sample t-test, show matrix view (list view code kept for future use)
+      if (current[[ome]]$test == "One-sample Moderated T-test") {
+        # Always use matrix view for simplified UX
+        group_view_mode("matrix")
+
+        tagList(
+          div(
+            class = "group-selection-section",
+            # Group selection view (matrix only)
+            uiOutput(ns("group_selection_view"))
+          )
+        )
+      } else {
+        # For other tests (F-test, two-sample), use standard pickerInput
+        pickerInput(
+          ns("select_groups"),
+          "Select groups:",
+          choices = choices,
+          selected = current[[ome]]$groups,
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            selectAllText = "Select All",
+            deselectAllText = "Deselect All",
+            noneSelectedText = "No groups selected"
+          )
+        )
+      }
+    })
+
+    # Observer for one-sample t-test view mode toggle (KEPT FOR FUTURE USE)
+    # observeEvent(input$group_view_toggle, {
+    #   group_view_mode(input$group_view_toggle)
+    # })
+
+    # Render group selection view for one-sample t-test
+    output$group_selection_view <- renderUI({
+      current <- stat_param()
+      ome <- selected_ome()
+      req(current[[ome]]$groups, cdesc(), default_annotation_column())
+
+      choices <- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      selected_groups <- current[[ome]]$groups
+
+      # Always use matrix view (list view code kept for future use)
+      render_group_selection_matrix(choices, selected_groups, ns)
+
+      # LIST VIEW CODE (KEPT FOR FUTURE USE):
+      # if (group_view_mode() == "matrix") {
+      #   # Matrix view
+      #   render_group_selection_matrix(choices, selected_groups, ns)
+      # } else {
+      #   # List view
+      #   pickerInput(
+      #     ns("select_groups_list"),
+      #     label = "Select groups to test:",
+      #     choices = choices,
+      #     selected = selected_groups,
+      #     multiple = TRUE,
+      #     options = pickerOptions(
+      #       actionsBox = TRUE,
+      #       liveSearch = TRUE,
+      #       liveSearchPlaceholder = "Search groups...",
+      #       selectAllText = "Select All",
+      #       deselectAllText = "Deselect All",
+      #       noneSelectedText = "No groups selected",
+      #       virtualScroll = if (length(choices) > 50) 50 else FALSE,
+      #       size = 10
+      #     ),
+      #     width = "100%"
+      #   )
+      # }
+    })
+
+    # Handle group matrix clicks (one-sample t-test)
+    observeEvent(input$group_matrix_click, {
+      req(selected_ome(), input$group_matrix_click)
+      current <- stat_param()
+      ome <- selected_ome()
+
+      clicked_group <- input$group_matrix_click
+
+      if (is.null(current[[ome]]$groups)) {
+        current[[ome]]$groups <- character(0)
+      }
+
+      # Toggle selection
+      if (clicked_group %in% current[[ome]]$groups) {
+        current[[ome]]$groups <- setdiff(current[[ome]]$groups, clicked_group)
+      } else {
+        current[[ome]]$groups <- c(current[[ome]]$groups, clicked_group)
+      }
+
+      stat_param(current)
+    })
+
+    # Handle pickerInput selection for one-sample t-test (KEPT FOR FUTURE USE)
+    # observeEvent(input$select_groups_list, {
+    #   req(selected_ome())
+    #   current <- stat_param()
+    #   ome <- selected_ome()
+    #
+    #   current[[ome]]$groups <- input$select_groups_list
+    #   stat_param(current)
+    # })
+
+
+################################################################################
+######MANUAL CONTROL GROUP SELECTION############################################
+    # Observer for manual control group checkbox
+    observeEvent(input$use_manual_controls, {
+      use_manual_controls(input$use_manual_controls)
+
+      # Clear manual selections when unchecking
+      if (!input$use_manual_controls) {
+        manual_control_groups(character(0))
+      }
+    })
+
+    # Observer for control group badge clicks
+    observeEvent(input$control_group_click, {
+      req(input$control_group_click)
+
+      clicked_group <- input$control_group_click
+      current_controls <- manual_control_groups()
+
+      # Toggle selection
+      if (clicked_group %in% current_controls) {
+        manual_control_groups(setdiff(current_controls, clicked_group))
+      } else {
+        manual_control_groups(c(current_controls, clicked_group))
+      }
+    })
+
 ################################################################################
 ######CONTRAST SELECTION########################################################
     # Dropdown selector is not so efficient for experiments with a large number of possible contrast combinations
@@ -350,13 +471,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     # Reactive to track contrast selection view mode (matrix or list)
     contrast_view_mode <- reactiveVal("matrix")
 
-    # Observer for view mode toggle
+    # Observer for view mode toggle (KEPT FOR FUTURE USE)
     # Matrix view is default for > 10 groups
     # List view is default for =< 10 groups - enhanced dropdown selector with search function
     # A smart control detector (beta) is implemented to auto-identify control groups (e.g., control, WT, etc.)
-    observeEvent(input$contrast_view_toggle, {
-      contrast_view_mode(input$contrast_view_toggle)
-    })
+    # observeEvent(input$contrast_view_toggle, {
+    #   contrast_view_mode(input$contrast_view_toggle)
+    # })
 
     # Quick select buttons
     # Smart control detector (beta)
@@ -378,20 +499,41 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       ome <- selected_ome()
 
       if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
-        control_group <- detect_control_group(current[[ome]]$groups)
-        control_contrasts <- generate_all_vs_reference(
-          current[[ome]]$groups,
-          control_group,
-          bidirectional = TRUE
-        )
-        current[[ome]]$contrasts <- control_contrasts
-        stat_param(current)
+        # Check if manual control selection is enabled
+        if (use_manual_controls() && length(manual_control_groups()) > 0) {
+          # Use manually selected control groups
+          control_groups <- manual_control_groups()
+          control_contrasts <- generate_all_vs_multiple_references(
+            current[[ome]]$groups,
+            control_groups,
+            bidirectional = TRUE
+          )
+          current[[ome]]$contrasts <- control_contrasts
+          stat_param(current)
 
-        showNotification(
-          paste0("Selected all contrasts vs '", control_group, "'"),
-          type = "message",
-          duration = 3
-        )
+          control_msg <- if (length(control_groups) == 1) {
+            paste0("Selected all contrasts vs '", control_groups[1], "'")
+          } else {
+            paste0("Selected all contrasts vs controls: ", paste(control_groups, collapse = ", "))
+          }
+          showNotification(control_msg, type = "message", duration = 3)
+        } else {
+          # Use auto-detection
+          control_group <- detect_control_group(current[[ome]]$groups)
+          control_contrasts <- generate_all_vs_reference(
+            current[[ome]]$groups,
+            control_group,
+            bidirectional = TRUE
+          )
+          current[[ome]]$contrasts <- control_contrasts
+          stat_param(current)
+
+          showNotification(
+            paste0("Selected all contrasts vs '", control_group, "' (auto-detected)"),
+            type = "message",
+            duration = 3
+          )
+        }
       }
     })
 
@@ -445,15 +587,15 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       stat_param(current)
     })
 
-    # Handle pickerInput selection (list view)
-    observeEvent(input$select_contrasts_list, {
-      req(selected_ome())
-      current <- stat_param()
-      ome <- selected_ome()
-
-      current[[ome]]$contrasts <- input$select_contrasts_list
-      stat_param(current)
-    })
+    # Handle pickerInput selection (list view) - KEPT FOR FUTURE USE
+    # observeEvent(input$select_contrasts_list, {
+    #   req(selected_ome())
+    #   current <- stat_param()
+    #   ome <- selected_ome()
+    #
+    #   current[[ome]]$contrasts <- input$select_contrasts_list
+    #   stat_param(current)
+    # })
 
     # Handle remove contrast from summary panel
     observeEvent(input$remove_contrast, {
@@ -471,12 +613,18 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       current <- stat_param()
       ome <- selected_ome()
 
-      req(current[[ome]]$test=="Two-sample Moderated T-test")
+      # Show contrast selection for two-sample t-test and F-test
+      test_type <- current[[ome]]$test
+      if (!test_type %in% c("Two-sample Moderated T-test", "Moderated F test")) {
+        return(NULL)
+      }
+
       if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) {
+        test_name <- if (test_type == "Moderated F test") "F-test" else "two-sample t-test"
         return(div(
           style = "color: #d9534f; padding: 10px; background-color: #f2dede; border: 1px solid #ebccd1; border-radius: 4px;",
           icon("exclamation-triangle"),
-          " Need at least 2 groups to perform two-sample t-test"
+          paste(" Need at least 2 groups to perform", test_name)
         ))
       }
 
@@ -496,15 +644,40 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
 
       selected_contrasts <- current[[ome]]$contrasts
 
-      # Determine default view mode based on number of groups
-      default_mode <- if (n_groups > 10) "matrix" else "list"
-      if (is.null(contrast_view_mode()) || contrast_view_mode() == "") {
-        contrast_view_mode(default_mode)
+      # Always use matrix view for simplified UX (list view code kept for future use)
+      contrast_view_mode("matrix")
+
+      # Add explanatory note for F-test
+      f_test_note <- if (test_type == "Moderated F test") {
+        div(
+          style = "background-color: #d9edf7; border-left: 4px solid #31708f; padding: 10px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
+          icon("info-circle", style = "color: #31708f; margin-right: 8px;"),
+          strong("F-test with Post-hoc Contrasts: ", style = "color: #31708f;"),
+          "The omnibus F-test will be performed first, followed by pairwise comparisons for the selected contrasts below.",
+          style = "color: #31708f;"
+        )
+      } else {
+        NULL
       }
 
       tagList(
         div(
           class = "contrast-selection-container",
+
+          # F-test explanatory note
+          f_test_note,
+
+          # Manual control group selection
+          div(
+            class = "manual-control-section",
+            style = "margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 4px;",
+            checkboxInput(
+              ns("use_manual_controls"),
+              "Manually specify control group(s)",
+              value = use_manual_controls()  # Maintain checkbox state across re-renders
+            ),
+            uiOutput(ns("control_group_selector_ui"))
+          ),
 
           # Quick select buttons
           div(
@@ -536,17 +709,17 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
             )
           ),
 
-          # View mode toggle
-          div(
-            class = "contrast-view-toggle",
-            radioButtons(
-              ns("contrast_view_toggle"),
-              label = NULL,
-              choices = c("Matrix View" = "matrix", "List View" = "list"),
-              selected = contrast_view_mode(),
-              inline = TRUE
-            )
-          ),
+          # View mode toggle (REMOVED FOR SIMPLIFIED UX - code kept for future use)
+          # div(
+          #   class = "contrast-view-toggle",
+          #   radioButtons(
+          #     ns("contrast_view_toggle"),
+          #     label = NULL,
+          #     choices = c("Matrix View" = "matrix", "List View" = "list"),
+          #     selected = contrast_view_mode(),
+          #     inline = TRUE
+          #   )
+          # ),
 
           # Matrix or List view
           uiOutput(ns("contrast_selection_view")),
@@ -566,34 +739,55 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       groups <- current[[ome]]$groups
       selected_contrasts <- current[[ome]]$contrasts %||% character(0)
 
-      if (contrast_view_mode() == "matrix") {
-        # Matrix view
-        render_contrast_matrix(groups, selected_contrasts, ns)
-      } else {
-        # List view
-        pairwise_contrasts <- combn(groups, 2, simplify = FALSE)
-        all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
-        all_labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      # Always use matrix view (list view code kept for future use)
+      render_contrast_matrix(groups, selected_contrasts, ns)
 
-        pickerInput(
-          ns("select_contrasts_list"),
-          label = "Select contrasts:",
-          choices = all_labels,
-          selected = selected_contrasts,
-          multiple = TRUE,
-          options = pickerOptions(
-            actionsBox = TRUE,
-            liveSearch = TRUE,
-            liveSearchPlaceholder = "Search contrasts...",
-            selectAllText = "Select All",
-            deselectAllText = "Deselect All",
-            noneSelectedText = "No contrasts selected",
-            virtualScroll = if (length(all_labels) > 50) 50 else FALSE,
-            size = 10
-          ),
-          width = "100%"
-        )
+      # LIST VIEW CODE (KEPT FOR FUTURE USE):
+      # if (contrast_view_mode() == "matrix") {
+      #   # Matrix view
+      #   render_contrast_matrix(groups, selected_contrasts, ns)
+      # } else {
+      #   # List view
+      #   pairwise_contrasts <- combn(groups, 2, simplify = FALSE)
+      #   all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+      #   all_labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
+      #
+      #   pickerInput(
+      #     ns("select_contrasts_list"),
+      #     label = "Select contrasts:",
+      #     choices = all_labels,
+      #     selected = selected_contrasts,
+      #     multiple = TRUE,
+      #     options = pickerOptions(
+      #       actionsBox = TRUE,
+      #       liveSearch = TRUE,
+      #       liveSearchPlaceholder = "Search contrasts...",
+      #       selectAllText = "Select All",
+      #       deselectAllText = "Deselect All",
+      #       noneSelectedText = "No contrasts selected",
+      #       virtualScroll = if (length(all_labels) > 50) 50 else FALSE,
+      #       size = 10
+      #     ),
+      #     width = "100%"
+      #   )
+      # }
+    })
+
+    # Render control group selector
+    output$control_group_selector_ui <- renderUI({
+      # Only show if checkbox is checked
+      if (!isTRUE(input$use_manual_controls)) {
+        return(NULL)
       }
+
+      current <- stat_param()
+      ome <- selected_ome()
+      req(current[[ome]]$groups)
+
+      groups <- current[[ome]]$groups
+      selected_controls <- manual_control_groups()
+
+      render_control_group_selector(groups, selected_controls, ns)
     })
 
     # Render selected contrasts summary

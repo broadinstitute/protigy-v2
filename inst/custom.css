@@ -508,3 +508,139 @@ a[download] {
     padding: 3px 8px;
   }
 }
+
+/* ============================================================================
+   Group Selection Matrix (One-sample T-test)
+   ============================================================================ */
+
+.group-selection-container {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.group-selection-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  justify-content: flex-start;
+}
+
+.group-selection-badge {
+  display: inline-block;
+  background-color: #f5f5f5;
+  border: 2px solid #ccc;
+  border-radius: 16px;
+  padding: 6px 14px;
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.group-selection-badge:hover {
+  background-color: #e3f2fd;
+  border-color: #2196F3;
+  box-shadow: 0 0 4px rgba(33, 150, 243, 0.4);
+}
+
+.group-selection-badge.selected {
+  background-color: #4CAF50;
+  border-color: #45a049;
+  color: white;
+  font-weight: bold;
+}
+
+.group-selection-badge.selected:hover {
+  background-color: #45a049;
+  border-color: #388e3c;
+}
+
+.group-selection-empty {
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+/* ============================================================================
+   Control Group Selector (Manual Control Selection)
+   ============================================================================ */
+
+.control-group-selector {
+  padding: 10px;
+  background-color: #fff;
+  border-radius: 4px;
+}
+
+.control-group-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 5px 0;
+  justify-content: flex-start;
+}
+
+.control-group-badge {
+  display: inline-block;
+  background-color: #f5f5f5;
+  border: 2px solid #ccc;
+  border-radius: 16px;
+  padding: 6px 14px;
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.control-group-badge:hover {
+  background-color: #fff3e0;
+  border-color: #ff9800;
+  box-shadow: 0 0 4px rgba(255, 152, 0, 0.4);
+}
+
+.control-group-badge.selected {
+  background-color: #2196F3;
+  border-color: #1976D2;
+  color: white;
+  font-weight: bold;
+}
+
+.control-group-badge.selected:hover {
+  background-color: #1976D2;
+  border-color: #1565C0;
+}
+
+.control-group-empty {
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  padding: 15px;
+}
+
+/* Manual control section styling */
+.manual-control-section {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+/* ============================================================================
+   Responsive adjustments for group and control selectors
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .group-selection-badge,
+  .control-group-badge {
+    font-size: 11px;
+    padding: 5px 12px;
+  }
+}
