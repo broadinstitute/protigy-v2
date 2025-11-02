@@ -11,34 +11,34 @@
 # UI for the summary tab
 exportTabUI <- function(id = "exportTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
-
+  
   tagList(
-
+    
     # Display content or "GCTs not yet processed" message
     uiOutput(ns("export_content"))
-
+    
   ) # end tagList
 }
 
 # server for the summary tab
-exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
-
+exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) { 
+  
   ## module function
   moduleServer(id, function (input, output, session) {
-
+    
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
-
+    
     # get parameters
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
     })
-
+    
     output$export_content <- renderUI({
       # This will trigger the validate() statements and show "GCTs not yet processed"
       req(GCTs_and_params())
-
+      
       tagList(
         # Omes for export using pickerInput
         pickerInput(
@@ -54,7 +54,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             noneSelectedText = "No omes selected"
           )
         ),
-
+        
         # Tabs for export using pickerInput
         pickerInput(
           ns("tabsForExport"),
@@ -69,17 +69,17 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             noneSelectedText = "No tabs selected"
           )
         ),
-
+        
         downloadButton(ns("download"), label = "Download", class = "btn btn-primary"),
-
+        
         br(),
         br(),
-
+        
         # Documentation section
         div(
           class = "well",
           h4("Export Documentation"),
-
+          
           h5(strong("What Gets Exported:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
           tags$ul(
             tags$li("summary_exports: Original and processed GCT datasets, overview plots (PDF)"),
@@ -91,7 +91,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             tags$li("statSummary_exports: P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
             tags$li("statPlot_exports: Volcano plots (PDF)")
           ),
-
+          
           h5(strong("Instructions:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
           tags$ol(
             tags$li("Select datasets and tabs to export"),
@@ -100,7 +100,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         )
       )
     })
-
+    
     # update omes for export
     observe({
       req(GCTs_and_params())
@@ -111,8 +111,8 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         selected = all_exports$omes()
       )
     })
-
-    # update tabs for export
+    
+    # update tabs for export 
     observe({
       req(GCTs_and_params())
       updatePickerInput(
@@ -122,26 +122,26 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         selected = names(all_exports$exports)
       )
     })
-
-
+    
+    
     output$download <- downloadHandler(
       filename = "protigy_exports.zip",
       content = function(file) {
-
+        
         # directory name where all exports will be saved
         dir_name <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(file))
         zip_dir <- tempdir(check = T)
         exports_dir <- file.path(zip_dir, dir_name)
         dir.create(exports_dir, recursive = T)
-
+        
         # gather inputs
         exports <- all_exports$exports
         selected_omes <- input$omesForExport
         selected_tabs <- input$tabsForExport
-
+        
         # make a folder for each -ome
         lapply(selected_omes, function(ome) dir.create(file.path(exports_dir, ome)))
-
+        
         # save parameters from each -ome
         lapply(setdiff(selected_omes, "multi_ome"), function(ome) {
           params <- parameters()[[ome]]
@@ -149,10 +149,10 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             params[setdiff(names(params), "gct_file_path")],
             file.path(exports_dir, ome, paste0(ome, "_parameters.yaml")))
         })
-
+        
         success_exports <- c()
         error_exports <- c()
-
+        
         # Calculate total number of exports for progress tracking
         total_exports <- 0
         for (tab_name in selected_tabs) {
@@ -166,42 +166,42 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             total_exports <- total_exports + length(exports_this_ome)
           }
         }
-
+        
         # Use withProgress for progress tracking
         withProgress(message = "Compiling exports...", value = 0, {
           current_export <- 0
-
+          
           # loop through selected tabs
           lapply(selected_tabs, function(tab_name) {
-
+          
           if (is.reactive(exports[[tab_name]])) {
             exports_all_omes <- exports[[tab_name]]()
           } else {
             exports_all_omes <- exports[[tab_name]]
           }
-
+          
           # loop through selected omes
           lapply(intersect(selected_omes, names(exports_all_omes)), function(ome) {
             exports_this_ome <- exports_all_omes[[ome]]
-
+            
             # make a folder for exports in this tab
             exports_in_tab_path <- file.path(exports_dir, ome, tab_name)
             dir.create(exports_in_tab_path)
-
+            
             # save each plot for this ome
             for(i in seq_along(exports_this_ome)) {
-
+              
               p <- exports_this_ome[[i]]
               p_name <- names(exports_this_ome)[i]
               if (is.reactive(p)) {
                 p <- p()
               }
-
+              
               # Update progress
               current_export <<- current_export + 1
               progress_text <- paste0("Exporting ", tab_name, " - ", ome, " (", current_export, "/", total_exports, ")")
               incProgress(1/total_exports, detail = progress_text)
-
+              
               my_shinyalert_tryCatch(
                 text.error = paste0("<b>Export Failed for ", p_name, ":</b>"),
                 append.error = TRUE,
@@ -210,30 +210,30 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
                 expr = {
                   # save the plot using the p() function
                   p(exports_in_tab_path)
-
+                  
                   # add to successful exports list
                   success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
                 }
               )
-
+              
               # If the above failed, add to error list (my_shinyalert_tryCatch handles the error silently)
               if (!file.exists(exports_in_tab_path)) {
                 error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
               }
-
+              
             }
           })
           })
-
+          
           # Update progress for zipping
           incProgress(0.1, detail = "Creating zip file...")
-
+          
         }) # End withProgress
-
+        
         # zip the outputs
-        zip::zip(file, file.path(dir_name, list.files(exports_dir)),
+        zip::zip(file, file.path(dir_name, list.files(exports_dir)), 
                  recurse = TRUE, root = zip_dir)
-
+        
         # shinyalert the exports that succeeded and errored
         shinyalert::shinyalert(
           html = TRUE,
@@ -252,6 +252,6 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         )
       }
     )
-
+    
   })
 }
