@@ -156,20 +156,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
           # Validate all files are same type
           if (!(all(all_extensions == "gct") || all(all_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
-            shinyalert::shinyalert(
-              title = "File Type Mismatch",
-              text = "All uploaded files must be the same type (all GCT or all CSV/Excel/TSV). Please remove existing files before uploading a different file type.",
-              type = "error"
+            showNotification(
+              ui = HTML(paste0("<b>File Type Mismatch</b><br>", "All uploaded files must be the same type (all GCT or all CSV/Excel/TSV). Please remove existing files before uploading a different file type.")),
+              type = "error",
+              duration = NULL,
+              closeButton = TRUE
             )
             return()
           }
 
           # Check for duplicate filenames
           if (any(new_files$name %in% accumulated_files()$name)) {
-            shinyalert::shinyalert(
-              title = "Duplicate Files",
-              text = "Some files have already been uploaded. Duplicate files will be skipped.",
-              type = "warning"
+            showNotification(
+              ui = HTML(paste0("<b>Duplicate Files</b><br>", "Some files have already been uploaded. Duplicate files will be skipped.")),
+              type = "warning",
+              duration = NULL,
+              closeButton = TRUE
             )
             # Filter out duplicates
             new_files <- new_files[!new_files$name %in% accumulated_files()$name, ]
@@ -181,10 +183,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         } else {
           # First upload - validate file types
           if (!(all(new_extensions == "gct") || all(new_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
-            shinyalert::shinyalert(
-              title = "Error",
-              text = "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.",
-              type = "error"
+            showNotification(
+              ui = HTML(paste0("<b>Error</b><br>", "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.")),
+              type = "error",
+              duration = NULL,
+              closeButton = TRUE
             )
             return()
           }
@@ -789,20 +792,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       
       # Validate labels
       if (any(labels == "")) {
-        shinyalert::shinyalert(
-          title = "Error",
-          text = "Please provide labels for all files.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please provide labels for all files.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
       
       # Check for duplicate labels
       if (length(unique(labels)) != length(labels)) {
-        shinyalert::shinyalert(
-          title = "Error", 
-          text = "Please provide unique labels for each file.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please provide unique labels for each file.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
@@ -853,10 +858,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
       # Validate identifier columns
       if (any(is.null(identifier_columns)) || any(identifier_columns == "")) {
-        shinyalert::shinyalert(
-          title = "Error",
-          text = "Please select identifier columns for all datasets.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please select identifier columns for all datasets.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
@@ -1006,13 +1012,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           })
           
           # Show success message
-          shinyalert::shinyalert(
-            title = "Files Converted!",
-            text = paste("Successfully converted", length(csv_excel_result$GCTs), 
-                        "CSV/Excel file(s) to analysis format. Now configure analysis parameters..."),
-            type = "success",
-            timer = 3000,
-            showConfirmButton = FALSE
+          showNotification(
+            ui = HTML(paste0("<b>Files Converted!</b><br>", "Successfully converted ", length(csv_excel_result$GCTs),
+                        " CSV/Excel file(s) to analysis format. Now configure analysis parameters...")),
+            type = "message",
+            duration = NULL,
+            closeButton = TRUE
           )
           
           # Automatically switch to Dataset Setup help tab

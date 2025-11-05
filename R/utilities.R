@@ -42,10 +42,11 @@ my_shinyalert_tryCatch <- function(expr,
             text.warning <- paste(text.warning, paste0(cond$message))
           }
           
-          shinyalert::shinyalert(
-            text = HTML(text.warning),
+          showNotification(
+            ui = HTML(text.warning),
             type = "warning",
-            html = TRUE
+            duration = NULL,
+            closeButton = TRUE
           )
         }
       }
@@ -62,10 +63,11 @@ my_shinyalert_tryCatch <- function(expr,
         text.error <- paste(text.error, paste0(cond$message))
       }
       
-      shinyalert::shinyalert(
-        text = HTML(text.error),
+      showNotification(
+        ui = HTML(text.error),
         type = "error",
-        html = TRUE
+        duration = NULL,
+        closeButton = TRUE
       )
     }
     
