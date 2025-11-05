@@ -327,8 +327,8 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
         stat_param(current)
       }
 
-      # For one-sample t-test, show matrix view (list view code kept for future use)
-      if (current[[ome]]$test == "One-sample Moderated T-test") {
+      # For one-sample t-test and F-test, show matrix view (list view code kept for future use)
+      if (current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
         # Always use matrix view for simplified UX
         group_view_mode("matrix")
 
@@ -340,7 +340,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
           )
         )
       } else {
-        # For other tests (F-test, two-sample), use standard pickerInput
+        # For two-sample t-test, use standard pickerInput
         pickerInput(
           ns("select_groups"),
           "Select groups:",
@@ -362,7 +362,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     #   group_view_mode(input$group_view_toggle)
     # })
 
-    # Render group selection view for one-sample t-test
+    # Render group selection view for one-sample t-test and F-test
     output$group_selection_view <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
@@ -402,7 +402,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # }
     })
 
-    # Handle group matrix clicks (one-sample t-test)
+    # Handle group matrix clicks (one-sample t-test and F-test)
     observeEvent(input$group_matrix_click, {
       req(selected_ome(), input$group_matrix_click)
       current <- stat_param()
@@ -613,18 +613,18 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       current <- stat_param()
       ome <- selected_ome()
 
-      # Show contrast selection for two-sample t-test and F-test
+      # Show contrast selection for two-sample t-test only
+      # F-test post-hoc UI removed but backend code kept for future use
       test_type <- current[[ome]]$test
-      if (!test_type %in% c("Two-sample Moderated T-test", "Moderated F test")) {
+      if (test_type != "Two-sample Moderated T-test") {
         return(NULL)
       }
 
       if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) {
-        test_name <- if (test_type == "Moderated F test") "F-test" else "two-sample t-test"
         return(div(
           style = "color: #d9534f; padding: 10px; background-color: #f2dede; border: 1px solid #ebccd1; border-radius: 4px;",
           icon("exclamation-triangle"),
-          paste(" Need at least 2 groups to perform", test_name)
+          " Need at least 2 groups to perform two-sample t-test"
         ))
       }
 
@@ -647,25 +647,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # Always use matrix view for simplified UX (list view code kept for future use)
       contrast_view_mode("matrix")
 
-      # Add explanatory note for F-test
-      f_test_note <- if (test_type == "Moderated F test") {
-        div(
-          style = "background-color: #d9edf7; border-left: 4px solid #31708f; padding: 10px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
-          icon("info-circle", style = "color: #31708f; margin-right: 8px;"),
-          strong("F-test with Post-hoc Contrasts: ", style = "color: #31708f;"),
-          "The omnibus F-test will be performed first, followed by pairwise comparisons for the selected contrasts below.",
-          style = "color: #31708f;"
-        )
-      } else {
-        NULL
-      }
-
       tagList(
         div(
           class = "contrast-selection-container",
-
-          # F-test explanatory note
-          f_test_note,
 
           # Manual control group selection
           div(
