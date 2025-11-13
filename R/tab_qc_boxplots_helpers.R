@@ -91,6 +91,7 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
     }
   }
   
-  print(g)
+  # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
+  return(g)
   
 }

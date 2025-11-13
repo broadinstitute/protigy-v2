@@ -101,7 +101,7 @@ set_annot_colors_discrete <- function( annot_table, # ====
                                                         "HighContrastPaired" = c('#6699CC', '#004488', '#EECC66', '#997700', '#EE99AA', '#994455')),
                                        shuffle_paired_palette = TRUE, # should the paired colors be shuffled?
                                        seq.pals = list("YlOrBr" = c('#FEE391', '#FEC44F', '#FB9A29', '#EC7014', '#CC4C02', '#993404', '#662506'),
-                                                       "Iridescent" = c(='#B5DDD8', '#A8D8DC', '#9BD2E1', '#8DCBE4', '#81C4E7', '#7BBCE7', '#7EB2E4', '#88A5DD', '#9398D2', '#9B8AC4', '#9D7DB2', '#9A709E', '#906388', '#805770', '#684957', '#46353A'),
+                                                       "Iridescent" = c('#B5DDD8', '#A8D8DC', '#9BD2E1', '#8DCBE4', '#81C4E7', '#7BBCE7', '#7EB2E4', '#88A5DD', '#9398D2', '#9B8AC4', '#9D7DB2', '#9A709E', '#906388', '#805770', '#684957', '#46353A'),
                                                        "Incandescent" = c('#A2F49B', '#BBE453', '#D5CE04', '#E7B503', '#F19903', '#F6790B', '#F94902', '#E40515', '#A80003')),
                                        
                                        # Special-Treatment Annotation Values ====
