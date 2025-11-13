@@ -8,6 +8,11 @@
 # Copyright (c) 2023 The Broad Institute, Inc. All rights reserved.
 # Default Color Palettes --- colorblind safe! --- courtesy of Paul Tol (https://personal.sron.nl/~pault/)
 #
+# IMPORTANT: Color assignment is deterministic and reproducible:
+# - Annotation values are sorted alphabetically (or by factor levels if factor)
+# - Colors are assigned in fixed order from palettes (no random shuffling for qualitative palettes)
+# - Same data imported multiple times will receive identical color-condition pairs
+#
 
 ### Set Color Palette (for an annotation datatable)
 
@@ -188,8 +193,8 @@ set_annot_colors_discrete <- function( annot_table, # ====
           
         } else {
           qual.colors = qual.pals[[qual.count]] # choose color palette
-          # assign colors, shuffled pseudo-randomly (using annot name as seed, to make sure we always choose the "same" random colors)
-          annot_colors <- eval_with_seed( { sample(qual.colors, n_colors) } , seed_string = annot)
+          # assign colors in fixed order (first n_colors from palette) for reproducibility
+          annot_colors <- qual.colors[1:n_colors]
           qual.index <- (qual.index+1) %% length(qual.pals) # increment qual.index, or restart if we've exhausted the qualitative palette list
         }
         
