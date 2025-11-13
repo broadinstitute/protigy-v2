@@ -655,18 +655,27 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # set new global variables
     observeEvent(gctsGO(), {
+      req(GCTs_and_params())
+
       parameters <- GCTs_and_params()$parameters
       all_omes <- names(parameters)
-      
+
       globals$omes <- all_omes
       globals$default_ome <- all_omes[1]
       globals$default_annotations <- sapply(
-        all_omes, 
+        all_omes,
         function(ome) parameters[[ome]]$annotation_column,
         simplify = FALSE
       )
-    })
-    
+
+      # Initialize colors with colorblind-safe palette
+      GCTs <- GCTs_and_params()$GCTs
+      GCTs_merged <- GCTs_and_params()$GCTs_merged
+      req(GCTs, GCTs_merged)
+      globals$colors <- make_custom_colors(GCTs, GCTs_merged)
+      globals$colors_default <- globals$colors
+    }, ignoreInit = TRUE)
+
     # move the current tab to the summary tab
     observeEvent(gctsGO(), {
       updateTabsetPanel(session = parent, inputId = "navbar-tabs", selected = "Summary")
