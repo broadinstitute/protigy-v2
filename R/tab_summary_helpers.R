@@ -40,11 +40,11 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
   font.size <- scale_font_size(dimension=length(sample_id),max.size=12,scale.factor=55)
   
   # make plot
-  g <- ggplot(data = non.missing, 
-         aes(x = .data$SampleID, y = .data$numFeatures, fill = .data$group, 
-             text = paste0("Sample ID: ", .data$SampleID, 
+  g <- ggplot(data = non.missing,
+         aes(x = .data$SampleID, y = .data$numFeatures, fill = .data$group,
+             text = paste0("Sample ID: ", .data$SampleID,
                            "\nNum. Features: ", .data$numFeatures))) +
-    geom_bar(stat = 'identity') +
+    geom_col() +
     theme_bw() +
     color_definition + 
     theme(text= element_text(size=12)) +
