@@ -21,8 +21,8 @@ exportTabUI <- function(id = "exportTab") {
 }
 
 # server for the summary tab
-exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) { 
-  
+exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, globals) {
+
   ## module function
   moduleServer(id, function (input, output, session) {
     

@@ -122,7 +122,7 @@ app_server <- function(input, output, session) {
     )
 
   ## export tab
-  exportTabServer(all_exports = all_exports, GCTs_and_params = GCTs_and_params)
+  exportTabServer(all_exports = all_exports, GCTs_and_params = GCTs_and_params, globals = globals)
 
 }
 
