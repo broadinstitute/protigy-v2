@@ -33,31 +33,6 @@ sync_colors_across_omes <- function(custom_colors, annot_column, annot_value, ne
 }
 
 
-#' Reset colors to default for a specific annotation column or all columns
-#' @param custom_colors Current custom colors
-#' @param default_colors The default color scheme
-#' @param ome The ome name (or "multi_ome"), or NULL for all
-#' @param annot_column The annotation column name, or NULL for all columns
-#' @return Updated custom_colors with reset colors
-reset_colors_to_default <- function(custom_colors, default_colors, ome = NULL, annot_column = NULL) {
-
-  if (is.null(ome)) {
-    # Reset all omes
-    return(default_colors)
-  } else if (is.null(annot_column)) {
-    # Reset all columns in a specific ome
-    custom_colors[[ome]] <- default_colors[[ome]]
-  } else {
-    # Reset a specific column in a specific ome
-    if (annot_column %in% names(default_colors[[ome]])) {
-      custom_colors[[ome]][[annot_column]] <- default_colors[[ome]][[annot_column]]
-    }
-  }
-
-  return(custom_colors)
-}
-
-
 #' Export colors to YAML format
 #' @param custom_colors The custom colors list
 #' @param file_path Path to save the YAML file

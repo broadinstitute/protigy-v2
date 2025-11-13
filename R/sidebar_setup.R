@@ -673,7 +673,6 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       GCTs_merged <- GCTs_and_params()$GCTs_merged
       req(GCTs, GCTs_merged)
       globals$colors <- make_custom_colors(GCTs, GCTs_merged)
-      globals$colors_default <- globals$colors
     }, ignoreInit = TRUE)
 
     # move the current tab to the summary tab

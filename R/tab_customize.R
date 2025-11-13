@@ -21,7 +21,7 @@ customizeTabUI <- function(id = "customizeTab") {
         # Top control panel
         fluidRow(
           column(
-            width = 4,
+            width = 6,
             selectInput(
               ns("color_mode"),
               label = "Color Definition Mode:",
@@ -31,20 +31,11 @@ customizeTabUI <- function(id = "customizeTab") {
             )
           ),
           column(
-            width = 4,
+            width = 6,
             conditionalPanel(
               condition = "input.color_mode == 'per_ome'",
               ns = ns,
               uiOutput(ns("ome_selector_ui"))
-            )
-          ),
-          column(
-            width = 4,
-            actionButton(
-              ns("reset_all"),
-              label = "Reset All Colors",
-              icon = icon("undo"),
-              class = "btn-warning"
             )
           )
         ),
@@ -130,7 +121,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     # Use existing colors from globals (initialized in sidebar_setup)
     # This ensures consistency and uses the colorblind-safe palette
     observeEvent(globals$colors, {
-      req(globals$colors, globals$colors_default)
+      req(globals$colors)
       custom_colors(globals$colors)
     }, once = TRUE, ignoreNULL = TRUE)
 
@@ -210,28 +201,14 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
           )
         })
 
-        # Return box with color pickers and reset button
+        # Return box with color pickers
         box(
           title = annot_col,
           status = "info",
           width = 12,
           collapsible = TRUE,
           collapsed = FALSE,
-          fluidRow(
-            column(
-              width = 10,
-              fluidRow(color_pickers)
-            ),
-            column(
-              width = 2,
-              actionButton(
-                ns(paste0("reset_", display_ome, "_", annot_col)),
-                label = "Reset",
-                icon = icon("undo"),
-                class = "btn-sm btn-default"
-              )
-            )
-          )
+          fluidRow(color_pickers)
         )
       })
 
@@ -301,61 +278,6 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
             custom_colors(updated_colors)
           }
         }
-      }
-    })
-
-
-    ## HANDLE RESET BUTTONS ##
-
-    # Reset all colors
-    observeEvent(input$reset_all, {
-      req(globals$colors_default)
-      custom_colors(globals$colors_default)
-      shinyalert::shinyalert(
-        title = "Colors Reset",
-        text = "All colors have been reset to defaults.",
-        type = "success"
-      )
-    })
-
-    # Reset individual annotation columns
-    observe({
-      req(custom_colors(), globals$colors_default)
-
-      # Determine which ome we're displaying
-      req(input$color_mode)
-      display_ome <- if (input$color_mode == "multi_ome") {
-        "multi_ome"
-      } else {
-        req(input$selected_ome)
-        input$selected_ome
-      }
-
-      colors <- custom_colors()
-      if (!(display_ome %in% names(colors))) return()
-
-      # Filter to only selected annotation columns
-      req(default_annotations())
-      if (display_ome == "multi_ome") {
-        selected_annots <- unique(unlist(default_annotations()))
-      } else {
-        selected_annots <- default_annotations()[[display_ome]]
-      }
-      annot_columns <- intersect(selected_annots, names(colors[[display_ome]]))
-
-      # Check for reset button clicks
-      for (annot_col in annot_columns) {
-        reset_button_id <- paste0("reset_", display_ome, "_", annot_col)
-
-        observeEvent(input[[reset_button_id]], {
-          updated_colors <- reset_colors_to_default(
-            custom_colors(),
-            globals$colors_default,
-            ome = display_ome,
-            annot_column = annot_col
-          )
-          custom_colors(updated_colors)
-        }, ignoreInit = TRUE)
       }
     })
 
