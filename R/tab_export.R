@@ -141,7 +141,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         
         # make a folder for each -ome
         lapply(selected_omes, function(ome) dir.create(file.path(exports_dir, ome)))
-        
+
         # save parameters from each -ome
         lapply(setdiff(selected_omes, "multi_ome"), function(ome) {
           params <- parameters()[[ome]]
@@ -149,7 +149,25 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             params[setdiff(names(params), "gct_file_path")],
             file.path(exports_dir, ome, paste0(ome, "_parameters.yaml")))
         })
-        
+
+        # create customization folder and save color palette
+        customization_dir <- file.path(exports_dir, "customization")
+        dir.create(customization_dir, recursive = TRUE)
+
+        # save color palette as YAML
+        if (!is.null(globals$colors)) {
+          my_shinyalert_tryCatch(
+            text.error = "<b>Failed to export color palette:</b>",
+            show.error = FALSE,
+            expr = {
+              export_colors_to_yaml(
+                globals$colors,
+                file.path(customization_dir, "color_palette.yaml")
+              )
+            }
+          )
+        }
+
         success_exports <- c()
         error_exports <- c()
         
