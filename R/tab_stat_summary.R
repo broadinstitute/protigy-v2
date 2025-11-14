@@ -673,7 +673,8 @@ statSummary_Ome_Server <- function(id,
         gct <- GCT(mat=as.matrix(mat),
                    rdesc=data.frame(rdesc),
                    rid=rownames(mat))
-        write_gct(gct, file.path(dir_name, paste0("stat_results_for_ssGSEA_", ome, ".gct")),appenddim = F)
+
+        write_gct(gct, file.path(dir_name, paste0("stat_results_for_ssGSEA_", ome, ".gct")), appenddim = FALSE)
       }
     }
     

@@ -30,13 +30,9 @@ setupSidebarUI <- function(id = "setupSidebar") {
   tags$div(
     style = "margin-bottom: 10px; padding: 15px; width: 100%", 
     tagList(
-      h4("Upload your data file(s)"), 
+      # File upload section - conditionally shown
+      uiOutput(ns("fileUploadSection")),
 
-      # File input
-      fileInput(ns("dataFiles"), 
-                paste("GCT, CSV, TSV, or Excel"),
-                multiple = TRUE,
-                accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
       hr(),
       
       # the main body of the sidebar, contents assigned in setupSidebarServer
@@ -71,7 +67,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # initialize INTERNAL reactive values....only used in this module
     parameters_internal_reactive <- reactiveVal()
     GCTs_unprocessed_internal_reactive <- reactiveVal()
-    
+    accumulated_files <- reactiveVal(NULL)  # Store accumulated file uploads
+
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
     backNextLogic <- reactiveValues(placeChanged = 0)
@@ -84,63 +81,317 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
+
+
+    ### FILE UPLOAD SECTION UI ###
     
-    
+    # Conditionally show/hide file upload section based on setup completion
+    output$fileUploadSection <- renderUI({
+      # Hide file upload UI after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
+      tagList(
+        h4("Upload your data file(s)"), 
+        
+        # File input
+        fileInput(ns("dataFiles"),
+                  paste("GCT, CSV, TSV, or Excel"),
+                  multiple = TRUE,
+                  accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
+        
+        # Display uploaded files list with remove buttons
+        uiOutput(ns("uploadedFilesList"))
+      )
+    })
+
+    ### UPLOADED FILES LIST UI ###
+
+    # Display list of uploaded files with remove buttons
+    output$uploadedFilesList <- renderUI({
+      # Hide file upload UI after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
+      # Use validate instead of req for better error handling
+      validate(need(accumulated_files(), ""))
+
+      files <- accumulated_files()
+
+      # Additional safety check
+      if (is.null(files) || nrow(files) == 0) {
+        return(NULL)
+      }
+
+      tagList(
+        h5(paste0("Uploaded Files (", nrow(files), ")")),
+        div(
+          style = "max-height: 200px; overflow-y: auto; margin-bottom: 10px; width: 100%;",
+          lapply(1:nrow(files), function(i) {
+            # Use filename as unique identifier (sanitize for use as ID)
+            file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
+            div(
+              style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
+              div(
+                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; line-height: 1.4;",
+                files$name[i]
+              ),
+              actionButton(
+                ns(paste0("remove_file_", file_id)),
+                label = NULL,
+                icon = icon("times"),
+                class = "btn-sm btn-primary",
+                style = "padding: 2px 8px; font-size: 12px; flex-shrink: 0;",
+                `data-filename` = files$name[i]  # Store filename as data attribute
+              )
+            )
+          })
+        ),
+        actionButton(
+          ns("clearAllFiles"),
+          "Clear All",
+          class = "btn-sm btn-primary",
+          icon = icon("trash")
+        )
+      )
+    })
+
+
     ### STEP 1: LABEL ASSIGNMENT ###
     
-    # once files uploaded, display label assignment
+    # once files uploaded, accumulate and display label assignment
     observeEvent(
-      eventExpr = input$dataFiles, 
+      eventExpr = input$dataFiles,
       ignoreInit = TRUE,
       handlerExpr = {
-        parameters_internal_reactive(NULL) # reset internal parameters
-        GCTs_unprocessed_internal_reactive(NULL) # reset internal GCTs
-        
-        # Check if files are GCT format or CSV/Excel format
-        file_extensions <- tools::file_ext(tolower(input$dataFiles$name))
-        
+        # Get newly uploaded files
+        new_files <- input$dataFiles
+
+        # Validate file format consistency
+        new_extensions <- tools::file_ext(tolower(new_files$name))
+
+        # Check if adding to existing files
+        if (!is.null(accumulated_files())) {
+          existing_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+          all_extensions <- c(existing_extensions, new_extensions)
+
+          # Validate all files are same type
+          if (!(all(all_extensions == "gct") || all(all_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
+            showNotification(
+              ui = HTML(paste0("<b>File Type Mismatch</b><br>", "All uploaded files must be the same type (all GCT or all CSV/Excel/TSV). Please remove existing files before uploading a different file type.")),
+              type = "error",
+              duration = NULL,
+              closeButton = TRUE
+            )
+            return()
+          }
+
+          # Check for duplicate filenames
+          if (any(new_files$name %in% accumulated_files()$name)) {
+            showNotification(
+              ui = HTML(paste0("<b>Duplicate Files</b><br>", "Some files have already been uploaded. Duplicate files will be skipped.")),
+              type = "warning",
+              duration = NULL,
+              closeButton = TRUE
+            )
+            # Filter out duplicates
+            new_files <- new_files[!new_files$name %in% accumulated_files()$name, ]
+            if (nrow(new_files) == 0) return()
+          }
+
+          # Accumulate files
+          accumulated_files(rbind(accumulated_files(), new_files))
+        } else {
+          # First upload - validate file types
+          if (!(all(new_extensions == "gct") || all(new_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
+            showNotification(
+              ui = HTML(paste0("<b>Error</b><br>", "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.")),
+              type = "error",
+              duration = NULL,
+              closeButton = TRUE
+            )
+            return()
+          }
+
+          # First upload
+          accumulated_files(new_files)
+
+          # Reset internal state for new session
+          parameters_internal_reactive(NULL)
+          GCTs_unprocessed_internal_reactive(NULL)
+        }
+
+        # Trigger workflow based on file type (using accumulated files)
+        file_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+
         if (all(file_extensions == "gct")) {
           # All GCT files - use existing workflow
           labelAssignment()
         } else if (all(file_extensions %in% c("csv", "xlsx", "xls", "tsv"))) {
           # All CSV/Excel/TSV files - use same workflow
           csvExcelWorkflow()
-          
+
           # Automatically switch to CSV/TSV/Excel Processing help tab
-          updateTabsetPanel(session = parent, 
-                           inputId = "navbar-tabs", 
+          updateTabsetPanel(session = parent,
+                           inputId = "navbar-tabs",
                            selected = "Help-Analysis")
-          
+
           # Switch to the CSV/TSV/Excel Processing tab within the help section
           shinyjs::runjs("
             setTimeout(function() {
               $('a[data-value=\"CSV/TSV/Excel Processing\"]').click();
             }, 100);
           ")
-        } else {
-          # Mixed file types - show error
-          shinyalert::shinyalert(
-            title = "Error",
-            text = "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.",
-            type = "error"
-          )
         }
       })
-    
+
+
+    ### FILE REMOVAL HANDLERS ###
+
+    # Handle individual file removal - Use filename as unique identifier to prevent index issues
+    observe({
+      # Hide file removal handlers after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
+      # Use validate for cleaner NULL handling
+      validate(need(accumulated_files(), ""))
+
+      files <- accumulated_files()
+
+      # Additional safety check
+      if (is.null(files) || nrow(files) == 0) {
+        return(NULL)
+      }
+
+      # Create observers for each remove button using filename as unique identifier
+      lapply(1:nrow(files), function(i) {
+        # Use filename as unique identifier (sanitize for use as ID)
+        file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
+        btn_id <- paste0("remove_file_", file_id)
+        filename <- files$name[i]  # Capture filename at observer creation time
+
+        observeEvent(input[[btn_id]], {
+          # Wrap in tryCatch to handle any reactive errors
+          tryCatch({
+            # Isolate to get current file list at button click time
+            current_files <- isolate(accumulated_files())
+
+            # Safety check
+            if (is.null(current_files)) {
+              return(NULL)
+            }
+
+            # Find the file by name (not index) to handle cases where files were removed
+            file_idx <- which(current_files$name == filename)
+            
+            if (length(file_idx) == 0) {
+              # File already removed, do nothing
+              return(NULL)
+            }
+
+            removed_name <- current_files$name[file_idx[1]]
+
+            # Remove the file by name
+            remaining_files <- current_files[current_files$name != filename, , drop = FALSE]
+
+            if (nrow(remaining_files) == 0) {
+              # Show notification FIRST (before state changes)
+              showNotification(
+                paste("Removed:", removed_name),
+                type = "message",
+                duration = 3
+              )
+
+              # Small delay to ensure notification is displayed
+              Sys.sleep(0.1)
+
+              # No files left - reset everything
+              accumulated_files(NULL)
+              parameters_internal_reactive(NULL)
+              GCTs_unprocessed_internal_reactive(NULL)
+              output$sideBarMain <- renderUI({ NULL })
+              output$rightButton <- renderUI({ NULL })
+              output$leftButton <- renderUI({ NULL })
+            } else {
+              # Update accumulated files first
+              accumulated_files(remaining_files)
+
+              # IMPORTANT: Reset parameters to force re-initialization
+              parameters_internal_reactive(NULL)
+              GCTs_unprocessed_internal_reactive(NULL)
+
+              # Refresh the workflow with remaining files
+              file_extensions <- tools::file_ext(tolower(remaining_files$name))
+              if (all(file_extensions == "gct")) {
+                labelAssignment()
+              } else {
+                csvExcelWorkflow()
+              }
+
+              # Show notification after state is updated
+              showNotification(
+                paste("Removed:", removed_name),
+                type = "message",
+                duration = 3
+              )
+            }
+          }, error = function(e) {
+            # Silently handle any reactive errors
+            message("Error removing file: ", e$message)
+          })
+        }, ignoreInit = TRUE, ignoreNULL = TRUE)
+      })
+    })
+
+    # Handle clear all files
+    observeEvent(input$clearAllFiles, {
+      # Only allow clearing files if setup is not complete
+      if (!is.null(GCTs_and_params())) {
+        showNotification(
+          "Cannot clear files after setup is complete. Please go back to setup to modify files.",
+          type = "warning",
+          duration = 5
+        )
+        return()
+      }
+      
+      accumulated_files(NULL)
+      parameters_internal_reactive(NULL)
+      GCTs_unprocessed_internal_reactive(NULL)
+      output$sideBarMain <- renderUI({ NULL })
+      output$rightButton <- renderUI({ NULL })
+      output$leftButton <- renderUI({ NULL })
+
+      showNotification(
+        "All files cleared",
+        type = "message",
+        duration = 3
+      )
+    })
+
+
     # also display label assignment if user navigates back to it
     observeEvent(
       eventExpr = input$backToLabelsButton,
       ignoreInit = TRUE,
-      handlerExpr = labelAssignment())
+      handlerExpr = {
+        # Reset GCTs_and_params to allow file upload/removal again
+        GCTs_and_params(NULL)
+        labelAssignment()
+      })
     
     # validate labels once submitted
     observeEvent(input$submitLabelsButton, {
       out <- my_shinyalert_tryCatch({
-        all_labels <- sapply(input$dataFiles$name, 
+        all_labels <- sapply(accumulated_files()$name,
                              function(n) input[[paste0('Label_', n)]])
         validate_labels(all_labels)
       }, return.error = FALSE)
-      
+
       # increment labelsGO if labels are valid
       if (out) labelsGO(labelsGO() + 1)
     })
@@ -165,24 +416,24 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # once labels assignment submitted, set values for back/next logic
     observeEvent(labelsGO(), {
       # current place in the next/back logic
-      backNextLogic$place <- 1 
-      
+      backNextLogic$place <- 1
+
       # maximum place (i.e. the total number of data files)
-      backNextLogic$maxPlace <- length(input$dataFiles$name) 
+      backNextLogic$maxPlace <- length(accumulated_files()$name)
     }, ignoreInit = TRUE)
-    
+
     # update GCT parameters with gct file paths and labels once labels are submitted
     observeEvent(labelsGO(), {
       # Check if parameters are already set up (CSV/Excel case) or need label assignment (GCT case)
       existing_params <- parameters_internal_reactive()
-      
+
       if (!is.null(existing_params) && length(existing_params) > 0) {
         # CSV/Excel case: parameters already have labels and structure, no need to rebuild
         message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
       } else {
         # GCT case: build parameters from file uploads and user-provided labels
         new_parameters <- list()
-        apply(input$dataFiles, 1, function(file) {
+        apply(accumulated_files(), 1, function(file) {
           file <- as.list(file)
           
           # get the label using the same inputId notation as in labelSetupUI()
@@ -298,15 +549,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # update parameter choices when intensity data is toggled
     current_intensity <- reactive({
       label <- names(parameters_internal_reactive())[isolate(backNextLogic$place)]
-      input[[paste0(label, '_intensity_data')]]})
+      checkbox_value <- input[[paste0(label, '_intensity_data')]]
+      # Convert checkbox boolean to "Yes"/"No" string
+      if (is.logical(checkbox_value)) {
+        if (checkbox_value) "Yes" else "No"
+      } else {
+        checkbox_value  # Fallback for old string values
+      }
+    })
     observeEvent(current_intensity(), {
       # first, collect all the current inputs
       collectInputs()
-      
+
       # gather current label and parameters
       label = names(parameters_internal_reactive())[backNextLogic$place]
       parameters = parameters_internal_reactive()[[label]]
-      
+
       # indicator for intensity data (check out the yaml format)
       ind = paste0("intensity_data_", tolower(current_intensity()))
       
@@ -502,7 +760,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # get the current label
       all_labels <- names(parameters_internal_reactive())
       current_label <- all_labels[backNextLogic$place]
-      
+
       # select labels for assignment
       applyToAll <- ifelse(is.null(input$applyToAll), FALSE, input$applyToAll)
       if (applyToAll) {
@@ -510,33 +768,40 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       } else {
         assignment_labels <- current_label # just the current label
       }
-      
+
       # get the current parameters
       new_parameters <- parameters_internal_reactive()
-      
+
       # get the list of all parameters names to update
       parameter_names <- c(names(default_parameters),
                            'annotation_column',
                            'group_normalization_column',
                            'gene_symbol_column')
-      
+
       # assign new user selections
-      # NOTE: there are fields in `new_parameters` that aren't updated here, 
+      # NOTE: there are fields in `new_parameters` that aren't updated here,
       # which means you can't easily forgo the for loop for an apply equivalent
       for (label in assignment_labels) {
         for (param in parameter_names) {
-          new_parameters[[label]][[param]] <- input[[paste0(current_label, '_', param)]]
+          input_value <- input[[paste0(current_label, '_', param)]]
+
+          # Convert intensity_data checkbox boolean to "Yes"/"No" string
+          if (param == "intensity_data" && is.logical(input_value)) {
+            input_value <- if (input_value) "Yes" else "No"
+          }
+
+          new_parameters[[label]][[param]] <- input_value
         }
       }
-      
+
       # assign reactiveVal
-      parameters_internal_reactive(new_parameters) 
+      parameters_internal_reactive(new_parameters)
     }
     
     # label assignment, has to be used in separate observeEvent() calls
     labelAssignment <- function() {
-      output$sideBarMain <- renderUI({labelSetupUI(ns = ns, 
-                                                   gctFileNames = input$dataFiles$name)})
+      output$sideBarMain <- renderUI({labelSetupUI(ns = ns,
+                                                   gctFileNames = accumulated_files()$name)})
       output$rightButton <- renderUI({actionButton(ns("submitLabelsButton"), 
                                                    "Submit",
                                                    class = "btn btn-primary")})
@@ -557,65 +822,67 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # Label assignment for CSV/Excel/TSV files (same pattern as GCT workflow)
     csvExcelLabelAssignment <- function() {
-      output$sideBarMain <- renderUI({csvExcelLabelSetupUI(ns = ns, 
-                                                           dataFileNames = input$dataFiles$name)})
-      output$rightButton <- renderUI({actionButton(ns("submitCSVExcelLabelsButton"), 
+      output$sideBarMain <- renderUI({csvExcelLabelSetupUI(ns = ns,
+                                                           dataFileNames = accumulated_files()$name)})
+      output$rightButton <- renderUI({actionButton(ns("submitCSVExcelLabelsButton"),
                                                    "Next",
                                                    class = "btn btn-primary")})
       output$leftButton <- NULL
-      
+
       # Update with saved labels if they exist (same as GCT workflow)
       lapply(names(parameters_internal_reactive()), function(label) {
         filename <- parameters_internal_reactive()[[label]]$gct_file_name
         updateTextInput(inputId = paste0('CSVExcelLabel_', filename), value = label)
       })
     }
-    
+
     # Handle CSV/Excel/TSV label submission
     observeEvent(input$submitCSVExcelLabelsButton, {
       # Collect labels from input fields
-      labels <- sapply(input$dataFiles$name, function(file) {
+      labels <- sapply(accumulated_files()$name, function(file) {
         input[[paste0('CSVExcelLabel_', file)]]
       })
       
       # Validate labels
       if (any(labels == "")) {
-        shinyalert::shinyalert(
-          title = "Error",
-          text = "Please provide labels for all files.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please provide labels for all files.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
       
       # Check for duplicate labels
       if (length(unique(labels)) != length(labels)) {
-        shinyalert::shinyalert(
-          title = "Error", 
-          text = "Please provide unique labels for each file.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please provide unique labels for each file.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
       
       # Store labels in parameters_internal_reactive (same as GCT workflow)
       for (i in seq_along(labels)) {
-        filename <- input$dataFiles$name[i]
+        filename <- accumulated_files()$name[i]
         label <- labels[i]
         parameters_internal_reactive(c(
           parameters_internal_reactive(),
           setNames(list(list(gct_file_name = filename)), label)
         ))
       }
-      
+
       # Move to identifier column selection
       csvExcelIdentifierSelection(labels)
     })
-    
+
     # Identifier column selection step
     csvExcelIdentifierSelection <- function(labels) {
-      output$sideBarMain <- renderUI({csvExcelIdentifierSetupUI(ns = ns, 
-                                                               dataFiles = input$dataFiles,
+      output$sideBarMain <- renderUI({csvExcelIdentifierSetupUI(ns = ns,
+                                                               dataFiles = accumulated_files(),
                                                                labels = labels)})
       output$rightButton <- renderUI({actionButton(ns("submitCSVExcelIdentifiersButton"), 
                                                    "Next",
@@ -638,49 +905,50 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # Handle identifier column submission
     observeEvent(input$submitCSVExcelIdentifiersButton, {
       # Collect identifier columns for each file
-      identifier_columns <- sapply(seq_len(nrow(input$dataFiles)), function(i) {
+      identifier_columns <- sapply(seq_len(nrow(accumulated_files())), function(i) {
         input[[paste0("identifierColumn_", i)]]
       })
-      
+
       # Validate identifier columns
       if (any(is.null(identifier_columns)) || any(identifier_columns == "")) {
-        shinyalert::shinyalert(
-          title = "Error",
-          text = "Please select identifier columns for all datasets.",
-          type = "error"
+        showNotification(
+          ui = HTML(paste0("<b>Error</b><br>", "Please select identifier columns for all datasets.")),
+          type = "error",
+          duration = NULL,
+          closeButton = TRUE
         )
         return()
       }
-      
+
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
-      
+
       # Move to experimental design setup
       csvExcelExpDesignSetup(identifier_columns)
     })
-    
+
     # Experimental design setup step
     csvExcelExpDesignSetup <- function(identifier_columns) {
-      
-      output$sideBarMain <- renderUI({csvExcelExpDesignSetupUI(ns = ns, 
-                                                      dataFiles = input$dataFiles,
-                                                              labels = sapply(input$dataFiles$name, function(file) {
+
+      output$sideBarMain <- renderUI({csvExcelExpDesignSetupUI(ns = ns,
+                                                      dataFiles = accumulated_files(),
+                                                              labels = sapply(accumulated_files()$name, function(file) {
                                                                 input[[paste0('CSVExcelLabel_', file)]]
                                                               }))})
       output$rightButton <- NULL
-      output$leftButton <- renderUI({actionButton(ns("backToCSVExcelIdentifiersButton"), 
+      output$leftButton <- renderUI({actionButton(ns("backToCSVExcelIdentifiersButton"),
                                                   "Back",
                                                   icon = icon("chevron-left"),
                                                   class = "btn btn-default")})
     }
-    
+
     # Handle back navigation
     observeEvent(input$backToCSVExcelLabelsButton, {
       csvExcelLabelAssignment()
     })
-    
+
     observeEvent(input$backToCSVExcelIdentifiersButton, {
-      labels <- sapply(input$dataFiles$name, function(file) {
+      labels <- sapply(accumulated_files()$name, function(file) {
         input[[paste0('CSVExcelLabel_', file)]]
       })
       csvExcelIdentifierSelection(labels)
@@ -688,13 +956,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # Create a reactive to store sample names for template generation
     template_sample_names <- reactive({
-      req(input$dataFiles)
-      
+      req(accumulated_files())
+
         tryCatch({
         all_samples <- c()
-        for (i in seq_len(nrow(input$dataFiles))) {
-          file_path <- input$dataFiles$datapath[i]
-          file_ext <- tools::file_ext(tolower(input$dataFiles$name[i]))
+        for (i in seq_len(nrow(accumulated_files()))) {
+          file_path <- accumulated_files()$datapath[i]
+          file_ext <- tools::file_ext(tolower(accumulated_files()$name[i]))
           
           if (file_ext == "csv") {
             data <- readr::read_csv(file_path, n_max = 1, show_col_types = FALSE)
@@ -776,11 +1044,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             }
             
             # Get labels from input fields
-            labels <- sapply(input$dataFiles$name, function(file) {
+            labels <- sapply(accumulated_files()$name, function(file) {
               input[[paste0('CSVExcelLabel_', file)]]
             })
-            
-            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(input$dataFiles, exp_design, identifier_columns, labels)
+
+            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(accumulated_files(), exp_design, identifier_columns, labels)
             
             setProgress(0.8, detail = "Setting up analysis parameters")
             
@@ -797,13 +1065,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           })
           
           # Show success message
-          shinyalert::shinyalert(
-            title = "Files Converted!",
-            text = paste("Successfully converted", length(csv_excel_result$GCTs), 
-                        "CSV/Excel file(s) to analysis format. Now configure analysis parameters..."),
-            type = "success",
-            timer = 3000,
-            showConfirmButton = FALSE
+          showNotification(
+            ui = HTML(paste0("<b>Files Converted!</b><br>", "Successfully converted ", length(csv_excel_result$GCTs),
+                        " CSV/Excel file(s) to analysis format. Now configure analysis parameters...")),
+            type = "message",
+            duration = NULL,
+            closeButton = TRUE
           )
           
           # Automatically switch to Dataset Setup help tab

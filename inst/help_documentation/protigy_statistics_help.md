@@ -20,6 +20,33 @@ ProTIGY offers several statistical tests based on the `limma` package, which pro
 - **Use case**: Pairwise comparisons between experimental groups
 - **When to use**: When comparing two groups directly (e.g., treatment vs. control)
 
+#### Selecting Contrasts
+
+ProTIGY provides multiple ways to select pairwise contrasts for two-sample t-tests:
+
+**Quick Select Buttons:**
+- **All Pairwise**: Select all possible pairwise contrasts (both directions: A/B and B/A)
+- **All vs Control**: Selects all contrasts vs manually specified control group(s). First check "Manually specify control group(s)" and select your control groups, then click this button.
+- **Sequential Pairs**: Select sequential comparisons comparing later to earlier groups (e.g., for Time_1, Time_2, Time_3, generates Time_2/Time_1, Time_3/Time_2) - useful for time-series or ordered experimental designs
+- **Clear All**: Deselect all contrasts
+
+**Manual Control Group Selection:**
+- Check the "Manually specify control group(s)" checkbox to enable control group selection
+- Click on group badges to select which groups should be used as controls
+- Once control groups are selected, use the "All vs Control" button to generate all contrasts vs the selected control groups
+
+**Matrix View Selection:**
+- Interactive grid where you can click cells to select contrasts
+  - Columns represent numerator groups (what you're testing)
+  - Rows represent denominator groups (what you're comparing against)
+  - Click any cell to toggle contrast selection
+  - Blue checkmark (✓) indicates selected contrasts
+
+**Selected Contrasts Panel:**
+- Shows a summary of all selected contrasts
+- Displays count (e.g., "42 of 380 contrasts selected")
+- Click the × button next to any contrast to remove it
+
 ### Moderated F-Test
 - **Purpose**: Test whether there is a significant difference between any of the defined groups
 - **Use case**: Multiple group comparisons

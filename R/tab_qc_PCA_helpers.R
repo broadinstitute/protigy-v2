@@ -98,38 +98,38 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   # Create aesthetic mappings based on display preferences
   if (is.null(second_col_of_interest)) {
     # Single variable - use existing logic
-    plot_aes <- aes_string(
-      x = paste0("PC", comp.x),
-      y = paste0("PC", comp.y),
-      color = col_of_interest,
-      text = "tooltip"
+    plot_aes <- aes(
+      x = .data[[paste0("PC", comp.x)]],
+      y = .data[[paste0("PC", comp.y)]],
+      color = .data[[col_of_interest]],
+      text = .data$tooltip
     )
     plot_title <- paste0("PCA plot by ", col_of_interest, ": ", ome)
   } else {
     # Two variables - create appropriate aesthetic mapping
     if (var1_display == "color" && var2_display == "shape") {
-      plot_aes <- aes_string(
-        x = paste0("PC", comp.x),
-        y = paste0("PC", comp.y),
-        color = col_of_interest,
-        shape = second_col_of_interest,
-        text = "tooltip"
+      plot_aes <- aes(
+        x = .data[[paste0("PC", comp.x)]],
+        y = .data[[paste0("PC", comp.y)]],
+        color = .data[[col_of_interest]],
+        shape = .data[[second_col_of_interest]],
+        text = .data$tooltip
       )
     } else if (var1_display == "shape" && var2_display == "color") {
-      plot_aes <- aes_string(
-        x = paste0("PC", comp.x),
-        y = paste0("PC", comp.y),
-        color = second_col_of_interest,
-        shape = col_of_interest,
-        text = "tooltip"
+      plot_aes <- aes(
+        x = .data[[paste0("PC", comp.x)]],
+        y = .data[[paste0("PC", comp.y)]],
+        color = .data[[second_col_of_interest]],
+        shape = .data[[col_of_interest]],
+        text = .data$tooltip
       )
     } else {
       # Default fallback
-      plot_aes <- aes_string(
-        x = paste0("PC", comp.x),
-        y = paste0("PC", comp.y),
-        color = col_of_interest,
-        text = "tooltip"
+      plot_aes <- aes(
+        x = .data[[paste0("PC", comp.x)]],
+        y = .data[[paste0("PC", comp.y)]],
+        color = .data[[col_of_interest]],
+        text = .data$tooltip
       )
     }
     plot_title <- paste0("PCA plot by ", col_of_interest, " and ", second_col_of_interest, ": ", ome)
@@ -242,5 +242,8 @@ create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,co
   #perform batch effect check and plot PCA regression
   pca.var <- pca_variance_explained (my_pca, cdesc[col_of_interest], components=1:components.max)
   g <- pca.var$plot+ggtitle(glue("Cumulative Variance Explained by {col_of_interest} for {ome}: ",'{round(pca.var$table$sum.total.var.pct, digits=2)}'))
+  
+  # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
+  return(g)
 }
 

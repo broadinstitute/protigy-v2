@@ -96,13 +96,13 @@ set_annot_colors_discrete <- function( annot_table, # ====
                                                         "Light" = c( '#77AADD', '#99DDFF', '#44BB99', '#BBCC33', '#AAAA00', '#EEDD88', '#EE8866', '#FFAABB'),
                                                         "HighContrast" = c('#004488', '#DDAA33', '#BB5566')),
                                        # if adding a new paired-palette, please add LIGHTER colors FIRST, to ensure consistent formatting
-                                       pair.pals = list("BrightPaired" = c("#A8DBFF", '#4477AA', "#CAFFFF", '#66CCEE', "#8BFFA2", '#27B13E', "#FFFFA8", '#CCBB44', "#FFCADB", '#EE6677', "#FF97DB", '#AA3377'),
+                                       pair.pals = list("BrightPaired" = c("#A8DBFF", '#4477AA', "#8BFFA2", '#27B13E', "#FFCADB", '#EE6677', "#FF97DB", '#AA3377'),
                                                         "VibrantPaired" = c("#64DBFF", '#0077BB', "#64FDEC", '#009988', "#FFDB97", '#EE7733', "#FF97DB", '#EE3377' ),
                                                         "HighContrastPaired" = c('#6699CC', '#004488', '#EECC66', '#997700', '#EE99AA', '#994455')),
                                        shuffle_paired_palette = TRUE, # should the paired colors be shuffled?
-                                       seq.pals = list("YlOrBr" = c('#FFFFE5', '#FFF7BC', '#FEE391', '#FEC44F', '#FB9A29', '#EC7014', '#CC4C02', '#993404', '#662506'),
-                                                       "Iridescent" = c('#FEFBE9', '#FCF7D5', '#F5F3C1', '#EAF0B5', '#DDECBF', '#D0E7CA', '#C2E3D2', '#B5DDD8', '#A8D8DC', '#9BD2E1', '#8DCBE4', '#81C4E7', '#7BBCE7', '#7EB2E4', '#88A5DD', '#9398D2', '#9B8AC4', '#9D7DB2', '#9A709E', '#906388', '#805770', '#684957', '#46353A'),
-                                                       "Incandescent" = c('#CEFFFF', '#C6F7D6', '#A2F49B', '#BBE453', '#D5CE04', '#E7B503', '#F19903', '#F6790B', '#F94902', '#E40515', '#A80003')),
+                                       seq.pals = list("YlOrBr" = c('#FEE391', '#FEC44F', '#FB9A29', '#EC7014', '#CC4C02', '#993404', '#662506'),
+                                                       "Iridescent" = c('#B5DDD8', '#A8D8DC', '#9BD2E1', '#8DCBE4', '#81C4E7', '#7BBCE7', '#7EB2E4', '#88A5DD', '#9398D2', '#9B8AC4', '#9D7DB2', '#9A709E', '#906388', '#805770', '#684957', '#46353A'),
+                                                       "Incandescent" = c('#A2F49B', '#BBE453', '#D5CE04', '#E7B503', '#F19903', '#F6790B', '#F94902', '#E40515', '#A80003')),
                                        
                                        # Special-Treatment Annotation Values ====
                                        normal_annot_vals = c("^nat$", "^wt$", "^unmut$","^normal$","^0$"), # possible "normal" annotations (not case sensitive). Assigned the first color from the paired palette.

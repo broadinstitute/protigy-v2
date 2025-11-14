@@ -139,7 +139,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
                        text = paste("ID:", .data$id, "<br>Gene Symbol:", .data$geneSymbol))) +
     geom_point(aes(color = .data$Significant), size = 1) +
     scale_color_manual(values = c('TRUE' = sig.col, 'FALSE' = bg.col)) +
-    geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", size = 0.5) +
+    geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", linewidth = 0.5) +
     labs(title = paste("Volcano plot for",ome, ": ",group_contrast, "(cutoff:", stat_params()[[ome]]$cutoff, ")"), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
     theme_minimal()
   

@@ -42,10 +42,11 @@ my_shinyalert_tryCatch <- function(expr,
             text.warning <- paste(text.warning, paste0(cond$message))
           }
           
-          shinyalert::shinyalert(
-            text = HTML(text.warning),
+          showNotification(
+            ui = HTML(text.warning),
             type = "warning",
-            html = TRUE
+            duration = NULL,
+            closeButton = TRUE
           )
         }
       }
@@ -62,10 +63,11 @@ my_shinyalert_tryCatch <- function(expr,
         text.error <- paste(text.error, paste0(cond$message))
       }
       
-      shinyalert::shinyalert(
-        text = HTML(text.error),
+      showNotification(
+        ui = HTML(text.error),
         type = "error",
-        html = TRUE
+        duration = NULL,
+        closeButton = TRUE
       )
     }
     
@@ -157,6 +159,11 @@ get_ggsave_params <- function(plot_type = "default") {
     height = dims$height,
     units = dims$units
   ))
+}
+
+# Alias for backward compatibility
+get_pdf_params <- function(plot_type = "default") {
+  get_plot_export_dimensions(plot_type)
 }
 
 # Helper function to determine if an annotation column contains discrete data

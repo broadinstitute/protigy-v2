@@ -7,8 +7,8 @@ intensity_data:
 - 'No'
 
 log_transformation:
-  - 'log10'
   - 'log2'
+  - 'log10'
   - 'None'
 
 

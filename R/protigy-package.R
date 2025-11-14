@@ -35,5 +35,8 @@
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput
+#' @importFrom future plan availableCores
+#' @importFrom furrr future_map future_map2
+#' @importFrom Matrix Matrix
 ## usethis namespace: end
 NULL

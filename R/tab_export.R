@@ -234,11 +234,9 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         zip::zip(file, file.path(dir_name, list.files(exports_dir)), 
                  recurse = TRUE, root = zip_dir)
         
-        # shinyalert the exports that succeeded and errored
-        shinyalert::shinyalert(
-          html = TRUE,
-          type = "info",
-          text = HTML(paste0(
+        # Show notification for exports that succeeded and errored
+        showNotification(
+          ui = HTML(paste0(
             "<div style='text-align: left'>",
             strong("Successfully saved:"), br(),
             "<ul><li>",
@@ -248,7 +246,10 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             "<ul><li>",
             paste(error_exports, collapse = "</li><li>"),
             "</li></ul></div>"
-          ))
+          )),
+          type = "message",
+          duration = NULL,
+          closeButton = TRUE
         )
       }
     )

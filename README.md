@@ -4,6 +4,17 @@
 
 ProTIGY is a Shiny application that supports datasets organized as a matrix with features (proteins, genes, transcripts) measured across samples (experimental conditions, replicates). ProTIGY can analyze various omics data types including proteomics, post-translational modifications (PTMs), RNA-seq, metabolomics, and other quantitative molecular datasets. ProTIGY allows you to upload and process multiple data types from the same experiment simultaneously (e.g., RNA-seq, proteome, and phosphoproteome data from the same samples), enabling integrated multi-omics analysis.
 
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/broadinstitute/protigy-v2.git
+cd protigy-v2
+
+# Install the package
+R -e "devtools::install('.')"
+```
+
 ## Key Features
 
 ### 📊 **Data Analysis & Visualization**
@@ -37,17 +48,6 @@ Many plots have a **double cogwheel** icon in the top right corner. Clicking thi
 
 ### Changing Settings
 If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
-
-## Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/broadinstitute/protigy-v2.git
-cd protigy-v2
-
-# Install the package
-R -e "devtools::install('.')"
-```
 
 ## Quick Start
 

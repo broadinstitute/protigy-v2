@@ -73,13 +73,17 @@ summary_missing_value_distribution <- function(gct, missing_val_cutoff, ome) {
   
   # generate plot
   gg <- ggplot(missing_val_df) +
-    stat_ecdf(aes(missing), geom = "step", pad = FALSE, linewidth = 0.5) + 
+    stat_ecdf(aes(missing), geom = "step", pad = FALSE, linewidth = 0.5) +
     geom_vline(
-      aes(xintercept = missing_val_cutoff, 
-          color = names(color_key)), 
+      aes(xintercept = missing_val_cutoff,
+          color = names(color_key)),
       show.legend = TRUE) +
-    geom_segment(aes(x = max(missing), y = 1, xend = 100, yend = 1), 
-                 linewidth = 0.5) +
+    annotate("segment",
+             x = max(missing_val_df$missing),
+             y = 1,
+             xend = 100,
+             yend = 1,
+             linewidth = 0.5) +
     scale_color_manual(name = "Missing value cutoff", values = color_key) +
     scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
     scale_x_continuous(labels = function(x) paste0(x, "%")) +
