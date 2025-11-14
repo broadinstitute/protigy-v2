@@ -322,25 +322,19 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       choices<- unique(cdesc()[[default_annotation_column()]])
       choices <- choices[!is.na(choices)]
 
+      # Initialize groups to empty for one-sample t-test and F-test, all groups for two-sample
       if (is.null(current[[ome]]$groups)) {
-        current[[ome]]$groups <- choices
+        if (current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
+          current[[ome]]$groups <- character(0)
+        } else {
+          current[[ome]]$groups <- choices
+        }
         stat_param(current)
       }
 
-      # For one-sample t-test and F-test, show matrix view (list view code kept for future use)
-      if (current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
-        # Always use matrix view for simplified UX
-        group_view_mode("matrix")
-
-        tagList(
-          div(
-            class = "group-selection-section",
-            # Group selection view (matrix only)
-            uiOutput(ns("group_selection_view"))
-          )
-        )
-      } else {
-        # For two-sample t-test, use standard pickerInput
+      # For two-sample t-test, use standard pickerInput in narrow column
+      # For one-sample t-test and F-test, group selection will be shown in wide column
+      if (current[[ome]]$test == "Two-sample Moderated T-test") {
         pickerInput(
           ns("select_groups"),
           "Select groups:",
@@ -354,6 +348,9 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
             noneSelectedText = "No groups selected"
           )
         )
+      } else {
+        # For one-sample t-test and F-test, return NULL - group selection shown in wide column
+        return(NULL)
       }
     })
 
@@ -366,13 +363,20 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     output$group_selection_view <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
-      req(current[[ome]]$groups, cdesc(), default_annotation_column())
+      req(cdesc(), default_annotation_column())
 
       choices <- unique(cdesc()[[default_annotation_column()]])
       choices <- choices[!is.na(choices)]
-      selected_groups <- current[[ome]]$groups
+      
+      # Initialize groups if null, but allow empty groups
+      if (is.null(current[[ome]]$groups)) {
+        current[[ome]]$groups <- character(0)
+        stat_param(current)
+      }
+      
+      selected_groups <- current[[ome]]$groups %||% character(0)
 
-      # Always use matrix view (list view code kept for future use)
+      # Always use checkbox view
       render_group_selection_matrix(choices, selected_groups, ns)
 
       # LIST VIEW CODE (KEPT FOR FUTURE USE):
@@ -402,26 +406,90 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # }
     })
 
-    # Handle group matrix clicks (one-sample t-test and F-test)
-    observeEvent(input$group_matrix_click, {
-      req(selected_ome(), input$group_matrix_click)
+    # Handle group checkbox changes (one-sample t-test and F-test)
+    observe({
       current <- stat_param()
       ome <- selected_ome()
-
-      clicked_group <- input$group_matrix_click
-
-      if (is.null(current[[ome]]$groups)) {
-        current[[ome]]$groups <- character(0)
+      req(cdesc(), default_annotation_column(), selected_ome())
+      
+      # Only process if test is one-sample t-test or F-test
+      if (is.null(current[[ome]]$test) || 
+          !current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
+        return(NULL)
       }
-
-      # Toggle selection
-      if (clicked_group %in% current[[ome]]$groups) {
-        current[[ome]]$groups <- setdiff(current[[ome]]$groups, clicked_group)
-      } else {
-        current[[ome]]$groups <- c(current[[ome]]$groups, clicked_group)
+      
+      choices <- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      
+      # Collect selected groups from checkboxes
+      selected_groups <- character(0)
+      for (group in choices) {
+        checkbox_id <- paste0("group_checkbox_", gsub("[^a-zA-Z0-9_]", "_", group))
+        checkbox_value <- input[[checkbox_id]]
+        if (!is.null(checkbox_value) && isTRUE(checkbox_value)) {
+          selected_groups <- c(selected_groups, group)
+        }
       }
-
+      
+      # Update stat_param only if selection changed
+      if (!identical(sort(current[[ome]]$groups %||% character(0)), sort(selected_groups))) {
+        current[[ome]]$groups <- selected_groups
+        stat_param(current)
+      }
+    })
+    
+    # Handle Select All button for group selection (one-sample t-test and F-test)
+    observeEvent(input$group_select_all, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      # Only process if test is one-sample t-test or F-test
+      if (is.null(current[[ome]]$test) || 
+          !current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
+        return(NULL)
+      }
+      
+      req(cdesc(), default_annotation_column())
+      choices <- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      
+      # Select all groups
+      current[[ome]]$groups <- choices
       stat_param(current)
+      
+      # Update all checkboxes to checked
+      for (group in choices) {
+        checkbox_id <- paste0("group_checkbox_", gsub("[^a-zA-Z0-9_]", "_", group))
+        updateCheckboxInput(session, checkbox_id, value = TRUE)
+      }
+    })
+    
+    # Handle Clear All button for group selection (one-sample t-test and F-test)
+    observeEvent(input$group_clear_all, {
+      req(selected_ome())
+      current <- stat_param()
+      ome <- selected_ome()
+      
+      # Only process if test is one-sample t-test or F-test
+      if (is.null(current[[ome]]$test) || 
+          !current[[ome]]$test %in% c("One-sample Moderated T-test", "Moderated F test")) {
+        return(NULL)
+      }
+      
+      req(cdesc(), default_annotation_column())
+      choices <- unique(cdesc()[[default_annotation_column()]])
+      choices <- choices[!is.na(choices)]
+      
+      # Clear all groups
+      current[[ome]]$groups <- character(0)
+      stat_param(current)
+      
+      # Update all checkboxes to unchecked
+      for (group in choices) {
+        checkbox_id <- paste0("group_checkbox_", gsub("[^a-zA-Z0-9_]", "_", group))
+        updateCheckboxInput(session, checkbox_id, value = FALSE)
+      }
     })
 
     # Handle pickerInput selection for one-sample t-test (KEPT FOR FUTURE USE)
@@ -499,14 +567,15 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       ome <- selected_ome()
 
       if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
-        # Check if manual control selection is enabled
+        # Require manual control selection - no auto-detection
         if (use_manual_controls() && length(manual_control_groups()) > 0) {
           # Use manually selected control groups
           control_groups <- manual_control_groups()
+          # Only generate contrasts where control is in denominator (bidirectional = FALSE)
           control_contrasts <- generate_all_vs_multiple_references(
             current[[ome]]$groups,
             control_groups,
-            bidirectional = TRUE
+            bidirectional = FALSE
           )
           current[[ome]]$contrasts <- control_contrasts
           stat_param(current)
@@ -518,28 +587,19 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
           }
           showNotification(control_msg, type = "message", duration = 3)
         } else {
-          # Use auto-detection
-          control_group <- detect_control_group(current[[ome]]$groups)
-          control_contrasts <- generate_all_vs_reference(
-            current[[ome]]$groups,
-            control_group,
-            bidirectional = TRUE
-          )
-          current[[ome]]$contrasts <- control_contrasts
-          stat_param(current)
-
+          # No control groups selected - show error message
           showNotification(
-            paste0("Selected all contrasts vs '", control_group, "' (auto-detected)"),
-            type = "message",
-            duration = 3
+            "Please check 'Manually specify control group(s)' and select at least one control group before using 'All vs Control'.",
+            type = "error",
+            duration = 5
           )
         }
       }
     })
 
     # Quick sequential selection automatically generates contrasts between consecutive groups in a sequence 
-    # For example, if the groups are ordered as ["Control", "Treatment_1", "Treatment_2", "Treatment_3"], "quick sequential" would automatically create: Control vs. Treatment_1, Treatment_1 vs. Treatment_2, Treatment_2 vs. Treatment_3, and their bidirectional counterparts 
-    # This is useful for time-seeries or ordered experimental designs 
+    # For example, if the groups are ordered as ["Time_1", "Time_2", "Time_3"], "quick sequential" would automatically create: Time_2/Time_1, Time_3/Time_2 (later/earlier)
+    # This is useful for time-series or ordered experimental designs where you want to compare later timepoints/conditions to earlier ones
     observeEvent(input$contrast_quick_sequential, {
       req(selected_ome())
       current <- stat_param()
@@ -548,7 +608,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       if (!is.null(current[[ome]]$groups) && length(current[[ome]]$groups) >= 2) {
         sequential_contrasts <- generate_sequential_pairs(
           current[[ome]]$groups,
-          bidirectional = TRUE
+          bidirectional = FALSE
         )
         current[[ome]]$contrasts <- sequential_contrasts
         stat_param(current)
@@ -608,17 +668,36 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       stat_param(current)
     })
 
-    # Display contrast choices
+    # Display contrast choices (or group selection for one-sample/F-test)
     output$select_contrast_ui <- renderUI({
       current <- stat_param()
       ome <- selected_ome()
-
-      # Show contrast selection for two-sample t-test only
-      # F-test post-hoc UI removed but backend code kept for future use
       test_type <- current[[ome]]$test
-      if (test_type != "Two-sample Moderated T-test") {
-        return(NULL)
-      }
+
+      # Show group selection for one-sample t-test and F-test in wide column
+      if (test_type %in% c("One-sample Moderated T-test", "Moderated F test")) {
+        req(cdesc(), default_annotation_column())
+        
+        choices <- unique(cdesc()[[default_annotation_column()]])
+        choices <- choices[!is.na(choices)]
+        
+        # Initialize groups if null, but allow empty groups
+        if (is.null(current[[ome]]$groups)) {
+          current[[ome]]$groups <- character(0)
+          stat_param(current)
+        }
+        
+        selected_groups <- current[[ome]]$groups %||% character(0)
+        
+        # Show group selection in wide column
+        tagList(
+          div(
+            class = "group-selection-section",
+            uiOutput(ns("group_selection_view"))
+          )
+        )
+      } else if (test_type == "Two-sample Moderated T-test") {
+        # Show contrast selection for two-sample t-test
 
       if (length(current[[ome]]$groups) < 2 || is.null(current[[ome]]$groups)) {
         return(div(
@@ -673,12 +752,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
               class = "btn-sm btn-default",
               icon = icon("th")
             ),
-            actionButton(
-              ns("contrast_quick_all_vs_control"),
-              "All vs Control",
-              class = "btn-sm btn-default",
-              icon = icon("bullseye")
-            ),
+            uiOutput(ns("all_vs_control_button")),
             actionButton(
               ns("contrast_quick_sequential"),
               "Sequential Pairs",
@@ -688,7 +762,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
             actionButton(
               ns("contrast_quick_clear"),
               "Clear All",
-              class = "btn-sm btn-warning",
+              class = "btn-sm btn-primary",
               icon = icon("times")
             )
           ),
@@ -712,6 +786,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
           uiOutput(ns("selected_contrasts_summary"))
         )
       )
+      } else {
+        # For "None" test or other cases, return NULL
+        return(NULL)
+      }
     })
 
     # Render the appropriate selection view
@@ -772,6 +850,20 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       selected_controls <- manual_control_groups()
 
       render_control_group_selector(groups, selected_controls, ns)
+    })
+    
+    # Render "All vs Control" button with reactive disabled state
+    output$all_vs_control_button <- renderUI({
+      # Disable button if manual controls not enabled or no control groups selected
+      is_disabled <- !(use_manual_controls() && length(manual_control_groups()) > 0)
+      
+      actionButton(
+        ns("contrast_quick_all_vs_control"),
+        "All vs Control",
+        class = "btn-sm btn-default",
+        icon = icon("bullseye"),
+        disabled = is_disabled
+      )
     })
 
     # Render selected contrasts summary
