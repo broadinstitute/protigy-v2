@@ -800,7 +800,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
             class = "remove-btn",
             onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
                             ns("remove_contrast"), contrast),
-            "×"
+            icon("times")
           )
         )
       })
