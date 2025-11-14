@@ -242,5 +242,8 @@ create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,co
   #perform batch effect check and plot PCA regression
   pca.var <- pca_variance_explained (my_pca, cdesc[col_of_interest], components=1:components.max)
   g <- pca.var$plot+ggtitle(glue("Cumulative Variance Explained by {col_of_interest} for {ome}: ",'{round(pca.var$table$sum.total.var.pct, digits=2)}'))
+  
+  # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
+  return(g)
 }
 

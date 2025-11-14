@@ -61,4 +61,7 @@ create_profile_plot <- function (gct, col_of_interest, ome, custom_color_map = N
       labs(colour = col_of_interest) + #legend title
       ggtitle(ifelse(type=="org", paste("Profile plot before normalization and filtering:", ome), paste("Profile plot after normalization and filtering:",ome))) #plot title
   }
+  
+  # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
+  return(g)
 }
