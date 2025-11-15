@@ -162,7 +162,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             expr = {
               export_colors_to_yaml(
                 globals$colors,
-                file.path(customization_dir, "color_palette.yaml")
+                file.path(customization_dir, "color_scheme.yaml")
               )
             }
           )
