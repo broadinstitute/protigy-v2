@@ -58,8 +58,8 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
         vals <- custom_colors[[ome]][[annot_col]]$vals
         colors <- custom_colors[[ome]][[annot_col]]$colors
 
-        # Create named vector for each annotation column
-        yaml_structure$colors[[ome]][[annot_col]] <- stats::setNames(colors, vals)
+        # Create named list for each annotation column (preserves names in YAML)
+        yaml_structure$colors[[ome]][[annot_col]] <- as.list(stats::setNames(colors, vals))
       }
     }
   }
@@ -75,7 +75,14 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
 }
 
 
-#' Import colors from YAML format
+#' Import colors from YAML format with smart matching
+#'
+#' Implements a three-scenario matching algorithm:
+#' 1. All conditions match: Apply colors based on condition-color name matching
+#' 2. Some conditions match: Apply colors to matches, then unused colors
+#'    sequentially (alphabetically) to unmatched conditions
+#' 3. No conditions match: Apply colors by order sequentially to conditions
+#'
 #' @param file_path Path to the YAML file
 #' @param custom_colors Current custom colors structure (to preserve structure)
 #' @return Updated custom_colors list
@@ -89,30 +96,82 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
       return(custom_colors)
     }
 
-    # Update colors from YAML
-    for (ome in names(yaml_data$colors)) {
-      if (!(ome %in% names(custom_colors))) {
-        warning("Ome '", ome, "' from YAML not found in current data")
+    # Process each ome in current session
+    for (ome in names(custom_colors)) {
+      # Skip if ome not in YAML
+      if (!(ome %in% names(yaml_data$colors))) {
         next
       }
 
+      # Collect ALL colors globally across all columns in YAML for this ome
+      # Build mapping: condition_name -> color
+      yaml_color_map <- list()
       for (annot_col in names(yaml_data$colors[[ome]])) {
-        if (!(annot_col %in% names(custom_colors[[ome]]))) {
-          warning("Annotation column '", annot_col, "' from YAML not found in ome '", ome, "'")
+        yaml_vals <- names(yaml_data$colors[[ome]][[annot_col]])
+
+        # Validate that the YAML structure has names (not an unnamed array)
+        if (is.null(yaml_vals) || length(yaml_vals) == 0) {
+          warning("YAML file has invalid structure for ", ome, "$", annot_col,
+                  ": expected named color mapping (e.g., condition: color) but found unnamed array. ",
+                  "This may be from an older export version. Please re-export the color palette.")
           next
         }
 
-        # Match values and update colors
-        yaml_vals <- names(yaml_data$colors[[ome]][[annot_col]])
         yaml_colors <- unname(unlist(yaml_data$colors[[ome]][[annot_col]]))
-        current_vals <- custom_colors[[ome]][[annot_col]]$vals
-
         for (i in seq_along(yaml_vals)) {
-          val_idx <- which(current_vals == yaml_vals[i])
-          if (length(val_idx) > 0) {
-            custom_colors[[ome]][[annot_col]]$colors[val_idx] <- yaml_colors[i]
+          # Store first occurrence (don't override if duplicate names across columns)
+          if (!(yaml_vals[i] %in% names(yaml_color_map))) {
+            yaml_color_map[[yaml_vals[i]]] <- yaml_colors[i]
           }
         }
+      }
+
+      # Process each annotation column in current session
+      for (annot_col in names(custom_colors[[ome]])) {
+        # Only process discrete colors
+        if (!custom_colors[[ome]][[annot_col]]$is_discrete) {
+          next
+        }
+
+        current_vals <- custom_colors[[ome]][[annot_col]]$vals
+        current_colors <- custom_colors[[ome]][[annot_col]]$colors
+        new_colors <- current_colors  # Start with original colors
+
+        # Track used colors and matched conditions
+        used_colors <- character(0)
+        matched_condition_indices <- integer(0)
+
+        # Step 1: Match by condition name (globally across YAML columns)
+        for (i in seq_along(current_vals)) {
+          if (current_vals[i] %in% names(yaml_color_map)) {
+            new_colors[i] <- yaml_color_map[[current_vals[i]]]
+            used_colors <- c(used_colors, yaml_color_map[[current_vals[i]]])
+            matched_condition_indices <- c(matched_condition_indices, i)
+          }
+        }
+
+        # Step 2: Get unused colors from YAML
+        all_yaml_colors <- unname(unlist(yaml_color_map))
+        unused_colors <- setdiff(all_yaml_colors, used_colors)
+
+        # Step 3: Get unmatched conditions (sorted alphabetically)
+        unmatched_indices <- setdiff(seq_along(current_vals), matched_condition_indices)
+        if (length(unmatched_indices) > 0 && length(unused_colors) > 0) {
+          # Sort unmatched conditions alphabetically
+          unmatched_vals <- current_vals[unmatched_indices]
+          sorted_order <- order(unmatched_vals)
+          sorted_unmatched_indices <- unmatched_indices[sorted_order]
+
+          # Step 4: Apply unused colors sequentially
+          num_to_assign <- min(length(sorted_unmatched_indices), length(unused_colors))
+          for (i in 1:num_to_assign) {
+            new_colors[sorted_unmatched_indices[i]] <- unused_colors[i]
+          }
+          # Remaining unmatched conditions keep their original colors
+        }
+
+        # Update colors
+        custom_colors[[ome]][[annot_col]]$colors <- new_colors
       }
     }
 

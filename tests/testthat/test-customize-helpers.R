@@ -280,3 +280,297 @@ test_that("make_custom_colors preserves column order", {
   expect_true("group2" %in% names(result$ome1))
   expect_true("group3" %in% names(result$ome2))
 })
+
+
+# Tests for import_colors_from_yaml with smart matching
+test_that("import_colors_from_yaml - Scenario 1: All conditions match", {
+  # Create custom colors structure
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A", "drug_B"),
+        colors = c("#000000", "#111111", "#222222")  # Original colors
+      )
+    )
+  )
+
+  # Create YAML file with all matching conditions
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+      drug_B: '#228833'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # All colors should be updated based on name matching
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_A
+  expect_equal(result$multi_ome$treatment$colors[3], "#228833")  # drug_B
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Scenario 2: Some conditions match", {
+  # Create custom colors structure with some matching and some non-matching conditions
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A", "drug_C", "drug_D"),  # drug_C and drug_D don't match YAML
+        colors = c("#000000", "#111111", "#222222", "#333333")  # Original colors
+      )
+    )
+  )
+
+  # YAML has control and drug_A (match) plus extra colors from drug_B
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+      drug_B: '#228833'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Matched conditions get their colors
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control (matched)
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_A (matched)
+
+  # Unmatched conditions sorted alphabetically: drug_C, drug_D
+  # Unused color from YAML: #228833 (from drug_B)
+  # drug_C should get #228833 (first unmatched alphabetically)
+  expect_equal(result$multi_ome$treatment$colors[3], "#228833")  # drug_C (sequential)
+
+  # drug_D has no more colors, keeps original
+  expect_equal(result$multi_ome$treatment$colors[4], "#333333")  # drug_D (original)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Scenario 3: No conditions match", {
+  # Create custom colors structure with completely different conditions
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("therapy_X", "therapy_Y", "therapy_Z"),  # None match YAML
+        colors = c("#000000", "#111111", "#222222")  # Original colors
+      )
+    )
+  )
+
+  # YAML has completely different condition names
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+      drug_B: '#228833'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # No matches, all conditions unmatched
+  # Sorted alphabetically: therapy_X, therapy_Y, therapy_Z
+  # Apply colors sequentially from YAML
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # therapy_X (sequential)
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # therapy_Y (sequential)
+  expect_equal(result$multi_ome$treatment$colors[3], "#228833")  # therapy_Z (sequential)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - More conditions than colors", {
+  # Create custom colors structure with more conditions than YAML has colors
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("drug_A", "drug_B", "drug_C", "drug_D", "drug_E"),
+        colors = c("#000000", "#111111", "#222222", "#333333", "#444444")
+      )
+    )
+  )
+
+  # YAML has only 2 colors
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_F: '#EE6677'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # No matches, sorted alphabetically: drug_A, drug_B, drug_C, drug_D, drug_E
+  # Only 2 colors available from YAML
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # drug_A (sequential)
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_B (sequential)
+
+  # Remaining conditions keep original colors
+  expect_equal(result$multi_ome$treatment$colors[3], "#222222")  # drug_C (original)
+  expect_equal(result$multi_ome$treatment$colors[4], "#333333")  # drug_D (original)
+  expect_equal(result$multi_ome$treatment$colors[5], "#444444")  # drug_E (original)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Global cross-column matching", {
+  # Create custom colors structure
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_X"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # YAML has 'control' in different column (tissue), should still match globally
+  yaml_content <- "
+colors:
+  multi_ome:
+    tissue:
+      control: '#4477AA'
+      normal: '#EE6677'
+    batch:
+      batch1: '#228833'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # 'control' should match globally from tissue column
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control (matched from tissue)
+
+  # 'drug_X' is unmatched (alphabetically first among unmatched)
+  # Unused colors: #EE6677, #228833
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_X (sequential from unused)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Skips continuous colors", {
+  # Create custom colors structure with continuous colors
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      ),
+      age = list(
+        is_discrete = FALSE,  # Continuous
+        vals = c(25, 30, 35, 40),
+        colors = c("#AAA", "#BBB", "#CCC", "#DDD")
+      )
+    )
+  )
+
+  # YAML only has discrete colors
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Treatment colors should be updated
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")
+
+  # Age (continuous) should remain unchanged
+  expect_equal(result$multi_ome$age$colors, c("#AAA", "#BBB", "#CCC", "#DDD"))
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Handles missing YAML colors section", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  yaml_content <- "
+metadata:
+  created_date: '2025-11-15'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  expect_warning(
+    result <- import_colors_from_yaml(temp_file, custom_colors),
+    "No 'colors' section found in YAML file"
+  )
+
+  # Should return original colors unchanged
+  expect_equal(result, custom_colors)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Handles missing ome gracefully", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # YAML has different ome name
+  yaml_content <- "
+colors:
+  proteome:
+    treatment:
+      control: '#4477AA'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Should return original colors unchanged (no matching ome)
+  expect_equal(result$multi_ome$treatment$colors, c("#000000", "#111111"))
+
+  unlink(temp_file)
+})

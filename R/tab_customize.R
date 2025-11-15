@@ -118,12 +118,22 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     # Initialize custom_colors as reactiveVal
     custom_colors <- reactiveVal()
 
+    # Flag to prevent observe block from interfering during import
+    importing <- reactiveVal(FALSE)
+
     # Use existing colors from globals (initialized in sidebar_setup)
     # This ensures consistency and uses the colorblind-safe palette
+    # Note: Removed 'once = TRUE' to allow updates if globals$colors changes
+    # but protect against overwriting user customizations during manual edits
     observeEvent(globals$colors, {
       req(globals$colors)
-      custom_colors(globals$colors)
-    }, once = TRUE, ignoreNULL = TRUE)
+
+      # Only update if custom_colors is not yet initialized or during import
+      # This prevents overwriting user's manual color changes
+      if (is.null(custom_colors()) || length(custom_colors()) == 0 || importing()) {
+        custom_colors(globals$colors)
+      }
+    }, ignoreNULL = TRUE)
 
 
     ## DYNAMIC UI FOR OME SELECTOR ##
@@ -221,9 +231,14 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     ## HANDLE COLOR CHANGES ##
 
     # Observe all color picker changes
+    # NOTE: Skip observation during import to prevent interference
     observe({
-      req(custom_colors())
-      colors <- custom_colors()
+      # Skip if currently importing
+      if (importing()) return()
+
+      # Get current colors without creating reactive dependency
+      colors <- isolate(custom_colors())
+      req(colors)
 
       # Determine which ome we're displaying
       req(input$color_mode)
@@ -286,22 +301,99 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
     # Import colors from YAML
     observeEvent(input$import_yaml, {
-      req(input$import_yaml, custom_colors())
+      req(input$import_yaml)
+
+      # Validate that data has been loaded and colors initialized
+      if (is.null(custom_colors()) || length(custom_colors()) == 0) {
+        shinyalert::shinyalert(
+          title = "Data Not Ready",
+          text = "Please upload and process your data files first before importing a color scheme.",
+          type = "warning"
+        )
+        return()
+      }
 
       file_path <- input$import_yaml$datapath
 
       tryCatch({
+        # Set importing flag to prevent observe block interference
+        importing(TRUE)
+
         updated_colors <- import_colors_from_yaml(file_path, custom_colors())
+
+        # Update the reactive value
         custom_colors(updated_colors)
+
+        # Update all color picker inputs directly using updateColourInput
+        # Determine which ome is currently displayed
+        req(input$color_mode)
+        display_ome <- if (input$color_mode == "multi_ome") {
+          "multi_ome"
+        } else {
+          req(input$selected_ome)
+          input$selected_ome
+        }
+
+        if (display_ome %in% names(updated_colors)) {
+          # Get annotation columns for displayed ome
+          req(default_annotations())
+          if (display_ome == "multi_ome") {
+            selected_annots <- unique(unlist(default_annotations()))
+          } else {
+            selected_annots <- default_annotations()[[display_ome]]
+          }
+
+          annot_columns <- intersect(selected_annots, names(updated_colors[[display_ome]]))
+
+          # Update each color picker
+          for (annot_col in annot_columns) {
+            color_info <- updated_colors[[display_ome]][[annot_col]]
+
+            if (!color_info$is_discrete) next
+
+            vals <- color_info$vals
+            col_colors <- color_info$colors
+
+            for (i in seq_along(vals)) {
+              picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
+              colourpicker::updateColourInput(
+                session,
+                picker_id,
+                value = col_colors[i]
+              )
+            }
+          }
+        }
+
+        # Reset importing flag
+        importing(FALSE)
+
         shinyalert::shinyalert(
           title = "Import Successful",
-          text = "Color scheme imported successfully!",
+          text = "Color scheme imported successfully! Colors have been updated.",
           type = "success"
         )
       }, error = function(e) {
+        importing(FALSE)  # Reset flag on error
+
+        # Log error for debugging
+        message("Color import error: ", e$message)
+
+        # Provide helpful error message to user
+        error_msg <- if (grepl("colors.*not found", e$message, ignore.case = TRUE)) {
+          paste("Invalid color scheme file. Please ensure the YAML file contains a 'colors' section.",
+                "\nError:", e$message)
+        } else if (grepl("yaml|parse", e$message, ignore.case = TRUE)) {
+          paste("Failed to parse YAML file. Please check that the file is valid YAML format.",
+                "\nError:", e$message)
+        } else {
+          paste("Failed to import color scheme:", e$message,
+                "\nPlease check that the file is a valid Protigy color scheme.")
+        }
+
         shinyalert::shinyalert(
           title = "Import Failed",
-          text = paste("Failed to import colors:", e$message),
+          text = error_msg,
           type = "error"
         )
       })
