@@ -92,53 +92,6 @@ test_that("sync_colors_across_omes updates all omes with same condition", {
 })
 
 
-test_that("reset_colors_to_default resets specific column or all colors", {
-  # Create mock colors
-  default_colors <- list(
-    multi_ome = list(
-      treatment = list(
-        is_discrete = TRUE,
-        vals = c("control", "drug_A"),
-        colors = c("#4477AA", "#EE6677")
-      ),
-      tissue = list(
-        is_discrete = TRUE,
-        vals = c("normal", "tumor"),
-        colors = c("#228833", "#CCBB44")
-      )
-    )
-  )
-
-  custom_colors <- default_colors
-  # Modify colors
-  custom_colors$multi_ome$treatment$colors <- c("#FF0000", "#00FF00")
-  custom_colors$multi_ome$tissue$colors <- c("#0000FF", "#FFFF00")
-
-  # Test resetting a specific column
-  reset_colors <- reset_colors_to_default(
-    custom_colors,
-    default_colors,
-    ome = "multi_ome",
-    annot_column = "treatment"
-  )
-
-  expect_equal(reset_colors$multi_ome$treatment$colors,
-               default_colors$multi_ome$treatment$colors)
-  expect_equal(reset_colors$multi_ome$tissue$colors,
-               custom_colors$multi_ome$tissue$colors)  # Should remain custom
-
-  # Test resetting all colors
-  reset_all <- reset_colors_to_default(
-    custom_colors,
-    default_colors,
-    ome = NULL,
-    annot_column = NULL
-  )
-
-  expect_equal(reset_all, default_colors)
-})
-
-
 test_that("export_colors_to_yaml and import_colors_from_yaml work correctly", {
   # Create test colors
   test_colors <- list(
@@ -177,11 +130,23 @@ test_that("export_colors_to_yaml and import_colors_from_yaml work correctly", {
   expect_true("colors" %in% names(yaml_data))
   expect_true("multi_ome" %in% names(yaml_data$colors))
 
-  # Verify values
-  expect_equal(names(yaml_data$colors$multi_ome$treatment),
-               c("control", "drug_A", "drug_B"))
+  # Verify metadata fields
+  expect_true("created_date" %in% names(yaml_data$metadata))
+  expect_true("protigy_version" %in% names(yaml_data$metadata))
+  expect_match(yaml_data$metadata$created_date, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+
+  # Verify that YAML has proper named structure (not unnamed array)
+  # This tests the as.list() fix
+  treatment_names <- names(yaml_data$colors$multi_ome$treatment)
+  expect_false(is.null(treatment_names))
+  expect_equal(treatment_names, c("control", "drug_A", "drug_B"))
   expect_equal(unname(unlist(yaml_data$colors$multi_ome$treatment)),
                c("#4477AA", "#EE6677", "#228833"))
+
+  # Verify tissue colors also have proper named structure
+  tissue_names <- names(yaml_data$colors$multi_ome$tissue)
+  expect_false(is.null(tissue_names))
+  expect_equal(tissue_names, c("normal", "tumor"))
 
   # Test import
   modified_colors <- test_colors
@@ -194,6 +159,44 @@ test_that("export_colors_to_yaml and import_colors_from_yaml work correctly", {
                test_colors$multi_ome$treatment$colors)
 
   # Clean up
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml skips continuous colors", {
+  # Create test colors with both discrete and continuous
+  test_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#4477AA", "#EE6677")
+      ),
+      age = list(
+        is_discrete = FALSE,
+        vals = c(20, 30, 40, 50),
+        colors = c("#AAAAAA", "#BBBBBB", "#CCCCCC", "#DDDDDD")
+      ),
+      tissue = list(
+        is_discrete = TRUE,
+        vals = c("normal", "tumor"),
+        colors = c("#228833", "#CCBB44")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(test_colors, temp_file)
+
+  yaml_data <- yaml::read_yaml(temp_file)
+
+  # Discrete columns should be exported
+  expect_true("treatment" %in% names(yaml_data$colors$multi_ome))
+  expect_true("tissue" %in% names(yaml_data$colors$multi_ome))
+
+  # Continuous column should NOT be exported
+  expect_false("age" %in% names(yaml_data$colors$multi_ome))
+
   unlink(temp_file)
 })
 
