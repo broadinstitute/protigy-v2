@@ -673,7 +673,7 @@ a[download] {
   margin-right: 50px !important; /* Add spacing from right edge of window */
   word-wrap: break-word;      /* Allow long words to wrap */
   overflow-wrap: break-word;  /* Modern alternative to word-wrap */
-  white-space: normal;        /* Ensure text can wrap */ 
+  white-space: normal;        /* Ensure text can wrap */
 }
 
 .shiny-notification-message {
@@ -682,4 +682,30 @@ a[download] {
   overflow-wrap: break-word;  /* Modern alternative to word-wrap */
   word-break: break-word;     /* Break long strings without spaces */
   white-space: pre-wrap;      /* Preserve line breaks and allow wrapping */
+}
+
+/* ============================================================================
+   Clear All Notifications Button Styling
+   ============================================================================ */
+
+/* Header button styling - orange color with middle alignment */
+#clear_all_notifications_header {
+  background-color: #f39c12;  /* Orange color */
+  border-color: #e67e22;
+  color: white;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  margin-top: 13px;
+  margin-right: 10px;
+  display: none;  /* Hidden by default, shown via JavaScript when notifications exist */
+}
+
+#clear_all_notifications_header:hover {
+  background-color: #e67e22;  /* Darker orange on hover */
+  border-color: #d35400;
+}
+
+#clear_all_notifications_header:active {
+  background-color: #d35400;  /* Even darker orange when clicked */
+  border-color: #c0392b;
 }
