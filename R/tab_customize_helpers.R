@@ -91,23 +91,39 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
   tryCatch({
     yaml_data <- yaml::read_yaml(file_path)
 
-    if (is.null(yaml_data$colors)) {
-      warning("No 'colors' section found in YAML file")
+    # Check for both ProTIGY format (colors) and PANOPLY format (groups.colors)
+    colors_data <- NULL
+    if (!is.null(yaml_data$colors)) {
+      colors_data <- yaml_data$colors
+    } else if (!is.null(yaml_data$`groups.colors`)) {
+      # PANOPLY format: groups.colors with flat structure (applies to all omes)
+      colors_data <- list()
+      # Apply to multi_ome and all individual omes
+      for (ome in names(custom_colors)) {
+        colors_data[[ome]] <- yaml_data$`groups.colors`
+      }
+    } else {
+      warning("No 'colors' or 'groups.colors' section found in YAML file")
+      return(custom_colors)
+    }
+
+    if (is.null(colors_data)) {
+      warning("No color data found in YAML file")
       return(custom_colors)
     }
 
     # Process each ome in current session
     for (ome in names(custom_colors)) {
       # Skip if ome not in YAML
-      if (!(ome %in% names(yaml_data$colors))) {
+      if (!(ome %in% names(colors_data))) {
         next
       }
 
       # Collect ALL colors globally across all columns in YAML for this ome
       # Build mapping: condition_name -> color
       yaml_color_map <- list()
-      for (annot_col in names(yaml_data$colors[[ome]])) {
-        yaml_vals <- names(yaml_data$colors[[ome]][[annot_col]])
+      for (annot_col in names(colors_data[[ome]])) {
+        yaml_vals <- names(colors_data[[ome]][[annot_col]])
 
         # Validate that the YAML structure has names (not an unnamed array)
         if (is.null(yaml_vals) || length(yaml_vals) == 0) {
@@ -117,7 +133,7 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
           next
         }
 
-        yaml_colors <- unname(unlist(yaml_data$colors[[ome]][[annot_col]]))
+        yaml_colors <- unname(unlist(colors_data[[ome]][[annot_col]]))
         for (i in seq_along(yaml_vals)) {
           # Store first occurrence (don't override if duplicate names across columns)
           if (!(yaml_vals[i] %in% names(yaml_color_map))) {

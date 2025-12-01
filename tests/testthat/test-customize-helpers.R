@@ -574,3 +574,181 @@ colors:
 
   unlink(temp_file)
 })
+
+test_that("import_colors_from_yaml - Handles legacy groups.colors format", {
+  # Create custom colors structure
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      ),
+      tissue = list(
+        is_discrete = TRUE,
+        vals = c("normal", "tumor"),
+        colors = c("#222222", "#333333")
+      )
+    ),
+    proteome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # PANOPLY format with groups.colors (flat structure, applies to all omes)
+  yaml_content <- "
+groups.colors:
+  treatment:
+    control: '#4477AA'
+    drug_A: '#EE6677'
+  tissue:
+    normal: '#228833'
+    tumor: '#CCBB44'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Should apply to both multi_ome and proteome (PANOPLY format applies to all)
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_A
+  expect_equal(result$multi_ome$tissue$colors[1], "#228833")  # normal
+  expect_equal(result$multi_ome$tissue$colors[2], "#CCBB44")  # tumor
+
+  expect_equal(result$proteome$treatment$colors[1], "#4477AA")  # control
+  expect_equal(result$proteome$treatment$colors[2], "#EE6677")  # drug_A
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Handles missing annotation columns gracefully", {
+  # Create custom colors with multiple annotation columns
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      ),
+      tissue = list(
+        is_discrete = TRUE,
+        vals = c("normal", "tumor"),
+        colors = c("#222222", "#333333")
+      ),
+      batch = list(
+        is_discrete = TRUE,
+        vals = c("batch1", "batch2"),
+        colors = c("#444444", "#555555")
+      )
+    )
+  )
+
+  # YAML only has treatment and tissue, missing batch
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+    tissue:
+      normal: '#228833'
+      tumor: '#CCBB44'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Columns in YAML should be updated
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")
+  expect_equal(result$multi_ome$tissue$colors[1], "#228833")
+  expect_equal(result$multi_ome$tissue$colors[2], "#CCBB44")
+
+  # Missing column (batch) should keep original colors
+  expect_equal(result$multi_ome$batch$colors, c("#444444", "#555555"))
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Handles missing condition values in annotation", {
+  # Create custom colors with more conditions than YAML
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A", "drug_B", "drug_C"),
+        colors = c("#000000", "#111111", "#222222", "#333333")
+      )
+    )
+  )
+
+  # YAML only has control and drug_A
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Matched conditions get YAML colors
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control (matched)
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_A (matched)
+
+  # Missing conditions (drug_B, drug_C) keep original colors
+  # (No unused colors in YAML since both were matched)
+  expect_equal(result$multi_ome$treatment$colors[3], "#222222")  # drug_B (original)
+  expect_equal(result$multi_ome$treatment$colors[4], "#333333")  # drug_C (original)
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml - Prefers ProTIGY format over PANOPLY format", {
+  # Create custom colors structure
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # YAML has both formats (should use ProTIGY format)
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+groups.colors:
+  treatment:
+    control: '#999999'
+    drug_A: '#888888'
+"
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # Should use ProTIGY format (colors), not PANOPLY format (groups.colors)
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # from colors
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # from colors
+
+  unlink(temp_file)
+})

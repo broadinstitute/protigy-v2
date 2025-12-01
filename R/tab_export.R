@@ -89,7 +89,8 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             tags$li("QCPCA_exports: PCA plots and regression plots (PDF)"),
             tags$li("multiomeHeatmap_exports: Multi-omics heatmaps (PDF)"),
             tags$li("statSummary_exports: P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
-            tags$li("statPlot_exports: Volcano plots (PDF)")
+            tags$li("statPlot_exports: Volcano plots (PDF)"),
+            tags$li("customization: Color scheme (YAML) - automatically included in all exports")
           ),
           
           h5(strong("Instructions:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
