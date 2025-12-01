@@ -688,10 +688,10 @@ a[download] {
    Clear All Notifications Button Styling
    ============================================================================ */
 
-/* Header button styling - orange color with middle alignment */
+/* Header button styling - black color with middle alignment */
 #clear_all_notifications_header {
-  background-color: #f39c12;  /* Orange color */
-  border-color: #e67e22;
+  background-color: #2c3e50;  /* Dark gray/black color */
+  border-color: #1a252f;
   color: white;
   font-size: 12px;
   transition: all 0.2s ease;
@@ -701,11 +701,11 @@ a[download] {
 }
 
 #clear_all_notifications_header:hover {
-  background-color: #e67e22;  /* Darker orange on hover */
-  border-color: #d35400;
+  background-color: #1a252f;  /* Darker on hover */
+  border-color: #0d1419;
 }
 
 #clear_all_notifications_header:active {
-  background-color: #d35400;  /* Even darker orange when clicked */
-  border-color: #c0392b;
+  background-color: #0d1419;  /* Even darker when clicked */
+  border-color: #000000;
 }
