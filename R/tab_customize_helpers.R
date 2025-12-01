@@ -103,7 +103,7 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
         colors_data[[ome]] <- yaml_data$`groups.colors`
       }
     } else {
-      warning("No 'colors' or 'groups.colors' section found in YAML file")
+      warning("No 'colors' section found in YAML file")
       return(custom_colors)
     }
 
@@ -153,6 +153,9 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
         current_colors <- custom_colors[[ome]][[annot_col]]$colors
         new_colors <- current_colors  # Start with original colors
 
+        # Check if this annotation column exists in YAML
+        annot_col_in_yaml <- annot_col %in% names(colors_data[[ome]])
+
         # Track used colors and matched conditions
         used_colors <- character(0)
         matched_condition_indices <- integer(0)
@@ -167,12 +170,19 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
         }
 
         # Step 2: Get unused colors from YAML
+        # Only apply unused colors if:
+        # 1. The column exists in YAML, OR
+        # 2. The column doesn't exist in YAML but has at least one matched condition (global matching)
         all_yaml_colors <- unname(unlist(yaml_color_map))
         unused_colors <- setdiff(all_yaml_colors, used_colors)
 
         # Step 3: Get unmatched conditions (sorted alphabetically)
         unmatched_indices <- setdiff(seq_along(current_vals), matched_condition_indices)
-        if (length(unmatched_indices) > 0 && length(unused_colors) > 0) {
+        
+        # Only apply unused colors if column exists in YAML OR if there are matched conditions
+        should_apply_unused <- annot_col_in_yaml || length(matched_condition_indices) > 0
+        
+        if (length(unmatched_indices) > 0 && length(unused_colors) > 0 && should_apply_unused) {
           # Sort unmatched conditions alphabetically
           unmatched_vals <- current_vals[unmatched_indices]
           sorted_order <- order(unmatched_vals)
@@ -185,6 +195,7 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
           }
           # Remaining unmatched conditions keep their original colors
         }
+        # If column doesn't exist in YAML and has no matches, unmatched conditions keep their original colors
 
         # Update colors
         custom_colors[[ome]][[annot_col]]$colors <- new_colors
