@@ -93,13 +93,12 @@ gctSetupUI <- function(ns,
 
     ## log transformation input
     add_css_attributes(
-      radioButtons(
+      selectInput(
         ns(paste0(label, '_log_transformation')),
         label = 'Log-transformation',
         choices = parameter_choices$log_transformation,
         selected = parameters[[label]]$log_transformation),
-      classes = "small-input",
-      styles = "padding-bottom: 10px"),
+      classes = "small-input"),
     
     ## data normalization input
     add_css_attributes(

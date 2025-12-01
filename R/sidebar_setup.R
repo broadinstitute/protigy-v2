@@ -30,16 +30,8 @@ setupSidebarUI <- function(id = "setupSidebar") {
   tags$div(
     style = "margin-bottom: 10px; padding: 15px; width: 100%", 
     tagList(
-      h4("Upload your data file(s)"), 
-
-      # File input
-      fileInput(ns("dataFiles"),
-                paste("GCT, CSV, TSV, or Excel"),
-                multiple = TRUE,
-                accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
-
-      # Display uploaded files list with remove buttons
-      uiOutput(ns("uploadedFilesList")),
+      # File upload section - conditionally shown
+      uiOutput(ns("fileUploadSection")),
 
       hr(),
       
@@ -91,10 +83,38 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
 
 
+    ### FILE UPLOAD SECTION UI ###
+    
+    # Conditionally show/hide file upload section based on setup completion
+    output$fileUploadSection <- renderUI({
+      # Hide file upload UI after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
+      tagList(
+        h4("Upload your data file(s)"), 
+        
+        # File input
+        fileInput(ns("dataFiles"),
+                  paste("GCT, CSV, TSV, or Excel"),
+                  multiple = TRUE,
+                  accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
+        
+        # Display uploaded files list with remove buttons
+        uiOutput(ns("uploadedFilesList"))
+      )
+    })
+
     ### UPLOADED FILES LIST UI ###
 
     # Display list of uploaded files with remove buttons
     output$uploadedFilesList <- renderUI({
+      # Hide file upload UI after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
       # Use validate instead of req for better error handling
       validate(need(accumulated_files(), ""))
 
@@ -110,6 +130,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         div(
           style = "max-height: 200px; overflow-y: auto; margin-bottom: 10px; width: 100%;",
           lapply(1:nrow(files), function(i) {
+            # Use filename as unique identifier (sanitize for use as ID)
+            file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
@@ -117,11 +139,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 files$name[i]
               ),
               actionButton(
-                ns(paste0("remove_file_", i)),
+                ns(paste0("remove_file_", file_id)),
                 label = NULL,
                 icon = icon("times"),
-                class = "btn-sm btn-danger",
-                style = "padding: 2px 8px; font-size: 12px; flex-shrink: 0;"
+                class = "btn-sm btn-primary",
+                style = "padding: 2px 8px; font-size: 12px; flex-shrink: 0;",
+                `data-filename` = files$name[i]  # Store filename as data attribute
               )
             )
           })
@@ -129,7 +152,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         actionButton(
           ns("clearAllFiles"),
           "Clear All",
-          class = "btn-warning btn-sm",
+          class = "btn-sm btn-primary",
           icon = icon("trash")
         )
       )
@@ -227,8 +250,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
     ### FILE REMOVAL HANDLERS ###
 
-    # Handle individual file removal - FIX: Use isolate to capture index correctly
+    # Handle individual file removal - Use filename as unique identifier to prevent index issues
     observe({
+      # Hide file removal handlers after setup is complete
+      if (!is.null(GCTs_and_params())) {
+        return(NULL)
+      }
+      
       # Use validate for cleaner NULL handling
       validate(need(accumulated_files(), ""))
 
@@ -239,9 +267,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         return(NULL)
       }
 
-      # Create observers for each remove button with proper index capturing
-      lapply(1:nrow(files), function(index) {
-        btn_id <- paste0("remove_file_", index)
+      # Create observers for each remove button using filename as unique identifier
+      lapply(1:nrow(files), function(i) {
+        # Use filename as unique identifier (sanitize for use as ID)
+        file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
+        btn_id <- paste0("remove_file_", file_id)
+        filename <- files$name[i]  # Capture filename at observer creation time
 
         observeEvent(input[[btn_id]], {
           # Wrap in tryCatch to handle any reactive errors
@@ -250,14 +281,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             current_files <- isolate(accumulated_files())
 
             # Safety check
-            if (is.null(current_files) || index > nrow(current_files)) {
+            if (is.null(current_files)) {
               return(NULL)
             }
 
-            removed_name <- current_files$name[index]
+            # Find the file by name (not index) to handle cases where files were removed
+            file_idx <- which(current_files$name == filename)
+            
+            if (length(file_idx) == 0) {
+              # File already removed, do nothing
+              return(NULL)
+            }
 
-            # Remove the file at this specific index
-            remaining_files <- current_files[-index, , drop = FALSE]
+            removed_name <- current_files$name[file_idx[1]]
+
+            # Remove the file by name
+            remaining_files <- current_files[current_files$name != filename, , drop = FALSE]
 
             if (nrow(remaining_files) == 0) {
               # Show notification FIRST (before state changes)
@@ -310,6 +349,16 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
     # Handle clear all files
     observeEvent(input$clearAllFiles, {
+      # Only allow clearing files if setup is not complete
+      if (!is.null(GCTs_and_params())) {
+        showNotification(
+          "Cannot clear files after setup is complete. Please go back to setup to modify files.",
+          type = "warning",
+          duration = 5
+        )
+        return()
+      }
+      
       accumulated_files(NULL)
       parameters_internal_reactive(NULL)
       GCTs_unprocessed_internal_reactive(NULL)
@@ -329,7 +378,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     observeEvent(
       eventExpr = input$backToLabelsButton,
       ignoreInit = TRUE,
-      handlerExpr = labelAssignment())
+      handlerExpr = {
+        # Reset GCTs_and_params to allow file upload/removal again
+        GCTs_and_params(NULL)
+        labelAssignment()
+      })
     
     # validate labels once submitted
     observeEvent(input$submitLabelsButton, {

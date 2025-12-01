@@ -19,8 +19,14 @@ app_server <- function(input, output, session) {
   GCTs_and_params <- sidebar_output$GCTs_and_params
   globals <- sidebar_output$globals
   GCTs_original <- sidebar_output$GCTs_original
-  
-  
+
+
+  ## Clear all notifications functionality
+  observeEvent(input$clear_all_notifications_header, {
+    shinyjs::runjs("$('.shiny-notification').remove();")
+  })
+
+
   ## Customize module
   custom_colors <- customizeTabServer(GCTs_and_params = GCTs_and_params,
                                       globals = globals)
