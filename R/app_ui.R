@@ -7,18 +7,57 @@
 ################################################################################
 
 app_UI <- function(request) {dashboardPage(
-  dashboardHeader(title = paste0('ProTIGY v', packageVersion('Protigy'))),
-  
+  dashboardHeader(
+    title = paste0('ProTIGY v', packageVersion('Protigy')),
+    tags$li(class = "dropdown",
+            actionButton(
+              inputId = "clear_all_notifications_header",
+              label = "Clear All Notifications",
+              icon = icon("bell-slash"),
+              class = "btn-sm"
+            )
+    )
+  ),
+
   shinydashboard::dashboardSidebar(
     setupSidebarUI()
   ),
-  
+
   dashboardBody(
     # include custom CSS
     includeCSS(system.file("custom.css", package = "Protigy")),
     # include shinyjs
     shinyjs::useShinyjs(),
-  
+
+    # JavaScript to manage Clear All Notifications button visibility
+    tags$script(HTML("
+      $(document).ready(function() {
+        // Function to update button visibility based on notification presence
+        function updateClearButton() {
+          var notifications = $('.shiny-notification');
+          if (notifications.length > 0) {
+            $('#clear_all_notifications_header').show();
+          } else {
+            $('#clear_all_notifications_header').hide();
+          }
+        }
+
+        // Use MutationObserver to watch for notification changes
+        var observer = new MutationObserver(function(mutations) {
+          updateClearButton();
+        });
+
+        // Observe the body for notification additions/removals
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+
+        // Initial check
+        updateClearButton();
+      });
+    ")),
+
     navbarPage(
       title = '',
       id = "navbar-tabs",
