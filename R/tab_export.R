@@ -21,8 +21,8 @@ exportTabUI <- function(id = "exportTab") {
 }
 
 # server for the summary tab
-exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) { 
-  
+exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, globals) {
+
   ## module function
   moduleServer(id, function (input, output, session) {
     
@@ -89,7 +89,8 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             tags$li("QCPCA_exports: PCA plots and regression plots (PDF)"),
             tags$li("multiomeHeatmap_exports: Multi-omics heatmaps (PDF)"),
             tags$li("statSummary_exports: P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
-            tags$li("statPlot_exports: Volcano plots (PDF)")
+            tags$li("statPlot_exports: Volcano plots (PDF)"),
+            tags$li("customization: Color scheme (YAML) - automatically included in all exports")
           ),
           
           h5(strong("Instructions:"), style = "font-size: 16px; margin-top: 20px; margin-bottom: 10px;"),
@@ -141,7 +142,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
         
         # make a folder for each -ome
         lapply(selected_omes, function(ome) dir.create(file.path(exports_dir, ome)))
-        
+
         # save parameters from each -ome
         lapply(setdiff(selected_omes, "multi_ome"), function(ome) {
           params <- parameters()[[ome]]
@@ -149,7 +150,25 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params) {
             params[setdiff(names(params), "gct_file_path")],
             file.path(exports_dir, ome, paste0(ome, "_parameters.yaml")))
         })
-        
+
+        # create customization folder and save color palette
+        customization_dir <- file.path(exports_dir, "customization")
+        dir.create(customization_dir, recursive = TRUE)
+
+        # save color palette as YAML
+        if (!is.null(globals$colors)) {
+          my_shinyalert_tryCatch(
+            text.error = "<b>Failed to export color palette:</b>",
+            show.error = FALSE,
+            expr = {
+              export_colors_to_yaml(
+                globals$colors,
+                file.path(customization_dir, "color_scheme.yaml")
+              )
+            }
+          )
+        }
+
         success_exports <- c()
         error_exports <- c()
         

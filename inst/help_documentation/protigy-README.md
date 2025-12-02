@@ -9,6 +9,7 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 - **Statistical Analysis**: Moderated t-tests, F-tests, and volcano plots
 - **Interactive Plots**: Zoom, pan, and explore your data
 - **Summary Statistics**: Data overview and sample information
+- **Color Customization**: Fully customize color schemes for all annotation columns across all datasets
 
 ### 🔧 **Data Processing**
 - **Normalization**: Multiple methods including median, quantile, and VSN normalization
@@ -32,6 +33,15 @@ If multiple datasets are uploaded, there will be multiple tabs on each page allo
 
 ### Plot Customization
 Many plots have a **double cogwheel** icon in the top right corner. Clicking this icon provides customization options for the plots. Your customization options will be saved and used for exports.
+
+### Color Customization
+The **Customize** tab allows you to fully customize color schemes for all annotation columns across all datasets. You can:
+- Maintain consistent colors across datasets (multi-ome mode) or customize each dataset independently (per-ome mode)
+- Import and export color schemes as YAML files
+- Restore default colors or reset to original app-generated colorblind-safe palettes
+- Customize colors for any discrete annotation column in your data
+
+See the **Help → Customization** tab for detailed instructions.
 
 ### Changing Settings
 If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
@@ -94,6 +104,7 @@ For CSV/TSV/Excel files, you'll also need to:
 
 - **General Help**: This tab provides an overview of ProTIGY's capabilities
 - **Analysis Help**: Detailed guidance on analysis parameters and options
+- **Customization Help**: Step-by-step instructions for customizing color schemes
 
 ## Technical Requirements
 

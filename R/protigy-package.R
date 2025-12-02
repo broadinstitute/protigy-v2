@@ -22,6 +22,7 @@
 #' @importFrom grid gpar
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly style
 #' @importFrom circlize colorRamp2
+#' @importFrom colourpicker colourInput
 #' @importFrom shinyBS tipify
 #' @importFrom WriteXLS WriteXLS
 #' @importFrom RColorBrewer brewer.pal

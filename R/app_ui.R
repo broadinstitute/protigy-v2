@@ -64,12 +64,13 @@ app_UI <- function(request) {dashboardPage(
       navbarMenu(
         "Help",
         tabPanel("General", helpGeneralTabUI(), value = "Help-General"),
+        tabPanel("Customize", helpCustomizationTabUI(), value = "Help-Customize"),
         tabPanel("Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
         icon = icon("question")
       ),
-      # tabPanel("Customize", 
-      #          customizeTabUI(),
-      #          icon = icon("wand-magic-sparkles")),
+      tabPanel("Customize",
+               customizeTabUI(),
+               icon = icon("wand-magic-sparkles")),
       tabPanel("Summary", summaryTabUI(), value = "Summary"),
       navbarMenu(
         "QC",
