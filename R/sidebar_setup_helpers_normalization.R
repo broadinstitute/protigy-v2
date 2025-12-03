@@ -52,6 +52,9 @@ normalize.data  <- function(data, # a data matrix
     ## group-specific normalization  
   } else { 
     
+    ## store original column order to preserve it after normalization
+    original.col.order <- colnames(data)
+    
     ## extract groups
     groups <- unique(grp.vec)
     
@@ -71,6 +74,9 @@ normalize.data  <- function(data, # a data matrix
         data.norm <- cbind(data.norm, data.group.norm)
       }
     } ## end for
+    
+    ## reorder columns to match original order
+    data.norm <- data.norm[, original.col.order, drop = FALSE]
     
   } ## end else
   

@@ -36,6 +36,30 @@ test_that("normalize.data handles group normalization", {
   expect_equal(dim(result_group), dim(test_data))
 })
 
+test_that("normalize.data preserves column order after group normalization", {
+  # Create test data with columns in a specific order
+  # This tests the bug where columns were reordered by group
+  test_data <- matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), nrow = 3, ncol = 4)
+  rownames(test_data) <- paste0("gene_", 1:3)
+  colnames(test_data) <- paste0("sample_", 1:4)
+  
+  # Create group vector where groups appear in non-alphabetical order
+  # Original order: sample_1 (B), sample_2 (A), sample_3 (B), sample_4 (A)
+  # If unique() sorts alphabetically, it would process A then B, reordering columns
+  test_grp_vec <- c("B", "A", "B", "A")
+  names(test_grp_vec) <- colnames(test_data)
+  
+  # Store original column order
+  original_col_order <- colnames(test_data)
+  
+  # Test group normalization
+  result_group <- normalize.data(test_data, method = "Median", grp.vec = test_grp_vec)
+  
+  # Verify column order is preserved
+  expect_equal(colnames(result_group), original_col_order)
+  expect_equal(dim(result_group), dim(test_data))
+})
+
 test_that("normalize.data handles single group", {
   # Create test data with proper dimnames
   test_data <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 2, ncol = 3)
