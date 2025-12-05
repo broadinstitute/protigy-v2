@@ -344,11 +344,15 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
     # Observe all color picker changes
     # NOTE: Skip observation during import to prevent interference
+    # We depend on custom_colors() to trigger when UI renders, then check inputs
     observe({
+      # Depend on custom_colors() so this runs when UI is rendered/updated
+      colors_ui <- custom_colors()
+      
       # Skip if currently importing
       if (importing()) return()
 
-      # Get current colors without creating reactive dependency
+      # Get current colors without creating additional reactive dependency
       colors <- isolate(custom_colors())
       req(colors)
 
