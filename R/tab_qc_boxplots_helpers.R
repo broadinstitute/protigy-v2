@@ -18,8 +18,20 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
   stats$sample <- rownames(stats)
   
   # add annotation information
-  group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
-  annot <- data.frame("sample"=colnames(gct@mat),"annot"=group)
+  # Check if this column is continuous based on color mapping
+  # If continuous, keep as numeric; if discrete, convert to factor
+  if (!is.null(custom_color_map) && !custom_color_map$is_discrete) {
+    # Continuous column - keep as numeric
+    group <- gct@cdesc[[col_of_interest]]
+    if (is.character(group) || is.factor(group)) {
+      group <- suppressWarnings(as.numeric(as.character(group)))
+    }
+    annot <- data.frame("sample"=colnames(gct@mat),"annot"=group)
+  } else {
+    # Discrete column - convert to factor
+    group <- as.factor(as.character(gct@cdesc[[col_of_interest]]))
+    annot <- data.frame("sample"=colnames(gct@mat),"annot"=group)
+  }
   stats <- left_join(stats,annot,by="sample")
   
   #get the outliers and add annotation information
@@ -45,12 +57,33 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
     color_definition <- scale_colour_manual(values = colors)
   } else {
     group <- as.numeric(group)
+    
+    # Get colors from custom_color_map or use defaults
+    if (is.null(custom_color_map$colors) || length(custom_color_map$colors) == 0) {
+      # Use default continuous colors
+      low_col <- "blue"
+      mid_col <- "white"
+      high_col <- "red"
+      na_col <- "gray50"
+    } else {
+      low_col <- custom_color_map$colors[which(custom_color_map$vals == "low")]
+      mid_col <- custom_color_map$colors[which(custom_color_map$vals == "mid")]
+      high_col <- custom_color_map$colors[which(custom_color_map$vals == "high")]
+      na_col <- custom_color_map$colors[which(custom_color_map$vals == "na_color")]
+      
+      # Fallback to defaults if any are missing
+      if (length(low_col) == 0) low_col <- "blue"
+      if (length(mid_col) == 0) mid_col <- "white"
+      if (length(high_col) == 0) high_col <- "red"
+      if (length(na_col) == 0) na_col <- "gray50"
+    }
+    
     color_definition <- scale_colour_gradient2(
-      low = custom_color_map$colors[which(custom_color_map$vals == "low")],
-      mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
-      high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(min(group), max(group)),
-      na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
+      low = low_col,
+      mid = mid_col,
+      high = high_col,
+      midpoint = mean(min(group, na.rm = TRUE), max(group, na.rm = TRUE)),
+      na.value = na_col
     )
   }
   

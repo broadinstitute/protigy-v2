@@ -66,11 +66,28 @@ set_annot_colors <- function( annot_table,
     if (!is.null(continuous_columns)) { 
       warning("The 'autodetect_continuous' parameter is set to TRUE, but continuous columns were manually selected with the 'continuous_columns' parameter. Autodetection will be skipped.")
     } else {
+      # Only check numeric columns for continuous - string columns are already discrete (converted in processGCTs)
       continuous_columns_idx = which(unname(sapply( annot_table_discrete, simplify=TRUE, # get column indices
-                                                    function(annot_col) { is.continuous(annot_col, na_annot_vals, autodetect_continuous_nfactor_cutoff) }))) # of continuous columns
+                                                    function(annot_col) { 
+                                                      # If column is already a string, it's discrete (was converted in processGCTs)
+                                                      if (is.character(annot_col) || is.factor(annot_col)) {
+                                                        return(FALSE) # not continuous
+                                                      }
+                                                      # Only check numeric columns
+                                                      is.continuous(annot_col, na_annot_vals, autodetect_continuous_nfactor_cutoff) 
+                                                    }))) # of continuous columns
       
       annot_table_continuous = cbind(annot_table_continuous, annot_table_discrete[continuous_columns_idx]) # add continuous columns to annot_table_continuous
       annot_table_discrete = annot_table_discrete[setdiff(1:length(annot_table_discrete), continuous_columns_idx)] # remove continuous columns from annot_table_discrete
+    }
+  }
+  
+  # Convert numeric columns that are determined to be discrete to strings
+  # This ensures they are treated as categorical, not continuous
+  # Note: This should rarely happen now since processGCTs already converts them, but keep as safety
+  for (col_name in names(annot_table_discrete)) {
+    if (is.numeric(annot_table_discrete[[col_name]])) {
+      annot_table_discrete[[col_name]] <- as.character(annot_table_discrete[[col_name]])
     }
   }
   

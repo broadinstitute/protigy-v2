@@ -271,9 +271,9 @@ test_that("is.continuous handles NA values correctly", {
 })
 
 test_that("is.continuous respects nfactor_cutoff parameter", {
-  # Test with default cutoff (10)
+  # Test with default cutoff (20)
   data_15_unique <- rep(1:15, each = 2)
-  expect_true(is.continuous(data_15_unique))
+  expect_false(is.continuous(data_15_unique))
   
   # Test with custom cutoff
   expect_false(is.continuous(data_15_unique, nfactor_cutoff = 20))

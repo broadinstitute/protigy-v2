@@ -212,12 +212,36 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
 }
 
 
+# Helper function to convert numeric columns that are discrete to strings
+# This ensures discrete columns are treated as categorical, not continuous
+# Use cutoff 20 to match processGCTs logic
+convert_discrete_numeric_to_string <- function(cdesc) {
+  for (col_name in names(cdesc)) {
+    if (is.numeric(cdesc[[col_name]])) {
+      # Check if this column should be treated as discrete
+      # Use cutoff 20 to match processGCTs logic
+      if (is.discrete(cdesc[[col_name]], nfactor_cutoff = 20)) {
+        cdesc[[col_name]] <- as.character(cdesc[[col_name]])
+      }
+    }
+  }
+  return(cdesc)
+}
+
 # wrapper to make custom colors
 make_custom_colors <- function(GCTs, GCTs_merged) {
+  # Convert numeric columns that are discrete to strings in all GCTs
+  # This must happen before colors are set up
+  GCTs_merged@cdesc <- convert_discrete_numeric_to_string(GCTs_merged@cdesc)
+  for (ome in names(GCTs)) {
+    GCTs[[ome]]@cdesc <- convert_discrete_numeric_to_string(GCTs[[ome]]@cdesc)
+  }
+  
   # initialize list
   custom_colors <- list()
   
   # start by making custom colors for the merged GCT
+  # Use cutoff 20 to match processGCTs logic
   custom_colors$multi_ome <- set_annot_colors(GCTs_merged@cdesc, autodetect_continuous_nfactor_cutoff = 20)
   
   # then, loop through each ome

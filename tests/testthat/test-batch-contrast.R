@@ -646,3 +646,58 @@ test_that("batch contrast processing maintains statistical validity", {
   # The batch approach is actually BETTER statistically than per-contrast
   # because it uses information from all groups to estimate variance
 })
+
+test_that("batch contrast processing handles hyphens in group names", {
+  # Test that group names with hyphens (e.g., "Non-inflamed") are handled correctly
+  # This tests the fix for syntactically valid R names in contrast matrices
+  if (!requireNamespace("limma", quietly = TRUE)) {
+    skip("limma package not available")
+  }
+  
+  # Create test data with groups containing hyphens
+  test_data <- matrix(rnorm(60), nrow = 10, ncol = 6)
+  rownames(test_data) <- paste0("gene_", 1:10)
+  colnames(test_data) <- paste0("sample_", 1:6)
+  
+  # Create groups with hyphens
+  groups <- rep(c("Inflamed", "Non-inflamed"), each = 3)
+  
+  # Create mapping from original group names to syntactically valid names
+  unique_groups <- unique(groups)
+  group_name_map <- setNames(make.names(unique_groups), unique_groups)
+  
+  # Convert group names to syntactically valid names
+  groups_valid <- group_name_map[as.character(groups)]
+  
+  # Create factor with valid names
+  f <- factor(groups_valid, levels = unique(groups_valid))
+  
+  # Create design matrix
+  design <- model.matrix(~ 0 + f)
+  colnames(design) <- levels(f)  # Ensure column names match factor levels
+  
+  # Create contrast strings with valid names
+  contrast_strings <- c("`Inflamed` - `Non.inflamed`")
+  contrast_list <- setNames(as.list(contrast_strings), "Inflamed_over_Non.inflamed")
+  
+  # Create contrast matrix
+  contrast_matrix <- do.call(
+    limma::makeContrasts,
+    c(contrast_list, list(levels = levels(f)))
+  )
+  
+  # Verify that contrast matrix row names match design matrix column names
+  expect_equal(rownames(contrast_matrix), colnames(design))
+  
+  # Fit model and contrasts - should not error or warn
+  data.matrix <- data.frame(test_data, stringsAsFactors = FALSE)
+  fit <- limma::lmFit(data.matrix, design)
+  
+  expect_no_error({
+    fit2 <- limma::contrasts.fit(fit, contrast_matrix)
+  })
+  
+  expect_no_warning({
+    fit2 <- limma::contrasts.fit(fit, contrast_matrix)
+  })
+})

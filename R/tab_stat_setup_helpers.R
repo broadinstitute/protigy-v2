@@ -77,7 +77,13 @@ stat.testing <- function(
         id <- tab.group[, id.col]
         data <- tab.group[, setdiff(colnames(tab.group), id.col)]
 
-        f <- factor(groups)
+        # Convert group names to syntactically valid names for factor creation
+        # This handles group names with hyphens (e.g., "Non-inflamed")
+        unique_groups <- unique(groups)
+        group_name_map <- setNames(make.names(unique_groups), unique_groups)
+        groups_valid <- group_name_map[as.character(groups)]
+        
+        f <- factor(groups_valid, levels = unique(groups_valid))
         if (length(levels(f)) < 2) {
           message(paste(
             "Skipping",
@@ -310,10 +316,14 @@ stat.testing <- function(
             sign(mod.t.result$logFC)
 
           ##add label(group_name)
+          # Convert group_name to syntactically valid R name for column names
+          # This handles group names with hyphens (e.g., "Non-inflamed" -> "Non.inflamed")
+          group_name_valid <- make.names(group_name)
+          
           if (!is.null(group_name)) {
             colnames(mod.t.result) <- paste(
               colnames(mod.t.result),
-              group_name,
+              group_name_valid,
               sep = '.'
             )
           }
@@ -325,9 +335,10 @@ stat.testing <- function(
           rownames(mod.t) <- id
 
           # Keep only id + renamed stats
+          # Use valid group name in grep pattern to match converted column names
           mod.t.sub <- mod.t[, c(
             "id",
-            grep(paste0("\\.", group_name, "$"), colnames(mod.t), value = TRUE)
+            grep(paste0("\\.", group_name_valid, "$"), colnames(mod.t), value = TRUE)
           )]
 
           # Merge into the combined table for this ome
@@ -393,6 +404,12 @@ stat.testing <- function(
         # Extract all unique groups involved in any contrast
         all_contrast_groups <- unique(unlist(selected_contrasts))
 
+        # Create mapping from original group names to syntactically valid names
+        # This handles group names with hyphens (e.g., "Non-inflamed") that need to be valid R names
+        group_name_map <- setNames(make.names(all_contrast_groups), all_contrast_groups)
+        # Reverse mapping for display purposes
+        valid_to_original <- setNames(all_contrast_groups, group_name_map)
+
         # Filter samples - direct logical indexing with fewer intermediate variables
         sample_groups <- cdesc[colnames(ome_data), annotation_col, drop = TRUE]
         keep_samples <- sample_groups %in% all_contrast_groups
@@ -411,10 +428,16 @@ stat.testing <- function(
           data.matrix <- ome_data[, keep_samples, drop = FALSE]
         }
 
-        groups <- factor(sample_groups[keep_samples], levels = all_contrast_groups)
+        # Convert group names to syntactically valid names for factor creation
+        sample_groups_valid <- group_name_map[as.character(sample_groups[keep_samples])]
+        all_contrast_groups_valid <- group_name_map[all_contrast_groups]
+        
+        groups <- factor(sample_groups_valid, levels = all_contrast_groups_valid)
 
         # Create design matrix with all groups (no intercept)
+        # Keep valid names in design matrix to match contrast matrix
         design <- model.matrix(~ 0 + groups)
+        # Ensure column names match factor levels exactly (for makeContrasts)
         colnames(design) <- levels(groups)
 
         # OPTIMIZATION STRATEGY 2: Pre-allocate contrast vectors (10-15% faster)
@@ -427,18 +450,23 @@ stat.testing <- function(
           contrast_pair <- selected_contrasts[[i]]
           group1 <- contrast_pair[1]
           group2 <- contrast_pair[2]
+          # Convert to valid names for contrast strings
+          group1_valid <- group_name_map[group1]
+          group2_valid <- group_name_map[group2]
           # For contrast "A / B", user expects fold change = A - B
           # Use backticks to handle special characters in group names
-          contrast_strings[i] <- paste0("`", group1, "` - `", group2, "`")
+          contrast_strings[i] <- paste0("`", group1_valid, "` - `", group2_valid, "`")
           contrast_names[i] <- paste0(group1, "_over_", group2)
         }
 
         # OPTIMIZATION STRATEGY 3: Replace eval(parse()) with do.call() (5-10% faster + safer)
         # Create contrast matrix using do.call for better performance and safety
+        # Use valid group names for makeContrasts (it needs syntactically valid names)
         contrast_list <- setNames(as.list(contrast_strings), contrast_names)
+        # makeContrasts needs the valid level names (not the design matrix with original names)
         contrast_matrix <- do.call(
           limma::makeContrasts,
-          c(contrast_list, list(levels = design))
+          c(contrast_list, list(levels = levels(groups)))
         )
 
         # Fit model once for all groups

@@ -195,7 +195,8 @@ is.discrete <- function(annot_col, nfactor_cutoff = 20) {
 
 # Helper function to determine if an annotation column contains continuous data
 # This is the inverse of is.discrete and used in color customization
-is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$", "^unknown$", "^$"), nfactor_cutoff = 10) {
+# Use same default cutoff as is.discrete() for consistency
+is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$", "^unknown$", "^$"), nfactor_cutoff = 20) {
   if (is.factor(annot_col)) {
     annot_vals <- levels(annot_col)
   } else {
