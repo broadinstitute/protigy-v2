@@ -87,8 +87,16 @@ test_that("create_boxplot handles different color map types", {
   result_discrete <- create_boxplot(mock_gct, "group", "test_ome", discrete_colors, mock_params, "org")
   expect_s3_class(result_discrete, "ggplot")
   
-  # Skip continuous color map test for boxplots - complex to test properly
-  # The function expects specific color map structure that's difficult to mock
+  # Test with continuous color map
+  continuous_colors <- list(
+    is_discrete = FALSE,
+    colors = NULL  # Will use default colors
+  )
+  # Create continuous annotation
+  mock_gct_continuous <- mock_gct
+  mock_gct_continuous@cdesc$age <- c(20, 25, 30, 35, 40, 45, 50, 55)
+  result_continuous <- create_boxplot(mock_gct_continuous, "age", "test_ome", continuous_colors, mock_params, "org")
+  expect_s3_class(result_continuous, "ggplot")
   
   # Test with NULL color map
   result_null <- create_boxplot(mock_gct, "group", "test_ome", NULL, mock_params, "org")
@@ -131,8 +139,16 @@ test_that("create_profile_plot handles different color map types", {
   result_discrete <- create_profile_plot(mock_gct, "group", "test_ome", discrete_colors, mock_params, "org")
   expect_s3_class(result_discrete, "ggplot")
   
-  # Skip continuous color map test for profile plots - complex to test properly
-  # The function expects specific color map structure that's difficult to mock
+  # Test with continuous color map
+  continuous_colors <- list(
+    is_discrete = FALSE,
+    colors = NULL  # Will use default colors
+  )
+  # Create continuous annotation
+  mock_gct_continuous <- mock_gct
+  mock_gct_continuous@cdesc$age <- c(20, 25, 30, 35, 40, 45, 50, 55)
+  result_continuous <- create_profile_plot(mock_gct_continuous, "age", "test_ome", continuous_colors, mock_params, "org")
+  expect_s3_class(result_continuous, "ggplot")
   
   # Test with NULL color map
   result_null <- create_profile_plot(mock_gct, "group", "test_ome", NULL, mock_params, "org")
@@ -471,4 +487,97 @@ test_that("create_corr_boxplot handles single-sample groups", {
     create_corr_boxplot(single_gct, "group", "test_ome", NULL, "pearson", single_cor_matrix),
     "No groups have more than one sample. Cannot calculate intra-group correlations."
   )
+})
+
+test_that("create_PCA_plot handles hyphens in group names", {
+  # Test PCA plot with group names containing hyphens (e.g., "Non-inflamed")
+  # This tests the fix for preserving original column names and annotation values
+  mock_mat <- matrix(rnorm(40), nrow = 5, ncol = 8)
+  rownames(mock_mat) <- paste0("gene_", 1:5)
+  colnames(mock_mat) <- paste0("sample_", 1:8)
+  
+  mock_cdesc <- data.frame(
+    group = c(rep("Inflamed", 4), rep("Non-inflamed", 4)),  # Group with hyphen
+    row.names = paste0("sample_", 1:8)
+  )
+  
+  mock_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:5),
+    row.names = paste0("gene_", 1:5)
+  )
+  
+  mock_gct <- new("GCT",
+                  mat = mock_mat,
+                  cdesc = mock_cdesc,
+                  rdesc = mock_rdesc,
+                  rid = paste0("gene_", 1:5),
+                  cid = paste0("sample_", 1:8)
+  )
+  
+  mock_colors <- list(
+    is_discrete = TRUE,
+    colors = list(group = c("red", "blue")),
+    vals = c("Inflamed", "Non-inflamed")
+  )
+  
+  # Should not error and should preserve hyphen in group name
+  result <- create_PCA_plot(mock_gct, "group", "test_ome", mock_colors, 1, 2)
+  expect_s3_class(result, "ggplot")
+  
+  # Check that the plot data contains the hyphenated group name
+  plot_data <- result$data
+  # The column is named after col_of_interest ("group")
+  annot_col <- plot_data$group
+  expect_true("Non-inflamed" %in% as.character(annot_col) || "Non-inflamed" %in% levels(annot_col))
+})
+
+test_that("create_PCA_plot handles continuous color mapping", {
+  # Test PCA plot with continuous color mapping
+  mock_mat <- matrix(rnorm(40), nrow = 5, ncol = 8)
+  rownames(mock_mat) <- paste0("gene_", 1:5)
+  colnames(mock_mat) <- paste0("sample_", 1:8)
+  
+  # Create continuous annotation (e.g., age, expression level)
+  mock_cdesc <- data.frame(
+    age = c(20, 25, 30, 35, 40, 45, 50, 55),  # Continuous variable
+    row.names = paste0("sample_", 1:8)
+  )
+  
+  mock_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:5),
+    row.names = paste0("gene_", 1:5)
+  )
+  
+  mock_gct <- new("GCT",
+                  mat = mock_mat,
+                  cdesc = mock_cdesc,
+                  rdesc = mock_rdesc,
+                  rid = paste0("gene_", 1:5),
+                  cid = paste0("sample_", 1:8)
+  )
+  
+  # Continuous color map with default colors (when colors is NULL)
+  continuous_colors <- list(
+    is_discrete = FALSE,
+    colors = NULL  # Will use default colors
+  )
+  
+  # Should not error and should keep age as numeric (not convert to factor)
+  result <- create_PCA_plot(mock_gct, "age", "test_ome", continuous_colors, 1, 2)
+  expect_s3_class(result, "ggplot")
+  
+  # Check that the plot data contains numeric age values
+  plot_data <- result$data
+  expect_true(is.numeric(plot_data$age))
+  
+  # Test with explicit continuous color map
+  continuous_colors_explicit <- list(
+    is_discrete = FALSE,
+    colors = c("blue", "white", "red", "gray50"),
+    vals = c("low", "mid", "high", "na_color")
+  )
+  
+  result2 <- create_PCA_plot(mock_gct, "age", "test_ome", continuous_colors_explicit, 1, 2)
+  expect_s3_class(result2, "ggplot")
+  expect_true(is.numeric(result2$data$age))
 })

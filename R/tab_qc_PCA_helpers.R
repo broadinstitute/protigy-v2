@@ -28,11 +28,25 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   
   #sort matrix by annotation
   mat <- gct@mat
-  group <- as.character(gct@cdesc[[col_of_interest]])
-  annot <- data.frame('sample'=colnames(mat),"annot"=group)
-  #replace NA with characters so that colors map appropriately
-  annot$annot[is.na(annot$annot)]="NA"
-  annot$annot <- as.factor(annot$annot)
+  group <- gct@cdesc[[col_of_interest]]
+  
+  # Check if this column is continuous based on color mapping
+  # If continuous, keep as numeric; if discrete, convert to factor
+  if (!is.null(custom_color_map) && !custom_color_map$is_discrete) {
+    # Continuous column - keep as numeric (don't convert to factor)
+    if (is.character(group) || is.factor(group)) {
+      group <- suppressWarnings(as.numeric(as.character(group)))
+    }
+    annot <- data.frame('sample'=colnames(mat),"annot"=group, stringsAsFactors = FALSE)
+  } else {
+    # Discrete column - convert to character then factor
+    group <- as.character(group)
+    annot <- data.frame('sample'=colnames(mat),"annot"=group, stringsAsFactors = FALSE)
+    #replace NA with characters so that colors map appropriately
+    annot$annot[is.na(annot$annot)]="NA"
+    # Convert to factor only after ensuring values are preserved
+    annot$annot <- factor(annot$annot, levels = unique(annot$annot))
+  }
   
   # add second annotation if provided
   if (!is.null(second_col_of_interest)) {
@@ -40,7 +54,8 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     annot$second_annot <- second_group
     #replace NA with characters so that colors map appropriately
     annot$second_annot[is.na(annot$second_annot)] <- "NA"
-    annot$second_annot <- as.factor(annot$second_annot)
+    # Convert to factor preserving original values
+    annot$second_annot <- factor(annot$second_annot, levels = unique(annot$second_annot))
     colnames(annot)[3] <- second_col_of_interest
   }
   
@@ -49,13 +64,67 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   colnames(annot)[2] = col_of_interest
   
   #remove zero-variance columns and calculate PCA
-  data.norm <- mat %>% data.frame() %>% drop_na() %>% t()
+  # Store original column names before conversion (to preserve hyphens, etc.)
+  # R's data.frame() converts hyphens to dots in column names, so we need to preserve them
+  original_colnames <- colnames(mat)
+  
+  # Convert to data.frame and drop NA rows (features), then transpose
+  # drop_na() removes entire rows (features), not columns (samples)
+  mat_df <- data.frame(mat, check.names = FALSE)
+  # Explicitly restore original column names to preserve hyphens, etc.
+  colnames(mat_df) <- original_colnames
+  
+  # Drop rows (features) with any NA, then transpose
+  # After transpose, rows are samples (from original columns)
+  mat_df <- mat_df %>% drop_na()
+  data.norm <- t(mat_df)
+  
+  # Ensure rownames (samples) match original column names
+  # After transpose, rownames should be the original column names
+  rownames(data.norm) <- original_colnames
+  
+  # Filter out zero-variance features (columns after transpose)
   data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
+  
+  # Check if we have any data left after filtering
+  if (ncol(data.norm) == 0) {
+    stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
+  }
+  if (nrow(data.norm) == 0) {
+    stop("No samples remain after filtering. Cannot perform PCA.")
+  }
+  
   my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
   
   # get variance explained
   vars <- my_pca$sdev^2
   prop_vars <- vars / sum(vars)
+  
+  # Use manual ggplot for PCA points with enhanced tooltip
+  pca_df <- as.data.frame(my_pca$x)
+  # Ensure sample names match original column names (preserve hyphens, etc.)
+  pca_df$sample <- rownames(pca_df)
+  
+  # Check if merge will result in empty data frame
+  if (nrow(pca_df) == 0) {
+    stop("PCA resulted in empty data frame. This may indicate a problem with the input data.")
+  }
+  
+  # Filter annot to only include samples that are in pca_df (after filtering)
+  # This ensures the merge will work correctly
+  annot <- annot[annot$sample %in% pca_df$sample, , drop = FALSE]
+  
+  # Check if annot is empty after filtering
+  if (nrow(annot) == 0) {
+    stop("No matching samples found between PCA results and annotations. This may indicate a sample name mismatch.")
+  }
+  
+  pca_df <- merge(pca_df, annot, by = "sample")
+  
+  # Check if merge resulted in empty data frame (shouldn't happen now, but safety check)
+  if (nrow(pca_df) == 0) {
+    stop("Merge resulted in empty data frame. This should not happen - please report this error.")
+  }
   
   # get color definition
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
@@ -66,20 +135,38 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     names(colors) <- c(custom_color_map$vals,NA)
     color_definition <- scale_colour_manual(values = colors)
   } else {
+    # Re-extract group from merged pca_df to ensure it matches
+    group <- as.character(pca_df[[col_of_interest]])
     group <- as.numeric(group)
+    
+    # Get colors from custom_color_map or use defaults
+    if (is.null(custom_color_map$colors) || length(custom_color_map$colors) == 0) {
+      # Use default continuous colors
+      low_col <- "blue"
+      mid_col <- "white"
+      high_col <- "red"
+      na_col <- "gray50"
+    } else {
+      low_col <- custom_color_map$colors[which(custom_color_map$vals == "low")]
+      mid_col <- custom_color_map$colors[which(custom_color_map$vals == "mid")]
+      high_col <- custom_color_map$colors[which(custom_color_map$vals == "high")]
+      na_col <- custom_color_map$colors[which(custom_color_map$vals == "na_color")]
+      
+      # Fallback to defaults if any are missing
+      if (length(low_col) == 0) low_col <- "blue"
+      if (length(mid_col) == 0) mid_col <- "white"
+      if (length(high_col) == 0) high_col <- "red"
+      if (length(na_col) == 0) na_col <- "gray50"
+    }
+    
     color_definition <- scale_colour_gradient2(
-      low = custom_color_map$colors[which(custom_color_map$vals == "low")],
-      mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
-      high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(min(group), max(group)),
-      na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
+      low = low_col,
+      mid = mid_col,
+      high = high_col,
+      midpoint = mean(min(group, na.rm = TRUE), max(group, na.rm = TRUE)),
+      na.value = na_col
     )
   }
-  
-  # Use manual ggplot for PCA points with enhanced tooltip
-  pca_df <- as.data.frame(my_pca$x)
-  pca_df$sample <- rownames(pca_df)
-  pca_df <- merge(pca_df, annot, by = "sample")
   
   # Compose tooltip text
   tooltip_text <- paste0(
@@ -235,7 +322,22 @@ create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,co
   cdesc <- gct@cdesc
   
   #remove zero-variance columns and calculate PCA
-  data.norm <- mat %>% data.frame() %>% drop_na() %>% t()
+  # Store original column names to preserve hyphens, etc.
+  original_colnames <- colnames(mat)
+  
+  # Convert to data.frame and drop NA rows (features), then transpose
+  mat_df <- data.frame(mat, check.names = FALSE)
+  # Explicitly restore original column names to preserve hyphens, etc.
+  colnames(mat_df) <- original_colnames
+  
+  # Drop rows (features) with any NA, then transpose
+  mat_df <- mat_df %>% drop_na()
+  data.norm <- t(mat_df)
+  
+  # Ensure rownames (samples) match original column names
+  rownames(data.norm) <- original_colnames
+  
+  # Filter out zero-variance features (columns after transpose)
   data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
   my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
   

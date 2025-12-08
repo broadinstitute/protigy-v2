@@ -294,3 +294,58 @@ test_that("Color palette is colorblind safe", {
   # Check that all colors are distinct
   expect_equal(length(unique(colors$group$colors)), length(colors$group$vals))
 })
+
+test_that("set_annot_colors correctly identifies discrete vs continuous with cutoff 20", {
+  # Test that the cutoff of 20 is consistently used for discrete/continuous detection
+  # This tests the fix for matching is.discrete() and is.continuous() cutoffs
+  
+  # Create numeric data with 15 unique values (should be discrete with cutoff 20)
+  test_annot_15 <- data.frame(
+    category = rep(1:15, each = 2),  # 15 unique values, 30 total
+    stringsAsFactors = FALSE
+  )
+  
+  colors_15 <- set_annot_colors(test_annot_15, autodetect_continuous_nfactor_cutoff = 20)
+  
+  # Should be identified as discrete (15 < 20)
+  expect_true(colors_15$category$is_discrete)
+  
+  # Create numeric data with 25 unique values (should be continuous with cutoff 20)
+  test_annot_25 <- data.frame(
+    value = seq(1, 25, by = 1),  # 25 unique values
+    stringsAsFactors = FALSE
+  )
+  
+  colors_25 <- set_annot_colors(test_annot_25, autodetect_continuous_nfactor_cutoff = 20)
+  
+  # Should be identified as continuous (25 > 20)
+  expect_false(colors_25$value$is_discrete)
+})
+
+test_that("set_annot_colors correctly handles already-converted string columns", {
+  # Test that columns already converted to strings by processGCTs are correctly
+  # identified as discrete (not checked with is.continuous())
+  
+  # Create test data with numeric column that should be discrete
+  test_annot <- data.frame(
+    category = as.character(rep(1:10, each = 2)),  # Already converted to string
+    stringsAsFactors = FALSE
+  )
+  
+  colors <- set_annot_colors(test_annot, autodetect_continuous_nfactor_cutoff = 20)
+  
+  # Should be identified as discrete (it's a character column)
+  expect_true(colors$category$is_discrete)
+  
+  # Create test data with numeric column that has many unique values
+  # but is already converted to string
+  test_annot_many <- data.frame(
+    id = as.character(1:100),  # Many unique values but already string
+    stringsAsFactors = FALSE
+  )
+  
+  colors_many <- set_annot_colors(test_annot_many, autodetect_continuous_nfactor_cutoff = 20)
+  
+  # Should still be identified as discrete (it's a character column)
+  expect_true(colors_many$id$is_discrete)
+})

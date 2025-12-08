@@ -219,6 +219,17 @@ processGCTs <- function(GCTs, parameters) {
                                function(ome) ome$params,
                                simplify = FALSE)
   
+  # Convert numeric columns that are discrete to strings in all processed GCTs
+  # This ensures discrete columns are treated as categorical, not continuous
+  for (ome in names(GCTs_processed)) {
+    for (col_name in names(GCTs_processed[[ome]]@cdesc)) {
+      if (is.numeric(GCTs_processed[[ome]]@cdesc[[col_name]])) {
+        if (is.discrete(GCTs_processed[[ome]]@cdesc[[col_name]], nfactor_cutoff = 20)) {
+          GCTs_processed[[ome]]@cdesc[[col_name]] <- as.character(GCTs_processed[[ome]]@cdesc[[col_name]])
+        }
+      }
+    }
+  }
   
   GCTs_merged <- my_shinyalert_tryCatch(
     merge_processed_gcts(GCTs_processed, parameters_updated),
@@ -233,6 +244,16 @@ processGCTs <- function(GCTs, parameters) {
   
   # have the whole output be NULL if there was an error
   if (is.null(GCTs_merged)) return(NULL)
+  
+  # Convert numeric columns that are discrete to strings in merged GCT
+  # Use cutoff 20 to match processGCTs logic
+  for (col_name in names(GCTs_merged@cdesc)) {
+    if (is.numeric(GCTs_merged@cdesc[[col_name]])) {
+      if (is.discrete(GCTs_merged@cdesc[[col_name]], nfactor_cutoff = 20)) {
+        GCTs_merged@cdesc[[col_name]] <- as.character(GCTs_merged@cdesc[[col_name]])
+      }
+    }
+  }
   
   output <- list(
     GCTs = GCTs_processed,

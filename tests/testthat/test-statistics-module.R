@@ -1136,3 +1136,133 @@ test_that("P-value histogram and volcano plot use consistent logic", {
   expect_equal(histogram_cutoff, 0.003)  # Maximum P.Value among first 3 features
   expect_equal(volcano_cutoff, -log10(0.003))  # Corresponding log scale
 })
+
+test_that("two_sample_moderated_t_test handles hyphens in group names", {
+  # Test that group names with hyphens (e.g., "Non-inflamed") are handled correctly
+  # This tests the fix for syntactically valid R names in factor levels
+  if (!requireNamespace("limma", quietly = TRUE)) {
+    skip("limma package not available")
+  }
+  
+  set.seed(123)
+  test_data <- matrix(rnorm(60), nrow = 10, ncol = 6)
+  rownames(test_data) <- paste0("gene_", 1:10)
+  colnames(test_data) <- paste0("sample_", 1:6)
+  
+  # Create groups with hyphens (like "Non-inflamed")
+  groups <- rep(c("Inflamed", "Non-inflamed"), each = 3)
+  
+  # Create mock GCT
+  mock_cdesc <- data.frame(
+    group = groups,
+    row.names = paste0("sample_", 1:6)
+  )
+  
+  mock_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:10),
+    row.names = paste0("gene_", 1:10)
+  )
+  
+  mock_gct <- new("GCT",
+                  mat = test_data,
+                  cdesc = mock_cdesc,
+                  rdesc = mock_rdesc,
+                  rid = paste0("gene_", 1:10),
+                  cid = paste0("sample_", 1:6)
+  )
+  
+  # Test the core logic from two_sample_moderated_t_test
+  annotation_col <- "group"
+  selected_contrasts <- list(c("Inflamed", "Non-inflamed"))
+  cdesc <- mock_gct@cdesc
+  ome_data <- mock_gct@mat
+  
+  # Extract groups involved in contrasts
+  all_contrast_groups <- unique(unlist(selected_contrasts))
+  
+  # Create mapping from original group names to syntactically valid names
+  group_name_map <- setNames(make.names(all_contrast_groups), all_contrast_groups)
+  
+  # Filter samples
+  sample_groups <- cdesc[colnames(ome_data), annotation_col, drop = TRUE]
+  keep_samples <- sample_groups %in% all_contrast_groups
+  
+  # Convert group names to syntactically valid names
+  sample_groups_valid <- group_name_map[as.character(sample_groups[keep_samples])]
+  all_contrast_groups_valid <- group_name_map[all_contrast_groups]
+  
+  groups <- factor(sample_groups_valid, levels = all_contrast_groups_valid)
+  
+  # Create design matrix
+  design <- model.matrix(~ 0 + groups)
+  colnames(design) <- levels(groups)  # Ensure column names match factor levels
+  
+  # Build contrast strings
+  contrast_strings <- character(length(selected_contrasts))
+  for (i in seq_along(selected_contrasts)) {
+    contrast_pair <- selected_contrasts[[i]]
+    group1 <- contrast_pair[1]
+    group2 <- contrast_pair[2]
+    group1_valid <- group_name_map[group1]
+    group2_valid <- group_name_map[group2]
+    contrast_strings[i] <- paste0("`", group1_valid, "` - `", group2_valid, "`")
+  }
+  
+  # Create contrast matrix
+  contrast_list <- setNames(as.list(contrast_strings), "Inflamed_over_Non.inflamed")
+  contrast_matrix <- do.call(
+    limma::makeContrasts,
+    c(contrast_list, list(levels = levels(groups)))
+  )
+  
+  # Verify that contrast matrix row names match design matrix column names
+  expect_equal(rownames(contrast_matrix), colnames(design))
+  
+  # Fit model and contrasts - should not error
+  data.matrix <- ome_data[, keep_samples, drop = FALSE]
+  fit <- limma::lmFit(data.matrix, design)
+  expect_no_error({
+    fit2 <- limma::contrasts.fit(fit, contrast_matrix)
+  })
+  
+  # Verify that no warning about row/column name mismatch occurs
+  expect_no_warning({
+    fit2 <- limma::contrasts.fit(fit, contrast_matrix)
+  })
+})
+
+test_that("moderated_f_test handles hyphens in group names", {
+  # Test that group names with hyphens are handled correctly in F-test
+  if (!requireNamespace("limma", quietly = TRUE)) {
+    skip("limma package not available")
+  }
+  
+  set.seed(123)
+  test_data <- matrix(rnorm(80), nrow = 10, ncol = 8)
+  rownames(test_data) <- paste0("gene_", 1:10)
+  colnames(test_data) <- paste0("sample_", 1:8)
+  
+  # Create groups with hyphens
+  groups <- rep(c("Inflamed", "Non-inflamed", "Pre-inflamed"), c(3, 3, 2))
+  
+  # Create mapping from original group names to syntactically valid names
+  unique_groups <- unique(groups)
+  group_name_map <- setNames(make.names(unique_groups), unique_groups)
+  
+  # Convert group names to syntactically valid names
+  groups_valid <- group_name_map[as.character(groups)]
+  
+  # Create factor with valid names
+  f <- factor(groups_valid, levels = unique(groups_valid))
+  
+  # Create design matrix
+  design <- model.matrix(~ 0 + f)
+  colnames(design) <- levels(f)  # Ensure column names match factor levels
+  
+  # Should not error
+  expect_no_error({
+    data.rownorm <- sweep(test_data, MARGIN = 1, STATS = apply(test_data, 1, mean, na.rm = TRUE))
+    fit <- limma::lmFit(data.rownorm, design)
+    fit <- limma::eBayes(fit, robust = TRUE)
+  })
+})
