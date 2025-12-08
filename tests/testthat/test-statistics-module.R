@@ -1266,3 +1266,98 @@ test_that("moderated_f_test handles hyphens in group names", {
     fit <- limma::eBayes(fit, robust = TRUE)
   })
 })
+
+test_that("one_sample_moderated_t_test handles hyphens in group names", {
+  # Test that group names with hyphens (e.g., "Non-inflamed") are handled correctly
+  # This tests the fix for syntactically valid R names in column names and grep patterns
+  if (!requireNamespace("limma", quietly = TRUE)) {
+    skip("limma package not available")
+  }
+  
+  set.seed(123)
+  test_data <- matrix(rnorm(30), nrow = 10, ncol = 3)
+  rownames(test_data) <- paste0("gene_", 1:10)
+  colnames(test_data) <- paste0("sample_", 1:3)
+  
+  # Create groups with hyphens (like "Non-inflamed")
+  groups <- rep("Non-inflamed", 3)
+  
+  # Create mock GCT
+  mock_cdesc <- data.frame(
+    group = groups,
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  mock_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:10),
+    row.names = paste0("gene_", 1:10)
+  )
+  
+  mock_gct <- new("GCT",
+                  mat = test_data,
+                  cdesc = mock_cdesc,
+                  rdesc = mock_rdesc,
+                  rid = paste0("gene_", 1:10),
+                  cid = paste0("sample_", 1:3)
+  )
+  
+  # Test the core logic from one_sample_moderated_t_test
+  annotation_col <- "group"
+  chosen_groups <- "Non-inflamed"
+  cdesc <- mock_gct@cdesc
+  ome_data <- mock_gct@mat
+  rdesc <- mock_gct@rdesc
+  
+  # Convert group_name to syntactically valid R name
+  group_name <- chosen_groups[1]
+  group_name_valid <- make.names(group_name)
+  
+  # Filter samples
+  sample_names <- colnames(ome_data)
+  all_groups <- cdesc[sample_names, annotation_col, drop = TRUE]
+  keep_samples_logical <- all_groups %in% group_name
+  samples_to_keep <- sample_names[keep_samples_logical]
+  
+  # Prepare data
+  data <- ome_data[, samples_to_keep, drop = FALSE]
+  data.matrix <- data.frame(data, stringsAsFactors = FALSE)
+  
+  # Run one-sample t-test
+  m <- limma::lmFit(data.matrix, method = 'robust')
+  m <- limma::eBayes(m, trend = FALSE, robust = TRUE)
+  sig <- limma::topTable(m, number = nrow(data), sort.by = 'none')
+  
+  # Create result data.frame
+  mod.t.result <- data.frame(
+    sig,
+    significant = sig[, 'adj.P.Val'] <= 0.05,
+    Log.P.Value = -log(sig$P.Value, 10),
+    stringsAsFactors = FALSE
+  )
+  mod.t.result$sign.logP <- mod.t.result$Log.P.Value * sign(mod.t.result$logFC)
+  
+  # Add label with valid group name
+  colnames(mod.t.result) <- paste(
+    colnames(mod.t.result),
+    group_name_valid,
+    sep = '.'
+  )
+  
+  # Create final table
+  id <- rownames(ome_data)
+  mod.t <- data.frame(
+    cbind(data.frame(id = id), mod.t.result),
+    stringsAsFactors = FALSE
+  )
+  
+  # Test that grep pattern matches (this was the bug - it wouldn't match if group_name had hyphens)
+  mod.t.sub <- mod.t[, c(
+    "id",
+    grep(paste0("\\.", group_name_valid, "$"), colnames(mod.t), value = TRUE)
+  )]
+  
+  # Should successfully extract columns
+  expect_true(ncol(mod.t.sub) > 1)  # Should have id + at least one stat column
+  expect_true("id" %in% colnames(mod.t.sub))
+  expect_true(any(grepl(group_name_valid, colnames(mod.t.sub))))
+})

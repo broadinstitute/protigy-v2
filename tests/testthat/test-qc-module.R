@@ -88,14 +88,27 @@ test_that("create_boxplot handles different color map types", {
   expect_s3_class(result_discrete, "ggplot")
   
   # Test with continuous color map
+  # Use a variable with many unique values (>20) to ensure it's treated as continuous
   continuous_colors <- list(
     is_discrete = FALSE,
     colors = NULL  # Will use default colors
   )
-  # Create continuous annotation
-  mock_gct_continuous <- mock_gct
-  mock_gct_continuous@cdesc$age <- c(20, 25, 30, 35, 40, 45, 50, 55)
-  result_continuous <- create_boxplot(mock_gct_continuous, "age", "test_ome", continuous_colors, mock_params, "org")
+  # Create continuous annotation with many unique values (30 values > 20 cutoff)
+  mock_gct_continuous <- create_mock_gct()
+  # Expand to 30 samples for continuous variable
+  mock_mat_continuous <- matrix(rnorm(300), nrow = 10, ncol = 30)
+  rownames(mock_mat_continuous) <- paste0("gene_", 1:10)
+  colnames(mock_mat_continuous) <- paste0("sample_", 1:30)
+  mock_cdesc_continuous <- data.frame(
+    group = rep(c("A", "B"), each = 15),
+    expression = seq(1, 30, by = 1),  # 30 unique values - will be continuous
+    row.names = paste0("sample_", 1:30)
+  )
+  mock_gct_continuous@mat <- mock_mat_continuous
+  mock_gct_continuous@cdesc <- mock_cdesc_continuous
+  mock_gct_continuous@cid <- paste0("sample_", 1:30)
+  
+  result_continuous <- create_boxplot(mock_gct_continuous, "expression", "test_ome", continuous_colors, mock_params, "org")
   expect_s3_class(result_continuous, "ggplot")
   
   # Test with NULL color map
@@ -140,14 +153,27 @@ test_that("create_profile_plot handles different color map types", {
   expect_s3_class(result_discrete, "ggplot")
   
   # Test with continuous color map
+  # Use a variable with many unique values (>20) to ensure it's treated as continuous
   continuous_colors <- list(
     is_discrete = FALSE,
     colors = NULL  # Will use default colors
   )
-  # Create continuous annotation
-  mock_gct_continuous <- mock_gct
-  mock_gct_continuous@cdesc$age <- c(20, 25, 30, 35, 40, 45, 50, 55)
-  result_continuous <- create_profile_plot(mock_gct_continuous, "age", "test_ome", continuous_colors, mock_params, "org")
+  # Create continuous annotation with many unique values (30 values > 20 cutoff)
+  mock_gct_continuous <- create_mock_gct()
+  # Expand to 30 samples for continuous variable
+  mock_mat_continuous <- matrix(rnorm(300), nrow = 10, ncol = 30)
+  rownames(mock_mat_continuous) <- paste0("gene_", 1:10)
+  colnames(mock_mat_continuous) <- paste0("sample_", 1:30)
+  mock_cdesc_continuous <- data.frame(
+    group = rep(c("A", "B"), each = 15),
+    expression = seq(1, 30, by = 1),  # 30 unique values - will be continuous
+    row.names = paste0("sample_", 1:30)
+  )
+  mock_gct_continuous@mat <- mock_mat_continuous
+  mock_gct_continuous@cdesc <- mock_cdesc_continuous
+  mock_gct_continuous@cid <- paste0("sample_", 1:30)
+  
+  result_continuous <- create_profile_plot(mock_gct_continuous, "expression", "test_ome", continuous_colors, mock_params, "org")
   expect_s3_class(result_continuous, "ggplot")
   
   # Test with NULL color map
@@ -533,27 +559,29 @@ test_that("create_PCA_plot handles hyphens in group names", {
 
 test_that("create_PCA_plot handles continuous color mapping", {
   # Test PCA plot with continuous color mapping
-  mock_mat <- matrix(rnorm(40), nrow = 5, ncol = 8)
-  rownames(mock_mat) <- paste0("gene_", 1:5)
-  colnames(mock_mat) <- paste0("sample_", 1:8)
+  # Use a variable with many unique values (>20) to ensure it's treated as continuous
+  mock_mat <- matrix(rnorm(300), nrow = 10, ncol = 30)
+  rownames(mock_mat) <- paste0("gene_", 1:10)
+  colnames(mock_mat) <- paste0("sample_", 1:30)
   
-  # Create continuous annotation (e.g., age, expression level)
+  # Create continuous annotation with many unique values (e.g., expression level, intensity)
+  # Using 30 unique values ensures it's classified as continuous (cutoff is 20)
   mock_cdesc <- data.frame(
-    age = c(20, 25, 30, 35, 40, 45, 50, 55),  # Continuous variable
-    row.names = paste0("sample_", 1:8)
+    expression = seq(1, 30, by = 1),  # 30 unique values - will be continuous
+    row.names = paste0("sample_", 1:30)
   )
   
   mock_rdesc <- data.frame(
-    gene_name = paste0("gene_", 1:5),
-    row.names = paste0("gene_", 1:5)
+    gene_name = paste0("gene_", 1:10),
+    row.names = paste0("gene_", 1:10)
   )
   
   mock_gct <- new("GCT",
                   mat = mock_mat,
                   cdesc = mock_cdesc,
                   rdesc = mock_rdesc,
-                  rid = paste0("gene_", 1:5),
-                  cid = paste0("sample_", 1:8)
+                  rid = paste0("gene_", 1:10),
+                  cid = paste0("sample_", 1:30)
   )
   
   # Continuous color map with default colors (when colors is NULL)
@@ -562,13 +590,13 @@ test_that("create_PCA_plot handles continuous color mapping", {
     colors = NULL  # Will use default colors
   )
   
-  # Should not error and should keep age as numeric (not convert to factor)
-  result <- create_PCA_plot(mock_gct, "age", "test_ome", continuous_colors, 1, 2)
+  # Should not error and should keep expression as numeric (not convert to factor)
+  result <- create_PCA_plot(mock_gct, "expression", "test_ome", continuous_colors, 1, 2)
   expect_s3_class(result, "ggplot")
   
-  # Check that the plot data contains numeric age values
+  # Check that the plot data contains numeric expression values
   plot_data <- result$data
-  expect_true(is.numeric(plot_data$age))
+  expect_true(is.numeric(plot_data$expression))
   
   # Test with explicit continuous color map
   continuous_colors_explicit <- list(
@@ -577,7 +605,7 @@ test_that("create_PCA_plot handles continuous color mapping", {
     vals = c("low", "mid", "high", "na_color")
   )
   
-  result2 <- create_PCA_plot(mock_gct, "age", "test_ome", continuous_colors_explicit, 1, 2)
+  result2 <- create_PCA_plot(mock_gct, "expression", "test_ome", continuous_colors_explicit, 1, 2)
   expect_s3_class(result2, "ggplot")
-  expect_true(is.numeric(result2$data$age))
+  expect_true(is.numeric(result2$data$expression))
 })

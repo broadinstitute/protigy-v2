@@ -316,10 +316,14 @@ stat.testing <- function(
             sign(mod.t.result$logFC)
 
           ##add label(group_name)
+          # Convert group_name to syntactically valid R name for column names
+          # This handles group names with hyphens (e.g., "Non-inflamed" -> "Non.inflamed")
+          group_name_valid <- make.names(group_name)
+          
           if (!is.null(group_name)) {
             colnames(mod.t.result) <- paste(
               colnames(mod.t.result),
-              group_name,
+              group_name_valid,
               sep = '.'
             )
           }
@@ -331,9 +335,10 @@ stat.testing <- function(
           rownames(mod.t) <- id
 
           # Keep only id + renamed stats
+          # Use valid group name in grep pattern to match converted column names
           mod.t.sub <- mod.t[, c(
             "id",
-            grep(paste0("\\.", group_name, "$"), colnames(mod.t), value = TRUE)
+            grep(paste0("\\.", group_name_valid, "$"), colnames(mod.t), value = TRUE)
           )]
 
           # Merge into the combined table for this ome
