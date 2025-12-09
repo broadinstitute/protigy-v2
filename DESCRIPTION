@@ -60,7 +60,7 @@ Imports:
     furrr
 Depends:
     R (>= 4.0.0),
-    shiny (>= 1.8.0)
+    shiny
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
