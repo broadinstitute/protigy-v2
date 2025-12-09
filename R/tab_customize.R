@@ -349,8 +349,10 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       # Depend on custom_colors() so this runs when UI is rendered/updated
       colors_ui <- custom_colors()
       
-      # Skip if currently importing
-      if (importing()) return()
+      # Skip if currently importing - check this FIRST before any other operations
+      if (importing()) {
+        return()
+      }
 
       # Get current colors without creating additional reactive dependency
       colors <- isolate(custom_colors())
@@ -438,49 +440,20 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
         updated_colors <- import_colors_from_yaml(file_path, custom_colors())
 
-        # Update the reactive value
-        custom_colors(updated_colors)
-
-        # Update color picker inputs for the currently selected annotation column
-        # Determine which ome is currently displayed
-        req(input$color_mode)
-        display_ome <- if (input$color_mode == "multi_ome") {
-          "multi_ome"
-        } else {
-          req(input$selected_ome)
-          input$selected_ome
-        }
-
-        if (display_ome %in% names(updated_colors)) {
-          # Only update the currently selected annotation column
-          if (!is.null(input$selected_annotation_column)) {
-            annot_col <- input$selected_annotation_column
-            
-            if (annot_col %in% names(updated_colors[[display_ome]])) {
-              color_info <- updated_colors[[display_ome]][[annot_col]]
-
-              if (color_info$is_discrete) {
-                vals <- color_info$vals
-                col_colors <- color_info$colors
-
-                for (i in seq_along(vals)) {
-                  picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
-                  colourpicker::updateColourInput(
-                    session,
-                    picker_id,
-                    value = col_colors[i]
-                  )
-                }
-              }
-            }
-          }
-        }
-
         # Store imported colors as the new defaults
         default_colors_stored(updated_colors)
 
-        # Reset importing flag
-        importing(FALSE)
+        # Update the reactive value
+        # The color picker UI will automatically update via renderUI when custom_colors() changes
+        # We don't need to manually update color pickers, which prevents triggering the observe block
+        custom_colors(updated_colors)
+
+        # Reset importing flag AFTER updating custom_colors
+        # Use a delay to ensure UI updates complete before allowing observer to run
+        # This prevents the observe block from immediately reacting to the color change
+        shinyjs::delay(200, {
+          importing(FALSE)
+        })
 
         shinyalert::shinyalert(
           title = "Import Successful",
