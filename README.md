@@ -6,6 +6,8 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ## Installation
 
+Enter the following code into your command line interface.
+
 ```bash
 # Clone the repository
 git clone https://github.com/broadinstitute/protigy-v2.git
@@ -13,7 +15,11 @@ cd protigy-v2
 
 # Install the package
 R -e "devtools::install('.')"
+```
 
+Once installed, open RStudio and entire the following code.
+
+```R
 # Load the package and start the app
 library(Protigy)
 Protigy::launchApp()
