@@ -17,7 +17,7 @@ cd protigy-v2
 R -e "devtools::install('.')"
 ```
 
-Once installed, open RStudio and entire the following code.
+Once installed, open RStudio and enter the following code.
 
 ```R
 # Load the package and start the app
