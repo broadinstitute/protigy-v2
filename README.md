@@ -13,6 +13,10 @@ cd protigy-v2
 
 # Install the package
 R -e "devtools::install('.')"
+
+# Load the package and start the app
+library(Protigy)
+Protigy::launchApp()
 ```
 
 ## Key Features
