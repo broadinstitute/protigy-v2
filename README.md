@@ -15,7 +15,7 @@ cd protigy-v2
 
 # Install and load devtools
 R -e "install.packages('devtools')"
-R -e "library('devtools')"
+R -e "library(devtools)"
 
 # Install the package
 R -e "devtools::install('.')"
