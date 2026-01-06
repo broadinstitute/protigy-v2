@@ -13,6 +13,9 @@ Enter the following code into your command line interface.
 git clone https://github.com/broadinstitute/protigy-v2.git
 cd protigy-v2
 
+# Install devtools
+R -e "install.packages('devtools')"
+
 # Install the package
 R -e "devtools::install('.')"
 ```
