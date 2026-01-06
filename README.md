@@ -11,19 +11,21 @@ Enter the following code into your command line interface.
 ```bash
 # Clone the repository
 git clone https://github.com/broadinstitute/protigy-v2.git
-cd protigy-v2
-
-# Install and load devtools
-R -e "install.packages('devtools')"
-R -e "library(devtools)"
-
-# Install the package
-R -e "devtools::install('.')"
 ```
 
-Once installed, open RStudio and enter the following code.
+Once the repository is cloned, open RStudio and enter the following code.
 
 ```R
+# Change to the repo folder
+setwd("protigy-v2")
+
+# Install and load devtools. NOTE: After installing once, you don't need to install every time. Just use library()
+install.packages('devtools')
+library(devtools)
+
+# Install the package. NOTE: After installing once, you don't need to install every time. Just use libraru()
+devtools::install('.')
+
 # Load the package and start the app
 library(Protigy)
 Protigy::launchApp()
