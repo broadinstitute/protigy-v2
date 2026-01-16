@@ -109,22 +109,28 @@ transformGCTs <- function(GCTs, parameters) {
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
-              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # Check if geneSymbol already exists and warn user
-                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+              
+              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
+              if ("geneSymbol" %in% names(rdesc)) {
+                # User selected a different column - preserve original as geneSymbol_original
+                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
+                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
                   warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
-                  # Preserve original geneSymbol column
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
+                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                  rdesc[[gene_symbol_col]] <- NULL
                 }
-                
-                # Rename the selected column to geneSymbol
+                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
+                # (no action needed - geneSymbol already exists)
+              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # geneSymbol doesn't exist - create it from selected column
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
                 }
               }
+              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
@@ -145,7 +151,7 @@ transformGCTs <- function(GCTs, parameters) {
               
               ## log transformation
               output_list <- perform_log_transformation(data, params$log_transformation)
-              data.log.trans <- output_list$data.log.trans
+              data.log.trans <- output_list$data.log.transform
               params$log_transformation <- output_list$updated_method
               
               ## re-combine GCT and return
@@ -210,22 +216,28 @@ processGCTs <- function(GCTs, parameters) {
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
-              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # Check if geneSymbol already exists and warn user
-                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+              
+              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
+              if ("geneSymbol" %in% names(rdesc)) {
+                # User selected a different column - preserve original as geneSymbol_original
+                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
+                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
                   warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
-                  # Preserve original geneSymbol column
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
+                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                  rdesc[[gene_symbol_col]] <- NULL
                 }
-                
-                # Rename the selected column to geneSymbol
+                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
+                # (no action needed - geneSymbol already exists)
+              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # geneSymbol doesn't exist - create it from selected column
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
                 }
               }
+              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
