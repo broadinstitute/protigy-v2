@@ -1,7 +1,7 @@
 ################################################################################
-# Unit Tests for CSV/Excel/TSV Processing Module
+# Unit Tests for CSV/Excel/TSV/SSV Processing Module
 #
-# Tests the core functionality of CSV/Excel/TSV file processing including:
+# Tests the core functionality of CSV/Excel/TSV/SSV file processing including:
 # - Experimental design template generation
 # - File reading and validation
 # - GCT conversion
@@ -100,6 +100,40 @@ test_that("readExperimentalDesign handles different file formats", {
   
   # Clean up
   unlink(csv_file)
+  
+  # Test TSV reading
+  tsv_file <- tempfile(fileext = ".tsv")
+  tsv_data <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Experiment = c("Control", "Treatment"),
+    Group = c("Group1", "Group2"),
+    stringsAsFactors = FALSE
+  )
+  write.table(tsv_data, tsv_file, sep = "\t", row.names = FALSE, quote = FALSE)
+  
+  result_tsv <- readExperimentalDesign(tsv_file)
+  expect_equal(nrow(result_tsv), 2)
+  expect_equal(colnames(result_tsv), c("columnName", "Experiment", "Group"))
+  
+  # Clean up
+  unlink(tsv_file)
+  
+  # Test SSV reading (semicolon-separated)
+  ssv_file <- tempfile(fileext = ".ssv")
+  ssv_data <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Experiment = c("Control", "Treatment"),
+    Group = c("Group1", "Group2"),
+    stringsAsFactors = FALSE
+  )
+  write.table(ssv_data, ssv_file, sep = ";", row.names = FALSE, quote = FALSE)
+  
+  result_ssv <- readExperimentalDesign(ssv_file)
+  expect_equal(nrow(result_ssv), 2)
+  expect_equal(colnames(result_ssv), c("columnName", "Experiment", "Group"))
+  
+  # Clean up
+  unlink(ssv_file)
 })
 
 ################################################################################
@@ -301,6 +335,120 @@ test_that("readExperimentalDesign handles unsupported file formats", {
 })
 
 ################################################################################
+# Test SSV File Processing
+################################################################################
+
+test_that("SSV files can be read and processed like CSV/TSV", {
+  # Create test SSV file
+  ssv_file <- tempfile(fileext = ".ssv")
+  ssv_data <- data.frame(
+    protein_id = c("P1", "P2", "P3"),
+    gene_symbol = c("G1", "G2", "G3"),
+    Sample1 = c(1, 2, 3),
+    Sample2 = c(4, 5, 6),
+    stringsAsFactors = FALSE
+  )
+  write.table(ssv_data, ssv_file, sep = ";", row.names = FALSE, quote = FALSE)
+  
+  # Read SSV file using readr::read_delim
+  result <- readr::read_delim(ssv_file, delim = ";", show_col_types = FALSE)
+  
+  expect_equal(nrow(result), 3)
+  expect_equal(ncol(result), 4)
+  expect_equal(colnames(result), c("protein_id", "gene_symbol", "Sample1", "Sample2"))
+  expect_equal(result$protein_id, c("P1", "P2", "P3"))
+  
+  # Clean up
+  unlink(ssv_file)
+})
+
+test_that("SSV files work with convertToGCT", {
+  # Create test SSV data
+  ssv_data <- data.frame(
+    protein_id = c("P1", "P2", "P3"),
+    gene_symbol = c("G1", "G2", "G3"),
+    Sample1 = c(1, 2, 3),
+    Sample2 = c(4, 5, 6),
+    stringsAsFactors = FALSE
+  )
+  
+  experimental_design <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Experiment = c("Control", "Treatment"),
+    Group = c("Group1", "Group2"),
+    stringsAsFactors = FALSE
+  )
+  
+  gct_obj <- convertToGCT(ssv_data, experimental_design, "test_file.ssv", "protein_id")
+  
+  # Check GCT structure
+  expect_s4_class(gct_obj, "GCT")
+  expect_equal(nrow(gct_obj@mat), 3) # 3 features
+  expect_equal(ncol(gct_obj@mat), 2) # 2 samples
+  expect_equal(length(gct_obj@rid), 3) # 3 row IDs
+  expect_equal(length(gct_obj@cid), 2) # 2 column IDs
+  
+  # Check that protein_id became the row ID
+  expect_equal(gct_obj@rid, c("P1", "P2", "P3"))
+  
+  # Check that gene_symbol is in rdesc
+  expect_true("gene_symbol" %in% colnames(gct_obj@rdesc))
+  expect_equal(gct_obj@rdesc$gene_symbol, c("G1", "G2", "G3"))
+  
+  # Check that experimental design is in cdesc
+  expect_true("Experiment" %in% colnames(gct_obj@cdesc))
+  expect_true("Group" %in% colnames(gct_obj@cdesc))
+})
+
+test_that("SSV experimental design files are read correctly", {
+  # Create SSV experimental design file
+  ssv_exp_design_file <- tempfile(fileext = ".ssv")
+  exp_design_data <- data.frame(
+    columnName = c("Sample1", "Sample2", "Sample3"),
+    Experiment = c("Control", "Treatment", "Control"),
+    Group = c("Group1", "Group2", "Group1"),
+    stringsAsFactors = FALSE
+  )
+  write.table(exp_design_data, ssv_exp_design_file, sep = ";", row.names = FALSE, quote = FALSE)
+  
+  # Read using readExperimentalDesign
+  result <- readExperimentalDesign(ssv_exp_design_file)
+  
+  expect_equal(nrow(result), 3)
+  expect_equal(colnames(result), c("columnName", "Experiment", "Group"))
+  expect_equal(result$columnName, c("Sample1", "Sample2", "Sample3"))
+  expect_equal(result$Experiment, c("Control", "Treatment", "Control"))
+  expect_equal(result$Group, c("Group1", "Group2", "Group1"))
+  
+  # Clean up
+  unlink(ssv_exp_design_file)
+})
+
+test_that("SSV files with semicolons in data are handled correctly", {
+  # Create SSV file with semicolons in quoted strings (if applicable)
+  # Note: readr::read_delim should handle this automatically
+  ssv_file <- tempfile(fileext = ".ssv")
+  ssv_data <- data.frame(
+    id = c("ID1", "ID2", "ID3"),
+    description = c("Item; A", "Item: B", "Item C"),
+    value1 = c(1, 2, 3),
+    value2 = c(4, 5, 6),
+    stringsAsFactors = FALSE
+  )
+  write.table(ssv_data, ssv_file, sep = ";", row.names = FALSE, quote = TRUE)
+  
+  # Read SSV file
+  result <- readr::read_delim(ssv_file, delim = ";", show_col_types = FALSE)
+  
+  expect_equal(nrow(result), 3)
+  expect_equal(ncol(result), 4)
+  expect_equal(result$id, c("ID1", "ID2", "ID3"))
+  
+  # Clean up
+  unlink(ssv_file)
+})
+
+################################################################################
 # Test Integration with Existing GCT Workflow
 ################################################################################
 
@@ -356,4 +504,61 @@ test_that("processCSVExcelWorkflowWithPerDatasetIdentifiers returns compatible f
   
   # Clean up temporary file
   unlink(temp_csv)
+})
+
+test_that("SSV files work with processCSVExcelWorkflowWithPerDatasetIdentifiers", {
+  # Create mock SSV data file
+  mock_files <- data.frame(
+    name = c("test1.ssv"),
+    datapath = c("path1"),
+    stringsAsFactors = FALSE
+  )
+  
+  experimental_design <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Experiment = c("Control", "Treatment"),
+    Group = c("Group1", "Group2"),
+    stringsAsFactors = FALSE
+  )
+  
+  identifier_columns <- c("protein_id")
+  labels <- c("test_dataset_ssv")
+  
+  # Create temporary SSV file for testing
+  temp_ssv <- tempfile(fileext = ".ssv")
+  test_data <- data.frame(
+    protein_id = c("P1", "P2"),
+    gene_symbol = c("G1", "G2"),
+    Sample1 = c(1, 2),
+    Sample2 = c(3, 4),
+    stringsAsFactors = FALSE
+  )
+  write.table(test_data, temp_ssv, sep = ";", row.names = FALSE, quote = FALSE)
+  
+  # Update mock_files with actual file path
+  mock_files$datapath <- temp_ssv
+  
+  # Test the function with SSV file
+  result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(
+    mock_files, experimental_design, identifier_columns, labels
+  )
+  
+  # Check structure matches GCT workflow
+  expect_type(result, "list")
+  expect_equal(names(result), c("GCTs", "parameters"))
+  expect_equal(names(result$GCTs), "test_dataset_ssv")
+  expect_equal(names(result$parameters), "test_dataset_ssv")
+  
+  # Check GCT object
+  expect_s4_class(result$GCTs$test_dataset_ssv, "GCT")
+  expect_equal(nrow(result$GCTs$test_dataset_ssv@mat), 2) # 2 features
+  expect_equal(ncol(result$GCTs$test_dataset_ssv@mat), 2) # 2 samples
+  
+  # Check parameters structure
+  expect_true("gct_file_path" %in% names(result$parameters$test_dataset_ssv))
+  expect_true("gct_file_name" %in% names(result$parameters$test_dataset_ssv))
+  expect_equal(result$parameters$test_dataset_ssv$gct_file_name, "test1.ssv")
+  
+  # Clean up temporary file
+  unlink(temp_ssv)
 })

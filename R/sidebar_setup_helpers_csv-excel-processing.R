@@ -40,6 +40,8 @@ csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels) {
           data <- readr::read_csv(file_path, show_col_types = FALSE)
         } else if (file_ext == "tsv") {
           data <- readr::read_tsv(file_path, show_col_types = FALSE)
+        } else if (file_ext == "ssv") {
+          data <- readr::read_delim(file_path, delim = ";", show_col_types = FALSE)
         } else if (file_ext %in% c("xlsx", "xls")) {
           data <- readxl::read_excel(file_path)
         } else {
@@ -108,12 +110,12 @@ csvExcelExpDesignSetupUI <- function(ns, dataFiles, labels) {
       style = "font-weight: bold; font-size: 16px; margin-bottom: 10px;",
       'Upload Experimental Design'
     ),
-    p('Upload your completed experimental design file (CSV, TSV, or Excel format).'),
+    p('Upload your completed experimental design file (CSV, TSV, SSV, or Excel format).'),
     
     fileInput(
       inputId = ns("expDesignFile"),
       label = "Choose experimental design file:",
-      accept = c(".csv", ".tsv", ".xlsx", ".xls"),
+      accept = c(".csv", ".tsv", ".ssv", ".xlsx", ".xls"),
       placeholder = "No file selected"
     ),
     
@@ -164,6 +166,8 @@ processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experime
         data <- readr::read_csv(file_path)
       } else if (file_ext == "tsv") {
         data <- readr::read_tsv(file_path)
+      } else if (file_ext == "ssv") {
+        data <- readr::read_delim(file_path, delim = ";")
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {
@@ -214,6 +218,8 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
         data <- readr::read_csv(file_path)
       } else if (file_ext == "tsv") {
         data <- readr::read_tsv(file_path)
+      } else if (file_ext == "ssv") {
+        data <- readr::read_delim(file_path, delim = ";")
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {
