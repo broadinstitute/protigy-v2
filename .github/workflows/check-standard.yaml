@@ -18,6 +18,9 @@ jobs:
 
     name: ${{ matrix.config.os }} (${{ matrix.config.r }})
 
+    # Allow macOS checks to fail without blocking the workflow (due to known pak issues)
+    continue-on-error: ${{ matrix.config.os == 'macos-latest' }}
+
     strategy:
       fail-fast: false
       matrix:
