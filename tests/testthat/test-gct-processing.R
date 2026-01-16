@@ -217,3 +217,220 @@ test_that("perform_data_filtering handles invalid method", {
     "Invalid data filter selected"
   )
 })
+
+test_that("fix_gene_symbols replaces semicolons with pipes", {
+  rdesc <- data.frame(
+    geneSymbol = c("EGFR;ERBB1", "TP53;P53", "BRCA1"),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1"))
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols removes blank symbols within strings", {
+  rdesc <- data.frame(
+    geneSymbol = c("EGFR| |ERBB1", "TP53| | |P53", "BRCA1| |"),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1"))
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols removes completely blank gene symbols", {
+  rdesc <- data.frame(
+    geneSymbol = c("EGFR", "", "BRCA1", NA),
+    row.names = paste0("gene_", 1:4)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(nrow(result$rdesc), 2)
+  expect_equal(result$rdesc$geneSymbol, c("EGFR", "BRCA1"))
+  expect_equal(length(result$removed_rids), 2)
+  expect_true("gene_2" %in% result$removed_rids)
+  expect_true("gene_4" %in% result$removed_rids)
+})
+
+test_that("fix_gene_symbols removes leading and trailing pipes", {
+  rdesc <- data.frame(
+    geneSymbol = c("|EGFR|ERBB1|", "|TP53", "BRCA1|"),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53", "BRCA1"))
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols handles list columns", {
+  rdesc <- data.frame(
+    geneSymbol = I(list("EGFR", "TP53", "BRCA1")),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_true(is.character(result$rdesc$geneSymbol))
+  expect_equal(result$rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols handles list columns with multiple values", {
+  rdesc <- data.frame(
+    geneSymbol = I(list(c("EGFR", "ERBB1"), "TP53", c("BRCA1", "BRCA2"))),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_true(is.character(result$rdesc$geneSymbol))
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53", "BRCA1|BRCA2"))
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols handles missing geneSymbol column", {
+  rdesc <- data.frame(
+    id = paste0("gene_", 1:3),
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(result$rdesc, rdesc)
+  expect_equal(length(result$removed_rids), 0)
+})
+
+test_that("fix_gene_symbols handles complex cases", {
+  rdesc <- data.frame(
+    geneSymbol = c("EGFR;ERBB1| |", "|TP53| |P53|", "BRCA1;BRCA2;BRCA3", "| |", ""),
+    row.names = paste0("gene_", 1:5)
+  )
+  
+  result <- fix_gene_symbols(rdesc)
+  
+  expect_equal(nrow(result$rdesc), 3)
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1|BRCA2|BRCA3"))
+  expect_equal(length(result$removed_rids), 2)
+})
+
+test_that("validateGCT creates Sample.ID when cdesc is null", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- NULL
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  result <- validateGCT(gct)
+  
+  expect_true("Sample.ID" %in% names(result@cdesc))
+  expect_equal(result@cdesc$Sample.ID, paste0("sample_", 1:3))
+  expect_equal(rownames(result@cdesc), paste0("sample_", 1:3))
+})
+
+test_that("validateGCT creates Sample.ID when cdesc is empty", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- data.frame(row.names = paste0("sample_", 1:3))
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  result <- validateGCT(gct)
+  
+  expect_true("Sample.ID" %in% names(result@cdesc))
+  expect_equal(result@cdesc$Sample.ID, paste0("sample_", 1:3))
+  expect_equal(rownames(result@cdesc), paste0("sample_", 1:3))
+})
+
+test_that("validateGCT creates Sample.ID when cdesc only has id column", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- data.frame(
+    id = paste0("sample_", 1:3),
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  result <- validateGCT(gct)
+  
+  expect_true("Sample.ID" %in% names(result@cdesc))
+  expect_equal(result@cdesc$Sample.ID, paste0("sample_", 1:3))
+  expect_equal(rownames(result@cdesc), paste0("sample_", 1:3))
+  expect_false("id" %in% names(result@cdesc))
+})
+
+test_that("validateGCT preserves cdesc with real metadata", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- data.frame(
+    group = c("A", "B", "C"),
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  result <- validateGCT(gct)
+  
+  expect_true("group" %in% names(result@cdesc))
+  expect_equal(result@cdesc$group, c("A", "B", "C"))
+  expect_false("Sample.ID" %in% names(result@cdesc))
+})
+
+test_that("validateGCT errors when cdesc has metadata but rownames don't match", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- data.frame(
+    group = c("A", "B", "C"),
+    row.names = paste0("wrong_sample_", 1:3)
+  )
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  expect_error(
+    validateGCT(gct),
+    "GCT data column names does not match `cdesc` row names"
+  )
+})
+
+test_that("validateGCT does not create Sample.ID when cdesc has id and other columns", {
+  mat <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(mat) <- paste0("gene_", 1:3)
+  colnames(mat) <- paste0("sample_", 1:3)
+  
+  rdesc <- data.frame(id = paste0("gene_", 1:3), row.names = paste0("gene_", 1:3))
+  cdesc <- data.frame(
+    id = paste0("sample_", 1:3),
+    group = c("A", "B", "C"),
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  gct <- new("GCT", mat = mat, rdesc = rdesc, cdesc = cdesc)
+  
+  result <- validateGCT(gct)
+  
+  expect_true("id" %in% names(result@cdesc))
+  expect_true("group" %in% names(result@cdesc))
+  expect_false("Sample.ID" %in% names(result@cdesc))
+})

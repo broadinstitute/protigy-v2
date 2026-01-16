@@ -3,6 +3,65 @@
 # The main processGCT()` function and it's helpers
 ################################################################################
 
+# Fix gene symbol column formatting
+# Replaces semicolons with pipes, removes blank symbols, and cleans up formatting
+# INPUT: rdesc data frame with geneSymbol column
+# OUTPUT: updated rdesc with fixed geneSymbol column, and vector of removed row IDs
+fix_gene_symbols <- function(rdesc) {
+  if (!"geneSymbol" %in% names(rdesc)) {
+    return(list(rdesc = rdesc, removed_rids = character(0)))
+  }
+  
+  # Store original row names/indices for tracking removed rows
+  original_rids <- rownames(rdesc)
+  
+  # Convert geneSymbol to character vector if it's a list or other type
+  if (is.list(rdesc$geneSymbol)) {
+    rdesc$geneSymbol <- unlist(lapply(rdesc$geneSymbol, function(x) {
+      if (is.null(x) || length(x) == 0) return("")
+      paste(as.character(x), collapse = "|")
+    }))
+  }
+  rdesc$geneSymbol <- as.character(rdesc$geneSymbol)
+  
+  # Replace semicolons with pipes
+  rdesc$geneSymbol <- gsub(";", "|", rdesc$geneSymbol)
+  
+  # Remove blank gene symbols within strings (e.g., "EGFR| |" -> "EGFR")
+  # Split by pipe, remove empty/whitespace-only entries, rejoin with pipe
+  rdesc$geneSymbol <- vapply(rdesc$geneSymbol, function(x) {
+    if (is.na(x) || x == "") return("")
+    parts <- strsplit(x, "\\|", fixed = FALSE)[[1]]
+    parts <- parts[trimws(parts) != ""]  # Remove blank/whitespace-only parts
+    paste(parts, collapse = "|")
+  }, character(1))
+  
+  # Remove any completely blank gene symbols (entire value is blank)
+  blank_indices <- which(rdesc$geneSymbol == "" | is.na(rdesc$geneSymbol))
+  removed_rids <- character(0)
+  if (length(blank_indices) > 0) {
+    removed_rids <- original_rids[blank_indices]
+    rdesc <- rdesc[-blank_indices, , drop = FALSE]
+  }
+  
+  # Remove any starting | characters
+  if (nrow(rdesc) > 0) {
+    start_str <- substring(rdesc$geneSymbol, 1, 1)
+    rdesc$geneSymbol[start_str == "|"] <- substring(rdesc$geneSymbol[start_str == "|"], 2)
+    
+    # Remove any ending | characters
+    gene_values <- rdesc$geneSymbol
+    end_str <- vapply(gene_values, function(x) {
+      if (nchar(x) > 0) substring(x, nchar(x), nchar(x)) else ""
+    }, character(1))
+    rdesc$geneSymbol[end_str == "|"] <- vapply(rdesc$geneSymbol[end_str == "|"], function(x) {
+      if (nchar(x) > 1) substring(x, 1, nchar(x) - 1) else ""
+    }, character(1))
+  }
+  
+  return(list(rdesc = rdesc, removed_rids = removed_rids))
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -64,6 +123,21 @@ transformGCTs <- function(GCTs, parameters) {
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
+                }
+              }
+              
+              ## fix gene symbol formatting (replace semicolons with pipes, clean up)
+              if ("geneSymbol" %in% names(rdesc)) {
+                fix_result <- fix_gene_symbols(rdesc)
+                rdesc <- fix_result$rdesc
+                removed_rids <- fix_result$removed_rids
+                
+                # Update data matrix to remove rows with blank gene symbols
+                if (length(removed_rids) > 0) {
+                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
+                  if (nrow(data) == 0) {
+                    stop("All rows were removed after filtering blank gene symbols.")
+                  }
                 }
               }
               
@@ -150,6 +224,21 @@ processGCTs <- function(GCTs, parameters) {
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
+                }
+              }
+              
+              ## fix gene symbol formatting (replace semicolons with pipes, clean up)
+              if ("geneSymbol" %in% names(rdesc)) {
+                fix_result <- fix_gene_symbols(rdesc)
+                rdesc <- fix_result$rdesc
+                removed_rids <- fix_result$removed_rids
+                
+                # Update data matrix to remove rows with blank gene symbols
+                if (length(removed_rids) > 0) {
+                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
+                  if (nrow(data) == 0) {
+                    stop("All rows were removed after filtering blank gene symbols.")
+                  }
                 }
               }
               
@@ -399,8 +488,26 @@ validateGCT <- function(gct) {
     stop("GCT data row names not match `rdesc` row names.")
   }
   
-  # check that cdesc matches column names
-  if (!setequal(colnames(mat), rownames(cdesc))) {
+  # Check if cdesc is missing, empty, or only has "id" column - if so, create Sample.ID column
+  # This handles GCTs that don't have proper cdesc metadata
+  if (is.null(cdesc) || nrow(cdesc) == 0 || ncol(cdesc) == 0) {
+    # Create new cdesc with Sample.ID column
+    sample_ids <- colnames(mat)
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    rownames(cdesc) <- sample_ids
+  } else if (ncol(cdesc) == 1 && names(cdesc)[1] == "id") {
+    # If cdesc only has exactly one column named "id", recreate with Sample.ID column
+    sample_ids <- colnames(mat)
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    rownames(cdesc) <- sample_ids
+  } else if (!setequal(colnames(mat), rownames(cdesc))) {
+    # cdesc has real metadata but rownames don't match - this is an error
     stop("GCT data column names does not match `cdesc` row names.")
   }
   
