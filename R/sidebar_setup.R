@@ -569,13 +569,25 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ind = paste0("intensity_data_", tolower(current_intensity()))
       
       # update data normalization
+      # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
+      norm_choices <- parameter_choices$data_normalization[[ind]]
+      gct <- GCTs_unprocessed_internal_reactive()[[label]]
+      n_samples <- if (!is.null(gct)) ncol(gct@mat) else 0
+      if (n_samples > 20) {
+        norm_choices <- norm_choices[norm_choices != "2-component"]
+      }
+      # If current selection is 2-component but it should be disabled, use default
+      norm_selected <- ifelse(
+        parameters$data_normalization %in% norm_choices,
+        parameters$data_normalization,
+        default_parameters$data_normalization)
+      if (n_samples > 20 && norm_selected == "2-component") {
+        norm_selected <- default_parameters$data_normalization
+      }
       updateSelectInput(
         inputId = paste0(label, '_data_normalization'),
-        choices = parameter_choices$data_normalization[[ind]],
-        selected = ifelse(
-          parameters$data_normalization %in% parameter_choices$data_normalization[[ind]],
-          parameters$data_normalization,
-          default_parameters$data_normalization))
+        choices = norm_choices,
+        selected = norm_selected)
       
       # update max missing
       updateNumericInput(

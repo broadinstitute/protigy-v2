@@ -409,29 +409,43 @@ perform_data_normalization <- function(data, method, cdesc,
     data.norm <- data
   } else {
     
-    if (perform.group.normalization) {
-      # get groups vector
-      groups.vector <- cdesc[[group.normalization.column]]
-      names(groups.vector) <- rownames(cdesc)
-      
-      # warning if there is any level in groups.vector with only one element
-      freq_count <- aggregate(groups.vector, list(element = groups.vector), length)[[2]]
-      if (any(freq_count == 1)) {
-        warning(
-          "One or more levels in the group normalization column only contain ",
-          "one element. Consider group normalizing by a different column.")
-      }
-      
-      # perform group-wise normalization
-      data.norm <- normalize.data(data, method, groups.vector)
+    # Disable two-component normalization for datasets with more than 20 samples (too slow)
+    # This is a safety check in case the UI didn't prevent selection (e.g., from old parameters)
+    if (method == "2-component" && ncol(data) > 20) {
+      warning(
+        paste0(
+          "Two-component normalization is disabled for datasets with more than 20 samples ",
+          "(current dataset has ", ncol(data), " samples) due to performance concerns. ",
+          "No normalization will be applied."
+        )
+      )
+      method <- "None"
+      data.norm <- data
     } else {
       
-      # perform regular normalization
-      data.norm <- normalize.data(data, method)
-    }
-    
-    # if two-component norm fails....
-    if(inherits(data.norm, 'try-error')){
+      if (perform.group.normalization) {
+        # get groups vector
+        groups.vector <- cdesc[[group.normalization.column]]
+        names(groups.vector) <- rownames(cdesc)
+        
+        # warning if there is any level in groups.vector with only one element
+        freq_count <- aggregate(groups.vector, list(element = groups.vector), length)[[2]]
+        if (any(freq_count == 1)) {
+          warning(
+            "One or more levels in the group normalization column only contain ",
+            "one element. Consider group normalizing by a different column.")
+        }
+        
+        # perform group-wise normalization
+        data.norm <- normalize.data(data, method, groups.vector)
+      } else {
+        
+        # perform regular normalization
+        data.norm <- normalize.data(data, method)
+      }
+      
+      # if two-component norm fails....
+      if(inherits(data.norm, 'try-error')){
       # reset to no normalization
       data.norm <- data
       method <- "None"
@@ -444,6 +458,7 @@ perform_data_normalization <- function(data, method, cdesc,
         '<b>log-ratio</b> data that is approximately <b>centered around',
         'zero</b>. Please make sure this is the case by <b>inspecting the',
         'profile plots</b> under the QC tab.'))
+      }
     }
   }
   
