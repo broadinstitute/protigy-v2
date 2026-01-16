@@ -270,6 +270,17 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
 
 ## calculate PCA regression
 pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
+  # Determine maximum available PCs
+  max_available_PCs <- ncol(pca$x)
+  
+  # Adjust components to use available PCs only
+  components <- components[components <= max_available_PCs]
+  
+  # Check if we have any valid components
+  if (length(components) == 0) {
+    stop("No valid principal components available. Cannot perform PCA regression.")
+  }
+  
   # Obtain the principal component coordinates
   p <- data.frame (pca$x[,components])
   
@@ -340,6 +351,10 @@ create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,co
   # Filter out zero-variance features (columns after transpose)
   data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
   my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
+  
+  # Determine maximum available PCs and adjust components.max accordingly
+  max_available_PCs <- ncol(my_pca$x)
+  components.max <- min(components.max, max_available_PCs)
   
   #perform batch effect check and plot PCA regression
   pca.var <- pca_variance_explained (my_pca, cdesc[col_of_interest], components=1:components.max)
