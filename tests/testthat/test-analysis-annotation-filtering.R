@@ -92,13 +92,15 @@ test_that("getUniqueColumns excludes numeric columns", {
 # Test Analysis Annotation Column Filtering Logic
 ################################################################################
 
-test_that("annotation column filtering excludes unique character columns", {
+test_that("annotation column filtering includes all discrete columns (including ID columns)", {
   # Create mock GCT object with cdesc containing mixed column types
   mock_cdesc <- data.frame(
-    Sample.ID = c("S1", "S2", "S3"),             # unique character - should be excluded
-    patient_id = c("P1", "P2", "P3"),            # unique character - should be excluded
+    Sample.ID = c("S1", "S2", "S3"),             # unique character (ID column) - should be included
+    patient_id = c("P1", "P2", "P3"),            # unique character (ID column) - should be included
     treatment = c("A", "A", "B"),                # non-unique character - should be included
     timepoint = c("T1", "T2", "T1"),             # non-unique character - should be included
+    single_category = c("X", "X", "X"),          # single category - should be included
+    continuous = c(1.5, 2.3, 1.8),               # continuous numeric - should be excluded
     stringsAsFactors = FALSE
   )
   
@@ -106,25 +108,49 @@ test_that("annotation column filtering excludes unique character columns", {
   mock_gct <- new("GCT")
   mock_gct@cdesc <- mock_cdesc
   
-  # Mock the gctSetupUI function logic
+  # Mock the gctSetupUI function logic (updated to include all discrete columns)
   all_cdesc_columns <- names(mock_gct@cdesc)
-  unique_columns <- getUniqueColumns(mock_gct@cdesc)
-  groups_choices <- all_cdesc_columns[!all_cdesc_columns %in% unique_columns]
+  # Filter to only discrete columns (exclude continuous columns)
+  groups_choices <- all_cdesc_columns[vapply(mock_gct@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
   
-  # Should exclude unique character columns
-  expect_false("Sample.ID" %in% groups_choices)
-  expect_false("patient_id" %in% groups_choices)
-  
-  # Should include non-unique character columns
+  # Should include all discrete columns, including ID columns
+  expect_true("Sample.ID" %in% groups_choices)
+  expect_true("patient_id" %in% groups_choices)
   expect_true("treatment" %in% groups_choices)
   expect_true("timepoint" %in% groups_choices)
+  expect_true("single_category" %in% groups_choices)
+  
+  # Should exclude continuous columns
+  expect_false("continuous" %in% groups_choices)
 })
 
-test_that("annotation column filtering provides fallback when no suitable columns", {
-  # Create mock GCT object with only unique character columns
+test_that("annotation column filtering includes ID columns when only ID columns available", {
+  # Create mock GCT object with only unique character columns (ID columns)
   mock_cdesc <- data.frame(
-    Sample.ID = c("S1", "S2", "S3"),             # unique character
-    patient_id = c("P1", "P2", "P3"),            # unique character
+    Sample.ID = c("S1", "S2", "S3"),             # unique character (ID column)
+    patient_id = c("P1", "P2", "P3"),            # unique character (ID column)
+    stringsAsFactors = FALSE
+  )
+  
+  # Create mock GCT object
+  mock_gct <- new("GCT")
+  mock_gct@cdesc <- mock_cdesc
+  
+  # Mock the gctSetupUI function logic (updated to include all discrete columns)
+  all_cdesc_columns <- names(mock_gct@cdesc)
+  groups_choices <- all_cdesc_columns[vapply(mock_gct@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
+  
+  # Should include ID columns (they are discrete)
+  expect_true("Sample.ID" %in% groups_choices)
+  expect_true("patient_id" %in% groups_choices)
+  expect_true(length(groups_choices) >= 2)
+})
+
+test_that("annotation column filtering provides fallback when no discrete columns", {
+  # Create mock GCT object with only continuous columns
+  mock_cdesc <- data.frame(
+    continuous1 = c(1.5, 2.3, 1.8),             # continuous numeric
+    continuous2 = c(10.1, 20.2, 30.3),          # continuous numeric
     stringsAsFactors = FALSE
   )
   
@@ -134,8 +160,7 @@ test_that("annotation column filtering provides fallback when no suitable column
   
   # Mock the gctSetupUI function logic
   all_cdesc_columns <- names(mock_gct@cdesc)
-  unique_columns <- getUniqueColumns(mock_gct@cdesc)
-  groups_choices <- all_cdesc_columns[!all_cdesc_columns %in% unique_columns]
+  groups_choices <- all_cdesc_columns[vapply(mock_gct@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
   
   # If no suitable annotation columns remain, use Sample.ID as fallback
   if (length(groups_choices) == 0) {
@@ -144,6 +169,29 @@ test_that("annotation column filtering provides fallback when no suitable column
   
   # Should fall back to Sample.ID
   expect_equal(groups_choices, "Sample.ID")
+})
+
+test_that("annotation column filtering includes columns with single category", {
+  # Create mock GCT object with column having only one category
+  mock_cdesc <- data.frame(
+    single_category = c("A", "A", "A"),          # single category - should be included
+    two_categories = c("A", "B", "A"),           # two categories - should be included
+    treatment = c("A", "A", "B"),                # two categories - should be included
+    stringsAsFactors = FALSE
+  )
+  
+  # Create mock GCT object
+  mock_gct <- new("GCT")
+  mock_gct@cdesc <- mock_cdesc
+  
+  # Mock the gctSetupUI function logic
+  all_cdesc_columns <- names(mock_gct@cdesc)
+  groups_choices <- all_cdesc_columns[vapply(mock_gct@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
+  
+  # Should include all discrete columns, including those with single category
+  expect_true("single_category" %in% groups_choices)
+  expect_true("two_categories" %in% groups_choices)
+  expect_true("treatment" %in% groups_choices)
 })
 
 ################################################################################
