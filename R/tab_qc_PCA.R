@@ -164,6 +164,14 @@ QCPCA_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
     
+    ## CACHED PCA CALCULATION ##
+    # Calculate PCA once per dataset - only recalculates when GCT_processed changes
+    # This ensures PCA remains consistent when only visualization parameters change
+    cached_pca_result <- reactive({
+      req(GCT_processed())
+      calculate_PCA(GCT_processed())
+    })
+    
     # sidebar contents
     output$qc_PCA_sidebar_contents <- renderUI({
       req(GCT_processed())
@@ -251,7 +259,8 @@ QCPCA_Ome_Server <- function(id,
     qc_PCA_plot_reactive <- eventReactive(
       eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, 
                     input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
-                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, color_map()), 
+                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, color_map(),
+                    cached_pca_result()), 
       valueExpr = {
         
         # get annotation column
@@ -296,7 +305,7 @@ QCPCA_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # generate plot
+        # generate plot using cached PCA
         create_PCA_plot(gct = GCT_processed(),
                             col_of_interest = annot_column,
                             ome = ome,
@@ -305,7 +314,8 @@ QCPCA_Ome_Server <- function(id,
                             comp.y = as.numeric(ifelse(is.null(input$qc_PCA_PC2), 2, input$qc_PCA_PC2)),
                             second_col_of_interest = second_annot_column,
                             var1_display = var1_display,
-                            var2_display = var2_display)
+                            var2_display = var2_display,
+                            pca_result = cached_pca_result())
       }
     )
     
@@ -318,7 +328,7 @@ QCPCA_Ome_Server <- function(id,
     
     # reactive
     qc_PCA_reg_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, color_map()), 
+      eventExpr = c(input$qc_PCA_annotation, color_map(), cached_pca_result()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
         
@@ -337,11 +347,12 @@ QCPCA_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # generate plot
+        # generate plot using cached PCA
         create_PCA_reg(gct = GCT_processed(),
                            col_of_interest = annot_column,
                            ome = ome,
-                           custom_color_map = annot_color_map)
+                           custom_color_map = annot_color_map,
+                           pca_result = cached_pca_result())
       }
     )
     
