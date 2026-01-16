@@ -94,13 +94,15 @@ test_that("getUniqueColumns excludes numeric columns", {
 
 test_that("annotation column filtering includes all discrete columns (including ID columns)", {
   # Create mock GCT object with cdesc containing mixed column types
+  # Need 25 samples for the continuous column to have >20 unique values
+  n_samples <- 25
   mock_cdesc <- data.frame(
-    Sample.ID = c("S1", "S2", "S3"),             # unique character (ID column) - should be included
-    patient_id = c("P1", "P2", "P3"),            # unique character (ID column) - should be included
-    treatment = c("A", "A", "B"),                # non-unique character - should be included
-    timepoint = c("T1", "T2", "T1"),             # non-unique character - should be included
-    single_category = c("X", "X", "X"),          # single category - should be included
-    continuous = c(1.5, 2.3, 1.8),               # continuous numeric - should be excluded
+    Sample.ID = paste0("S", 1:n_samples),             # unique character (ID column) - should be included
+    patient_id = paste0("P", 1:n_samples),            # unique character (ID column) - should be included
+    treatment = rep(c("A", "B"), length.out = n_samples),                # non-unique character - should be included
+    timepoint = rep(c("T1", "T2", "T1"), length.out = n_samples),             # non-unique character - should be included
+    single_category = rep("X", n_samples),          # single category - should be included
+    continuous = (1:n_samples) + (1:n_samples) * 0.1,  # continuous numeric with 25 unique values - should be excluded
     stringsAsFactors = FALSE
   )
   
@@ -120,7 +122,7 @@ test_that("annotation column filtering includes all discrete columns (including 
   expect_true("timepoint" %in% groups_choices)
   expect_true("single_category" %in% groups_choices)
   
-  # Should exclude continuous columns
+  # Should exclude continuous columns (is.discrete returns FALSE for numeric columns with many unique values)
   expect_false("continuous" %in% groups_choices)
 })
 
@@ -147,10 +149,11 @@ test_that("annotation column filtering includes ID columns when only ID columns 
 })
 
 test_that("annotation column filtering provides fallback when no discrete columns", {
-  # Create mock GCT object with only continuous columns
+  # Create mock GCT object with only continuous columns (many unique numeric values)
+  # Need enough unique values to trigger is.discrete() to return FALSE
   mock_cdesc <- data.frame(
-    continuous1 = c(1.5, 2.3, 1.8),             # continuous numeric
-    continuous2 = c(10.1, 20.2, 30.3),          # continuous numeric
+    continuous1 = c(1.5, 2.3, 1.8, 4.1, 5.2, 6.3, 7.4, 8.5, 9.6, 10.7, 11.8, 12.9, 13.0, 14.1, 15.2, 16.3, 17.4, 18.5, 19.6, 20.7, 21.8),  # >20 unique values
+    continuous2 = c(10.1, 20.2, 30.3, 40.4, 50.5, 60.6, 70.7, 80.8, 90.9, 100.0, 110.1, 120.2, 130.3, 140.4, 150.5, 160.6, 170.7, 180.8, 190.9, 200.0, 210.1),  # >20 unique values
     stringsAsFactors = FALSE
   )
   

@@ -4,8 +4,7 @@
 # Shiny funcions (UI and server)
 ################################################################################
 
-#' @import colourpicker
-#' @import shinydashboard
+#' @importFrom colourpicker colourInput updateColourInput
 # UI for the customize tab
 customizeTabUI <- function(id = "customizeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`

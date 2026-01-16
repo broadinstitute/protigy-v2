@@ -1,5 +1,8 @@
 # Tests for GCT processing functions
 
+# Note: Tests that call transformGCTs or processGCTs may trigger showNotification
+# which requires a Shiny session. These tests use testthat::with_mock to mock showNotification
+
 # Load test data
 data(brca_retrospective_v5.0_rnaseq_gct)
 data(brca_retrospective_v5.0_phosphoproteome_gct)
@@ -537,10 +540,35 @@ test_that("geneSymbol is preserved when it exists and user selects None", {
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_true("geneSymbol" %in% names(result$test@rdesc))
-  expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_true("geneSymbol" %in% names(result$test@rdesc))
+      expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+    }
+  )
 })
 
 test_that("geneSymbol is preserved when it exists and user selects geneSymbol itself", {
@@ -572,10 +600,35 @@ test_that("geneSymbol is preserved when it exists and user selects geneSymbol it
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_true("geneSymbol" %in% names(result$test@rdesc))
-  expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_true("geneSymbol" %in% names(result$test@rdesc))
+      expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+    }
+  )
 })
 
 test_that("geneSymbol is replaced when it exists and user selects different column", {
@@ -608,13 +661,38 @@ test_that("geneSymbol is replaced when it exists and user selects different colu
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_true("geneSymbol" %in% names(result$test@rdesc))
-  expect_true("geneSymbol_original" %in% names(result$test@rdesc))
-  expect_equal(result$test@rdesc$geneSymbol, c("EGFR_NEW", "TP53_NEW", "BRCA1_NEW"))
-  expect_equal(result$test@rdesc$geneSymbol_original, c("EGFR", "TP53", "BRCA1"))
-  expect_false("gene_name" %in% names(result$test@rdesc))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_true("geneSymbol" %in% names(result$test@rdesc))
+      expect_true("geneSymbol_original" %in% names(result$test@rdesc))
+      expect_equal(result$test@rdesc$geneSymbol, c("EGFR_NEW", "TP53_NEW", "BRCA1_NEW"))
+      expect_equal(result$test@rdesc$geneSymbol_original, c("EGFR", "TP53", "BRCA1"))
+      expect_false("gene_name" %in% names(result$test@rdesc))
+    }
+  )
 })
 
 test_that("geneSymbol is created when it doesn't exist and user selects valid column", {
@@ -646,11 +724,36 @@ test_that("geneSymbol is created when it doesn't exist and user selects valid co
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_true("geneSymbol" %in% names(result$test@rdesc))
-  expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
-  expect_false("gene_name" %in% names(result$test@rdesc))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_true("geneSymbol" %in% names(result$test@rdesc))
+      expect_equal(result$test@rdesc$geneSymbol, c("EGFR", "TP53", "BRCA1"))
+      expect_false("gene_name" %in% names(result$test@rdesc))
+    }
+  )
 })
 
 test_that("geneSymbol is not created when it doesn't exist and user selects None", {
@@ -681,9 +784,34 @@ test_that("geneSymbol is not created when it doesn't exist and user selects None
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_false("geneSymbol" %in% names(result$test@rdesc))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_false("geneSymbol" %in% names(result$test@rdesc))
+    }
+  )
 })
 
 test_that("geneSymbol is not created when selected column doesn't exist", {
@@ -714,9 +842,34 @@ test_that("geneSymbol is not created when selected column doesn't exist", {
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_false("geneSymbol" %in% names(result$test@rdesc))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_false("geneSymbol" %in% names(result$test@rdesc))
+    }
+  )
 })
 
 test_that("geneSymbol formatting is applied when it exists and user selects None", {
@@ -748,8 +901,33 @@ test_that("geneSymbol formatting is applied when it exists and user selects None
     annotation_column = "group"
   )
   
-  result <- transformGCTs(list(test = gct), list(test = params))
-  
-  expect_true("geneSymbol" %in% names(result$test@rdesc))
-  expect_equal(result$test@rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1"))
+  # Mock my_shinyalert_tryCatch to avoid showNotification requirement
+  # Also mock withProgress and incProgress to avoid session requirement  
+  testthat::with_mock(
+    `Protigy::my_shinyalert_tryCatch` = function(expr, show.warning = TRUE, show.error = TRUE, return.error = NULL, ...) {
+      # Just execute the expression without try/catch wrapper
+      # Use withCallingHandlers to catch warnings but continue execution
+      withCallingHandlers(
+        expr = expr,
+        warning = function(cond) {
+          # Suppress warnings in tests
+          invokeRestart("muffleWarning")
+        }
+      )
+    },
+    `shiny::withProgress` = function(expr, ...) {
+      # Just execute the expression without progress wrapper
+      expr
+    },
+    `shiny::incProgress` = function(...) {
+      # Do nothing in tests
+      invisible(NULL)
+    },
+    {
+      result <- transformGCTs(list(test = gct), list(test = params))
+      
+      expect_true("geneSymbol" %in% names(result$test@rdesc))
+      expect_equal(result$test@rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1"))
+    }
+  )
 })

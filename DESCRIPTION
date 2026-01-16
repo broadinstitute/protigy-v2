@@ -1,6 +1,6 @@
 Package: Protigy
 Title: Proteomics Toolset for Integrative Data Analysis
-Version: 2.2.3
+Version: 2.3.0
 Authors@R: c(
     person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
     person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),
@@ -50,7 +50,6 @@ Imports:
     ggfortify,
     limma,
     shinyWidgets,
-    shinyBS,
     glue,
     Matrix,
     janitor,
