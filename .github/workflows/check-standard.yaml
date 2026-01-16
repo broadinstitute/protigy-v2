@@ -18,14 +18,10 @@ jobs:
 
     name: ${{ matrix.config.os }} (${{ matrix.config.r }})
 
-    # Allow macOS checks to fail without blocking the workflow (due to known pak issues)
-    continue-on-error: ${{ matrix.config.os == 'macos-latest' }}
-
     strategy:
       fail-fast: false
       matrix:
         config:
-          - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
           - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest,   r: 'release'}
@@ -44,6 +40,37 @@ jobs:
         with:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
+
+  R-CMD-check-macos:
+    runs-on: macos-latest
+
+    name: macOS (release)
+
+    # Allow macOS checks to fail without blocking the workflow (due to known pak issues)
+    continue-on-error: true
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
           use-public-rspm: true
 
       - uses: r-lib/actions/setup-r-dependencies@v2
