@@ -1,6 +1,6 @@
-# CSV/TSV/Excel Processing
+# CSV/TSV/SSV/Excel Processing
 
-This section explains how to process CSV, TSV, and Excel files in ProTIGY. These file formats require additional setup steps compared to GCT files, including label assignment, identifier column selection, and experimental design upload.
+This section explains how to process CSV, TSV, SSV (semicolon-separated), and Excel files in ProTIGY. These file formats require additional setup steps compared to GCT files, including label assignment, identifier column selection, and experimental design upload.
 
 ## Important: File Upload Requirements
 
@@ -8,7 +8,7 @@ This section explains how to process CSV, TSV, and Excel files in ProTIGY. These
 
 ## Workflow Overview
 
-After assigning labels (see General Help), the CSV/TSV/Excel processing workflow consists of three main steps:
+After assigning labels (see General Help), the CSV/TSV/SSV/Excel processing workflow consists of three main steps:
 
 1. **Select Identifier Columns** - Choose which column contains unique feature identifiers
 2. **Experimental Design** - Upload sample metadata and experimental design
@@ -46,10 +46,10 @@ Click "Download Template" to get a CSV template with:
 
 ### Option 2: Upload Experimental Design
 
-Upload your completed experimental design file (CSV, TSV, or Excel format).
+Upload your completed experimental design file (CSV, TSV, SSV, or Excel format).
 
 **Requirements:**
-- Must be CSV, TSV, or Excel format
+- Must be CSV, TSV, SSV, or Excel format
 - First column must be named "columnName"
 - Sample IDs must match column names in your data files
 - All samples must have corresponding entries
@@ -57,7 +57,7 @@ Upload your completed experimental design file (CSV, TSV, or Excel format).
 ## Step 3: Process Files
 
 After uploading your experimental design file, click "Process Files" to:
-- Convert CSV/TSV/Excel files to GCT format
+- Convert CSV/TSV/SSV/Excel files to GCT format
 - Store experimental design as sample metadata
 - Separate sample data from row metadata
 
@@ -72,7 +72,7 @@ After processing, you will move on to normalization and filtering.
 - Check for extra spaces or special characters
 
 **"Failed to process file"**
-- Verify file format is supported (CSV, TSV, Excel)
+- Verify file format is supported (CSV, TSV, SSV, Excel)
 - Check that file is not corrupted
 - Ensure first row contains headers
 

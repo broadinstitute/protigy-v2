@@ -62,7 +62,7 @@ validateExperimentalDesign <- function(exp_design) {
 }
 
 # Read and validate uploaded experimental design file
-# INPUT: file path to experimental design file (CSV, TSV, or Excel)
+# INPUT: file path to experimental design file (CSV, TSV, SSV, or Excel)
 # OUTPUT: validated data.frame
 readExperimentalDesign <- function(file_path) {
   tryCatch({
@@ -74,10 +74,12 @@ readExperimentalDesign <- function(file_path) {
       exp_design <- readr::read_csv(file_path)
     } else if (file_ext == "tsv") {
       exp_design <- readr::read_tsv(file_path)
+    } else if (file_ext == "ssv") {
+      exp_design <- readr::read_delim(file_path, delim = ";")
     } else if (file_ext %in% c("xlsx", "xls")) {
       exp_design <- readxl::read_excel(file_path)
     } else {
-      stop("Unsupported file format: ", file_ext, ". Supported formats are CSV, TSV, and Excel.")
+      stop("Unsupported file format: ", file_ext, ". Supported formats are CSV, TSV, SSV, and Excel.")
     }
     
     # Validate the experimental design

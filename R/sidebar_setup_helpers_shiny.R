@@ -32,17 +32,13 @@ gctSetupUI <- function(ns,
                        current_place, 
                        max_place,
                        GCTs) {
-  # groups column choices pulled from cdesc, excluding ID columns (unique character data)
+  # groups column choices pulled from cdesc
   all_cdesc_columns <- names(GCTs[[label]]@cdesc)
   
-  # Get columns that have unique character values (these are ID columns and should be excluded)
-  unique_columns <- getUniqueColumns(GCTs[[label]]@cdesc)
-  
-  # Filter out ID columns (unique character columns) from annotation choices
-  groups_choices <- all_cdesc_columns[!all_cdesc_columns %in% unique_columns]
-  
-  # Further filter to only discrete columns for analysis annotation
-  groups_choices <- groups_choices[vapply(GCTs[[label]]@cdesc[groups_choices], function(col) is.discrete(col), logical(1))]
+  # Filter to only discrete columns for analysis annotation (exclude continuous columns)
+  # NOTE: We allow ALL discrete columns regardless of number of categories (even if <2)
+  # Statistical testing will be disabled in the statistics tab if there are <2 categories
+  groups_choices <- all_cdesc_columns[vapply(GCTs[[label]]@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
   
   # If no suitable annotation columns remain, use Sample.ID as fallback
   if (length(groups_choices) == 0) {
@@ -52,6 +48,18 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
+  
+  # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
+  norm_choices <- parameter_choices$data_normalization$intensity_data_no
+  n_samples <- ncol(GCTs[[label]]@mat)
+  if (n_samples > 20) {
+    norm_choices <- norm_choices[norm_choices != "2-component"]
+  }
+  # If current selection is 2-component but it should be disabled, use default
+  norm_selected <- parameters[[label]]$data_normalization
+  if (n_samples > 20 && norm_selected == "2-component") {
+    norm_selected <- "None"
+  }
   
   tagList(
     h4('Setup for ',
@@ -105,8 +113,8 @@ gctSetupUI <- function(ns,
       selectInput(
         ns(paste0(label, '_data_normalization')),
         label = 'Data normalization',
-        choices = parameter_choices$data_normalization$intensity_data_no,
-        selected = parameters[[label]]$data_normalization),
+        choices = norm_choices,
+        selected = norm_selected),
       classes = "small-input"),
     
     ## group-wise normalization

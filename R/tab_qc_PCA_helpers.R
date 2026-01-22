@@ -4,9 +4,50 @@
 # Produce PCA plots
 ################################################################################
 
+## Calculate PCA from GCT object
+## This function extracts and processes the data matrix, then calculates PCA
+## Returns the PCA object and the processed data matrix
+calculate_PCA <- function(gct) {
+  # Get matrix
+  mat <- gct@mat
+  
+  # Store original column names to preserve hyphens, etc.
+  original_colnames <- colnames(mat)
+  
+  # Convert to data.frame and drop NA rows (features), then transpose
+  mat_df <- data.frame(mat, check.names = FALSE)
+  # Explicitly restore original column names to preserve hyphens, etc.
+  colnames(mat_df) <- original_colnames
+  
+  # Drop rows (features) with any NA, then transpose
+  # After transpose, rows are samples (from original columns)
+  mat_df <- mat_df %>% drop_na()
+  data.norm <- t(mat_df)
+  
+  # Ensure rownames (samples) match original column names
+  rownames(data.norm) <- original_colnames
+  
+  # Filter out zero-variance features (columns after transpose)
+  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
+  
+  # Check if we have any data left after filtering
+  if (ncol(data.norm) == 0) {
+    stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
+  }
+  if (nrow(data.norm) == 0) {
+    stop("No samples remain after filtering. Cannot perform PCA.")
+  }
+  
+  # Calculate PCA
+  my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
+  
+  return(list(pca = my_pca, data_norm = data.norm, original_colnames = original_colnames))
+}
+
 ## plot PCA
 create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, 
-                            second_col_of_interest = NULL, var1_display = "color", var2_display = "shape") {
+                            second_col_of_interest = NULL, var1_display = "color", var2_display = "shape",
+                            pca_result = NULL) {
   # Check for valid PC inputs
   if (is.null(comp.x) || is.null(comp.y) || length(comp.x) == 0 || length(comp.y) == 0) {
     stop("PC1 and PC2 must be valid and non-empty.")
@@ -26,7 +67,18 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     }
   }
   
-  #sort matrix by annotation
+  # Use pre-calculated PCA if provided, otherwise calculate it
+  if (!is.null(pca_result)) {
+    my_pca <- pca_result$pca
+    original_colnames <- pca_result$original_colnames
+  } else {
+    # Calculate PCA if not provided
+    pca_result <- calculate_PCA(gct)
+    my_pca <- pca_result$pca
+    original_colnames <- pca_result$original_colnames
+  }
+  
+  # Get matrix for annotations (use original, unsorted for annotation extraction)
   mat <- gct@mat
   group <- gct@cdesc[[col_of_interest]]
   
@@ -59,42 +111,9 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     colnames(annot)[3] <- second_col_of_interest
   }
   
-  mat <- mat[,order(annot$annot)]
+  # Sort annotations by the primary annotation for visualization (doesn't affect PCA)
   annot <- annot[order(annot$annot),]
   colnames(annot)[2] = col_of_interest
-  
-  #remove zero-variance columns and calculate PCA
-  # Store original column names before conversion (to preserve hyphens, etc.)
-  # R's data.frame() converts hyphens to dots in column names, so we need to preserve them
-  original_colnames <- colnames(mat)
-  
-  # Convert to data.frame and drop NA rows (features), then transpose
-  # drop_na() removes entire rows (features), not columns (samples)
-  mat_df <- data.frame(mat, check.names = FALSE)
-  # Explicitly restore original column names to preserve hyphens, etc.
-  colnames(mat_df) <- original_colnames
-  
-  # Drop rows (features) with any NA, then transpose
-  # After transpose, rows are samples (from original columns)
-  mat_df <- mat_df %>% drop_na()
-  data.norm <- t(mat_df)
-  
-  # Ensure rownames (samples) match original column names
-  # After transpose, rownames should be the original column names
-  rownames(data.norm) <- original_colnames
-  
-  # Filter out zero-variance features (columns after transpose)
-  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
-  
-  # Check if we have any data left after filtering
-  if (ncol(data.norm) == 0) {
-    stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
-  }
-  if (nrow(data.norm) == 0) {
-    stop("No samples remain after filtering. Cannot perform PCA.")
-  }
-  
-  my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
   
   # get variance explained
   vars <- my_pca$sdev^2
@@ -239,29 +258,27 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     g <- g + color_definition
   }
   
-  # Add shape scale for more than 6 shapes
+  # Add shape scale - always use open shapes first for better visibility
   if (!is.null(second_col_of_interest)) {
     # Get unique values for shape variable
     shape_var <- if (var1_display == "shape") col_of_interest else second_col_of_interest
     unique_shapes <- unique(pca_df[[shape_var]])
     n_shapes <- length(unique_shapes)
     
-    if (n_shapes > 6) {
-      # Define more shapes - using a combination of different point types
-      # R has 25 built-in shapes (0-25), but some are duplicates or not suitable
-      # We'll use a good selection of distinct shapes
-      available_shapes <- c(16, 17, 15, 18, 1, 2, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 19, 20, 21, 22, 23, 24, 25)
-      
-      if (n_shapes <= length(available_shapes)) {
-        shape_values <- available_shapes[1:n_shapes]
-        names(shape_values) <- unique_shapes
-        g <- g + scale_shape_manual(values = shape_values)
-      } else {
-        # If we still need more shapes, we can cycle through them
-        shape_values <- rep(available_shapes, ceiling(n_shapes / length(available_shapes)))[1:n_shapes]
-        names(shape_values) <- unique_shapes
-        g <- g + scale_shape_manual(values = shape_values)
-      }
+    # Define shapes - open shapes (0-14) are used first as they are easier to distinguish
+    # Then filled shapes (15-25) are used
+    # Order: circle, square, triangle, diamond, triangle down, then other open shapes, then filled
+    available_shapes <- c(1, 0, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25)
+    
+    if (n_shapes <= length(available_shapes)) {
+      shape_values <- available_shapes[1:n_shapes]
+      names(shape_values) <- unique_shapes
+      g <- g + scale_shape_manual(values = shape_values)
+    } else {
+      # If we still need more shapes, we can cycle through them
+      shape_values <- rep(available_shapes, ceiling(n_shapes / length(available_shapes)))[1:n_shapes]
+      names(shape_values) <- unique_shapes
+      g <- g + scale_shape_manual(values = shape_values)
     }
   }
   
@@ -270,6 +287,17 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
 
 ## calculate PCA regression
 pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
+  # Determine maximum available PCs
+  max_available_PCs <- ncol(pca$x)
+  
+  # Adjust components to use available PCs only
+  components <- components[components <= max_available_PCs]
+  
+  # Check if we have any valid components
+  if (length(components) == 0) {
+    stop("No valid principal components available. Cannot perform PCA regression.")
+  }
+  
   # Obtain the principal component coordinates
   p <- data.frame (pca$x[,components])
   
@@ -315,31 +343,23 @@ pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
 }
 
 ##plot PCA regression
-create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL,components.max=10){
+create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL, components.max=10, pca_result = NULL){
   
   #get data and annotations
-  mat <- gct@mat
   cdesc <- gct@cdesc
   
-  #remove zero-variance columns and calculate PCA
-  # Store original column names to preserve hyphens, etc.
-  original_colnames <- colnames(mat)
+  # Use pre-calculated PCA if provided, otherwise calculate it
+  if (!is.null(pca_result)) {
+    my_pca <- pca_result$pca
+  } else {
+    # Calculate PCA if not provided
+    pca_result <- calculate_PCA(gct)
+    my_pca <- pca_result$pca
+  }
   
-  # Convert to data.frame and drop NA rows (features), then transpose
-  mat_df <- data.frame(mat, check.names = FALSE)
-  # Explicitly restore original column names to preserve hyphens, etc.
-  colnames(mat_df) <- original_colnames
-  
-  # Drop rows (features) with any NA, then transpose
-  mat_df <- mat_df %>% drop_na()
-  data.norm <- t(mat_df)
-  
-  # Ensure rownames (samples) match original column names
-  rownames(data.norm) <- original_colnames
-  
-  # Filter out zero-variance features (columns after transpose)
-  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
-  my_pca <- prcomp (data.norm, center=TRUE, scale=TRUE)
+  # Determine maximum available PCs and adjust components.max accordingly
+  max_available_PCs <- ncol(my_pca$x)
+  components.max <- min(components.max, max_available_PCs)
   
   #perform batch effect check and plot PCA regression
   pca.var <- pca_variance_explained (my_pca, cdesc[col_of_interest], components=1:components.max)

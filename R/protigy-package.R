@@ -3,7 +3,7 @@
 
 ## usethis namespace: start
 #' @export
-#' @rawNamespace import(shiny, except=c(dataTableOutput, renderDataTable))
+#' @rawNamespace import(shiny, except=c(dataTableOutput, renderDataTable, runExample))
 #' @import ggplot2
 #' @import dplyr
 #' @import tidyr
@@ -22,7 +22,7 @@
 #' @importFrom grid gpar
 #' @importFrom plotly ggplotly plotlyOutput renderPlotly style
 #' @importFrom circlize colorRamp2
-#' @importFrom colourpicker colourInput
+#' @importFrom colourpicker colourInput updateColourInput
 #' @importFrom shinyBS tipify
 #' @importFrom WriteXLS WriteXLS
 #' @importFrom RColorBrewer brewer.pal

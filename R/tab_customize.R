@@ -4,8 +4,7 @@
 # Shiny funcions (UI and server)
 ################################################################################
 
-#' @import colourpicker
-#' @import shinydashboard
+#' @importFrom colourpicker colourInput updateColourInput
 # UI for the customize tab
 customizeTabUI <- function(id = "customizeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
@@ -267,11 +266,19 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         default_annot <- discrete_annot_columns[1]
       }
 
+      # Preserve current selection if it's still valid, otherwise use default
+      current_selection <- isolate(input$selected_annotation_column)
+      if (!is.null(current_selection) && current_selection %in% discrete_annot_columns) {
+        selected_annot <- current_selection
+      } else {
+        selected_annot <- default_annot
+      }
+
       selectInput(
         ns("selected_annotation_column"),
         label = "Annotation Column:",
         choices = discrete_annot_columns,
-        selected = default_annot
+        selected = selected_annot
       )
     })
 

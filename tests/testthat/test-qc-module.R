@@ -356,6 +356,368 @@ test_that("create_PCA_reg creates valid ggplot objects", {
   expect_s3_class(result, "ggplot")
 })
 
+test_that("create_PCA_reg handles fewer than 10 PCs correctly", {
+  # Create a GCT with only 3 samples (max 3 PCs possible)
+  small_mat <- matrix(rnorm(15), nrow = 5, ncol = 3)
+  rownames(small_mat) <- paste0("gene_", 1:5)
+  colnames(small_mat) <- paste0("sample_", 1:3)
+  
+  small_cdesc <- data.frame(
+    group = c("A", "B", "A"),
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  small_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:5),
+    row.names = paste0("gene_", 1:5)
+  )
+  
+  small_gct <- new("GCT",
+                   mat = small_mat,
+                   cdesc = small_cdesc,
+                   rdesc = small_rdesc,
+                   rid = paste0("gene_", 1:5),
+                   cid = paste0("sample_", 1:3)
+  )
+  
+  mock_colors <- create_mock_color_map()
+  
+  # Should work with default components.max=10, but only use available PCs (3)
+  result <- create_PCA_reg(small_gct, "group", "test_ome", mock_colors)
+  expect_s3_class(result, "ggplot")
+  
+  # Should also work with explicit components.max > available PCs
+  result2 <- create_PCA_reg(small_gct, "group", "test_ome", mock_colors, components.max = 10)
+  expect_s3_class(result2, "ggplot")
+  
+  # Should work with components.max less than available PCs
+  result3 <- create_PCA_reg(small_gct, "group", "test_ome", mock_colors, components.max = 2)
+  expect_s3_class(result3, "ggplot")
+})
+
+test_that("create_PCA_reg handles edge case with minimal PCs", {
+  # Create a GCT with only 2 samples (max 2 PCs possible, but typically only 1 is meaningful)
+  minimal_mat <- matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2)
+  rownames(minimal_mat) <- c("gene1", "gene2")
+  colnames(minimal_mat) <- c("sample1", "sample2")
+  
+  minimal_cdesc <- data.frame(
+    group = c("A", "B"),
+    row.names = c("sample1", "sample2")
+  )
+  
+  minimal_rdesc <- data.frame(
+    gene_name = c("gene1", "gene2"),
+    row.names = c("gene1", "gene2")
+  )
+  
+  minimal_gct <- new("GCT",
+                     mat = minimal_mat,
+                     cdesc = minimal_cdesc,
+                     rdesc = minimal_rdesc,
+                     rid = c("gene1", "gene2"),
+                     cid = c("sample1", "sample2")
+  )
+  
+  mock_colors <- create_mock_color_map()
+  
+  # Should work even with only 1-2 PCs available
+  result <- create_PCA_reg(minimal_gct, "group", "test_ome", mock_colors)
+  expect_s3_class(result, "ggplot")
+})
+
+test_that("pca_variance_explained handles fewer than 10 PCs correctly", {
+  # Create a PCA with only 3 samples (max 3 PCs)
+  small_mat <- matrix(rnorm(15), nrow = 5, ncol = 3)
+  rownames(small_mat) <- paste0("gene_", 1:5)
+  colnames(small_mat) <- paste0("sample_", 1:3)
+  
+  # Calculate PCA
+  data.norm <- small_mat %>% data.frame() %>% drop_na() %>% t()
+  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
+  my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
+  
+  # Create cdesc
+  small_cdesc <- data.frame(
+    group = c("A", "B", "A"),
+    row.names = paste0("sample_", 1:3)
+  )
+  
+  # Test with default components (1:10) - should automatically adjust to available PCs
+  result_default <- pca_variance_explained(my_pca, small_cdesc)
+  expect_true(is.list(result_default))
+  expect_true("plot" %in% names(result_default))
+  expect_true("table" %in% names(result_default))
+  expect_s3_class(result_default$plot, "ggplot")
+  
+  # Test with explicit components that exceed available PCs
+  result_explicit <- pca_variance_explained(my_pca, small_cdesc, components = 1:10)
+  expect_true(is.list(result_explicit))
+  expect_s3_class(result_explicit$plot, "ggplot")
+  
+  # Test with components that are within available PCs
+  result_within <- pca_variance_explained(my_pca, small_cdesc, components = 1:2)
+  expect_true(is.list(result_within))
+  expect_s3_class(result_within$plot, "ggplot")
+})
+
+test_that("pca_variance_explained handles edge case with minimal PCs", {
+  # Create a PCA with only 2 samples (max 2 PCs, but typically only 1 meaningful)
+  minimal_mat <- matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2)
+  rownames(minimal_mat) <- c("gene1", "gene2")
+  colnames(minimal_mat) <- c("sample1", "sample2")
+  
+  # Calculate PCA
+  data.norm <- minimal_mat %>% data.frame() %>% drop_na() %>% t()
+  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
+  my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
+  
+  # Create cdesc
+  minimal_cdesc <- data.frame(
+    group = c("A", "B"),
+    row.names = c("sample1", "sample2")
+  )
+  
+  # Should work with default components, adjusting to available PCs
+  result <- pca_variance_explained(my_pca, minimal_cdesc)
+  expect_true(is.list(result))
+  expect_s3_class(result$plot, "ggplot")
+  
+  # Should work with explicit components within range
+  result2 <- pca_variance_explained(my_pca, minimal_cdesc, components = 1)
+  expect_true(is.list(result2))
+  expect_s3_class(result2$plot, "ggplot")
+})
+
+test_that("create_PCA_reg handles datasets with 10 or more PCs", {
+  # Create a GCT with 15 samples (max 15 PCs possible)
+  large_mat <- matrix(rnorm(150), nrow = 10, ncol = 15)
+  rownames(large_mat) <- paste0("gene_", 1:10)
+  colnames(large_mat) <- paste0("sample_", 1:15)
+  
+  large_cdesc <- data.frame(
+    group = rep(c("A", "B", "C"), each = 5),
+    row.names = paste0("sample_", 1:15)
+  )
+  
+  large_rdesc <- data.frame(
+    gene_name = paste0("gene_", 1:10),
+    row.names = paste0("gene_", 1:10)
+  )
+  
+  large_gct <- new("GCT",
+                   mat = large_mat,
+                   cdesc = large_cdesc,
+                   rdesc = large_rdesc,
+                   rid = paste0("gene_", 1:10),
+                   cid = paste0("sample_", 1:15)
+  )
+  
+  mock_colors <- create_mock_color_map()
+  
+  # Should work with default components.max=10 (using first 10 of 15 available)
+  result <- create_PCA_reg(large_gct, "group", "test_ome", mock_colors)
+  expect_s3_class(result, "ggplot")
+  
+  # Should work with components.max less than available
+  result2 <- create_PCA_reg(large_gct, "group", "test_ome", mock_colors, components.max = 5)
+  expect_s3_class(result2, "ggplot")
+})
+
+test_that("calculate_PCA function works correctly", {
+  mock_gct <- create_mock_gct()
+  
+  # Test that calculate_PCA returns expected structure
+  pca_result <- calculate_PCA(mock_gct)
+  
+  expect_true(is.list(pca_result))
+  expect_true("pca" %in% names(pca_result))
+  expect_true("data_norm" %in% names(pca_result))
+  expect_true("original_colnames" %in% names(pca_result))
+  
+  # Test that PCA object is valid
+  expect_true(inherits(pca_result$pca, "prcomp"))
+  expect_true(is.matrix(pca_result$data_norm))
+  expect_true(is.character(pca_result$original_colnames))
+  
+  # Test that PCA has expected components
+  expect_true("x" %in% names(pca_result$pca))
+  expect_true("sdev" %in% names(pca_result$pca))
+  expect_true(nrow(pca_result$pca$x) == length(pca_result$original_colnames))
+})
+
+test_that("create_PCA_plot works with pre-calculated PCA", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  # Pre-calculate PCA
+  pca_result <- calculate_PCA(mock_gct)
+  
+  # Test that plot works with pre-calculated PCA
+  result_with_pca <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    pca_result = pca_result
+  )
+  
+  expect_s3_class(result_with_pca, "ggplot")
+  
+  # Test that plot works without pre-calculated PCA (backward compatibility)
+  result_without_pca <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2
+  )
+  
+  expect_s3_class(result_without_pca, "ggplot")
+  
+  # Test that both produce the same PCA coordinates (data should be identical)
+  # Extract PCA coordinates from both plots
+  plot_data_with <- result_with_pca$data
+  plot_data_without <- result_without_pca$data
+  
+  # PCA coordinates should be the same (allowing for small numerical differences)
+  expect_equal(plot_data_with$PC1, plot_data_without$PC1, tolerance = 1e-10)
+  expect_equal(plot_data_with$PC2, plot_data_without$PC2, tolerance = 1e-10)
+})
+
+test_that("create_PCA_reg works with pre-calculated PCA", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  # Pre-calculate PCA
+  pca_result <- calculate_PCA(mock_gct)
+  
+  # Test that regression plot works with pre-calculated PCA
+  result_with_pca <- create_PCA_reg(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    pca_result = pca_result
+  )
+  
+  expect_s3_class(result_with_pca, "ggplot")
+  
+  # Test that regression plot works without pre-calculated PCA (backward compatibility)
+  result_without_pca <- create_PCA_reg(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors
+  )
+  
+  expect_s3_class(result_without_pca, "ggplot")
+  
+  # Both should produce valid plots (we can't easily compare exact values due to 
+  # variance explained calculations, but both should work)
+  expect_true(inherits(result_with_pca, "ggplot"))
+  expect_true(inherits(result_without_pca, "ggplot"))
+})
+
+test_that("PCA caching produces consistent results across multiple calls", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  # Pre-calculate PCA once
+  pca_result <- calculate_PCA(mock_gct)
+  
+  # Create multiple plots with different visualization parameters using same PCA
+  plot1 <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    pca_result = pca_result
+  )
+  
+  plot2 <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 2,
+    comp.y = 3,
+    pca_result = pca_result
+  )
+  
+  # Both should use the same underlying PCA coordinates
+  plot1_data <- plot1$data
+  plot2_data <- plot2$data
+  
+  # PC1 and PC2 should be identical in both plots (same PCA, different visualization)
+  expect_equal(plot1_data$PC1, plot2_data$PC1, tolerance = 1e-10)
+  expect_equal(plot1_data$PC2, plot2_data$PC2, tolerance = 1e-10)
+  
+  # PC3 should be available in plot2
+  expect_true("PC3" %in% names(plot2_data))
+})
+
+test_that("calculate_PCA handles edge cases correctly", {
+  # Test with minimal data
+  minimal_mat <- matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2)
+  rownames(minimal_mat) <- c("gene1", "gene2")
+  colnames(minimal_mat) <- c("sample1", "sample2")
+  
+  minimal_cdesc <- data.frame(
+    group = c("A", "B"),
+    row.names = c("sample1", "sample2")
+  )
+  
+  minimal_rdesc <- data.frame(
+    gene_name = c("gene1", "gene2"),
+    row.names = c("gene1", "gene2")
+  )
+  
+  minimal_gct <- new("GCT",
+                     mat = minimal_mat,
+                     cdesc = minimal_cdesc,
+                     rdesc = minimal_rdesc,
+                     rid = c("gene1", "gene2"),
+                     cid = c("sample1", "sample2")
+  )
+  
+  # Should work with minimal data
+  pca_result <- calculate_PCA(minimal_gct)
+  expect_true(is.list(pca_result))
+  expect_true(inherits(pca_result$pca, "prcomp"))
+  
+  # Test error handling with invalid data (all NA)
+  na_mat <- matrix(NA, nrow = 2, ncol = 2)
+  rownames(na_mat) <- c("gene1", "gene2")
+  colnames(na_mat) <- c("sample1", "sample2")
+  
+  na_cdesc <- data.frame(
+    group = c("A", "B"),
+    row.names = c("sample1", "sample2")
+  )
+  
+  na_rdesc <- data.frame(
+    gene_name = c("gene1", "gene2"),
+    row.names = c("gene1", "gene2")
+  )
+  
+  na_gct <- new("GCT",
+                mat = na_mat,
+                cdesc = na_cdesc,
+                rdesc = na_rdesc,
+                rid = c("gene1", "gene2"),
+                cid = c("sample1", "sample2")
+  )
+  
+  # Should error appropriately
+  expect_error(calculate_PCA(na_gct), "No features remain after filtering")
+})
+
 test_that("dynamicHeightHMCorr calculates height correctly", {
   # Test with different numbers of entries
   height_10 <- dynamicHeightHMCorr(10)

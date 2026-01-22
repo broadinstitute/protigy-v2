@@ -3,6 +3,65 @@
 # The main processGCT()` function and it's helpers
 ################################################################################
 
+# Fix gene symbol column formatting
+# Replaces semicolons with pipes, removes blank symbols, and cleans up formatting
+# INPUT: rdesc data frame with geneSymbol column
+# OUTPUT: updated rdesc with fixed geneSymbol column, and vector of removed row IDs
+fix_gene_symbols <- function(rdesc) {
+  if (!"geneSymbol" %in% names(rdesc)) {
+    return(list(rdesc = rdesc, removed_rids = character(0)))
+  }
+  
+  # Store original row names/indices for tracking removed rows
+  original_rids <- rownames(rdesc)
+  
+  # Convert geneSymbol to character vector if it's a list or other type
+  if (is.list(rdesc$geneSymbol)) {
+    rdesc$geneSymbol <- unlist(lapply(rdesc$geneSymbol, function(x) {
+      if (is.null(x) || length(x) == 0) return("")
+      paste(as.character(x), collapse = "|")
+    }))
+  }
+  rdesc$geneSymbol <- as.character(rdesc$geneSymbol)
+  
+  # Replace semicolons with pipes
+  rdesc$geneSymbol <- gsub(";", "|", rdesc$geneSymbol)
+  
+  # Remove blank gene symbols within strings (e.g., "EGFR| |" -> "EGFR")
+  # Split by pipe, remove empty/whitespace-only entries, rejoin with pipe
+  rdesc$geneSymbol <- vapply(rdesc$geneSymbol, function(x) {
+    if (is.na(x) || x == "") return("")
+    parts <- strsplit(x, "\\|", fixed = FALSE)[[1]]
+    parts <- parts[trimws(parts) != ""]  # Remove blank/whitespace-only parts
+    paste(parts, collapse = "|")
+  }, character(1))
+  
+  # Remove any completely blank gene symbols (entire value is blank)
+  blank_indices <- which(rdesc$geneSymbol == "" | is.na(rdesc$geneSymbol))
+  removed_rids <- character(0)
+  if (length(blank_indices) > 0) {
+    removed_rids <- original_rids[blank_indices]
+    rdesc <- rdesc[-blank_indices, , drop = FALSE]
+  }
+  
+  # Remove any starting | characters
+  if (nrow(rdesc) > 0) {
+    start_str <- substring(rdesc$geneSymbol, 1, 1)
+    rdesc$geneSymbol[start_str == "|"] <- substring(rdesc$geneSymbol[start_str == "|"], 2)
+    
+    # Remove any ending | characters
+    gene_values <- rdesc$geneSymbol
+    end_str <- vapply(gene_values, function(x) {
+      if (nchar(x) > 0) substring(x, nchar(x), nchar(x)) else ""
+    }, character(1))
+    rdesc$geneSymbol[end_str == "|"] <- vapply(rdesc$geneSymbol[end_str == "|"], function(x) {
+      if (nchar(x) > 1) substring(x, 1, nchar(x) - 1) else ""
+    }, character(1))
+  }
+  
+  return(list(rdesc = rdesc, removed_rids = removed_rids))
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -50,20 +109,41 @@ transformGCTs <- function(GCTs, parameters) {
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
-              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # Check if geneSymbol already exists and warn user
-                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+              
+              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
+              if ("geneSymbol" %in% names(rdesc)) {
+                # User selected a different column - preserve original as geneSymbol_original
+                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
+                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
                   warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
-                  # Preserve original geneSymbol column
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
+                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                  rdesc[[gene_symbol_col]] <- NULL
                 }
-                
-                # Rename the selected column to geneSymbol
+                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
+                # (no action needed - geneSymbol already exists)
+              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # geneSymbol doesn't exist - create it from selected column
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
+                }
+              }
+              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              
+              ## fix gene symbol formatting (replace semicolons with pipes, clean up)
+              if ("geneSymbol" %in% names(rdesc)) {
+                fix_result <- fix_gene_symbols(rdesc)
+                rdesc <- fix_result$rdesc
+                removed_rids <- fix_result$removed_rids
+                
+                # Update data matrix to remove rows with blank gene symbols
+                if (length(removed_rids) > 0) {
+                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
+                  if (nrow(data) == 0) {
+                    stop("All rows were removed after filtering blank gene symbols.")
+                  }
                 }
               }
               
@@ -71,7 +151,7 @@ transformGCTs <- function(GCTs, parameters) {
               
               ## log transformation
               output_list <- perform_log_transformation(data, params$log_transformation)
-              data.log.trans <- output_list$data.log.trans
+              data.log.trans <- output_list$data.log.transform
               params$log_transformation <- output_list$updated_method
               
               ## re-combine GCT and return
@@ -136,20 +216,41 @@ processGCTs <- function(GCTs, parameters) {
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
-              if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # Check if geneSymbol already exists and warn user
-                if ("geneSymbol" %in% names(rdesc) && gene_symbol_col != "geneSymbol") {
+              
+              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
+              if ("geneSymbol" %in% names(rdesc)) {
+                # User selected a different column - preserve original as geneSymbol_original
+                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
+                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
                   warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
-                  # Preserve original geneSymbol column
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
+                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+                  rdesc[[gene_symbol_col]] <- NULL
                 }
-                
-                # Rename the selected column to geneSymbol
+                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
+                # (no action needed - geneSymbol already exists)
+              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+                # geneSymbol doesn't exist - create it from selected column
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                
                 # Remove the original column if it's not already geneSymbol
                 if (gene_symbol_col != "geneSymbol") {
                   rdesc[[gene_symbol_col]] <- NULL
+                }
+              }
+              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              
+              ## fix gene symbol formatting (replace semicolons with pipes, clean up)
+              if ("geneSymbol" %in% names(rdesc)) {
+                fix_result <- fix_gene_symbols(rdesc)
+                rdesc <- fix_result$rdesc
+                removed_rids <- fix_result$removed_rids
+                
+                # Update data matrix to remove rows with blank gene symbols
+                if (length(removed_rids) > 0) {
+                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
+                  if (nrow(data) == 0) {
+                    stop("All rows were removed after filtering blank gene symbols.")
+                  }
                 }
               }
               
@@ -308,29 +409,43 @@ perform_data_normalization <- function(data, method, cdesc,
     data.norm <- data
   } else {
     
-    if (perform.group.normalization) {
-      # get groups vector
-      groups.vector <- cdesc[[group.normalization.column]]
-      names(groups.vector) <- rownames(cdesc)
-      
-      # warning if there is any level in groups.vector with only one element
-      freq_count <- aggregate(groups.vector, list(element = groups.vector), length)[[2]]
-      if (any(freq_count == 1)) {
-        warning(
-          "One or more levels in the group normalization column only contain ",
-          "one element. Consider group normalizing by a different column.")
-      }
-      
-      # perform group-wise normalization
-      data.norm <- normalize.data(data, method, groups.vector)
+    # Disable two-component normalization for datasets with more than 20 samples (too slow)
+    # This is a safety check in case the UI didn't prevent selection (e.g., from old parameters)
+    if (method == "2-component" && ncol(data) > 20) {
+      warning(
+        paste0(
+          "Two-component normalization is disabled for datasets with more than 20 samples ",
+          "(current dataset has ", ncol(data), " samples) due to performance concerns. ",
+          "No normalization will be applied."
+        )
+      )
+      method <- "None"
+      data.norm <- data
     } else {
       
-      # perform regular normalization
-      data.norm <- normalize.data(data, method)
-    }
-    
-    # if two-component norm fails....
-    if(inherits(data.norm, 'try-error')){
+      if (perform.group.normalization) {
+        # get groups vector
+        groups.vector <- cdesc[[group.normalization.column]]
+        names(groups.vector) <- rownames(cdesc)
+        
+        # warning if there is any level in groups.vector with only one element
+        freq_count <- aggregate(groups.vector, list(element = groups.vector), length)[[2]]
+        if (any(freq_count == 1)) {
+          warning(
+            "One or more levels in the group normalization column only contain ",
+            "one element. Consider group normalizing by a different column.")
+        }
+        
+        # perform group-wise normalization
+        data.norm <- normalize.data(data, method, groups.vector)
+      } else {
+        
+        # perform regular normalization
+        data.norm <- normalize.data(data, method)
+      }
+      
+      # if two-component norm fails....
+      if(inherits(data.norm, 'try-error')){
       # reset to no normalization
       data.norm <- data
       method <- "None"
@@ -343,6 +458,7 @@ perform_data_normalization <- function(data, method, cdesc,
         '<b>log-ratio</b> data that is approximately <b>centered around',
         'zero</b>. Please make sure this is the case by <b>inspecting the',
         'profile plots</b> under the QC tab.'))
+      }
     }
   }
   
@@ -399,8 +515,26 @@ validateGCT <- function(gct) {
     stop("GCT data row names not match `rdesc` row names.")
   }
   
-  # check that cdesc matches column names
-  if (!setequal(colnames(mat), rownames(cdesc))) {
+  # Check if cdesc is missing, empty, or only has "id" column - if so, create Sample.ID column
+  # This handles GCTs that don't have proper cdesc metadata
+  if (is.null(cdesc) || nrow(cdesc) == 0 || ncol(cdesc) == 0) {
+    # Create new cdesc with Sample.ID column
+    sample_ids <- colnames(mat)
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    rownames(cdesc) <- sample_ids
+  } else if (ncol(cdesc) == 1 && names(cdesc)[1] == "id") {
+    # If cdesc only has exactly one column named "id", recreate with Sample.ID column
+    sample_ids <- colnames(mat)
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    rownames(cdesc) <- sample_ids
+  } else if (!setequal(colnames(mat), rownames(cdesc))) {
+    # cdesc has real metadata but rownames don't match - this is an error
     stop("GCT data column names does not match `cdesc` row names.")
   }
   

@@ -240,6 +240,12 @@ stat.testing <- function(
         }
 
         combined_results <- dplyr::left_join(rdesc_df, final.results, by = "id")
+        
+        # Add normalized values from the matrix
+        normalized_df <- as.data.frame(ome_data)
+        normalized_df$id <- rownames(normalized_df)
+        combined_results <- dplyr::left_join(combined_results, normalized_df, by = "id")
+        
         results_list[[ome_name]] <- combined_results
       }
     })
@@ -366,6 +372,11 @@ stat.testing <- function(
           combined_results,
           by = "id"
         )
+        
+        # Add normalized values from the matrix
+        normalized_df <- as.data.frame(ome_data)
+        normalized_df$id <- rownames(normalized_df)
+        combined_results <- dplyr::left_join(combined_results, normalized_df, by = "id")
 
         results_list[[ome_name]] <- combined_results
       }
@@ -550,6 +561,11 @@ stat.testing <- function(
           combined_results,
           by = "id"
         )
+        
+        # Add normalized values from the matrix
+        normalized_df <- as.data.frame(ome_data)
+        normalized_df$id <- rownames(normalized_df)
+        combined_results <- dplyr::left_join(combined_results, normalized_df, by = "id")
 
         results_list[[ome_name]] <- combined_results
       }

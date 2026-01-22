@@ -6,6 +6,21 @@ This section explains the statistical testing options available in ProTIGY for a
 
 **The default annotation chosen during setup is used for all statistical analysis.** If you want to use a different annotation, you need to go back to the setup menu and change that setting before running the analysis.
 
+### Annotation Requirements for Statistical Testing
+
+Statistical testing requires an annotation column that meets the following criteria:
+
+- **At least 2 categories**: The annotation column must have at least 2 distinct groups/categories for comparison
+- **Multiple samples per group**: The annotation column cannot be an ID column where every value is unique (1 sample per group)
+  - ID columns (like sample IDs or patient IDs) are not suitable for statistical testing because each group would have only 1 sample, which is insufficient for statistical comparison
+  - You need multiple samples in each group to perform meaningful statistical tests
+
+**What happens if your annotation is not suitable?**
+- A prominent warning message will appear at the top of the Statistics tab explaining why testing is not available
+- The test selection dropdown will only show "None" as an option
+- The "Run Test" button will be disabled
+- To fix this, return to the **Setup** tab using the sidebar button and select a different annotation column that has multiple samples per group
+
 ## Statistical Tests
 
 ProTIGY offers several statistical tests based on the `limma` package, which provides moderated t-tests and F-tests for omics data analysis.

@@ -97,9 +97,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         
         # File input
         fileInput(ns("dataFiles"),
-                  paste("GCT, CSV, TSV, or Excel"),
+                  paste("GCT, CSV, TSV, SSV, or Excel"),
                   multiple = TRUE,
-                  accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv")),
+                  accept = c(".gct", ".csv", ".xlsx", ".xls", ".tsv", ".ssv")),
         
         # Display uploaded files list with remove buttons
         uiOutput(ns("uploadedFilesList"))
@@ -178,9 +178,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           all_extensions <- c(existing_extensions, new_extensions)
 
           # Validate all files are same type
-          if (!(all(all_extensions == "gct") || all(all_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
+          if (!(all(all_extensions == "gct") || all(all_extensions %in% c("csv", "xlsx", "xls", "tsv", "ssv")))) {
             showNotification(
-              ui = HTML(paste0("<b>File Type Mismatch</b><br>", "All uploaded files must be the same type (all GCT or all CSV/Excel/TSV). Please remove existing files before uploading a different file type.")),
+              ui = HTML(paste0("<b>File Type Mismatch</b><br>", "All uploaded files must be the same type (all GCT or all CSV/Excel/TSV/SSV). Please remove existing files before uploading a different file type.")),
               type = "error",
               duration = NULL,
               closeButton = TRUE
@@ -205,9 +205,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           accumulated_files(rbind(accumulated_files(), new_files))
         } else {
           # First upload - validate file types
-          if (!(all(new_extensions == "gct") || all(new_extensions %in% c("csv", "xlsx", "xls", "tsv")))) {
+          if (!(all(new_extensions == "gct") || all(new_extensions %in% c("csv", "xlsx", "xls", "tsv", "ssv")))) {
             showNotification(
-              ui = HTML(paste0("<b>Error</b><br>", "Please upload files of the same type only (GCT, CSV/Excel/TSV). Mixed file types are not supported.")),
+              ui = HTML(paste0("<b>Error</b><br>", "Please upload files of the same type only (GCT, CSV/Excel/TSV/SSV). Mixed file types are not supported.")),
               type = "error",
               duration = NULL,
               closeButton = TRUE
@@ -229,8 +229,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         if (all(file_extensions == "gct")) {
           # All GCT files - use existing workflow
           labelAssignment()
-        } else if (all(file_extensions %in% c("csv", "xlsx", "xls", "tsv"))) {
-          # All CSV/Excel/TSV files - use same workflow
+        } else if (all(file_extensions %in% c("csv", "xlsx", "xls", "tsv", "ssv"))) {
+          # All CSV/Excel/TSV/SSV files - use same workflow
           csvExcelWorkflow()
 
           # Automatically switch to CSV/TSV/Excel Processing help tab
@@ -569,13 +569,25 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ind = paste0("intensity_data_", tolower(current_intensity()))
       
       # update data normalization
+      # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
+      norm_choices <- parameter_choices$data_normalization[[ind]]
+      gct <- GCTs_unprocessed_internal_reactive()[[label]]
+      n_samples <- if (!is.null(gct)) ncol(gct@mat) else 0
+      if (n_samples > 20) {
+        norm_choices <- norm_choices[norm_choices != "2-component"]
+      }
+      # If current selection is 2-component but it should be disabled, use default
+      norm_selected <- ifelse(
+        parameters$data_normalization %in% norm_choices,
+        parameters$data_normalization,
+        default_parameters$data_normalization)
+      if (n_samples > 20 && norm_selected == "2-component") {
+        norm_selected <- default_parameters$data_normalization
+      }
       updateSelectInput(
         inputId = paste0(label, '_data_normalization'),
-        choices = parameter_choices$data_normalization[[ind]],
-        selected = ifelse(
-          parameters$data_normalization %in% parameter_choices$data_normalization[[ind]],
-          parameters$data_normalization,
-          default_parameters$data_normalization))
+        choices = norm_choices,
+        selected = norm_selected)
       
       # update max missing
       updateNumericInput(

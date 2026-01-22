@@ -36,7 +36,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # Get the ome names directly here
       ome_names <- names(GCTs())
       
-      tagList(
+        tagList(
+        # Show warning prominently in main panel if annotation is not suitable
+        uiOutput(ns("annotation_testing_warning_main")),
+        
         fluidRow(
           column(2,
                  div(class = "stat-setup-controls",
@@ -45,7 +48,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
                      if (length(ome_names) > 1) {
                        checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
                      },
-                     actionButton(ns("run_test_button"),"Run Test", class = "btn btn-primary")
+                     uiOutput(ns("run_test_button_ui"))
                  )
           ),
           column(2,
@@ -161,6 +164,80 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       req(default_annotation_column())
       paste("Selected annotation column:", default_annotation_column())  
     })
+    
+    # Check if annotation column has enough categories for statistical testing
+    # An annotation is suitable if:
+    # 1. It has at least 2 unique categories
+    # 2. It is NOT an ID column (where every value is unique, meaning 1 sample per group)
+    annotation_suitable_for_testing <- reactive({
+      req(cdesc(), default_annotation_column())
+      annot_col <- default_annotation_column()
+      values <- cdesc()[[annot_col]]
+      
+      # Get unique non-NA values
+      choices <- unique(values)
+      choices <- choices[!is.na(choices)]
+      
+      # Check if it's an ID column (every value is unique)
+      non_na_values <- values[!is.na(values)]
+      is_id_column <- length(non_na_values) == length(unique(non_na_values)) && 
+                      length(non_na_values) > 0 &&
+                      is.character(non_na_values)
+      
+      # Suitable if: has >=2 categories AND is not an ID column
+      length(choices) >= 2 && !is_id_column
+    })
+    
+    # Display warning prominently in main panel if annotation column is not suitable for testing
+    output$annotation_testing_warning_main <- renderUI({
+      req(default_annotation_column())
+      
+      suitable <- tryCatch({
+        annotation_suitable_for_testing()
+      }, error = function(e) {
+        FALSE
+      })
+      
+      if (!suitable) {
+        annot_col <- default_annotation_column()
+        values <- cdesc()[[annot_col]]
+        non_na_values <- values[!is.na(values)]
+        is_id_column <- length(non_na_values) == length(unique(non_na_values)) && 
+                        length(non_na_values) > 0 &&
+                        is.character(non_na_values)
+        
+        if (is_id_column) {
+          warning_msg <- paste0(
+            "The selected annotation column '", annot_col, 
+            "' is an ID column where every value is unique (1 sample per group). ",
+            "Statistical testing requires multiple samples per group for comparison."
+          )
+        } else {
+          choices <- unique(values)
+          choices <- choices[!is.na(choices)]
+          warning_msg <- paste0(
+            "The selected annotation column '", annot_col, 
+            "' has fewer than 2 categories (currently ", length(choices), " category). ",
+            "Statistical testing requires at least 2 groups for comparison."
+          )
+        }
+        
+        div(
+          style = "color: #856404; padding: 20px; background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; margin-bottom: 20px; text-align: center;",
+          icon("exclamation-triangle", style = "font-size: 48px; color: #856404; margin-bottom: 15px;"),
+          h3(strong("Statistical Testing Not Available"), style = "color: #856404; margin-top: 10px; margin-bottom: 15px;"),
+          p(warning_msg, style = "font-size: 16px; color: #856404; margin-bottom: 15px;"),
+          p(
+            strong("To change the annotation column: "),
+            "Please return to the ", strong("Setup"), " tab using the button in the sidebar, ",
+            "then select a different annotation column that has multiple samples per group.",
+            style = "font-size: 16px; color: #856404; margin-top: 15px;"
+          )
+        )
+      } else {
+        return(NULL)
+      }
+    })
 
 ######APPLY TO ALL OMES#########################################################
     original_stat_param <- reactiveVal(NULL)
@@ -221,12 +298,26 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     #saving the selected test to stat_param
     observeEvent(input$select_test, {
       req(selected_ome())
-      current <- stat_param()             
-      ome <- selected_ome()               
+      current <- stat_param()           
+      ome <- selected_ome()
+      
+      # Check if annotation is suitable for testing
+      suitable <- annotation_suitable_for_testing()
+      
+      # If annotation is not suitable and user tries to select a test other than "None", reset to "None"
+      if (!suitable && input$select_test != "None") {
+        showNotification(
+          "Statistical testing is not available with the current annotation column. Please select a different annotation column in the Setup tab.",
+          type = "warning",
+          duration = 5
+        )
+        updateSelectInput(session, "select_test", selected = "None")
+        return()
+      }
       
       if (is.null(current[[ome]])) {current[[ome]] <- list()}
       
-      current[[ome]]$test <- input$select_test 
+      current[[ome]]$test <- input$select_test
       
       # Only set stat and cutoff if not already set
       if (is.null(current[[ome]]$stat)) current[[ome]]$stat <- "adj.p.val"
@@ -245,12 +336,35 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     
     #displaying the test choices
     output$select_test <- renderUI ({
+      req(selected_ome())
       current <- stat_param()
       ome <- selected_ome()
       
       if (is.null(current[[ome]]$test)) {
         current[[ome]]$test <- "None"
         stat_param(current)
+      }
+      
+      # Check if annotation is suitable for testing
+      suitable <- tryCatch({
+        annotation_suitable_for_testing()
+      }, error = function(e) {
+        FALSE
+      })
+      
+      # If annotation is not suitable, reset test to "None" and only show "None" as option
+      if (!suitable) {
+        if (current[[ome]]$test != "None") {
+          current[[ome]]$test <- "None"
+          stat_param(current)
+        }
+        return(
+          selectInput(ns("select_test"), 
+                      "Select test:", 
+                      choices = "None", 
+                      selected = "None"
+          )
+        )
       }
       
       # Get intensity parameter for this ome
@@ -262,17 +376,34 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
         test_choices <- c("None", "One-sample Moderated T-test", "Two-sample Moderated T-test", "Moderated F test")
       }
       
+      selected_test <- current[[ome]]$test
       # If current test is One-sample and intensity is Yes, reset to None
       if (current[[ome]]$test == "One-sample Moderated T-test" && !is.null(intensity_param) && intensity_param == "Yes") {
         current[[ome]]$test <- "None"
         stat_param(current)
+        selected_test <- "None"
       }
       
       selectInput(ns("select_test"), 
                   "Select test:", 
                   choices = test_choices, 
-                  selected = current[[ome]]$test
+                  selected = selected_test
       )
+    })
+    
+    # Render run test button with conditional enabling
+    output$run_test_button_ui <- renderUI({
+      suitable <- tryCatch({
+        annotation_suitable_for_testing()
+      }, error = function(e) {
+        FALSE
+      })
+      
+      if (suitable) {
+        actionButton(ns("run_test_button"), "Run Test", class = "btn btn-primary")
+      } else {
+        actionButton(ns("run_test_button"), "Run Test", class = "btn btn-primary", disabled = TRUE)
+      }
     })
     
 ################################################################################
@@ -317,6 +448,12 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # Only show groups if a test other than "None" is selected
       if (is.null(current[[ome]]$test) || current[[ome]]$test == "None") {
         return(NULL)  # Don't show anything if no test or "None" test
+      }
+      
+      # Check if annotation is suitable for testing
+      suitable <- annotation_suitable_for_testing()
+      if (!suitable) {
+        return(NULL)  # Don't show groups if annotation is not suitable
       }
 
       choices<- unique(cdesc()[[default_annotation_column()]])
@@ -673,6 +810,12 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       current <- stat_param()
       ome <- selected_ome()
       test_type <- current[[ome]]$test
+      
+      # Check if annotation is suitable for testing
+      suitable <- annotation_suitable_for_testing()
+      if (!suitable || test_type == "None") {
+        return(NULL)
+      }
 
       # Show group selection for one-sample t-test and F-test in wide column
       if (test_type %in% c("One-sample Moderated T-test", "Moderated F test")) {
@@ -1010,6 +1153,19 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
         req(GCTs(), default_annotations())
         param_list <- stat_param()
         gcts <- GCTs()
+        
+        # Check if annotation is suitable for testing for selected ome
+        ome <- selected_ome()
+        if (!annotation_suitable_for_testing()) {
+          showNotification(
+            paste0("Statistical testing is not available. The annotation column '", 
+                   default_annotation_column(), 
+                   "' has fewer than 2 categories. Please select a different annotation column in the Setup tab."),
+            type = "error",
+            duration = 10
+          )
+          return()
+        }
 
         test_results<- list()
           
@@ -1018,6 +1174,24 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
           groups <- param_list[[ome]]$groups
           annotation_col <- default_annotations()[[ome]]
           contrasts <- param_list[[ome]]$contrasts
+          
+          # Skip if test is None
+          if (test == "None") {
+            next
+          }
+          
+          # Check if this ome's annotation column has enough categories
+          ome_choices <- unique(gcts[[ome]]@cdesc[[annotation_col]])
+          ome_choices <- ome_choices[!is.na(ome_choices)]
+          if (length(ome_choices) < 2) {
+            showNotification(
+              paste0("Skipping ", ome, ": annotation column '", annotation_col, 
+                     "' has fewer than 2 categories."),
+              type = "warning",
+              duration = 5
+            )
+            next
+          }
 
           contrasts_list <- NULL
           if (!is.null(contrasts)) {
