@@ -4,21 +4,22 @@
 ################################################################################
 
 # Fix gene symbol column formatting
-# Replaces semicolons with pipes, removes blank symbols, and cleans up formatting
+# Replaces semicolons with pipes, converts blank symbols to NA, and cleans up formatting
+# Blank geneSymbol values are converted to NA and kept (rows are not removed)
 # INPUT: rdesc data frame with geneSymbol column
-# OUTPUT: updated rdesc with fixed geneSymbol column, and vector of removed row IDs
+# OUTPUT: updated rdesc with fixed geneSymbol column, and empty vector (for backward compatibility)
 fix_gene_symbols <- function(rdesc) {
   if (!"geneSymbol" %in% names(rdesc)) {
     return(list(rdesc = rdesc, removed_rids = character(0)))
   }
   
-  # Store original row names/indices for tracking removed rows
+  # Store original row names (for backward compatibility - no rows are removed)
   original_rids <- rownames(rdesc)
   
   # Convert geneSymbol to character vector if it's a list or other type
   if (is.list(rdesc$geneSymbol)) {
     rdesc$geneSymbol <- unlist(lapply(rdesc$geneSymbol, function(x) {
-      if (is.null(x) || length(x) == 0) return("")
+      if (is.null(x) || length(x) == 0) return(NA_character_)
       paste(as.character(x), collapse = "|")
     }))
   }
@@ -30,33 +31,65 @@ fix_gene_symbols <- function(rdesc) {
   # Remove blank gene symbols within strings (e.g., "EGFR| |" -> "EGFR")
   # Split by pipe, remove empty/whitespace-only entries, rejoin with pipe
   rdesc$geneSymbol <- vapply(rdesc$geneSymbol, function(x) {
-    if (is.na(x) || x == "") return("")
+    if (is.na(x) || x == "") return(NA_character_)
     parts <- strsplit(x, "\\|", fixed = FALSE)[[1]]
     parts <- parts[trimws(parts) != ""]  # Remove blank/whitespace-only parts
-    paste(parts, collapse = "|")
+    result <- paste(parts, collapse = "|")
+    # If result is empty after cleaning, return NA instead of empty string
+    if (result == "") return(NA_character_)
+    return(result)
   }, character(1))
   
-  # Remove any completely blank gene symbols (entire value is blank)
-  blank_indices <- which(rdesc$geneSymbol == "" | is.na(rdesc$geneSymbol))
-  removed_rids <- character(0)
-  if (length(blank_indices) > 0) {
-    removed_rids <- original_rids[blank_indices]
-    rdesc <- rdesc[-blank_indices, , drop = FALSE]
-  }
+  # Convert any remaining blank gene symbols to NA (keep all rows)
+  # Blank gene symbols are valid - convert to NA but don't remove rows
+  rdesc$geneSymbol[rdesc$geneSymbol == ""] <- NA_character_
   
-  # Remove any starting | characters
+  # No rows should be removed - blank geneSymbol values are converted to NA
+  removed_rids <- character(0)
+  
+  # Remove any starting | characters (only for non-NA values)
   if (nrow(rdesc) > 0) {
-    start_str <- substring(rdesc$geneSymbol, 1, 1)
-    rdesc$geneSymbol[start_str == "|"] <- substring(rdesc$geneSymbol[start_str == "|"], 2)
-    
-    # Remove any ending | characters
-    gene_values <- rdesc$geneSymbol
-    end_str <- vapply(gene_values, function(x) {
-      if (nchar(x) > 0) substring(x, nchar(x), nchar(x)) else ""
-    }, character(1))
-    rdesc$geneSymbol[end_str == "|"] <- vapply(rdesc$geneSymbol[end_str == "|"], function(x) {
-      if (nchar(x) > 1) substring(x, 1, nchar(x) - 1) else ""
-    }, character(1))
+    non_na_mask <- !is.na(rdesc$geneSymbol)
+    if (any(non_na_mask)) {
+      start_str <- substring(rdesc$geneSymbol[non_na_mask], 1, 1)
+      start_pipe_mask <- start_str == "|"
+      if (any(start_pipe_mask)) {
+        rdesc$geneSymbol[non_na_mask][start_pipe_mask] <- substring(
+          rdesc$geneSymbol[non_na_mask][start_pipe_mask], 2
+        )
+        # Convert to NA if result is empty
+        empty_after_start <- rdesc$geneSymbol[non_na_mask][start_pipe_mask] == ""
+        if (any(empty_after_start)) {
+          na_indices <- which(non_na_mask)[start_pipe_mask][empty_after_start]
+          rdesc$geneSymbol[na_indices] <- NA_character_
+        }
+      }
+      
+      # Remove any ending | characters (only for non-NA values)
+      non_na_mask <- !is.na(rdesc$geneSymbol)
+      if (any(non_na_mask)) {
+        gene_values <- rdesc$geneSymbol[non_na_mask]
+        end_str <- vapply(gene_values, function(x) {
+          if (nchar(x) > 0) substring(x, nchar(x), nchar(x)) else ""
+        }, character(1))
+        end_pipe_mask <- end_str == "|"
+        if (any(end_pipe_mask)) {
+          rdesc$geneSymbol[non_na_mask][end_pipe_mask] <- vapply(
+            rdesc$geneSymbol[non_na_mask][end_pipe_mask], 
+            function(x) {
+              if (nchar(x) > 1) substring(x, 1, nchar(x) - 1) else ""
+            }, 
+            character(1)
+          )
+          # Convert to NA if result is empty
+          empty_after_end <- rdesc$geneSymbol[non_na_mask][end_pipe_mask] == ""
+          if (any(empty_after_end)) {
+            na_indices <- which(non_na_mask)[end_pipe_mask][empty_after_end]
+            rdesc$geneSymbol[na_indices] <- NA_character_
+          }
+        }
+      }
+    }
   }
   
   return(list(rdesc = rdesc, removed_rids = removed_rids))
@@ -115,20 +148,17 @@ transformGCTs <- function(GCTs, parameters) {
                 # User selected a different column - preserve original as geneSymbol_original
                 if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
                     gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
+                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
                   rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  rdesc[[gene_symbol_col]] <- NULL
+                  # Preserve the selected column (don't remove it)
                 }
                 # If user selected "None" or geneSymbol itself, keep existing geneSymbol
                 # (no action needed - geneSymbol already exists)
               } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
                 # geneSymbol doesn't exist - create it from selected column
+                # Preserve the original column (don't remove it)
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                # Remove the original column if it's not already geneSymbol
-                if (gene_symbol_col != "geneSymbol") {
-                  rdesc[[gene_symbol_col]] <- NULL
-                }
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
@@ -136,15 +166,8 @@ transformGCTs <- function(GCTs, parameters) {
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
                 rdesc <- fix_result$rdesc
-                removed_rids <- fix_result$removed_rids
-                
-                # Update data matrix to remove rows with blank gene symbols
-                if (length(removed_rids) > 0) {
-                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
-                  if (nrow(data) == 0) {
-                    stop("All rows were removed after filtering blank gene symbols.")
-                  }
-                }
+                # No rows are removed - blank geneSymbol values are converted to NA
+                # removed_rids is kept for backward compatibility but should be empty
               }
               
               incProgress(1, detail = "log transformation")
@@ -222,20 +245,17 @@ processGCTs <- function(GCTs, parameters) {
                 # User selected a different column - preserve original as geneSymbol_original
                 if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
                     gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'.")
+                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
                   rdesc$geneSymbol_original <- rdesc$geneSymbol
                   rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  rdesc[[gene_symbol_col]] <- NULL
+                  # Preserve the selected column (don't remove it)
                 }
                 # If user selected "None" or geneSymbol itself, keep existing geneSymbol
                 # (no action needed - geneSymbol already exists)
               } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
                 # geneSymbol doesn't exist - create it from selected column
+                # Preserve the original column (don't remove it)
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                # Remove the original column if it's not already geneSymbol
-                if (gene_symbol_col != "geneSymbol") {
-                  rdesc[[gene_symbol_col]] <- NULL
-                }
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
@@ -243,15 +263,8 @@ processGCTs <- function(GCTs, parameters) {
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
                 rdesc <- fix_result$rdesc
-                removed_rids <- fix_result$removed_rids
-                
-                # Update data matrix to remove rows with blank gene symbols
-                if (length(removed_rids) > 0) {
-                  data <- data[setdiff(rownames(data), removed_rids), , drop = FALSE]
-                  if (nrow(data) == 0) {
-                    stop("All rows were removed after filtering blank gene symbols.")
-                  }
-                }
+                # No rows are removed - blank geneSymbol values are converted to NA
+                # removed_rids is kept for backward compatibility but should be empty
               }
               
               incProgress(1, detail = "log transformation")

@@ -248,6 +248,19 @@ QCPCA_Ome_Server <- function(id,
               selected = "shape"),
             classes = "small-input",
             styles = "margin-right: 10px"
+          ),
+          
+          conditionalPanel(
+            condition = paste0("input['", ns("qc_PCA_var1_display"), "'] == 'shape' || input['", ns("qc_PCA_var2_display"), "'] == 'shape'"),
+            
+            add_css_attributes(
+              checkboxInput(
+                ns("qc_PCA_fill_shapes"),
+                "Fill shapes",
+                value = FALSE),
+              classes = "small-input",
+              styles = "margin-right: 10px"
+            )
           )
         )
       )
@@ -259,7 +272,8 @@ QCPCA_Ome_Server <- function(id,
     qc_PCA_plot_reactive <- eventReactive(
       eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, 
                     input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
-                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, color_map(),
+                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, 
+                    input$qc_PCA_fill_shapes, color_map(),
                     cached_pca_result()), 
       valueExpr = {
         
@@ -305,6 +319,9 @@ QCPCA_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
+        # get fill shapes option
+        fill_shapes <- if (!is.null(input$qc_PCA_fill_shapes)) input$qc_PCA_fill_shapes else FALSE
+        
         # generate plot using cached PCA
         create_PCA_plot(gct = GCT_processed(),
                             col_of_interest = annot_column,
@@ -315,6 +332,7 @@ QCPCA_Ome_Server <- function(id,
                             second_col_of_interest = second_annot_column,
                             var1_display = var1_display,
                             var2_display = var2_display,
+                            fill_shapes = fill_shapes,
                             pca_result = cached_pca_result())
       }
     )

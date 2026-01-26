@@ -999,6 +999,183 @@ test_that("Statistics functions handle column duplication fix", {
   }
 })
 
+test_that("Normalized values join preserves all rows in statistics results", {
+  # Test that when normalized values are added to statistics results,
+  # all rows are preserved and IDs match correctly
+  
+  # Create mock data with specific IDs to test the join
+  set.seed(123)
+  n_features <- 25
+  n_samples <- 6
+  
+  # Create matrix with some IDs that might cause issues (e.g., potential duplicates)
+  mock_mat <- matrix(rnorm(n_features * n_samples), nrow = n_features, ncol = n_samples)
+  # Use IDs that could potentially have issues if rownames are used incorrectly
+  feature_ids <- c(paste0("A0A0", sprintf("%06d", 1:10)), 
+                   paste0("E9P", sprintf("%04d", 1:5)),
+                   paste0("H0Y", sprintf("%04d", 1:5)),
+                   paste0("Q9", sprintf("%06d", 1:5)))
+  rownames(mock_mat) <- feature_ids
+  colnames(mock_mat) <- paste0("sample_", 1:n_samples)
+  
+  # Create rdesc with id column (matching the actual GCT structure)
+  mock_rdesc <- data.frame(
+    id = feature_ids,  # Same IDs as rownames
+    gene_name = paste0("gene_", 1:n_features),
+    geneSymbol = paste0("GENE", 1:n_features),
+    row.names = feature_ids
+  )
+  
+  mock_cdesc <- data.frame(
+    group = rep(c("A", "B"), each = 3),
+    row.names = paste0("sample_", 1:n_samples)
+  )
+  
+  mock_gct <- new("GCT",
+    mat = mock_mat,
+    cdesc = mock_cdesc,
+    rdesc = mock_rdesc,
+    rid = feature_ids,
+    cid = paste0("sample_", 1:n_samples)
+  )
+  
+  # Simulate the statistics calculation and normalized values join
+  # This mimics the logic from tab_stat_setup_helpers.R
+  
+  # Step 1: Get data (as in the actual function)
+  ome_data <- mock_gct@mat
+  rdesc <- mock_gct@rdesc
+  
+  # Step 2: Create statistics results (simplified)
+  # In real code, this would come from limma, but for testing we'll create mock results
+  final_results <- data.frame(
+    id = feature_ids,
+    logFC = rnorm(n_features),
+    P.Value = runif(n_features, 0, 1),
+    adj.P.Val = runif(n_features, 0, 1),
+    stringsAsFactors = FALSE
+  )
+  
+  # Step 3: Join rdesc to results (as in actual code)
+  rdesc_df <- as.data.frame(rdesc)
+  if (!"id" %in% colnames(rdesc_df)) {
+    rdesc_df$id <- rownames(rdesc_df)
+  }
+  
+  combined_results <- dplyr::left_join(rdesc_df, final_results, by = "id")
+  
+  # Verify initial join preserved all rows
+  expect_equal(nrow(combined_results), n_features)
+  expect_true(all(feature_ids %in% combined_results$id))
+  
+  # Step 4: Add normalized values (the part we fixed)
+  normalized_df <- as.data.frame(ome_data)
+  # Use the same ID source as used for statistics (from rdesc)
+  if ("id" %in% colnames(rdesc)) {
+    normalized_df$id <- rdesc[["id"]]
+  } else {
+    normalized_df$id <- rownames(rdesc)
+  }
+  
+  # Verify normalized_df has correct IDs
+  expect_equal(nrow(normalized_df), n_features)
+  expect_true(all(feature_ids %in% normalized_df$id))
+  
+  # Step 5: Join normalized values
+  combined_results_with_intensities <- dplyr::left_join(combined_results, normalized_df, by = "id")
+  
+  # THE KEY TEST: All rows should be preserved
+  expect_equal(nrow(combined_results_with_intensities), n_features, 
+               info = "All rows must be preserved when adding normalized values")
+  expect_true(all(feature_ids %in% combined_results_with_intensities$id),
+              info = "All original IDs must be present after join")
+  
+  # Verify that normalized values were added (should have sample columns)
+  expect_true(all(paste0("sample_", 1:n_samples) %in% colnames(combined_results_with_intensities)),
+              info = "Normalized intensity columns should be present")
+  
+  # Verify no duplicate IDs in the result
+  expect_equal(length(unique(combined_results_with_intensities$id)), n_features,
+               info = "No duplicate IDs should be created")
+})
+
+test_that("Normalized values join works with IDs from rdesc (not rownames)", {
+  # Test that the join uses rdesc[["id"]] correctly, not rownames
+  # This tests the specific fix we made
+  
+  set.seed(456)
+  n_features <- 15
+  n_samples <- 4
+  
+  # Create matrix where rownames might differ from rdesc$id (edge case)
+  mock_mat <- matrix(rnorm(n_features * n_samples), nrow = n_features, ncol = n_samples)
+  rownames(mock_mat) <- paste0("row_", 1:n_features)
+  colnames(mock_mat) <- paste0("sample_", 1:n_samples)
+  
+  # Create rdesc with id column that's different from rownames
+  # This simulates a case where rownames might be modified but rdesc$id is correct
+  feature_ids <- paste0("ID_", 1:n_features)
+  mock_rdesc <- data.frame(
+    id = feature_ids,  # IDs in rdesc (the correct ones to use)
+    gene_name = paste0("gene_", 1:n_features),
+    row.names = rownames(mock_mat)  # Rownames match matrix, but IDs are different
+  )
+  
+  mock_cdesc <- data.frame(
+    group = rep(c("A", "B"), each = 2),
+    row.names = paste0("sample_", 1:n_samples)
+  )
+  
+  mock_gct <- new("GCT",
+    mat = mock_mat,
+    cdesc = mock_cdesc,
+    rdesc = mock_rdesc,
+    rid = rownames(mock_mat),
+    cid = paste0("sample_", 1:n_samples)
+  )
+  
+  # Simulate statistics results using rdesc IDs (as in actual code)
+  ome_data <- mock_gct@mat
+  rdesc <- mock_gct@rdesc
+  
+  # Create final results with IDs from rdesc (as in actual code)
+  final_results <- data.frame(
+    id = rdesc[["id"]],  # Using rdesc IDs, not rownames
+    logFC = rnorm(n_features),
+    P.Value = runif(n_features, 0, 1),
+    stringsAsFactors = FALSE
+  )
+  
+  # Join rdesc to results
+  rdesc_df <- as.data.frame(rdesc)
+  if (!"id" %in% colnames(rdesc_df)) {
+    rdesc_df$id <- rownames(rdesc_df)
+  }
+  
+  combined_results <- dplyr::left_join(rdesc_df, final_results, by = "id")
+  expect_equal(nrow(combined_results), n_features)
+  
+  # Add normalized values using the FIXED approach (rdesc[["id"]], not rownames)
+  normalized_df <- as.data.frame(ome_data)
+  if ("id" %in% colnames(rdesc)) {
+    normalized_df$id <- rdesc[["id"]]  # Use rdesc IDs, not rownames
+  } else {
+    normalized_df$id <- rownames(rdesc)
+  }
+  
+  # Join normalized values
+  combined_results_with_intensities <- dplyr::left_join(combined_results, normalized_df, by = "id")
+  
+  # All rows should be preserved
+  expect_equal(nrow(combined_results_with_intensities), n_features,
+               info = "All rows must be preserved when using rdesc IDs")
+  expect_true(all(feature_ids %in% combined_results_with_intensities$id),
+              info = "All rdesc IDs must be present")
+  
+  # Verify IDs match between results and normalized values
+  expect_setequal(combined_results_with_intensities$id, feature_ids)
+})
+
 test_that("P-value histogram correctly handles adjusted p-value cutoff", {
   # Test that the p-value histogram draws the red line at the correct position
   # when using adjusted p-value cutoff

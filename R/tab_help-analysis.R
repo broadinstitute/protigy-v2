@@ -14,7 +14,7 @@ helpAnalysisTabUI <- function(id = "helpTab") {
           id = ns("analysisHelpTabs"),
           type = "tabs",
           tabPanel(
-            "CSV/TSV/Excel Processing",
+            "CSV/TSV/SSV/Excel Processing",
             includeMarkdown(
               system.file("help_documentation/protigy_csv_excel_processing_help.md", 
                           package = "Protigy")

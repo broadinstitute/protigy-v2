@@ -160,10 +160,8 @@ summary_workflow <- function(params) {
 # dataset information summary table
 summary_dataset <- function(params, gct_original, gct_processed) {
   dataset_summary <- list(
-    "Features (original)" = sum(
-      apply(gct_original@mat, 1, function(x) sum(!is.na(x)) > 1)),
-    "Features (post-filtering)" = sum(
-      apply(gct_processed@mat, 1, function(x) sum(!is.na(x)) > 1)),
+    "Features (original)" = nrow(gct_original@mat),
+    "Features (post-filtering)" = nrow(gct_processed@mat),
     "Expression columns" = dim(gct_processed@mat)[2],
     "Groups" = length(unique(gct_processed@cdesc[[params$annotation_column]]))
   )
