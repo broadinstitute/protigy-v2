@@ -318,7 +318,7 @@ test_that("fix_gene_symbols removes blank symbols within strings", {
   expect_equal(length(result$removed_rids), 0)
 })
 
-test_that("fix_gene_symbols removes completely blank gene symbols", {
+test_that("fix_gene_symbols converts blank gene symbols to NA and keeps all rows", {
   rdesc <- data.frame(
     geneSymbol = c("EGFR", "", "BRCA1", NA),
     row.names = paste0("gene_", 1:4)
@@ -326,11 +326,10 @@ test_that("fix_gene_symbols removes completely blank gene symbols", {
   
   result <- fix_gene_symbols(rdesc)
   
-  expect_equal(nrow(result$rdesc), 2)
-  expect_equal(result$rdesc$geneSymbol, c("EGFR", "BRCA1"))
-  expect_equal(length(result$removed_rids), 2)
-  expect_true("gene_2" %in% result$removed_rids)
-  expect_true("gene_4" %in% result$removed_rids)
+  # All rows should be kept - blank values converted to NA
+  expect_equal(nrow(result$rdesc), 4)
+  expect_equal(result$rdesc$geneSymbol, c("EGFR", NA_character_, "BRCA1", NA_character_))
+  expect_equal(length(result$removed_rids), 0)  # No rows removed
 })
 
 test_that("fix_gene_symbols removes leading and trailing pipes", {
@@ -383,7 +382,7 @@ test_that("fix_gene_symbols handles missing geneSymbol column", {
   expect_equal(length(result$removed_rids), 0)
 })
 
-test_that("fix_gene_symbols handles complex cases", {
+test_that("fix_gene_symbols handles complex cases and converts blank to NA", {
   rdesc <- data.frame(
     geneSymbol = c("EGFR;ERBB1| |", "|TP53| |P53|", "BRCA1;BRCA2;BRCA3", "| |", ""),
     row.names = paste0("gene_", 1:5)
@@ -391,9 +390,10 @@ test_that("fix_gene_symbols handles complex cases", {
   
   result <- fix_gene_symbols(rdesc)
   
-  expect_equal(nrow(result$rdesc), 3)
-  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1|BRCA2|BRCA3"))
-  expect_equal(length(result$removed_rids), 2)
+  # All rows should be kept - blank values (| | and "") converted to NA
+  expect_equal(nrow(result$rdesc), 5)
+  expect_equal(result$rdesc$geneSymbol, c("EGFR|ERBB1", "TP53|P53", "BRCA1|BRCA2|BRCA3", NA_character_, NA_character_))
+  expect_equal(length(result$removed_rids), 0)  # No rows removed
 })
 
 test_that("validateGCT creates Sample.ID when cdesc is null", {
@@ -552,7 +552,7 @@ test_that("geneSymbol column selection preserves original geneSymbol as geneSymb
   # User selected a different column - preserve original as geneSymbol_original
   test_rdesc$geneSymbol_original <- test_rdesc$geneSymbol
   test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]
-  test_rdesc[[gene_symbol_col]] <- NULL
+  # Selected column should be preserved (not removed)
   
   # Verify original geneSymbol was preserved as geneSymbol_original
   expect_true("geneSymbol_original" %in% names(test_rdesc))
@@ -562,8 +562,9 @@ test_that("geneSymbol column selection preserves original geneSymbol as geneSymb
   expect_true("geneSymbol" %in% names(test_rdesc))
   expect_equal(test_rdesc$geneSymbol, c("NEW1", "NEW2", "NEW3"))
   
-  # Verify selected column (gene_name) was removed
-  expect_false("gene_name" %in% names(test_rdesc))
+  # Verify selected column (gene_name) was preserved
+  expect_true("gene_name" %in% names(test_rdesc))
+  expect_equal(test_rdesc$gene_name, c("NEW1", "NEW2", "NEW3"))
 })
 
 # Note: Integration tests for transformGCTs geneSymbol handling have been removed.

@@ -39,8 +39,9 @@ If your dataset contains gene symbol information, you can specify which column c
 
 **Note**: 
 - If `geneSymbol` does not exist and you select another column, that column's values will be copied to create a `geneSymbol` column, and the original column will be preserved in the dataset.
-- If `geneSymbol` already exists and you select a different column, the original `geneSymbol` column will be preserved as `geneSymbol_original`, and the selected column will become the new `geneSymbol` column (the selected column will be removed after copying).
+- If `geneSymbol` already exists and you select a different column, the original `geneSymbol` column will be preserved as `geneSymbol_original`, and the selected column will become the new `geneSymbol` column. The selected column will also be preserved in the dataset.
 - If `geneSymbol` already exists and you select "None" or "geneSymbol" itself, the existing `geneSymbol` column will be kept unchanged.
+- **Blank gene symbols**: Blank or empty gene symbol values are converted to `NA` and all rows are preserved. Features without gene symbols are kept in the analysis.
 
 ## Data Preprocessing Options
 
