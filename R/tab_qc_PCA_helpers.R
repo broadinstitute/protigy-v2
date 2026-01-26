@@ -47,7 +47,7 @@ calculate_PCA <- function(gct) {
 ## plot PCA
 create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL, comp.x=1, comp.y=2, 
                             second_col_of_interest = NULL, var1_display = "color", var2_display = "shape",
-                            pca_result = NULL) {
+                            fill_shapes = FALSE, pca_result = NULL) {
   # Check for valid PC inputs
   if (is.null(comp.x) || is.null(comp.y) || length(comp.x) == 0 || length(comp.y) == 0) {
     stop("PC1 and PC2 must be valid and non-empty.")
@@ -258,17 +258,28 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     g <- g + color_definition
   }
   
-  # Add shape scale - always use open shapes first for better visibility
+  # Add shape scale - use open shapes by default, filled shapes when toggle is selected
   if (!is.null(second_col_of_interest)) {
     # Get unique values for shape variable
     shape_var <- if (var1_display == "shape") col_of_interest else second_col_of_interest
-    unique_shapes <- unique(pca_df[[shape_var]])
+    unique_shapes <- sort(unique(pca_df[[shape_var]]))
     n_shapes <- length(unique_shapes)
     
-    # Define shapes - open shapes (0-14) are used first as they are easier to distinguish
-    # Then filled shapes (15-25) are used
-    # Order: circle, square, triangle, diamond, triangle down, then other open shapes, then filled
-    available_shapes <- c(1, 0, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25)
+    # Define shapes - by default use open shapes (hollow), or filled shapes if toggle is selected
+    # Logic: shapes 3, 4, 8, 11 count as filled (have symbols inside: plus, cross, asterisk, star)
+    # All other shapes (0, 1, 2, 5, 6, 7, 9, 10, 12, 13, 14) count as hollow
+    # Order: circle first, then square, triangle, diamond, triangle down, then the rest
+    if (fill_shapes) {
+      # Filled shapes: circle first, then other distinct filled shapes
+      # 16 (circle), 15 (square), 17 (triangle), 18 (diamond), then symbol shapes (3, 4, 8, 11),
+      # then 19 (circle small), 20 (bullet) as last resort
+      available_shapes <- c(16, 15, 17, 18, 3, 4, 8, 11, 19, 20)
+    } else {
+      # Open shapes (hollow) - default: circle first, then other hollow shapes
+      # Order: 1 (circle), 0 (square), 2 (triangle), 5 (diamond), 6 (triangle down),
+      #        then 7, 9, 10, 12, 13, 14 (other hollow shapes)
+      available_shapes <- c(1, 0, 2, 5, 6, 7, 9, 10, 12, 13, 14)
+    }
     
     if (n_shapes <= length(available_shapes)) {
       shape_values <- available_shapes[1:n_shapes]

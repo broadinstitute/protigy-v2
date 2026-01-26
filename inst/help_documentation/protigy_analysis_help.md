@@ -45,3 +45,16 @@ You can choose between a one-sample, two-sample moderate T-tests, moderated F-te
 -   **Two-sample mod T**: For each possible pairwise comparison of groups test whether the group means are significantly different from each other.
 -   **mod F**: Test whether there is a significant difference between any of the defined groups. Should be used if more than 2 groups are being compared.
 -   **none**: Don't do any test. Useful for exploratory data analysis such as PCA.
+
+#### PCA Plots
+
+Principal Component Analysis (PCA) plots are available in the **QC** tab and help visualize patterns and relationships in your data.
+
+**PCA Plot Features:**
+- **Group by**: Select which annotation column to use for coloring points
+- **PC Selection**: Choose which principal components to display (PC1, PC2, etc.)
+- **Second Variable**: Optionally add a second annotation column for visualization
+  - **Display Options**: Choose whether each variable is displayed as color or shape
+  - **Fill Shapes**: Toggle to switch between hollow (default) and filled shapes when using shape visualization
+    - **Hollow shapes (default)**: Open shapes without fill for better visibility
+    - **Filled shapes**: Solid filled shapes when the toggle is enabled

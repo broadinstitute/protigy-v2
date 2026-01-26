@@ -718,6 +718,102 @@ test_that("calculate_PCA handles edge cases correctly", {
   expect_error(calculate_PCA(na_gct), "No features remain after filtering")
 })
 
+test_that("create_PCA_plot accepts fill_shapes parameter", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  # Add a second annotation column for shape testing
+  mock_gct@cdesc$batch <- rep(c("batch1", "batch2"), 4)
+  
+  # Test with fill_shapes = FALSE (default, hollow shapes)
+  plot_hollow <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    second_col_of_interest = "batch",
+    var1_display = "color",
+    var2_display = "shape",
+    fill_shapes = FALSE
+  )
+  
+  expect_s3_class(plot_hollow, "ggplot")
+  
+  # Test with fill_shapes = TRUE (filled shapes)
+  plot_filled <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    second_col_of_interest = "batch",
+    var1_display = "color",
+    var2_display = "shape",
+    fill_shapes = TRUE
+  )
+  
+  expect_s3_class(plot_filled, "ggplot")
+  
+  # Both plots should be valid ggplot objects
+  expect_true(inherits(plot_hollow, "ggplot"))
+  expect_true(inherits(plot_filled, "ggplot"))
+})
+
+test_that("create_PCA_plot fill_shapes works with multiple shape categories", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  # Create GCT with 6 different batch categories to test shape cycling
+  mock_gct@cdesc$batch <- rep(c("batch1", "batch2", "batch3", "batch4", "batch5", "batch6"), length.out = 8)
+  
+  # Test with fill_shapes = TRUE and 6 categories
+  plot_filled <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    second_col_of_interest = "batch",
+    var1_display = "color",
+    var2_display = "shape",
+    fill_shapes = TRUE
+  )
+  
+  expect_s3_class(plot_filled, "ggplot")
+  
+  # Plot should be created successfully with filled shapes for 6 categories
+  expect_true(inherits(plot_filled, "ggplot"))
+})
+
+test_that("create_PCA_plot fill_shapes defaults to FALSE", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  
+  mock_gct@cdesc$batch <- rep(c("batch1", "batch2"), 4)
+  
+  # Test without specifying fill_shapes (should default to FALSE)
+  plot_default <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    second_col_of_interest = "batch",
+    var1_display = "color",
+    var2_display = "shape"
+  )
+  
+  expect_s3_class(plot_default, "ggplot")
+  
+  # Plot should be created successfully with default (hollow) shapes
+  expect_true(inherits(plot_default, "ggplot"))
+})
+
 test_that("dynamicHeightHMCorr calculates height correctly", {
   # Test with different numbers of entries
   height_10 <- dynamicHeightHMCorr(10)

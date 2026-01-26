@@ -124,11 +124,8 @@ transformGCTs <- function(GCTs, parameters) {
                 # (no action needed - geneSymbol already exists)
               } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
                 # geneSymbol doesn't exist - create it from selected column
+                # Preserve the original column (don't remove it)
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                # Remove the original column if it's not already geneSymbol
-                if (gene_symbol_col != "geneSymbol") {
-                  rdesc[[gene_symbol_col]] <- NULL
-                }
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
@@ -231,11 +228,8 @@ processGCTs <- function(GCTs, parameters) {
                 # (no action needed - geneSymbol already exists)
               } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
                 # geneSymbol doesn't exist - create it from selected column
+                # Preserve the original column (don't remove it)
                 rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                # Remove the original column if it's not already geneSymbol
-                if (gene_symbol_col != "geneSymbol") {
-                  rdesc[[gene_symbol_col]] <- NULL
-                }
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               

@@ -233,15 +233,15 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           # All CSV/Excel/TSV/SSV files - use same workflow
           csvExcelWorkflow()
 
-          # Automatically switch to CSV/TSV/Excel Processing help tab
+          # Automatically switch to CSV/TSV/SSV/Excel Processing help tab
           updateTabsetPanel(session = parent,
                            inputId = "navbar-tabs",
                            selected = "Help-Analysis")
 
-          # Switch to the CSV/TSV/Excel Processing tab within the help section
+          # Switch to the CSV/TSV/SSV/Excel Processing tab within the help section
           shinyjs::runjs("
             setTimeout(function() {
-              $('a[data-value=\"CSV/TSV/Excel Processing\"]').click();
+              $('a[data-value=\"CSV/TSV/SSV/Excel Processing\"]').click();
             }, 100);
           ")
         }

@@ -6,13 +6,28 @@ This section explains the data preprocessing options available in ProTIGY for se
 
 This is the default annotation column used for all analysis in ProTIGY. This column contains sample metadata that will be used for grouping and analysis throughout the workflow.
 
-- **Purpose**: Provides consistent sample grouping for statistical analysis and visualization
+- **Purpose**: Provides consistent sample grouping for visualization and statistical analysis
 - **Usage**: Used for sample grouping in plots, statistical tests, and analysis results
 - **Content**: Contains sample metadata such as tumor type (tumor vs NAT), treatment group (drug A, B, C), time point, etc.
-- **Important**: This column must contain **discrete/categorical data** (e.g., treatment groups, cell lines, conditions). Continuous variables are not suitable for sample grouping and will not be available for selection. Instead, convert continuous variables to discrete categories:
-  - **Age**: Convert continuous age to age bins (e.g., "Young", "Middle-aged", "Elderly")
-  - **Time**: Convert continuous time to discrete time points (e.g., "Day 0", "Day 7", "Day 14")
-  - **Measurements**: Convert continuous measurements to categories (e.g., "Low", "Medium", "High")
+- **Important**: This column should contain **discrete/categorical data** (e.g., treatment groups, cell lines, conditions) for best results.
+
+### Visualization vs. Statistical Testing
+
+**You can select an analysis annotation column for visualization even if it is not compatible with statistical testing.** This allows you to explore your data visually before deciding on the appropriate annotation for statistical analysis.
+
+- **Visualization**: Any discrete/categorical annotation column can be used for visualization in QC plots, PCA, and other exploratory analyses
+- **Statistical Testing**: To perform statistical tests, the annotation column must meet additional requirements:
+  - **At least 2 categories**: The column must have at least 2 distinct groups for comparison
+  - **Multiple samples per group**: The column cannot be an ID column where every value is unique (1 sample per group)
+    - ID columns (like sample IDs or patient IDs) are not suitable for statistical testing because each group would have only 1 sample
+    - You need multiple samples in each group to perform meaningful statistical tests
+
+**What happens if your annotation is not suitable for statistics?**
+- You can still use it for **visualization** in all QC plots and exploratory analyses
+- A warning message will appear in the Statistics tab explaining why testing is not available
+- The test selection dropdown will only show "None" as an option
+- The "Run Test" button will be disabled
+- To perform statistical testing, return to the **Setup** tab and select a different annotation column that has multiple samples per group
 
 ## Gene Symbol Column
 
@@ -22,7 +37,10 @@ If your dataset contains gene symbol information, you can specify which column c
 - **Custom**: You can select any other column from your dataset's row metadata (rdesc) to use as gene symbols
 - **None**: If no gene symbol column is available, select "None"
 
-**Note**: If you select a column other than "geneSymbol", that column will be renamed to "geneSymbol" for downstream analysis. If a "geneSymbol" column already exists, it will be preserved as "geneSymbol_original".
+**Note**: 
+- If `geneSymbol` does not exist and you select another column, that column's values will be copied to create a `geneSymbol` column, and the original column will be preserved in the dataset.
+- If `geneSymbol` already exists and you select a different column, the original `geneSymbol` column will be preserved as `geneSymbol_original`, and the selected column will become the new `geneSymbol` column (the selected column will be removed after copying).
+- If `geneSymbol` already exists and you select "None" or "geneSymbol" itself, the existing `geneSymbol` column will be kept unchanged.
 
 ## Data Preprocessing Options
 
@@ -48,7 +66,7 @@ When enabled, normalization will be performed within each experimental group sep
 ### For Log-Transformed Ratios:
 - **Median**: Subtract the sample median from each value (centering). All samples will have a median of zero after normalization.
 - **Median-MAD**: Subtract the sample median and divide by sample MAD (centering plus scaling). All samples will have a median of zero after normalization.
-- **2-component**: Use a mixture-model approach to separate non-changing from changing features. Features are z-scored using the mean and standard deviation of non-changing features. **Warning: This method is extremely slow for datasets with many (>20) samples.**
+- **2-component**: Use a mixture-model approach to separate non-changing from changing features. Features are z-scored using the mean and standard deviation of non-changing features. **Note: This method is disabled for datasets with more than 20 samples due to processing time constraints.**
 
 ### For Log-Transformed Intensities:
 - **Median (non-zero)**: Subtract the sample median and add back the median of all sample medians. This preserves the overall intensity scale.

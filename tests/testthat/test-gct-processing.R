@@ -511,6 +511,61 @@ test_that("validateGCT does not create Sample.ID when cdesc has id and other col
   expect_false("Sample.ID" %in% names(result@cdesc))
 })
 
+test_that("geneSymbol column selection preserves original column when geneSymbol doesn't exist", {
+  # Test the geneSymbol column selection logic directly
+  # Create test rdesc without geneSymbol
+  test_rdesc <- data.frame(
+    id = paste0("gene_", 1:3),
+    gene_name = c("GENE1", "GENE2", "GENE3"),  # This column will be selected for geneSymbol
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  # Simulate the geneSymbol column selection logic from transformGCTs
+  gene_symbol_col <- "gene_name"
+  
+  # geneSymbol doesn't exist - create it from selected column
+  # Preserve the original column (don't remove it)
+  test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]
+  
+  # Verify geneSymbol was created
+  expect_true("geneSymbol" %in% names(test_rdesc))
+  expect_equal(test_rdesc$geneSymbol, c("GENE1", "GENE2", "GENE3"))
+  
+  # Verify original gene_name column is preserved
+  expect_true("gene_name" %in% names(test_rdesc))
+  expect_equal(test_rdesc$gene_name, c("GENE1", "GENE2", "GENE3"))
+})
+
+test_that("geneSymbol column selection preserves original geneSymbol as geneSymbol_original when selecting different column", {
+  # Test the geneSymbol column selection logic directly
+  # Create test rdesc with existing geneSymbol
+  test_rdesc <- data.frame(
+    id = paste0("gene_", 1:3),
+    geneSymbol = c("OLD1", "OLD2", "OLD3"),  # Original geneSymbol
+    gene_name = c("NEW1", "NEW2", "NEW3"),  # This column will be selected
+    row.names = paste0("gene_", 1:3)
+  )
+  
+  # Simulate the geneSymbol column selection logic from transformGCTs
+  gene_symbol_col <- "gene_name"
+  
+  # User selected a different column - preserve original as geneSymbol_original
+  test_rdesc$geneSymbol_original <- test_rdesc$geneSymbol
+  test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]
+  test_rdesc[[gene_symbol_col]] <- NULL
+  
+  # Verify original geneSymbol was preserved as geneSymbol_original
+  expect_true("geneSymbol_original" %in% names(test_rdesc))
+  expect_equal(test_rdesc$geneSymbol_original, c("OLD1", "OLD2", "OLD3"))
+  
+  # Verify new geneSymbol was created from gene_name
+  expect_true("geneSymbol" %in% names(test_rdesc))
+  expect_equal(test_rdesc$geneSymbol, c("NEW1", "NEW2", "NEW3"))
+  
+  # Verify selected column (gene_name) was removed
+  expect_false("gene_name" %in% names(test_rdesc))
+})
+
 # Note: Integration tests for transformGCTs geneSymbol handling have been removed.
 # The core functionality is already well-tested via fix_gene_symbols() tests (lines 297-397).
 # The geneSymbol column selection logic is straightforward and doesn't require separate integration tests

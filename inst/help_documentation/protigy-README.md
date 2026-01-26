@@ -18,7 +18,7 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ### 📁 **Data Import & Export**
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
-- **Supported Formats**: GCT v1.3, CSV, TSV, and Excel files
+- **Supported Formats**: GCT v1.3, CSV, TSV, SSV (semicolon-separated), and Excel files
 - **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
 
 ## UI Navigation
@@ -55,7 +55,8 @@ If you need to change settings such as normalization/filtering or the default an
 **Supported Formats:**
 - **GCT**: Gene Cluster Text format (`.gct`) - v1.3 format
 - **CSV**: Comma-separated values (`.csv`)
-- **TSV**: Tab-separated values (`.tsv`) 
+- **TSV**: Tab-separated values (`.tsv`)
+- **SSV**: Semicolon-separated values (`.ssv`)
 - **Excel**: Microsoft Excel files (`.xlsx`, `.xls`)
 
 **File Requirements:**
