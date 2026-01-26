@@ -258,17 +258,22 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     g <- g + color_definition
   }
   
-  # Add shape scale - always use open shapes first for better visibility
+  # Add shape scale - prioritize solid shapes for better visual distinction
   if (!is.null(second_col_of_interest)) {
     # Get unique values for shape variable
     shape_var <- if (var1_display == "shape") col_of_interest else second_col_of_interest
     unique_shapes <- unique(pca_df[[shape_var]])
     n_shapes <- length(unique_shapes)
     
-    # Define shapes - open shapes (0-14) are used first as they are easier to distinguish
-    # Then filled shapes (15-25) are used
-    # Order: circle, square, triangle, diamond, triangle down, then other open shapes, then filled
-    available_shapes <- c(1, 0, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25)
+    # Prioritize solid/filled shapes for better visual distinction
+    # ggplot2 shape codes: 15-20 are solid filled, 21-25 are fillable (appear solid by default), 0-14 are hollow
+    # Order: Most distinct solid shapes first, then fillable shapes, then hollow shapes as fallback
+    available_shapes <- c(
+      16, 15, 17, 18, 25,           # Solid filled shapes (circle, square, triangles, diamond)
+      21, 22, 23, 24,               # Fillable shapes (appear solid by default)
+      1, 0, 2, 5, 6,                # Common hollow shapes (fallback for 10+ categories)
+      4, 3, 7, 8, 9, 10, 11, 12, 13, 14, 19, 20  # Additional shapes for 16+ categories
+    )
     
     if (n_shapes <= length(available_shapes)) {
       shape_values <- available_shapes[1:n_shapes]
