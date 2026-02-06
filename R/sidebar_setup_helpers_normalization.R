@@ -108,7 +108,20 @@ normalize.data.helper <- function(data,
   cat('   normalization method: ', method, '\n')
   
   data <- data.matrix(data)
-  
+
+  # Coerce to numeric if needed (e.g. CSV/Excel import can produce character matrix)
+  if (!is.numeric(data)) {
+    warning("Data matrix contained non-numeric values; coercing to numeric (non-numeric -> NA).")
+    dim_prev <- dim(data)
+    dimnames_prev <- dimnames(data)
+    data <- matrix(
+      as.numeric(data),
+      nrow = dim_prev[1L],
+      ncol = dim_prev[2L],
+      dimnames = dimnames_prev
+    )
+  }
+
   # Check for single-row matrices - normalization doesn't make sense
   if (nrow(data) == 1) {
     warning("Single-row matrices cannot be meaningfully normalized column-wise. Returning data unchanged.")

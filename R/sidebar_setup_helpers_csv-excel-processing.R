@@ -339,7 +339,20 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
   filtered_data <- data[, experimental_columns, drop = FALSE]
   data_matrix <- as.matrix(filtered_data[, -1, drop = FALSE]) # Remove identifier column from matrix
   rownames(data_matrix) <- feature_ids
-  
+
+  # Ensure numeric: Excel/readxl may read some sample columns as character (e.g. mixed types),
+  # which would make the matrix character and break median() in normalization.
+  if (!is.numeric(data_matrix)) {
+    dim_prev <- dim(data_matrix)
+    dimnames_prev <- dimnames(data_matrix)
+    data_matrix <- matrix(
+      as.numeric(data_matrix),
+      nrow = dim_prev[1L],
+      ncol = dim_prev[2L],
+      dimnames = dimnames_prev
+    )
+  }
+
   # Get final sample IDs (should be the experimental ones)
   sample_ids <- colnames(data_matrix)
   
