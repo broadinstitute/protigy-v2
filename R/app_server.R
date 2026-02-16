@@ -102,6 +102,29 @@ app_server <- function(input, output, session) {
     stat_params = stat_setup_output$stat_params
   )
 
+  ## Linear Model Setup module
+  lm_setup_output <- lmSetup_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    parent = session
+  )
+
+  ## Linear Model Results module
+  all_lmResults_exports <- lmResults_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    lm_results = lm_setup_output$lm_results,
+    lm_params = lm_setup_output$lm_params
+  )
+
+  ## Linear Model Plot module
+  all_lmPlot_exports <- lmPlot_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    lm_results = lm_setup_output$lm_results,
+    lm_params = lm_setup_output$lm_params
+  )
+
   # ## Statistics Table module
   # all_statTable_exports <- statTable_Tab_Server(
   #   GCTs_and_params = GCTs_and_params,
@@ -137,7 +160,9 @@ app_server <- function(input, output, session) {
         QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports,
         statSummary_exports = all_statSummary_exports,
-        statPlot_exports = all_statPlot_exports
+        statPlot_exports = all_statPlot_exports,
+        lmResults_exports = all_lmResults_exports,
+        lmPlot_exports = all_lmPlot_exports
       )
     )
 

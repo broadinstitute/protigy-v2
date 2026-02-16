@@ -99,6 +99,12 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Volcano Plot", statPlot_Tab_UI(), value = "Statistics-Volcano")
         # tabPanel("Table", statTable_Tab_UI())
       ),
+      navbarMenu(
+        "Linear Model",
+        tabPanel("Setup", lmSetup_Tab_UI(), value = "LinearModel-Setup"),
+        tabPanel("Results", lmResults_Tab_UI(), value = "LinearModel-Results"),
+        tabPanel("Volcano Plot", lmPlot_Tab_UI(), value = "LinearModel-Volcano")
+      ),
       
       # navbarMenu(
       #   "Clustering",

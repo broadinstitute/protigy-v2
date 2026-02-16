@@ -31,7 +31,7 @@
 #' @importFrom shinyjqui orderInput updateOrderInput
 #' @importFrom grDevices colorRampPalette dev.off pdf boxplot.stats
 #' @importFrom methods new
-#' @importFrom stats density mad median quantile sd aggregate coef qnorm qt setNames cor anova lm prcomp var complete.cases model.matrix
+#' @importFrom stats density mad median quantile sd aggregate coef qnorm qt setNames cor anova lm prcomp var complete.cases model.matrix as.formula p.adjust
 #' @importFrom zip zip
 #' @importFrom utils tail stack combn compareVersion packageVersion write.csv write.table head
 #' @importFrom rlang .data %||%
