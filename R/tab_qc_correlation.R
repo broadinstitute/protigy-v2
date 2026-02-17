@@ -110,10 +110,15 @@ QCCorrelation_Tab_Server <- function(id = "QCCorrelationTab",
           GCT_processed = reactive(GCTs()[[ome]]),
           parameters = reactive(parameters()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors()[[ome]])
+          color_map = reactive(custom_colors()[[ome]]),
+          # Pre-compute correlation matrix once per ome, shared between heatmap and boxplot
+          cached_corr = reactive({
+            req(GCTs()[[ome]])
+            cor(GCTs()[[ome]]@mat, use = "pairwise.complete.obs", method = "pearson")
+          })
         )
       }, simplify = FALSE)
-      
+
       all_plots(output_plots) # set reactive value with outputs
     })
     
@@ -156,7 +161,8 @@ QCCorrelation_Ome_Server <- function(id,
                                    GCT_processed,
                                    parameters,
                                    default_annotation_column,
-                                   color_map) {
+                                   color_map,
+                                   cached_corr = NULL) {
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -187,11 +193,12 @@ QCCorrelation_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # generate plot
+        # generate plot (pass pre-computed correlation matrix to avoid recomputation)
          create_corr_heatmap(gct = GCT_processed(),
                               col_of_interest = annot_column,
                               ome = ome,
-                              custom_color_map = annot_color_map)
+                              custom_color_map = annot_color_map,
+                              precomputed_corr = if (!is.null(cached_corr)) cached_corr() else NULL)
       }
     )
     
@@ -238,17 +245,23 @@ QCCorrelation_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # generate plot
+        # generate plot (pass pre-computed correlation matrix to avoid recomputation)
         create_corr_boxplot(gct = GCT_processed(),
                            col_of_interest = annot_column,
                            ome = ome,
-                           custom_color_map = annot_color_map)
+                           custom_color_map = annot_color_map,
+                           precomputed_corr = if (!is.null(cached_corr)) cached_corr() else NULL)
       }
     )
     
+    # convert ggplot to plotly once in a reactive (avoid re-conversion on every render)
+    qc_corr_boxplot_plotly <- reactive({
+      ggplotly(qc_corr_boxplot_reactive())
+    })
+
     # render summary plot
     output$qc_corr_boxplot <- renderPlotly(
-      ggplotly(qc_corr_boxplot_reactive())
+      qc_corr_boxplot_plotly()
     )
     
     # sidebar contents

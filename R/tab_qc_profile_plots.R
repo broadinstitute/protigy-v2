@@ -169,21 +169,36 @@ QCProfilePlots_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
+    ## PRE-COMPUTE LONG-FORMAT DATA ##
+    # pivot_longer on large matrices is expensive; cache it so annotation changes
+    # only need to join new annotations, not re-pivot the entire matrix.
+    cached_long_org <- reactive({
+      req(GCT_original())
+      mat <- GCT_original()@mat
+      as.data.frame(mat) %>% pivot_longer(everything(), names_to = "sample", values_to = "values")
+    })
+
+    cached_long_norm <- reactive({
+      req(GCT_processed())
+      mat <- GCT_processed()@mat
+      as.data.frame(mat) %>% pivot_longer(everything(), names_to = "sample", values_to = "values")
+    })
+
     ## ORIGINAL PROFILE PlOT ##
-    
+
     # reactive
     qc_profile_plot_org_reactive <- eventReactive(
-      eventExpr = c(input$qc_profile_plots_annotation, color_map()), 
+      eventExpr = c(input$qc_profile_plots_annotation, color_map()),
       valueExpr = {
         req(GCT_original(), default_annotation_column(), color_map())
-        
+
         # get annotation column
         if (!is.null(input$qc_profile_plots_annotation)) {
           annot_column <- input$qc_profile_plots_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -191,14 +206,15 @@ QCProfilePlots_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
-        # generate plot
+
+        # generate plot using pre-computed long-format data
         create_profile_plot(gct = GCT_original(),
                     col_of_interest = annot_column,
                     ome = ome,
                     custom_color_map = annot_color_map,
                     parameters=parameters(),
-                    type="org")
+                    type="org",
+                    precomputed_long = cached_long_org())
       }
     )
     
@@ -211,17 +227,17 @@ QCProfilePlots_Ome_Server <- function(id,
     
     # reactive
     qc_profile_plot_norm_reactive <- eventReactive(
-      eventExpr = c(input$qc_profile_plots_annotation, color_map()), 
+      eventExpr = c(input$qc_profile_plots_annotation, color_map()),
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
         # get annotation column
         if (!is.null(input$qc_profile_plots_annotation)) {
           annot_column <- input$qc_profile_plots_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -229,14 +245,15 @@ QCProfilePlots_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
-        # generate plot
+
+        # generate plot using pre-computed long-format data
         create_profile_plot(gct = GCT_processed(),
                        col_of_interest = annot_column,
                        ome = ome,
                        custom_color_map = annot_color_map,
                        parameters=parameters(),
-                       type="norm")
+                       type="norm",
+                       precomputed_long = cached_long_norm())
       }
     )
     

@@ -263,9 +263,14 @@ summaryOmeServer <- function(id, ome,
       }
     )
     
+    # convert ggplot to plotly once in a reactive (avoid re-conversion on every render)
+    quant_features_plotly <- reactive({
+      ggplotly(quant_features_plot_reactive(), tooltip = "text")
+    })
+
     # render summary plot
     output$quant_features_plot <- renderPlotly(
-      ggplotly(quant_features_plot_reactive(), tooltip = "text")
+      quant_features_plotly()
     )
     
     # sidebar contents

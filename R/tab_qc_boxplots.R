@@ -169,21 +169,34 @@ QCBoxplots_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
+    ## PRE-COMPUTE BOXPLOT STATISTICS ##
+    # Boxplot stats depend only on the data matrix, not on annotation/color choices.
+    # Cache them so annotation changes don't trigger expensive recomputation.
+    cached_boxplot_stats_org <- reactive({
+      req(GCT_original())
+      precompute_boxplot_stats(GCT_original()@mat)
+    })
+
+    cached_boxplot_stats_norm <- reactive({
+      req(GCT_processed())
+      precompute_boxplot_stats(GCT_processed()@mat)
+    })
+
     ## ORIGINAL BOXPLOT ##
-    
+
     # reactive
     qc_boxplot_org_reactive <- eventReactive(
-      eventExpr = c(input$qc_boxplots_annotation, color_map()), 
+      eventExpr = c(input$qc_boxplots_annotation, color_map()),
       valueExpr = {
         req(GCT_original(), default_annotation_column(), color_map())
-        
+
         # get annotation column
         if (!is.null(input$qc_boxplots_annotation)) {
           annot_column <- input$qc_boxplots_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -191,14 +204,15 @@ QCBoxplots_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
-        # generate plot
+
+        # generate plot using pre-computed stats
         create_boxplot(gct = GCT_original(),
                     col_of_interest = annot_column,
                     ome = ome,
                     custom_color_map = annot_color_map,
                     parameters=parameters(),
-                    type="org")
+                    type="org",
+                    precomputed_stats = cached_boxplot_stats_org())
       }
     )
     
@@ -211,17 +225,17 @@ QCBoxplots_Ome_Server <- function(id,
     
     # reactive
     qc_boxplot_norm_reactive <- eventReactive(
-      eventExpr = c(input$qc_boxplots_annotation, color_map()), 
+      eventExpr = c(input$qc_boxplots_annotation, color_map()),
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
         # get annotation column
         if (!is.null(input$qc_boxplots_annotation)) {
           annot_column <- input$qc_boxplots_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -229,14 +243,15 @@ QCBoxplots_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
-        # generate plot
+
+        # generate plot using pre-computed stats
         create_boxplot(gct = GCT_processed(),
                        col_of_interest = annot_column,
                        ome = ome,
                        custom_color_map = annot_color_map,
                        parameters=parameters(),
-                       type="norm")
+                       type="norm",
+                       precomputed_stats = cached_boxplot_stats_norm())
       }
     )
     
