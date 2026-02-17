@@ -51,18 +51,18 @@ detect_control_group <- function(groups) {
 generate_all_pairwise <- function(groups, bidirectional = TRUE) {
   if (length(groups) < 2) return(character(0))
 
-  # Generate all pairwise combinations
-  pairwise_contrasts <- combn(groups, 2, simplify = FALSE)
+  # Generate all pairwise combinations as a matrix (2 x n_pairs)
+  pairs <- combn(groups, 2)
 
   if (bidirectional) {
-    # Add reverse pairs
-    all_pairs <- c(pairwise_contrasts, lapply(pairwise_contrasts, rev))
+    # Vectorized: forward labels then reverse labels
+    labels <- c(
+      paste(pairs[1, ], "/", pairs[2, ]),
+      paste(pairs[2, ], "/", pairs[1, ])
+    )
   } else {
-    all_pairs <- pairwise_contrasts
+    labels <- paste(pairs[1, ], "/", pairs[2, ])
   }
-
-  # Format as "Group1 / Group2"
-  labels <- sapply(all_pairs, function(p) paste(p[1], "/", p[2]))
   return(labels)
 }
 
@@ -106,13 +106,13 @@ generate_all_vs_reference <- function(groups, reference, bidirectional = FALSE) 
 generate_sequential_pairs <- function(groups, bidirectional = FALSE) {
   if (length(groups) < 2) return(character(0))
 
-  contrasts <- character(0)
-  for (i in 1:(length(groups) - 1)) {
-    # Generate later/earlier contrasts (e.g., Time_2/Time_1, Time_3/Time_2)
-    contrasts <- c(contrasts, paste(groups[i + 1], "/", groups[i]))
-    if (bidirectional) {
-      contrasts <- c(contrasts, paste(groups[i], "/", groups[i + 1]))
-    }
+  n <- length(groups)
+  # Vectorized: generate all sequential pairs at once
+  contrasts <- paste(groups[2:n], "/", groups[1:(n - 1)])
+
+  if (bidirectional) {
+    reverse <- paste(groups[1:(n - 1)], "/", groups[2:n])
+    contrasts <- c(contrasts, reverse)
   }
 
   return(contrasts)
@@ -137,9 +137,11 @@ parse_contrast_label <- function(contrast_label) {
 #' @param contrast_labels Character vector of contrasts in "Group1 / Group2" format
 #' @return List of character vectors, each with c(numerator, denominator)
 contrast_labels_to_list <- function(contrast_labels) {
-  lapply(contrast_labels, function(label) {
-    parts <- parse_contrast_label(label)
-    return(c(parts$numerator, parts$denominator))
+  # Vectorized split: split all labels at once, then reshape
+  parts <- strsplit(contrast_labels, " / ", fixed = TRUE)
+  lapply(parts, function(p) {
+    if (length(p) != 2) stop("Invalid contrast label format. Expected 'Group1 / Group2'")
+    p
   })
 }
 
@@ -171,6 +173,20 @@ is_valid_contrast <- function(contrast_label, groups) {
 render_contrast_matrix <- function(groups, selected_contrasts, ns) {
   n_groups <- length(groups)
 
+  # Pre-compute the set of selected contrasts for O(1) lookup
+  selected_set <- if (length(selected_contrasts) > 0) {
+    new.env(hash = TRUE, parent = emptyenv(), size = length(selected_contrasts))
+    # Use environment as hash set for fast membership testing
+  } else {
+    NULL
+  }
+  if (!is.null(selected_set)) {
+    for (sc in selected_contrasts) selected_set[[sc]] <- TRUE
+  }
+
+  # Pre-compute the click handler namespace prefix once
+  click_ns <- ns("contrast_matrix_click")
+
   # Create table header row
   header_row <- tags$tr(
     tags$td(
@@ -181,7 +197,7 @@ render_contrast_matrix <- function(groups, selected_contrasts, ns) {
     lapply(groups, function(col_group) {
       tags$td(
         class = "contrast-matrix-header col-header",
-        title = col_group,  # Tooltip for long names
+        title = col_group,
         col_group
       )
     })
@@ -190,49 +206,43 @@ render_contrast_matrix <- function(groups, selected_contrasts, ns) {
   # Create matrix body rows
   body_rows <- lapply(groups, function(row_group) {
     tags$tr(
-      # Row header
       tags$td(
         class = "contrast-matrix-header row-header",
-        title = row_group,  # Tooltip for long names
+        title = row_group,
         row_group
       ),
-      # Matrix cells
       lapply(groups, function(col_group) {
-        # Columns are numerator, rows are denominator
-        contrast_label <- paste(col_group, "/", row_group)
         is_diagonal <- row_group == col_group
-        is_selected <- contrast_label %in% selected_contrasts
 
-        cell_class <- paste0(
-          "contrast-matrix-cell",
-          if (is_diagonal) " disabled" else "",
-          if (is_selected && !is_diagonal) " selected" else ""
-        )
-
-        # Build onclick handler (use HTML() to prevent escaping)
-        onclick_handler <- if (!is_diagonal) {
-          sprintf(
-            "Shiny.setInputValue('%s', '%s', {priority: 'event'})",
-            ns("contrast_matrix_click"),
-            gsub("'", "\\\\'", contrast_label)  # Escape single quotes
+        if (is_diagonal) {
+          tags$td(
+            class = "contrast-matrix-cell disabled",
+            `data-numerator` = col_group,
+            `data-denominator` = row_group,
+            ""
           )
         } else {
-          NULL
-        }
+          contrast_label <- paste(col_group, "/", row_group)
+          is_selected <- !is.null(selected_set) &&
+            exists(contrast_label, envir = selected_set, inherits = FALSE)
 
-        tags$td(
-          class = cell_class,
-          `data-numerator` = col_group,
-          `data-denominator` = row_group,
-          `data-contrast` = contrast_label,
-          onclick = onclick_handler,
-          "" # Empty content - CSS will add checkmark/dash
-        )
+          tags$td(
+            class = if (is_selected) "contrast-matrix-cell selected" else "contrast-matrix-cell",
+            `data-numerator` = col_group,
+            `data-denominator` = row_group,
+            `data-contrast` = contrast_label,
+            onclick = sprintf(
+              "Shiny.setInputValue('%s', '%s', {priority: 'event'})",
+              click_ns,
+              gsub("'", "\\\\'", contrast_label)
+            ),
+            ""
+          )
+        }
       })
     )
   })
 
-  # Assemble complete matrix
   div(
     class = "contrast-matrix-container",
     div(
@@ -269,15 +279,14 @@ generate_all_vs_multiple_references <- function(groups, reference_groups, bidire
   other_groups <- setdiff(groups, reference_groups)
   if (length(other_groups) == 0) return(character(0))
 
-  # Generate "Other / Reference" contrasts for each reference
-  contrasts <- character(0)
-  for (ref in reference_groups) {
-    for (g in other_groups) {
-      contrasts <- c(contrasts, paste(g, "/", ref))
-      if (bidirectional) {
-        contrasts <- c(contrasts, paste(ref, "/", g))
-      }
-    }
+  # Vectorized: expand.grid creates all combinations at once
+  combos <- expand.grid(other = other_groups, ref = reference_groups,
+                        stringsAsFactors = FALSE)
+  contrasts <- paste(combos$other, "/", combos$ref)
+
+  if (bidirectional) {
+    reverse_contrasts <- paste(combos$ref, "/", combos$other)
+    contrasts <- c(contrasts, reverse_contrasts)
   }
 
   return(contrasts)

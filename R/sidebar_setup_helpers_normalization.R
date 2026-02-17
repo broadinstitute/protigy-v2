@@ -139,43 +139,42 @@ normalize.data.helper <- function(data,
   }
   ## median only
   if(method == 'Median'){
-    
-    data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
+    # Vectorized: subtract column medians using sweep instead of apply
+    col_medians <- apply(data, 2, median, na.rm=TRUE)
+    data.norm <- sweep(data, 2, col_medians, "-")
     data.norm <- safe_set_colnames(data.norm, data)
-    
+
     if(per_group){
-      all_medians <- apply(data, 2, median, na.rm=T)
-      data.norm <- data.norm + median( all_medians, na.rm=T)
+      data.norm <- data.norm + median(col_medians, na.rm=TRUE)
     }
   }
   ## median plus shifting by medians of medians
   if(method == 'Median (non-zero)'){
-    
-    all_medians <- apply(data, 2, median, na.rm=T)
-    data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
-    
-    data.norm <- data.norm + median( all_medians, na.rm=T )
+    col_medians <- apply(data, 2, median, na.rm=TRUE)
+    data.norm <- sweep(data, 2, col_medians, "-")
+    data.norm <- data.norm + median(col_medians, na.rm=TRUE)
     data.norm <- safe_set_colnames(data.norm, data)
   }
   ## median & MAD
   if(method == 'Median-MAD'){
-    data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
+    col_medians <- apply(data, 2, median, na.rm=TRUE)
+    col_mads <- apply(data, 2, mad, na.rm=TRUE)
+    data.norm <- sweep(data, 2, col_medians, "-")
+    data.norm <- sweep(data.norm, 2, col_mads, "/")
     data.norm <- safe_set_colnames(data.norm, data)
-    
+
     if(per_group){
-      all_medians <-  apply(data, 2, median, na.rm=T)
-      data.norm <- data.norm + median( all_medians, na.rm=T)
+      data.norm <- data.norm + median(col_medians, na.rm=TRUE)
     }
   }
   ## median & MAD plus shifting by medians of medians
   if(method == 'Median-MAD (non-zero)'){
-    
-    all_medians <- apply(data, 2, median, na.rm=T)
-    data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
-    
-    data.norm <- data.norm + median( all_medians, na.rm=T )
+    col_medians <- apply(data, 2, median, na.rm=TRUE)
+    col_mads <- apply(data, 2, mad, na.rm=TRUE)
+    data.norm <- sweep(data, 2, col_medians, "-")
+    data.norm <- sweep(data.norm, 2, col_mads, "/")
+    data.norm <- data.norm + median(col_medians, na.rm=TRUE)
     data.norm <- safe_set_colnames(data.norm, data)
-    
   }
   
   ## 2-component normalization
@@ -205,7 +204,8 @@ normalize.data.helper <- function(data,
   }
   ## Upper quartile
   if(method == 'Upper-quartile'){
-    data.norm <- apply(data, 2, function(x) x - quantile(x, c(0.75),na.rm=T))
+    col_q75 <- apply(data, 2, quantile, probs = 0.75, na.rm = TRUE)
+    data.norm <- sweep(data, 2, col_q75, "-")
     data.norm <- safe_set_colnames(data.norm, data)
   }
   

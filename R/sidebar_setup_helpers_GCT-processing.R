@@ -12,87 +12,35 @@ fix_gene_symbols <- function(rdesc) {
   if (!"geneSymbol" %in% names(rdesc)) {
     return(list(rdesc = rdesc, removed_rids = character(0)))
   }
-  
-  # Store original row names (for backward compatibility - no rows are removed)
-  original_rids <- rownames(rdesc)
-  
+
   # Convert geneSymbol to character vector if it's a list or other type
   if (is.list(rdesc$geneSymbol)) {
-    rdesc$geneSymbol <- unlist(lapply(rdesc$geneSymbol, function(x) {
+    rdesc$geneSymbol <- vapply(rdesc$geneSymbol, function(x) {
       if (is.null(x) || length(x) == 0) return(NA_character_)
       paste(as.character(x), collapse = "|")
-    }))
+    }, character(1))
   }
-  rdesc$geneSymbol <- as.character(rdesc$geneSymbol)
-  
-  # Replace semicolons with pipes
-  rdesc$geneSymbol <- gsub(";", "|", rdesc$geneSymbol)
-  
-  # Remove blank gene symbols within strings (e.g., "EGFR| |" -> "EGFR")
-  # Split by pipe, remove empty/whitespace-only entries, rejoin with pipe
-  rdesc$geneSymbol <- vapply(rdesc$geneSymbol, function(x) {
-    if (is.na(x) || x == "") return(NA_character_)
-    parts <- strsplit(x, "\\|", fixed = FALSE)[[1]]
-    parts <- parts[trimws(parts) != ""]  # Remove blank/whitespace-only parts
-    result <- paste(parts, collapse = "|")
-    # If result is empty after cleaning, return NA instead of empty string
-    if (result == "") return(NA_character_)
-    return(result)
-  }, character(1))
-  
-  # Convert any remaining blank gene symbols to NA (keep all rows)
-  # Blank gene symbols are valid - convert to NA but don't remove rows
-  rdesc$geneSymbol[rdesc$geneSymbol == ""] <- NA_character_
-  
-  # No rows should be removed - blank geneSymbol values are converted to NA
-  removed_rids <- character(0)
-  
-  # Remove any starting | characters (only for non-NA values)
-  if (nrow(rdesc) > 0) {
-    non_na_mask <- !is.na(rdesc$geneSymbol)
-    if (any(non_na_mask)) {
-      start_str <- substring(rdesc$geneSymbol[non_na_mask], 1, 1)
-      start_pipe_mask <- start_str == "|"
-      if (any(start_pipe_mask)) {
-        rdesc$geneSymbol[non_na_mask][start_pipe_mask] <- substring(
-          rdesc$geneSymbol[non_na_mask][start_pipe_mask], 2
-        )
-        # Convert to NA if result is empty
-        empty_after_start <- rdesc$geneSymbol[non_na_mask][start_pipe_mask] == ""
-        if (any(empty_after_start)) {
-          na_indices <- which(non_na_mask)[start_pipe_mask][empty_after_start]
-          rdesc$geneSymbol[na_indices] <- NA_character_
-        }
-      }
-      
-      # Remove any ending | characters (only for non-NA values)
-      non_na_mask <- !is.na(rdesc$geneSymbol)
-      if (any(non_na_mask)) {
-        gene_values <- rdesc$geneSymbol[non_na_mask]
-        end_str <- vapply(gene_values, function(x) {
-          if (nchar(x) > 0) substring(x, nchar(x), nchar(x)) else ""
-        }, character(1))
-        end_pipe_mask <- end_str == "|"
-        if (any(end_pipe_mask)) {
-          rdesc$geneSymbol[non_na_mask][end_pipe_mask] <- vapply(
-            rdesc$geneSymbol[non_na_mask][end_pipe_mask], 
-            function(x) {
-              if (nchar(x) > 1) substring(x, 1, nchar(x) - 1) else ""
-            }, 
-            character(1)
-          )
-          # Convert to NA if result is empty
-          empty_after_end <- rdesc$geneSymbol[non_na_mask][end_pipe_mask] == ""
-          if (any(empty_after_end)) {
-            na_indices <- which(non_na_mask)[end_pipe_mask][empty_after_end]
-            rdesc$geneSymbol[na_indices] <- NA_character_
-          }
-        }
-      }
-    }
-  }
-  
-  return(list(rdesc = rdesc, removed_rids = removed_rids))
+  gs <- as.character(rdesc$geneSymbol)
+
+  # Replace semicolons with pipes (vectorized)
+  gs <- gsub(";", "|", gs, fixed = TRUE)
+
+  # Remove blank/whitespace-only segments between pipes (vectorized regex)
+  # Repeatedly remove empty segments: "||" -> "|", "| |" -> "|"
+  gs <- gsub("\\|\\s*\\|", "|", gs)
+  # Handle any remaining whitespace-only segments
+  gs <- gsub("\\|\\s*\\|", "|", gs)
+
+  # Remove leading and trailing pipes (vectorized)
+  gs <- sub("^\\|+", "", gs)
+  gs <- sub("\\|+$", "", gs)
+
+  # Convert empty strings to NA
+  gs[!is.na(gs) & gs == ""] <- NA_character_
+
+  rdesc$geneSymbol <- gs
+
+  return(list(rdesc = rdesc, removed_rids = character(0)))
 }
 
 # function to transform original GCT file so it is comparable to processed GCT file
@@ -304,8 +252,8 @@ processGCTs <- function(GCTs, parameters) {
               incProgress(1, detail = "compiling results")
               
               #update cdesc and rdesc if needed
-              cdesc <- cdesc[rownames(cdesc)%in%colnames(data.filtered),,drop=F]
-              rdesc <- rdesc[rownames(rdesc)%in%rownames(data.filtered),,drop=F]
+              cdesc <- cdesc[colnames(data.filtered), , drop = FALSE]
+              rdesc <- rdesc[rownames(data.filtered), , drop = FALSE]
               
               ## re-combine GCT and return
               processed_GCT <- GCT(cdesc = cdesc, 
@@ -336,13 +284,14 @@ processGCTs <- function(GCTs, parameters) {
   # Convert numeric columns that are discrete to strings in all processed GCTs
   # This ensures discrete columns are treated as categorical, not continuous
   for (ome in names(GCTs_processed)) {
-    for (col_name in names(GCTs_processed[[ome]]@cdesc)) {
-      if (is.numeric(GCTs_processed[[ome]]@cdesc[[col_name]])) {
-        if (is.discrete(GCTs_processed[[ome]]@cdesc[[col_name]], nfactor_cutoff = 20)) {
-          GCTs_processed[[ome]]@cdesc[[col_name]] <- as.character(GCTs_processed[[ome]]@cdesc[[col_name]])
-        }
+    cdesc <- GCTs_processed[[ome]]@cdesc
+    numeric_cols <- which(vapply(cdesc, is.numeric, logical(1)))
+    for (idx in numeric_cols) {
+      if (is.discrete(cdesc[[idx]], nfactor_cutoff = 20)) {
+        cdesc[[idx]] <- as.character(cdesc[[idx]])
       }
     }
+    GCTs_processed[[ome]]@cdesc <- cdesc
   }
   
   GCTs_merged <- my_shinyalert_tryCatch(
@@ -361,13 +310,14 @@ processGCTs <- function(GCTs, parameters) {
   
   # Convert numeric columns that are discrete to strings in merged GCT
   # Use cutoff 20 to match processGCTs logic
-  for (col_name in names(GCTs_merged@cdesc)) {
-    if (is.numeric(GCTs_merged@cdesc[[col_name]])) {
-      if (is.discrete(GCTs_merged@cdesc[[col_name]], nfactor_cutoff = 20)) {
-        GCTs_merged@cdesc[[col_name]] <- as.character(GCTs_merged@cdesc[[col_name]])
-      }
+  merged_cdesc <- GCTs_merged@cdesc
+  numeric_cols <- which(vapply(merged_cdesc, is.numeric, logical(1)))
+  for (idx in numeric_cols) {
+    if (is.discrete(merged_cdesc[[idx]], nfactor_cutoff = 20)) {
+      merged_cdesc[[idx]] <- as.character(merged_cdesc[[idx]])
     }
   }
+  GCTs_merged@cdesc <- merged_cdesc
   
   output <- list(
     GCTs = GCTs_processed,
@@ -481,8 +431,9 @@ perform_data_normalization <- function(data, method, cdesc,
 
 # maximum missing value filter
 perform_missing_filter <- function(data, max_missing) {
-  missing_percent <- apply(data, 1, function(x) sum(is.na(x))/length(x))
-  data <- data[missing_percent <= max_missing/100, ]
+  # Use rowMeans on logical matrix instead of apply loop for better performance
+  missing_percent <- rowMeans(is.na(data))
+  data <- data[missing_percent <= max_missing/100, , drop = FALSE]
   return(data)
 }
 
@@ -633,45 +584,41 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
     # figure out which columns conflict with other omes
     conflict_columns <- c()
     for (i in seq_along(GCTs_processed)) {
-      ome <- names(GCTs_processed)[i]
       gct <- GCTs_processed[[i]]
-      
+
       # subset to only samples in ome
       samples_in_ome <- gct@cid
       merged_cdesc_subset <- GCTs_merged@cdesc[samples_in_ome, , drop = FALSE]
-      
+
       # if there's a column with all NA, replace with values in this ome
-      replace_NA_col <- intersect(
-        names(which(sapply(merged_cdesc_subset, function(col) all(is.na(col))))),
-        names(gct@cdesc)
-      )
+      all_na_cols <- vapply(merged_cdesc_subset, function(col) all(is.na(col)), logical(1))
+      replace_NA_col <- intersect(names(which(all_na_cols)), names(gct@cdesc))
       if (length(replace_NA_col) > 0) {
         GCTs_merged@cdesc[samples_in_ome, replace_NA_col] <- gct@cdesc[samples_in_ome, replace_NA_col]
         merged_cdesc_subset <- GCTs_merged@cdesc[samples_in_ome, , drop = FALSE]
       }
-      
-      
-      # find columns that have a conflict
-      conflict_columns_ome <- names(which(
-        sapply(names(gct@cdesc), function(col) {
-          TRUE %in% c(
-            any(gct@cdesc[[col]] != merged_cdesc_subset[[col]]), # any values are not the same
-            any(is.na(gct@cdesc[[col]]) != is.na(merged_cdesc_subset[[col]])) # any NA's are not in the same place
-          )
-        })
-      ))
-      
-      conflict_columns <- unique(c(conflict_columns, conflict_columns_ome))
+
+      # find columns that have a conflict - only check shared columns
+      shared_cols <- intersect(names(gct@cdesc), names(merged_cdesc_subset))
+      if (length(shared_cols) > 0) {
+        conflict_columns_ome <- vapply(shared_cols, function(col) {
+          ome_vals <- gct@cdesc[[col]]
+          merged_vals <- merged_cdesc_subset[[col]]
+          any(ome_vals != merged_vals, na.rm = TRUE) ||
+            any(is.na(ome_vals) != is.na(merged_vals))
+        }, logical(1))
+        conflict_columns <- unique(c(conflict_columns, shared_cols[conflict_columns_ome]))
+      }
     }
     
     incProgress()
     
     # remove conflicting columns and re-name by ome
     for (col in conflict_columns) {
-      
+
       # get the omes that contain this conflict column
       omes_with_col <- names(which(
-        sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
+        vapply(GCTs_processed, function(gct) col %in% names(gct@cdesc), logical(1))
       ))
       
       # get the new column names, make sure they're unique
@@ -707,7 +654,7 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
       for (col in missing_columns) {
         # Find which datasets have this column
         omes_with_col <- names(which(
-          sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
+          vapply(GCTs_processed, function(gct) col %in% names(gct@cdesc), logical(1))
         ))
         
         # For samples that don't have this column, fill with NA

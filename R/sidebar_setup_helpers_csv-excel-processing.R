@@ -245,22 +245,17 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
 # INPUT: data.frame
 # OUTPUT: character vector of column names with unique character values
 getUniqueColumns <- function(data) {
-  unique_columns <- character(0)
-  
-  for (col_name in colnames(data)) {
-    # Get non-NA values
+  # Vectorized: check all columns at once using vapply
+  col_names <- colnames(data)
+  is_unique_char <- vapply(col_names, function(col_name) {
     values <- data[[col_name]]
     non_na_values <- values[!is.na(values)]
-    
-    # Check if column is character type and has unique values
-    if (length(non_na_values) > 0 && 
-        is.character(non_na_values) && 
-        length(non_na_values) == length(unique(non_na_values))) {
-      unique_columns <- c(unique_columns, col_name)
-    }
-  }
-  
-  return(unique_columns)
+    length(non_na_values) > 0 &&
+      is.character(non_na_values) &&
+      !anyDuplicated(non_na_values)
+  }, logical(1))
+
+  return(col_names[is_unique_char])
 }
 
 # Validate that the user-specified identifier column exists and is valid
@@ -390,43 +385,35 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
 # INPUT: sample IDs from data file, experimental design
 # OUTPUT: list with sample_columns and rdesc_columns vectors
 classifyColumns <- function(sample_ids, experimentalDesign) {
-  sample_columns <- character(0)
-  rdesc_columns <- character(0)
-  
-  for (col_name in sample_ids) {
-    # Check if column exists in experimental design
-    exp_design_row <- experimentalDesign[experimentalDesign$columnName == col_name, ]
-    
-    if (nrow(exp_design_row) == 0) {
-      # Case 1: columnName is missing from experimental design file
-      # This column should be moved to rdesc
-      rdesc_columns <- c(rdesc_columns, col_name)
-    } else {
-      # Case 2: columnName is present in experimental design
-      # Check if all metadata entries are blank/NA
-      metadata_columns <- setdiff(names(experimentalDesign), "columnName")
-      
-      if (length(metadata_columns) == 0) {
-        # No metadata columns - treat as sample
-        sample_columns <- c(sample_columns, col_name)
-      } else {
-        # Check if all metadata values are NA/blank
-        all_metadata_values <- exp_design_row[, metadata_columns, drop = FALSE]
-        all_blank <- all(is.na(all_metadata_values) | 
-                        as.character(all_metadata_values) == "" | 
-                        trimws(as.character(all_metadata_values)) == "")
-        
-        if (all_blank) {
-          # All metadata entries are blank/NA - move to rdesc
-          rdesc_columns <- c(rdesc_columns, col_name)
-        } else {
-          # Has valid metadata - treat as sample
-          sample_columns <- c(sample_columns, col_name)
-        }
-      }
-    }
+  metadata_columns <- setdiff(names(experimentalDesign), "columnName")
+
+  # Match all sample_ids to experimental design rows at once
+  match_idx <- match(sample_ids, experimentalDesign$columnName)
+
+  # Columns not found in experimental design go to rdesc
+  not_found <- is.na(match_idx)
+
+  if (length(metadata_columns) == 0) {
+    # No metadata columns - all found columns are samples
+    sample_columns <- sample_ids[!not_found]
+    rdesc_columns <- sample_ids[not_found]
+  } else {
+    # For found columns, check if all metadata is blank/NA
+    found_ids <- sample_ids[!not_found]
+    found_idx <- match_idx[!not_found]
+
+    # Vectorized blank check across all metadata columns
+    is_all_blank <- vapply(found_idx, function(i) {
+      row_vals <- experimentalDesign[i, metadata_columns, drop = FALSE]
+      all(is.na(row_vals) |
+          as.character(row_vals) == "" |
+          trimws(as.character(row_vals)) == "")
+    }, logical(1))
+
+    sample_columns <- found_ids[!is_all_blank]
+    rdesc_columns <- c(sample_ids[not_found], found_ids[is_all_blank])
   }
-  
+
   return(list(
     sample_columns = sample_columns,
     rdesc_columns = rdesc_columns
