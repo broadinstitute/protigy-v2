@@ -77,7 +77,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     labelsGO <- reactiveVal(0)
     gctsGO <- reactiveVal(0)
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
-    
+    is_spectronaut_reactive        <- reactiveVal(FALSE)
+    spectronaut_condition_data     <- reactiveVal(NULL)
+    spectronaut_processed_data     <- reactiveVal(NULL)
+    preview_data_reactive          <- reactiveVal(NULL)
+
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
@@ -521,7 +525,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_unprocessed_internal_reactive())})
+                                                   GCTs = GCTs_unprocessed_internal_reactive(),
+                                                   is_spectronaut = isTRUE(is_spectronaut_reactive()))})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -796,7 +801,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       parameter_names <- c(names(default_parameters),
                            'annotation_column',
                            'group_normalization_column',
-                           'gene_symbol_column')
+                           'gene_symbol_column',
+                           'spectronaut_gene_symbol_split',
+                           'spectronaut_gene_symbol_separator')
 
       # assign new user selections
       # NOTE: there are fields in `new_parameters` that aren't updated here,
@@ -943,8 +950,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
 
-      # Move to experimental design setup
-      csvExcelExpDesignSetup(identifier_columns)
+      # Move to Spectronaut step (which may proceed to exp design)
+      csvExcelSpectronautStep(identifier_columns)
     })
 
     # Experimental design setup step
@@ -961,6 +968,194 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                   icon = icon("chevron-left"),
                                                   class = "btn btn-default")})
     }
+
+    # Spectronaut preprocessing step
+    csvExcelSpectronautStep <- function(identifier_columns) {
+      # Read column names from first uploaded file for UI
+      first_file <- accumulated_files()[1, ]
+      file_ext <- tools::file_ext(tolower(first_file$name))
+      data_columns <- tryCatch({
+        preview <- read_uploaded_data_preview(first_file$datapath, file_ext, n_max = 1)
+        if (!is.null(preview)) names(preview) else character(0)
+      }, error = function(e) character(0))
+
+      output$sideBarMain <- renderUI({
+        tagList(
+          checkboxInput(ns("is_spectronaut"),
+                        "This is a Spectronaut pivot report",
+                        value = isTRUE(is_spectronaut_reactive())),
+          conditionalPanel(
+            condition = paste0("input['", ns("is_spectronaut"), "']"),
+            spectronautSetupUI(ns = ns, data_columns = data_columns)
+          )
+        )
+      })
+      output$rightButton <- renderUI({
+        actionButton(ns("submitSpectronautStepButton"), "Next", class = "btn btn-primary")
+      })
+      output$leftButton <- renderUI({
+        actionButton(ns("backToCSVExcelIdentifiersButton"), "Back",
+                     icon = icon("chevron-left"), class = "btn btn-default")
+      })
+    }
+
+    # Handle condition setup file upload
+    observeEvent(input$spectronautConditionFile, {
+      req(input$spectronautConditionFile)
+      tryCatch({
+        cond_data <- read_spectronaut_condition_setup(input$spectronautConditionFile$datapath)
+        spectronaut_condition_data(cond_data)
+
+        # Detect suffixes from first data file
+        first_file <- accumulated_files()[1, ]
+        file_ext <- tools::file_ext(tolower(first_file$name))
+        all_cols <- tryCatch({
+          preview <- read_uploaded_data_preview(first_file$datapath, file_ext, n_max = 1)
+          if (!is.null(preview)) names(preview) else character(0)
+        }, error = function(e) character(0))
+
+        run_labels <- cond_data[["Run Label"]]
+        suffixes <- detect_quant_suffixes(all_cols, run_labels)
+
+        output$spectronautSuffixUI <- renderUI({
+          if (length(suffixes) == 0) {
+            p("No quantification suffixes detected. Check that run labels match column names.",
+              style = "color: orange;")
+          } else {
+            selectInput(ns("spectronaut_quant_suffix"),
+                        "Quantification metric:",
+                        choices = suffixes,
+                        selected = suffixes[1])
+          }
+        })
+      }, error = function(e) {
+        showNotification(
+          ui = HTML(paste0("<b>Error reading condition setup file:</b><br>", e$message)),
+          type = "error", duration = NULL, closeButton = TRUE
+        )
+      })
+    })
+
+    # Handle Spectronaut step submission
+    observeEvent(input$submitSpectronautStepButton, {
+      is_spectronaut_reactive(isTRUE(input$is_spectronaut))
+
+      if (isTRUE(input$is_spectronaut)) {
+        # Validate and preprocess
+        withProgress(message = "Preprocessing Spectronaut data...", {
+          tryCatch({
+            processed_list <- list()
+            for (i in seq_len(nrow(accumulated_files()))) {
+              file_path <- accumulated_files()$datapath[i]
+              file_ext  <- tools::file_ext(tolower(accumulated_files()$name[i]))
+              data <- read_uploaded_data_preview(file_path, file_ext, n_max = Inf)
+              if (is.null(data)) stop("Could not read file: ", accumulated_files()$name[i])
+
+              # Create protigy_id if requested
+              if (isTRUE(input$spectronaut_create_id) &&
+                  !is.null(input$spectronaut_id_source_column) &&
+                  input$spectronaut_id_source_column %in% names(data)) {
+                sep <- if (nchar(trimws(input$spectronaut_id_separator)) > 0)
+                  input$spectronaut_id_separator else ";"
+                data <- extract_protigy_id(data, input$spectronaut_id_source_column, sep)
+              }
+
+              # Apply condition setup if provided
+              if (isTRUE(input$spectronaut_use_condition_setup) &&
+                  !is.null(spectronaut_condition_data()) &&
+                  !is.null(input$spectronaut_quant_suffix)) {
+                data <- apply_spectronaut_condition_setup(
+                  data,
+                  spectronaut_condition_data(),
+                  input$spectronaut_quant_suffix,
+                  isTRUE(input$spectronaut_merge_condition_replicate)
+                )
+              }
+
+              processed_list[[i]] <- data
+              setProgress(i / nrow(accumulated_files()))
+            }
+            spectronaut_processed_data(processed_list)
+            preview_data_reactive(processed_list[[1]])
+          }, error = function(e) {
+            showNotification(
+              ui = HTML(paste0("<b>Spectronaut preprocessing error:</b><br>", e$message)),
+              type = "error", duration = NULL, closeButton = TRUE
+            )
+            return()
+          })
+        })
+      }
+
+      # Proceed to experimental design setup
+      identifier_columns <- csvExcel_identifier_columns_reactive()
+      csvExcelExpDesignSetup(identifier_columns)
+    })
+
+    # Live preview: update when create_id options change
+    observeEvent(
+      list(input$spectronaut_create_id, input$spectronaut_id_separator,
+           input$spectronaut_id_source_column),
+      {
+        req(accumulated_files(), isTRUE(input$spectronaut_create_id))
+        first_file <- accumulated_files()[1, ]
+        file_ext <- tools::file_ext(tolower(first_file$name))
+        data <- read_uploaded_data_preview(first_file$datapath, file_ext)
+        if (!is.null(data) &&
+            !is.null(input$spectronaut_id_source_column) &&
+            input$spectronaut_id_source_column %in% names(data)) {
+          sep <- if (!is.null(input$spectronaut_id_separator) &&
+                     nchar(trimws(input$spectronaut_id_separator)) > 0)
+            input$spectronaut_id_separator else ";"
+          data <- extract_protigy_id(data, input$spectronaut_id_source_column, sep)
+        }
+        preview_data_reactive(data)
+      },
+      ignoreInit = TRUE
+    )
+
+    # Live preview: update when condition setup options change
+    observeEvent(
+      list(input$spectronaut_quant_suffix, input$spectronaut_merge_condition_replicate),
+      {
+        req(accumulated_files(), !is.null(spectronaut_condition_data()),
+            !is.null(input$spectronaut_quant_suffix))
+        first_file <- accumulated_files()[1, ]
+        file_ext <- tools::file_ext(tolower(first_file$name))
+        data <- read_uploaded_data_preview(first_file$datapath, file_ext)
+        if (!is.null(data)) {
+          data <- apply_spectronaut_condition_setup(
+            data,
+            spectronaut_condition_data(),
+            input$spectronaut_quant_suffix,
+            isTRUE(input$spectronaut_merge_condition_replicate)
+          )
+          preview_data_reactive(data)
+        }
+      },
+      ignoreInit = TRUE
+    )
+
+    # Data preview table output
+    output$dataPreviewTable <- DT::renderDT({
+      req(preview_data_reactive())
+      DT::datatable(
+        preview_data_reactive(),
+        options = list(scrollX = TRUE, pageLength = 20, dom = 'tip'),
+        rownames = FALSE
+      )
+    })
+    output$showDataPreview <- reactive({ !is.null(preview_data_reactive()) })
+    outputOptions(output, "showDataPreview", suspendWhenHidden = FALSE)
+
+    # Update preview when files are first uploaded
+    observeEvent(accumulated_files(), {
+      req(accumulated_files())
+      first_file <- accumulated_files()[1, ]
+      file_ext <- tools::file_ext(tolower(first_file$name))
+      data <- read_uploaded_data_preview(first_file$datapath, file_ext)
+      preview_data_reactive(data)
+    }, ignoreNULL = TRUE)
 
     # Handle back navigation
     observeEvent(input$backToCSVExcelLabelsButton, {
@@ -1068,13 +1263,28 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
               input[[paste0('CSVExcelLabel_', file)]]
             })
 
-            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(accumulated_files(), exp_design, identifier_columns, labels)
+            # Use pre-processed data if Spectronaut preprocessing was applied
+            files_to_process <- if (isTRUE(is_spectronaut_reactive()) && !is.null(spectronaut_processed_data())) {
+              spectronaut_processed_data()
+            } else {
+              NULL
+            }
+            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(accumulated_files(), exp_design, identifier_columns, labels, preprocessed_data = files_to_process)
             
             setProgress(0.8, detail = "Setting up analysis parameters")
             
             # Store converted GCT objects and parameters for later processing (same as GCT workflow)
             GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
             parameters_internal_reactive(csv_excel_result$parameters)
+
+            # Mark as spectronaut in each label's parameters
+            if (isTRUE(is_spectronaut_reactive())) {
+              params <- parameters_internal_reactive()
+              for (lbl in names(params)) {
+                params[[lbl]]$is_spectronaut <- TRUE
+              }
+              parameters_internal_reactive(params)
+            }
             
             # Set up back/next navigation logic for parameter setup
             backNextLogic$place <- 1

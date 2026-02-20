@@ -162,6 +162,14 @@ transformGCTs <- function(GCTs, parameters) {
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
+              ## Spectronaut gene symbol splitting
+              if (isTRUE(params$spectronaut_gene_symbol_split) &&
+                  !is.null(params$spectronaut_gene_symbol_separator) &&
+                  "geneSymbol" %in% names(rdesc)) {
+                rdesc <- split_gene_symbol_column(rdesc, "geneSymbol",
+                                                  params$spectronaut_gene_symbol_separator)
+              }
+
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
@@ -169,7 +177,7 @@ transformGCTs <- function(GCTs, parameters) {
                 # No rows are removed - blank geneSymbol values are converted to NA
                 # removed_rids is kept for backward compatibility but should be empty
               }
-              
+
               incProgress(1, detail = "log transformation")
               
               ## log transformation
@@ -259,6 +267,14 @@ processGCTs <- function(GCTs, parameters) {
               }
               # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
               
+              ## Spectronaut gene symbol splitting
+              if (isTRUE(params$spectronaut_gene_symbol_split) &&
+                  !is.null(params$spectronaut_gene_symbol_separator) &&
+                  "geneSymbol" %in% names(rdesc)) {
+                rdesc <- split_gene_symbol_column(rdesc, "geneSymbol",
+                                                  params$spectronaut_gene_symbol_separator)
+              }
+
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
@@ -266,7 +282,7 @@ processGCTs <- function(GCTs, parameters) {
                 # No rows are removed - blank geneSymbol values are converted to NA
                 # removed_rids is kept for backward compatibility but should be empty
               }
-              
+
               incProgress(1, detail = "log transformation")
               
               ## log transformation

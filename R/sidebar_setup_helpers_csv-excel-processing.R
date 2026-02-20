@@ -148,10 +148,10 @@ csvExcelExpDesignSetupUI <- function(ns, dataFiles, labels) {
 # Process CSV/Excel/TSV files with per-dataset identifier columns
 # INPUT: list of data files, experimental design data.frame, identifierColumns (vector per dataset)
 # OUTPUT: list of GCT objects (same format as existing GCT workflow)
-processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experimentalDesign, identifierColumns, labels) {
+processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experimentalDesign, identifierColumns, labels, preprocessed_data = NULL) {
   GCTs <- list()
   parameters <- list()
-  
+
   # Process each file with its specific identifier column
   for (i in seq_len(nrow(dataFiles))) {
     file_path <- dataFiles$datapath[i]
@@ -159,10 +159,12 @@ processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experime
     file_ext <- tools::file_ext(tolower(file_name))
     identifier_col <- identifierColumns[i]
     label <- labels[i]  # Use user-assigned label
-    
+
     tryCatch({
-      # Read the data file
-      if (file_ext == "csv") {
+      # Use pre-processed data if provided (e.g. from Spectronaut preprocessing)
+      if (!is.null(preprocessed_data) && i <= length(preprocessed_data)) {
+        data <- preprocessed_data[[i]]
+      } else if (file_ext == "csv") {
         data <- readr::read_csv(file_path)
       } else if (file_ext == "tsv") {
         data <- readr::read_tsv(file_path)
@@ -582,4 +584,32 @@ processCSVExcelWorkflow <- function(dataFiles, experimentalDesign, identifierCol
     GCTs = GCTs,
     parameters = parameters
   ))
+}
+
+#' Read a preview of an uploaded data file (first n_max rows)
+#'
+#' Thin wrapper around readr/readxl for the file types supported in the
+#' CSV/Excel workflow. Returns a data.frame or NULL on error.
+#'
+#' @param file_path character path to the file
+#' @param file_ext character file extension (lowercase, without dot): "csv", "tsv", "xlsx", "xls", "ssv"
+#' @param n_max integer max rows to read (default 20)
+#' @return data.frame or NULL
+read_uploaded_data_preview <- function(file_path, file_ext, n_max = 20) {
+  tryCatch({
+    data <- if (file_ext == "csv") {
+      readr::read_csv(file_path, n_max = n_max, show_col_types = FALSE)
+    } else if (file_ext == "tsv") {
+      readr::read_tsv(file_path, n_max = n_max, show_col_types = FALSE)
+    } else if (file_ext %in% c("xlsx", "xls")) {
+      readxl::read_excel(file_path, n_max = n_max)
+    } else if (file_ext == "ssv") {
+      readr::read_delim(file_path, delim = ";", n_max = n_max, show_col_types = FALSE)
+    } else {
+      return(NULL)
+    }
+    as.data.frame(data)
+  }, error = function(e) {
+    NULL
+  })
 }

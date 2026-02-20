@@ -18,3 +18,6 @@ plot_export_units: "in"
 multiome_heatmap_width: 12
 multiome_heatmap_height: 8
 multiome_heatmap_units: "in"
+is_spectronaut: false
+spectronaut_gene_symbol_split: false
+spectronaut_gene_symbol_separator: ";"

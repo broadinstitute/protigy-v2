@@ -58,6 +58,20 @@ app_UI <- function(request) {dashboardPage(
       });
     ")),
 
+    # Data preview panel - shown when a CSV/Excel file is uploaded
+    conditionalPanel(
+      condition = "output.showDataPreview",
+      div(id = "data-preview-panel", style = "padding: 10px 15px;",
+        div(style = "display:flex; align-items:center; gap:8px; margin-bottom:6px;",
+          tags$strong(shiny::icon("table"), " Data Preview (first 20 rows)"),
+          actionButton("toggleDataPreview", "Hide", class = "btn btn-xs btn-default",
+                       onclick = "$('#data-preview-content').slideToggle(); $(this).text($(this).text() === 'Hide' ? 'Show' : 'Hide');")
+        ),
+        div(id = "data-preview-content",
+            DT::DTOutput("setupSidebar-dataPreviewTable"))
+      )
+    ),
+
     navbarPage(
       title = '',
       id = "navbar-tabs",

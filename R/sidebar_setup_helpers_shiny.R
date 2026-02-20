@@ -25,13 +25,14 @@ labelSetupUI <- function(ns, gctFileNames) {
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the 
 # setupDefaults.yaml!
-gctSetupUI <- function(ns, 
-                       label, 
-                       parameter_choices, 
-                       parameters, 
-                       current_place, 
+gctSetupUI <- function(ns,
+                       label,
+                       parameter_choices,
+                       parameters,
+                       current_place,
                        max_place,
-                       GCTs) {
+                       GCTs,
+                       is_spectronaut = FALSE) {
   # groups column choices pulled from cdesc
   all_cdesc_columns <- names(GCTs[[label]]@cdesc)
   
@@ -89,7 +90,26 @@ gctSetupUI <- function(ns,
             ifelse("geneSymbol" %in% names(GCTs[[label]]@rdesc), "geneSymbol", "None"),
             parameters[[label]]$gene_symbol_column)),
         classes = "small-input"),
-    
+
+    if (isTRUE(is_spectronaut)) {
+      tagList(
+        checkboxInput(
+          ns(paste0(label, '_spectronaut_gene_symbol_split')),
+          "Split gene symbol column and use first non-empty value",
+          value = isTRUE(parameters[[label]]$spectronaut_gene_symbol_split)
+        ),
+        conditionalPanel(
+          condition = paste0("input['", ns(paste0(label, '_spectronaut_gene_symbol_split')), "']"),
+          textInput(
+            ns(paste0(label, '_spectronaut_gene_symbol_separator')),
+            "Separator",
+            value = if (!is.null(parameters[[label]]$spectronaut_gene_symbol_separator))
+              parameters[[label]]$spectronaut_gene_symbol_separator else ";"
+          )
+        )
+      )
+    },
+
     ## intensity data input
     add_css_attributes(
       checkboxInput(
