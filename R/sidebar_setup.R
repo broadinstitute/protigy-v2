@@ -135,7 +135,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
-                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; line-height: 1.4;",
+                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; line-height: 1.4;",
                 files$name[i]
               ),
               actionButton(
