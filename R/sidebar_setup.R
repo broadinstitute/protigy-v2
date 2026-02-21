@@ -77,10 +77,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     labelsGO <- reactiveVal(0)
     gctsGO <- reactiveVal(0)
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
-    is_spectronaut_reactive        <- reactiveVal(FALSE)
+    is_spectronaut_reactive        <- reactiveVal(list())
     spectronaut_condition_data     <- reactiveVal(NULL)
     spectronaut_processed_data     <- reactiveVal(NULL)
     preview_data_reactive          <- reactiveVal(NULL)
+    spectronaut_parse_place        <- reactiveVal(1)
 
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
@@ -902,8 +903,18 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         ))
       }
 
-      # Move to identifier column selection
-      csvExcelIdentifierSelection(labels)
+      # Collect per-file Spectronaut flags
+      spectronaut_flags <- setNames(
+        sapply(accumulated_files()$name, function(f) isTRUE(input[[paste0("is_spectronaut_", f)]])),
+        accumulated_files()$name
+      )
+      is_spectronaut_reactive(spectronaut_flags)
+
+      if (any(spectronaut_flags)) {
+        csvExcelSpectronautParseStep(labels, spectronaut_flags, place = 1)
+      } else {
+        csvExcelIdentifierSelection(labels)
+      }
     })
 
     # Identifier column selection step
@@ -950,8 +961,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
 
-      # Move to Spectronaut step (which may proceed to exp design)
-      csvExcelSpectronautStep(identifier_columns)
+      csvExcelExpDesignSetup(identifier_columns)
     })
 
     # Experimental design setup step
@@ -969,34 +979,52 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                   class = "btn btn-default")})
     }
 
-    # Spectronaut preprocessing step
-    csvExcelSpectronautStep <- function(identifier_columns) {
-      # Read column names from first uploaded file for UI
-      first_file <- accumulated_files()[1, ]
-      file_ext <- tools::file_ext(tolower(first_file$name))
+    # Spectronaut per-file parse step
+    csvExcelSpectronautParseStep <- function(labels, spectronaut_flags, place) {
+      spectronaut_indices <- which(spectronaut_flags)
+      current_file_idx <- spectronaut_indices[place]
+      current_file <- accumulated_files()[current_file_idx, ]
+      current_label <- labels[current_file_idx]
+      file_ext <- tools::file_ext(tolower(current_file$name))
+
       data_columns <- tryCatch({
-        preview <- read_uploaded_data_preview(first_file$datapath, file_ext, n_max = 1)
+        preview <- read_uploaded_data_preview(current_file$datapath, file_ext, n_max = 1)
         if (!is.null(preview)) names(preview) else character(0)
       }, error = function(e) character(0))
 
       output$sideBarMain <- renderUI({
         tagList(
-          checkboxInput(ns("is_spectronaut"),
-                        "This is a Spectronaut pivot report",
-                        value = isTRUE(is_spectronaut_reactive())),
-          conditionalPanel(
-            condition = paste0("input['", ns("is_spectronaut"), "']"),
-            spectronautSetupUI(ns = ns, data_columns = data_columns)
-          )
+          h4(paste0("Parse Spectronaut Report: ", current_label,
+                    " (", place, " of ", length(spectronaut_indices), ")")),
+          spectronautSetupUI(ns = ns, data_columns = data_columns)
         )
       })
-      output$rightButton <- renderUI({
-        actionButton(ns("submitSpectronautStepButton"), "Next", class = "btn btn-primary")
-      })
-      output$leftButton <- renderUI({
-        actionButton(ns("backToCSVExcelIdentifiersButton"), "Back",
-                     icon = icon("chevron-left"), class = "btn btn-default")
-      })
+
+      if (place == 1) {
+        output$leftButton <- renderUI({
+          actionButton(ns("backToCSVExcelLabelsButton"), "Back",
+                       icon = icon("chevron-left"), class = "btn btn-default")
+        })
+      } else {
+        output$leftButton <- renderUI({
+          actionButton(ns("backSpectronautParseButton"), "Back",
+                       icon = icon("chevron-left"), class = "btn btn-default")
+        })
+      }
+
+      if (place == length(spectronaut_indices)) {
+        output$rightButton <- renderUI({
+          actionButton(ns("submitSpectronautParseButton"), "Preprocess & Continue",
+                       class = "btn btn-primary")
+        })
+      } else {
+        output$rightButton <- renderUI({
+          actionButton_icon_right(ns("submitSpectronautParseButton"), "Next File",
+                                  icon = icon("chevron-right"))
+        })
+      }
+
+      spectronaut_parse_place(place)
     }
 
     # Handle condition setup file upload
@@ -1036,60 +1064,56 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       })
     })
 
-    # Handle Spectronaut step submission
-    observeEvent(input$submitSpectronautStepButton, {
-      is_spectronaut_reactive(isTRUE(input$is_spectronaut))
+    # Handle Spectronaut parse step submission
+    observeEvent(input$submitSpectronautParseButton, {
+      flags <- is_spectronaut_reactive()
+      spectronaut_indices <- which(flags)
+      place <- spectronaut_parse_place()
+      current_file_idx <- spectronaut_indices[place]
+      current_file <- accumulated_files()[current_file_idx, ]
+      file_ext <- tools::file_ext(tolower(current_file$name))
 
-      if (isTRUE(input$is_spectronaut)) {
-        # Validate and preprocess
-        withProgress(message = "Preprocessing Spectronaut data...", {
-          tryCatch({
-            processed_list <- list()
-            for (i in seq_len(nrow(accumulated_files()))) {
-              file_path <- accumulated_files()$datapath[i]
-              file_ext  <- tools::file_ext(tolower(accumulated_files()$name[i]))
-              data <- read_uploaded_data_preview(file_path, file_ext, n_max = Inf)
-              if (is.null(data)) stop("Could not read file: ", accumulated_files()$name[i])
+      labels <- sapply(accumulated_files()$name, function(f) input[[paste0('CSVExcelLabel_', f)]])
+      current_label <- labels[current_file_idx]
 
-              # Create protigy_id if requested
-              if (isTRUE(input$spectronaut_create_id) &&
-                  !is.null(input$spectronaut_id_source_column) &&
-                  input$spectronaut_id_source_column %in% names(data)) {
-                sep <- if (nchar(trimws(input$spectronaut_id_separator)) > 0)
-                  input$spectronaut_id_separator else ";"
-                data <- extract_protigy_id(data, input$spectronaut_id_source_column, sep)
-              }
+      processed <- tryCatch({
+        full_data <- read_uploaded_data_preview(current_file$datapath, file_ext, n_max = Inf)
+        if (!is.null(spectronaut_condition_data())) {
+          apply_spectronaut_condition_setup(full_data, spectronaut_condition_data(),
+                                            input$spectronaut_quant_suffix)
+        } else {
+          full_data
+        }
+      }, error = function(e) {
+        showNotification(HTML(paste0("<b>Error preprocessing:</b><br>", e$message)),
+                         type = "error", duration = NULL, closeButton = TRUE)
+        NULL
+      })
 
-              # Apply condition setup if provided
-              if (isTRUE(input$spectronaut_use_condition_setup) &&
-                  !is.null(spectronaut_condition_data()) &&
-                  !is.null(input$spectronaut_quant_suffix)) {
-                data <- apply_spectronaut_condition_setup(
-                  data,
-                  spectronaut_condition_data(),
-                  input$spectronaut_quant_suffix,
-                  isTRUE(input$spectronaut_merge_condition_replicate)
-                )
-              }
+      if (is.null(processed)) return()
 
-              processed_list[[i]] <- data
-              setProgress(i / nrow(accumulated_files()))
-            }
-            spectronaut_processed_data(processed_list)
-            preview_data_reactive(processed_list[[1]])
-          }, error = function(e) {
-            showNotification(
-              ui = HTML(paste0("<b>Spectronaut preprocessing error:</b><br>", e$message)),
-              type = "error", duration = NULL, closeButton = TRUE
-            )
-            return()
-          })
-        })
+      current_data <- spectronaut_processed_data()
+      if (is.null(current_data)) current_data <- list()
+      current_data[[current_label]] <- processed
+      spectronaut_processed_data(current_data)
+
+      if (place < length(spectronaut_indices)) {
+        csvExcelSpectronautParseStep(labels, flags, place + 1)
+      } else {
+        csvExcelIdentifierSelection(labels)
       }
+    })
 
-      # Proceed to experimental design setup
-      identifier_columns <- csvExcel_identifier_columns_reactive()
-      csvExcelExpDesignSetup(identifier_columns)
+    # Handle back navigation within Spectronaut parse steps
+    observeEvent(input$backSpectronautParseButton, {
+      flags <- is_spectronaut_reactive()
+      place <- spectronaut_parse_place()
+      labels <- sapply(accumulated_files()$name, function(f) input[[paste0('CSVExcelLabel_', f)]])
+      if (place > 1) {
+        csvExcelSpectronautParseStep(labels, flags, place - 1)
+      } else {
+        csvExcelLabelAssignment()
+      }
     })
 
     # Live preview: update when create_id options change
@@ -1263,13 +1287,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
               input[[paste0('CSVExcelLabel_', file)]]
             })
 
-            # Use pre-processed data if Spectronaut preprocessing was applied
-            files_to_process <- if (isTRUE(is_spectronaut_reactive()) && !is.null(spectronaut_processed_data())) {
-              spectronaut_processed_data()
-            } else {
-              NULL
-            }
-            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(accumulated_files(), exp_design, identifier_columns, labels, preprocessed_data = files_to_process)
+            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(
+              accumulated_files(), exp_design, identifier_columns, labels,
+              preprocessed_data = spectronaut_processed_data()
+            )
             
             setProgress(0.8, detail = "Setting up analysis parameters")
             

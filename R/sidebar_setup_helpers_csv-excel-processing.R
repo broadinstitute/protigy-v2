@@ -8,11 +8,14 @@ csvExcelLabelSetupUI <- function(ns, dataFileNames) {
   tagList(
     h4('Assign labels'),
     lapply(dataFileNames, function(file) {
-      add_css_attributes(
-        textInput(inputId = ns(paste0('CSVExcelLabel_', file)),
-                  label = file,
-                  placeholder = "Proteome, Phosphoproteome, etc."),
-        classes = "small-input")
+      tagList(
+        add_css_attributes(
+          textInput(inputId = ns(paste0('CSVExcelLabel_', file)),
+                    label = file,
+                    placeholder = "Proteome, Phosphoproteome, etc."),
+          classes = "small-input"),
+        checkboxInput(ns(paste0("is_spectronaut_", file)), "Spectronaut pivot report", value = FALSE)
+      )
     })
   )
 }
@@ -162,8 +165,8 @@ processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experime
 
     tryCatch({
       # Use pre-processed data if provided (e.g. from Spectronaut preprocessing)
-      if (!is.null(preprocessed_data) && i <= length(preprocessed_data)) {
-        data <- preprocessed_data[[i]]
+      if (!is.null(preprocessed_data) && !is.null(preprocessed_data[[label]])) {
+        data <- preprocessed_data[[label]]
       } else if (file_ext == "csv") {
         data <- readr::read_csv(file_path)
       } else if (file_ext == "tsv") {
