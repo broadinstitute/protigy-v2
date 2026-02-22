@@ -254,18 +254,20 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
                  recurse = TRUE, root = zip_dir)
         
         # Show notification for exports that succeeded and errored
-        showNotification(
-          ui = HTML(paste0(
+        if (length(error_exports) == 0) {
+          notification_ui <- HTML("<div>Analysis results successfully saved!</div>")
+        } else {
+          notification_ui <- HTML(paste0(
             "<div style='text-align: left'>",
-            strong("Successfully saved:"), br(),
-            "<ul><li>",
-            paste(success_exports, collapse = "</li><li>"),
-            "</li></ul>",
+            "Analysis results successfully saved!", br(), br(),
             strong("Could not save:"), br(),
             "<ul><li>",
             paste(error_exports, collapse = "</li><li>"),
             "</li></ul></div>"
-          )),
+          ))
+        }
+        showNotification(
+          ui = notification_ui,
           type = "message",
           duration = NULL,
           closeButton = TRUE
