@@ -46,18 +46,55 @@ generateExperimentalDesignTemplate <- function(dataFiles, identifierColumn = NUL
   return(template)
 }
 
-# Validate experimental design template
+#' Validate an experimental design data frame
+#'
+#' Checks that the \code{columnName} column exists, contains no NA values, and
+#' has no duplicate entries. NA values in factor/metadata columns are intentionally
+#' permitted — rows where all factor columns are NA represent feature annotation
+#' columns (rdesc) rather than sample/data columns.
+#'
+#' @param exp_design data.frame with at least a \code{columnName} column
+#' @return \code{TRUE} invisibly if valid; otherwise throws an error
+#' @details The distinction between metadata rows and data rows:
+#'   \itemize{
+#'     \item \strong{Metadata rows} (rdesc): all factor columns are NA. These become
+#'       row descriptor columns in the GCT object, containing feature annotations like
+#'       gene symbols, protein descriptions, etc.
+#'     \item \strong{Data rows} (sample columns): at least one factor column has a
+#'       non-NA value. These become sample columns in the GCT matrix.
+#'   }
+#'   Only \code{columnName} NA or duplicates are true validation errors.
 validateExperimentalDesign <- function(exp_design) {
-  # Check that columnName column exists (this is the only required column)
   if (!"columnName" %in% names(exp_design)) {
     stop("Missing required column: columnName")
   }
-  
-  # Check for empty string throughout the dataframe
-  if (any(exp_design == "", na.rm = TRUE)) {
-    stop("Missing or empty values found in experimental design.")
+
+  # columnName itself must not contain NA (each row must identify what it is)
+  na_colname_rows <- which(is.na(exp_design$columnName))
+  if (length(na_colname_rows) > 0) {
+    stop("The 'columnName' column has NA values in row(s): ",
+         paste(na_colname_rows, collapse = ", "),
+         ". Every row must have a columnName value.")
   }
-  
+
+  # Duplicate columnNames are not allowed
+  dupes <- exp_design$columnName[duplicated(exp_design$columnName)]
+  if (length(dupes) > 0) {
+    stop("Duplicate values found in 'columnName': ", paste(unique(dupes), collapse = ", "))
+  }
+
+  # Identify and log column types based on NA pattern in factor columns.
+  # Metadata columns: all factor columns are NA → rdesc/feature annotation.
+  # Data columns: at least one factor column is non-NA → sample/data.
+  factor_cols <- setdiff(names(exp_design), "columnName")
+  if (length(factor_cols) > 0) {
+    is_metadata_row <- apply(exp_design[, factor_cols, drop = FALSE], 1, function(row) all(is.na(row)))
+    n_metadata <- sum(is_metadata_row)
+    n_data <- sum(!is_metadata_row)
+    message("Experimental design: ", n_data, " data/sample column(s), ",
+            n_metadata, " metadata/annotation column(s).")
+  }
+
   return(TRUE)
 }
 
@@ -82,6 +119,9 @@ readExperimentalDesign <- function(file_path) {
       stop("Unsupported file format: ", file_ext, ". Supported formats are CSV, TSV, SSV, and Excel.")
     }
     
+    # Replace empty strings with NA so metadata-only rows don't fail validation
+    exp_design[exp_design == ""] <- NA
+
     # Validate the experimental design
     validateExperimentalDesign(exp_design)
     

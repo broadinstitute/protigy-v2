@@ -77,6 +77,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     labelsGO <- reactiveVal(0)
     gctsGO <- reactiveVal(0)
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
+    exp_design_df                  <- reactiveVal(NULL)
+    show_exp_design_panel          <- reactiveVal(FALSE)
     is_spectronaut_reactive        <- reactiveVal(list())
     spectronaut_condition_data     <- reactiveVal(NULL)
     spectronaut_processed_data     <- reactiveVal(NULL)
@@ -702,6 +704,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # process GCTs 
     observeEvent(input$submitGCTButton, {
+      shinyjs::runjs("$('#data-preview-content').hide(); $('#toggleDataPreview').text('Show');")
       parameters <- parameters_internal_reactive()
       GCTs <- GCTs_unprocessed_internal_reactive()
       
@@ -943,12 +946,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # Handle identifier column submission
     observeEvent(input$submitCSVExcelIdentifiersButton, {
       # Collect identifier columns for each file
-      identifier_columns <- sapply(seq_len(nrow(accumulated_files())), function(i) {
+      # Use lapply (not sapply) to preserve NULLs when a selectInput was never rendered
+      identifier_columns <- lapply(seq_len(nrow(accumulated_files())), function(i) {
         input[[paste0("identifierColumn_", i)]]
       })
 
       # Validate identifier columns
-      if (any(is.null(identifier_columns)) || any(identifier_columns == "")) {
+      if (any(sapply(identifier_columns, is.null)) || any(identifier_columns == "")) {
         showNotification(
           ui = HTML(paste0("<b>Error</b><br>", "Please select identifier columns for all datasets.")),
           type = "error",
@@ -958,6 +962,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         return()
       }
 
+      # Convert to character vector now that NULLs are confirmed absent
+      identifier_columns <- unlist(identifier_columns)
+
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
 
@@ -966,12 +973,26 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
     # Experimental design setup step
     csvExcelExpDesignSetup <- function(identifier_columns) {
+      # Initialise the inline table with sample names and default Condition/Replicate columns
+      sample_names <- template_sample_names()
+      exp_design_df(data.frame(
+        columnName = sample_names,
+        Condition  = rep(NA_character_, length(sample_names)),
+        Replicate  = rep(NA_character_, length(sample_names)),
+        stringsAsFactors = FALSE
+      ))
 
-      output$sideBarMain <- renderUI({csvExcelExpDesignSetupUI(ns = ns,
-                                                      dataFiles = accumulated_files(),
-                                                              labels = sapply(accumulated_files()$name, function(file) {
-                                                                input[[paste0('CSVExcelLabel_', file)]]
-                                                              }))})
+      show_exp_design_panel(TRUE)
+      output$sideBarMain <- renderUI({
+        df <- exp_design_df()
+        if (!is.null(df) && ncol(df) > 1) {
+          actionButton(ns("processCSVExcel"), "Process Files",
+                       class = "btn btn-primary btn-block")
+        } else {
+          p(style = "color:#888; font-size:0.9em;",
+            "Fill in the Experimental Design table, then click Process Files.")
+        }
+      })
       output$rightButton <- NULL
       output$leftButton <- renderUI({actionButton(ns("backToCSVExcelIdentifiersButton"),
                                                   "Back",
@@ -1080,7 +1101,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         full_data <- read_uploaded_data_preview(current_file$datapath, file_ext, n_max = Inf)
         if (!is.null(spectronaut_condition_data())) {
           apply_spectronaut_condition_setup(full_data, spectronaut_condition_data(),
-                                            input$spectronaut_quant_suffix)
+                                            input$spectronaut_quant_suffix,
+                                            isTRUE(input$spectronaut_merge_condition_replicate))
         } else {
           full_data
         }
@@ -1172,6 +1194,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     output$showDataPreview <- reactive({ !is.null(preview_data_reactive()) })
     outputOptions(output, "showDataPreview", suspendWhenHidden = FALSE)
 
+    output$showExpDesignPanel <- reactive({ isTRUE(show_exp_design_panel()) })
+    outputOptions(output, "showExpDesignPanel", suspendWhenHidden = FALSE)
+
+    output$expDesignPanelContent <- renderUI({
+      req(show_exp_design_panel())
+      csvExcelExpDesignSetupUI(ns = ns)
+    })
+
     # Update preview when files are first uploaded
     observeEvent(accumulated_files(), {
       req(accumulated_files())
@@ -1187,12 +1217,101 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     })
 
     observeEvent(input$backToCSVExcelIdentifiersButton, {
+      show_exp_design_panel(FALSE)
       labels <- sapply(accumulated_files()$name, function(file) {
         input[[paste0('CSVExcelLabel_', file)]]
       })
       csvExcelIdentifierSelection(labels)
     })
-    
+
+    ### INLINE EXPERIMENTAL DESIGN TABLE ###
+
+    # Render editable rhandsontable (supports clipboard paste and fill-down)
+    output$exp_design_table <- rhandsontable::renderRHandsontable({
+      req(exp_design_df())
+      df <- exp_design_df()
+
+      ht <- rhandsontable::rhandsontable(
+        df,
+        rowHeaders  = NULL,
+        useTypes    = FALSE,
+        stretchH    = "all",
+        contextMenu = TRUE,
+        width       = "100%"
+      )
+
+      # Make first column (columnName) read-only with gray background
+      ht <- rhandsontable::hot_col(ht, col = 1, readOnly = TRUE,
+                                   renderer = "function(instance, td, row, col, prop, value, cellProperties) {
+                                     Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                     td.style.background = '#f5f5f5';
+                                     td.style.color = '#666';
+                                     return td;
+                                   }")
+      ht
+    })
+
+    # Sync table edits back to exp_design_df (entire table sent on every change)
+    observeEvent(input$exp_design_table, {
+      req(input$exp_design_table)
+      new_df <- rhandsontable::hot_to_r(input$exp_design_table)
+      # Protect columnName from user edits (read-only in widget, belt-and-suspenders).
+      # Only apply if row counts match — a mismatch means the widget is stale from a
+      # prior render cycle (e.g. after navigating Back and re-entering this step) and
+      # the update should be ignored to avoid a replacement-length crash.
+      current <- isolate(exp_design_df())
+      if (!is.null(current) && nrow(new_df) == nrow(current)) {
+        new_df[[1]] <- current[[1]]
+        exp_design_df(new_df)
+      }
+    }, ignoreInit = TRUE)
+
+    # Add factor column
+    observeEvent(input$add_factor_col, {
+      req(nchar(trimws(input$new_factor_name)) > 0)
+      col_name <- trimws(input$new_factor_name)
+      df <- exp_design_df()
+      if (!is.null(df) && !col_name %in% names(df)) {
+        df[[col_name]] <- NA_character_
+        exp_design_df(df)
+      }
+      updateTextInput(session, "new_factor_name", value = "")
+    })
+
+    # Render remove-column selector (only shows user-added columns)
+    output$remove_factor_col_ui <- renderUI({
+      df <- exp_design_df()
+      removable <- setdiff(names(df), c("columnName", "Condition", "Replicate"))
+      if (length(removable) == 0) return(NULL)
+      div(
+        style = "display:flex; gap:4px; align-items:center;",
+        selectInput(ns("remove_factor_col_select"), label = NULL,
+                    choices = removable, width = "120px"),
+        actionButton(ns("remove_factor_col"), "Remove", class = "btn btn-danger btn-sm")
+      )
+    })
+
+    # Remove factor column via Remove button
+    observeEvent(input$remove_factor_col, {
+      col_name <- input$remove_factor_col_select
+      df <- exp_design_df()
+      if (!is.null(df) && col_name %in% names(df) && col_name != "columnName") {
+        df[[col_name]] <- NULL
+        exp_design_df(df)
+      }
+    })
+
+    # CSV upload populates the inline table
+    observeEvent(input$expDesignFile, {
+      req(input$expDesignFile)
+      tryCatch({
+        uploaded <- readExperimentalDesign(input$expDesignFile$datapath)
+        exp_design_df(as.data.frame(uploaded))
+      }, error = function(e) {
+        showNotification(paste("Upload error:", e$message), type = "error")
+      })
+    })
+
     # Create a reactive to store sample names for template generation
     template_sample_names <- reactive({
       req(accumulated_files())
@@ -1227,38 +1346,35 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     })
     
     # Download handler for experimental design template
+    # Uses the current inline table state so any added columns and filled values are included
     output$downloadExpDesignTemplate <- downloadHandler(
       filename = "experimental_design_template.csv",
       content = function(file) {
-        # Get sample names from reactive
-        sample_names <- template_sample_names()
-        
-        # Create template data frame with columnName, Experiment, and Group columns
-        template_df <- data.frame(
-          columnName = sample_names,
-          Experiment = rep("", length(sample_names)),
-          Group = rep("", length(sample_names)),
+        df <- exp_design_df()
+        if (is.null(df)) {
+          # Fallback: plain columnName template
+          sample_names <- template_sample_names()
+          df <- data.frame(
+            columnName = sample_names,
+            Condition  = rep("", length(sample_names)),
+            Replicate  = rep("", length(sample_names)),
             stringsAsFactors = FALSE
           )
-          
-        # Write the template to file
-        write.csv(template_df, file, row.names = FALSE)
+        }
+        # Replace NAs with empty strings for a cleaner CSV template
+        df[is.na(df)] <- ""
+        readr::write_csv(df, file)
       }
     )
-    
-    # Reactive output to control process button visibility for CSV/Excel
-    output$expDesignFileUploaded <- reactive({
-      return(!is.null(input$expDesignFile))
-    })
-    outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
     
     
     
 
-    # Process CSV/Excel data when experimental design is uploaded
+    # Process CSV/Excel data when experimental design is ready
     observeEvent(input$processCSVExcel, {
-      req(input$expDesignFile)
-      
+      shinyjs::runjs("$('#data-preview-content').hide(); $('#toggleDataPreview').text('Show');")
+      req(exp_design_df())
+
       my_shinyalert_tryCatch(
         text.error = "<b>CSV/Excel Processing Error:</b>",
         append.error = TRUE,
@@ -1268,10 +1384,21 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           # Process CSV/Excel files with progress indication
           withProgress(message = "Processing CSV/Excel files...", {
             setProgress(0.2, detail = "Reading experimental design")
-            
-            # Read experimental design
-            exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
-            
+
+            # Use the inline table state as the experimental design
+            # Normalize blank/NA-string cells so metadata-only rows are correctly
+            # excluded from sample classification. rhandsontable round-trips R NA
+            # as the string "NA" (useTypes = FALSE), so we must handle both.
+            exp_design <- exp_design_df()
+            exp_design[exp_design == ""]   <- NA
+            exp_design[exp_design == "NA"] <- NA
+
+            # Guard: columnName column must not contain NA after normalization
+            if ("columnName" %in% names(exp_design) && any(is.na(exp_design$columnName))) {
+              stop("The experimental design has empty/missing values in the 'columnName' column. ",
+                   "Every row must have a valid column name.")
+            }
+
             setProgress(0.5, detail = "Converting data to analysis format")
             
             # Process CSV/Excel files with per-dataset identifier columns
@@ -1337,6 +1464,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           ")
           
           # Trigger the standard parameter setup workflow (same as GCT files)
+          show_exp_design_panel(FALSE)
           labelsGO(labelsGO() + 1)
         }
       )

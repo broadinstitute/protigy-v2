@@ -58,6 +58,20 @@ app_UI <- function(request) {dashboardPage(
       });
     ")),
 
+    # Experimental design panel - shown during CSV/Excel experimental design step
+    conditionalPanel(
+      condition = "output['setupSidebar-showExpDesignPanel']",
+      div(id = "exp-design-panel", style = "padding: 10px 15px;",
+          uiOutput("setupSidebar-expDesignPanelContent")
+      )
+    ),
+
+    # Separator between experimental design and data preview
+    conditionalPanel(
+      condition = "output['setupSidebar-showDataPreview']",
+      hr(style = "margin: 8px 15px;")
+    ),
+
     # Data preview panel - shown when a CSV/Excel file is uploaded
     conditionalPanel(
       condition = "output.showDataPreview",
@@ -70,6 +84,11 @@ app_UI <- function(request) {dashboardPage(
         div(id = "data-preview-content",
             DT::DTOutput("setupSidebar-dataPreviewTable"))
       )
+    ),
+
+    conditionalPanel(
+      condition = "output['setupSidebar-showDataPreview']",
+      div(style = "padding-top: 20px;")
     ),
 
     navbarPage(

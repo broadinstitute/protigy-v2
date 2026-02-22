@@ -56,7 +56,8 @@ Imports:
     snakecase,
     shinyjs,
     future,
-    furrr
+    furrr,
+    rhandsontable
 Depends:
     R (>= 4.0.0),
     shiny

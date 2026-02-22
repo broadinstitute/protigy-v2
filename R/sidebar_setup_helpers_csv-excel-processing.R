@@ -85,66 +85,40 @@ csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels) {
   )
 }
 
-# UI function for experimental design template download and upload
-csvExcelExpDesignSetupUI <- function(ns, dataFiles, labels) {
+# UI function for experimental design inline editor + optional CSV upload fallback
+csvExcelExpDesignSetupUI <- function(ns) {
   tagList(
-    h4('Experimental Design'),
-    
-    # Template download section
+    h4("Experimental Design"),
+
+    # Add / remove factor column controls
     div(
-      style = "font-weight: bold; font-size: 16px; margin-bottom: 10px;",
-      'Download Template'
+      style = "display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:10px;",
+      textInput(ns("new_factor_name"), label = NULL, placeholder = "Factor name..."),
+      actionButton(ns("add_factor_col"), "Add Factor Column", class = "btn btn-default btn-sm"),
+      uiOutput(ns("remove_factor_col_ui"))
     ),
-    p('Download a template experimental design file that you can fill in with your sample information.'),
-    
-    div(
-      class = "small-input",
-      downloadButton(
-        outputId = ns("downloadExpDesignTemplate"),
-        label = "Download Template",
-        class = "btn btn-primary"
-      )
-    ),
-    
+
+    # Editable spreadsheet table
+    rhandsontable::rHandsontableOutput(ns("exp_design_table")),
+
     hr(),
-    
-    # Experimental design upload section
-    div(
-      style = "font-weight: bold; font-size: 16px; margin-bottom: 10px;",
-      'Upload Experimental Design'
+
+    # Upload fallback section
+    tags$p(
+      tags$strong("Or upload a file (CSV / TSV / Excel)"),
+      style = "font-size:15px; margin-top:14px; margin-bottom:8px;"
     ),
-    p('Upload your completed experimental design file (CSV, TSV, SSV, or Excel format).'),
-    
-    fileInput(
-      inputId = ns("expDesignFile"),
-      label = "Choose experimental design file:",
-      accept = c(".csv", ".tsv", ".ssv", ".xlsx", ".xls"),
-      placeholder = "No file selected"
-    ),
-    
-    hr(),
-    
-    # Process button (will be shown when experimental design is uploaded)
-    div(
-      id = ns("processButtonContainer"),
-      style = "display: none;",
-      actionButton(
-        inputId = ns("processCSVExcel"),
-        label = "Process Files",
-        class = "btn btn-primary"
+    p("Download a pre-filled template based on your sample names, edit externally, then upload."),
+    downloadButton(ns("downloadExpDesignTemplate"), "Download Template",
+                   class = "btn btn-primary btn-sm"),
+    div(style = "margin-top:10px;",
+      fileInput(
+        ns("expDesignFile"),
+        label = "Upload completed design:",
+        accept = c(".csv", ".tsv", ".ssv", ".xlsx", ".xls"),
+        placeholder = "No file selected"
       )
-    ),
-    
-    # JavaScript to show/hide process button based on file upload
-    tags$script(HTML(paste0("
-      $(document).on('change', '#", ns("expDesignFile"), "', function() {
-        if (this.files.length > 0) {
-          $('#", ns("processButtonContainer"), "').show();
-        } else {
-          $('#", ns("processButtonContainer"), "').hide();
-        }
-      });
-    ")))
+    )
   )
 }
 
@@ -168,17 +142,28 @@ processCSVExcelWorkflowWithPerDatasetIdentifiers <- function(dataFiles, experime
       if (!is.null(preprocessed_data) && !is.null(preprocessed_data[[label]])) {
         data <- preprocessed_data[[label]]
       } else if (file_ext == "csv") {
-        data <- readr::read_csv(file_path)
+        data <- readr::read_csv(file_path, show_col_types = FALSE)
       } else if (file_ext == "tsv") {
-        data <- readr::read_tsv(file_path)
+        data <- readr::read_tsv(file_path, show_col_types = FALSE)
       } else if (file_ext == "ssv") {
-        data <- readr::read_delim(file_path, delim = ";")
+        data <- readr::read_delim(file_path, delim = ";", show_col_types = FALSE)
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {
         stop("Unsupported file format: ", file_ext)
       }
       
+      # Warn if experimental design lists samples not found in data file
+      design_samples <- experimentalDesign$columnName[!is.na(experimentalDesign$columnName)]
+      data_cols <- setdiff(colnames(data), identifier_col)
+      missing_from_data <- setdiff(design_samples, data_cols)
+      if (length(missing_from_data) > 0) {
+        warning("[", file_name, "] ", length(missing_from_data),
+                " sample(s) in experimental design not found in data: ",
+                paste(head(missing_from_data, 5), collapse = ", "),
+                if (length(missing_from_data) > 5) "..." else "")
+      }
+
       # Convert to GCT object with specific identifier column
       gct_obj <- convertToGCT(data, experimentalDesign, file_name, identifier_col)
       
@@ -220,11 +205,11 @@ processCSVExcelFiles <- function(dataFiles, experimentalDesign, identifierColumn
     tryCatch({
       # Read the data file
       if (file_ext == "csv") {
-        data <- readr::read_csv(file_path)
+        data <- readr::read_csv(file_path, show_col_types = FALSE)
       } else if (file_ext == "tsv") {
-        data <- readr::read_tsv(file_path)
+        data <- readr::read_tsv(file_path, show_col_types = FALSE)
       } else if (file_ext == "ssv") {
-        data <- readr::read_delim(file_path, delim = ";")
+        data <- readr::read_delim(file_path, delim = ";", show_col_types = FALSE)
       } else if (file_ext %in% c("xlsx", "xls")) {
         data <- readxl::read_excel(file_path)
       } else {
@@ -284,9 +269,13 @@ validateIdentifierColumn <- function(data, identifierColumn) {
 }
 
 
-# Validate that identifier column has unique values
-# INPUT: data.frame, identifier column name
-# OUTPUT: TRUE if valid, throws error if duplicates found
+#' Validate that identifier column has unique values
+#'
+#' @param data data.frame containing the identifier column
+#' @param identifier_column character name of the identifier column to validate
+#' @return \code{TRUE} invisibly if valid; otherwise throws an error
+#' @details Errors if the identifier column contains any NA values (all feature IDs
+#'   must be non-missing). Also errors on duplicate or empty string values.
 validateUniqueIdentifiers <- function(data, identifier_column) {
   if (!identifier_column %in% colnames(data)) {
     stop("Identifier column '", identifier_column, "' not found in data")
@@ -296,7 +285,14 @@ validateUniqueIdentifiers <- function(data, identifier_column) {
   
   # Remove NA values for duplicate checking
   non_na_values <- identifier_values[!is.na(identifier_values)]
-  
+
+  # Reject rows where identifier is NA
+  na_count <- sum(is.na(identifier_values))
+  if (na_count > 0) {
+    stop("Identifier column '", identifier_column, "' has ", na_count,
+         " NA/missing value(s). All feature IDs must be non-missing.")
+  }
+
   # Check for duplicates
   if (any(duplicated(non_na_values))) {
     duplicate_values <- non_na_values[duplicated(non_na_values)]
@@ -324,6 +320,10 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
   
   # Get feature IDs from the determined identifier column
   feature_id_col <- which(colnames(data) == final_identifier_column)
+  if (length(feature_id_col) == 0) {
+    stop("Identifier column '", final_identifier_column, "' not found in data after preprocessing. ",
+         "The column may have been removed during Spectronaut preprocessing.")
+  }
   feature_ids <- data[[feature_id_col]]
   
   # Get all sample IDs from data (all columns except identifier column)
@@ -333,7 +333,22 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
   column_classification <- classifyColumns(all_sample_ids, experimentalDesign)
   experimental_sample_ids <- column_classification$sample_columns
   rdesc_columns <- column_classification$rdesc_columns
-  
+
+  # Surface diagnostics about column classification
+  n_not_found <- column_classification$n_not_in_design
+  n_metadata  <- column_classification$n_all_na_meta
+  n_samples   <- length(experimental_sample_ids)
+
+  if (n_not_found > 0) {
+    message("[", file_name, "] ", n_not_found,
+            " column(s) not in experimental design \u2192 moved to feature metadata (rdesc).")
+  }
+  if (n_metadata > 0) {
+    message("[", file_name, "] ", n_metadata,
+            " column(s) found in design but all metadata values are NA \u2192 treated as feature metadata (rdesc).")
+  }
+  message("[", file_name, "] ", n_samples, " sample column(s) identified.")
+
   # Check if we have any experimental columns
   if (length(experimental_sample_ids) == 0) {
     stop("No experimental columns found with valid metadata for file: ", file_name)
@@ -368,13 +383,14 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
     stringsAsFactors = FALSE
   )
   rownames(rdesc) <- feature_ids
-  
-  # Add rdesc columns (metadata columns that should be in rdesc)
-  if (length(rdesc_columns) > 0) {
-    rdesc_data <- data[, c(feature_id_col, which(colnames(data) %in% rdesc_columns)), drop = FALSE]
-    for (col in rdesc_columns) {
-      rdesc[[col]] <- rdesc_data[[col]]
-    }
+
+  # Add ALL non-numeric, non-sample, non-identifier columns to rdesc
+  all_cols <- colnames(data)
+  sample_and_id_cols <- c(all_cols[feature_id_col], experimental_sample_ids)
+  candidate_rdesc_cols <- setdiff(all_cols, sample_and_id_cols)
+
+  for (col in candidate_rdesc_cols) {
+    rdesc[[col]] <- data[[col]]
   }
   
   
@@ -385,15 +401,27 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
   gct_obj <- cmapR::GCT(
     mat = data_matrix,
     rdesc = rdesc,
-    cdesc = cdesc
+    cdesc = cdesc,
+    rid = rownames(data_matrix)
   )
   
   return(gct_obj)
 }
 
-# Classify columns as either sample columns or rdesc columns based on experimental design
-# INPUT: sample IDs from data file, experimental design
-# OUTPUT: list with sample_columns and rdesc_columns vectors
+#' Classify columns as sample columns or row descriptor (rdesc) columns
+#'
+#' @param sample_ids character vector of column names from the data file (excluding the identifier column)
+#' @param experimentalDesign data.frame with at least a \code{columnName} column
+#' @return Named list with: \code{sample_columns} (character vector of data/sample columns),
+#'   \code{rdesc_columns} (character vector of metadata/annotation columns),
+#'   \code{n_not_in_design} (integer count of columns absent from experimental design),
+#'   \code{n_all_na_meta} (integer count of columns in design with all-NA factor values).
+#' @details A column is classified as a \strong{data/sample column} if its entry in the
+#'   experimental design has at least one non-NA, non-empty value in the factor columns.
+#'   A column is classified as a \strong{metadata/rdesc column} if: (a) it is not present
+#'   in the experimental design at all, or (b) all its factor column values are NA or empty.
+#'   NAs in factor columns for rdesc rows are intentional and expected — they represent
+#'   feature annotation like protein group IDs or gene symbols, not missing data.
 classifyColumns <- function(sample_ids, experimentalDesign) {
   sample_columns <- character(0)
   rdesc_columns <- character(0)
@@ -433,8 +461,10 @@ classifyColumns <- function(sample_ids, experimentalDesign) {
   }
   
   return(list(
-    sample_columns = sample_columns,
-    rdesc_columns = rdesc_columns
+    sample_columns  = sample_columns,
+    rdesc_columns   = rdesc_columns,
+    n_not_in_design = sum(not_found),
+    n_all_na_meta   = if (exists("is_all_blank")) sum(is_all_blank) else 0L
   ))
 }
 
