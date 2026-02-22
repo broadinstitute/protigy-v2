@@ -17,3 +17,7 @@ CLAUDE.md
 # Pak lockfiles (optional, platform-specific)
 pkg.lock
 .github/pkg.lock
+
+.worktrees/
+
+firebase-debug.log
