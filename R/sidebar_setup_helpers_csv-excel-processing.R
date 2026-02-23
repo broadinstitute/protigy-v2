@@ -389,7 +389,7 @@ convertToGCT <- function(data, experimentalDesign, file_name, identifierColumn) 
   )
   rownames(rdesc) <- feature_ids
 
-  # Add ALL non-numeric, non-sample, non-identifier columns to rdesc
+  # Add all non-sample, non-identifier columns to rdesc (metadata/annotation columns)
   all_cols <- colnames(data)
   sample_and_id_cols <- c(all_cols[feature_id_col], experimental_sample_ids)
   candidate_rdesc_cols <- setdiff(all_cols, sample_and_id_cols)
@@ -465,11 +465,23 @@ classifyColumns <- function(sample_ids, experimentalDesign) {
     }
   }
   
+  # Count columns not found in design vs found but with all-NA metadata
+  n_not_in_design <- 0L
+  n_all_na_meta   <- 0L
+  for (col_name in sample_ids) {
+    exp_design_row <- experimentalDesign[experimentalDesign$columnName == col_name, ]
+    if (nrow(exp_design_row) == 0) {
+      n_not_in_design <- n_not_in_design + 1L
+    } else if (col_name %in% rdesc_columns) {
+      n_all_na_meta <- n_all_na_meta + 1L
+    }
+  }
+
   return(list(
     sample_columns  = sample_columns,
     rdesc_columns   = rdesc_columns,
-    n_not_in_design = sum(not_found),
-    n_all_na_meta   = if (exists("is_all_blank")) sum(is_all_blank) else 0L
+    n_not_in_design = n_not_in_design,
+    n_all_na_meta   = n_all_na_meta
   ))
 }
 
