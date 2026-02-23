@@ -5,6 +5,7 @@
 #' @export
 #' @rawNamespace import(shiny, except=c(dataTableOutput, renderDataTable, runExample))
 #' @import ggplot2
+#' @import ggrepel
 #' @import dplyr
 #' @import tidyr
 #' @import ComplexHeatmap
@@ -20,7 +21,7 @@
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
-#' @importFrom plotly ggplotly plotlyOutput renderPlotly style
+#' @importFrom plotly ggplotly plotlyOutput renderPlotly style add_annotations event_register event_data layout
 #' @importFrom circlize colorRamp2
 #' @importFrom colourpicker colourInput updateColourInput
 #' @importFrom shinyBS tipify
