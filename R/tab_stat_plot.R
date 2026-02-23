@@ -308,19 +308,28 @@ statPlot_Ome_Server <- function(id,
       )
     })
 
-    # Register per-protein remove button observers whenever POI list changes
+    # Register per-protein remove button observers whenever POI list changes.
+    # Track which buttons already have observers to avoid accumulating duplicates.
+    poi_observer_registry <- reactiveVal(character(0))
+
     observeEvent(proteins_of_interest(), {
-      pois <- proteins_of_interest()
-      lapply(pois, function(pid) {
+      pois     <- proteins_of_interest()
+      existing <- poi_observer_registry()
+      new_pois <- setdiff(pois, existing)
+
+      lapply(new_pois, function(pid) {
         btn_id <- paste0("remove_poi_", make.names(pid))
-        # Use local() to capture pid value correctly in loop
         local({
           pid_local <- pid
           observeEvent(input[[btn_id]], {
             proteins_of_interest(setdiff(proteins_of_interest(), pid_local))
-          }, ignoreNULL = TRUE, ignoreInit = TRUE)
+            poi_observer_registry(setdiff(poi_observer_registry(), btn_id))
+          }, ignoreNULL = TRUE, ignoreInit = TRUE, once = TRUE)
         })
       })
+
+      # Update registry with union of existing and new
+      poi_observer_registry(unique(c(existing, new_pois)))
     })
 
     # Clear all POIs
@@ -330,13 +339,13 @@ statPlot_Ome_Server <- function(id,
     })
 
     # Auto-enable POI checkbox when proteins are added to the list
-    observe({
+    observeEvent(proteins_of_interest(), {
       pois <- proteins_of_interest()
-      if (length(pois) > 0 && !"poi" %in% input$label_mode) {
+      if (length(pois) > 0 && !"poi" %in% isolate(input$label_mode)) {
         updateCheckboxGroupInput(session, "label_mode",
-          selected = unique(c(input$label_mode, "poi")))
+          selected = unique(c(isolate(input$label_mode), "poi")))
       }
-    })
+    }, ignoreNULL = FALSE)
 
     # Hidden label overflow warning
     output$hidden_labels_warning <- renderUI({
@@ -371,10 +380,17 @@ statPlot_Ome_Server <- function(id,
       matched_ids   <- character(0)
       unmatched_ids <- character(0)
 
+      # Find the id column using case-insensitive match (consistent with poi_export_function)
+      id_col <- grep("^id$", colnames(df), value = TRUE, ignore.case = TRUE)[1]
+      if (is.na(id_col)) {
+        showNotification("No 'id' column found in stat results.", type = "error", duration = 4)
+        return()
+      }
+
       for (token in query_tokens) {
         hit_rows <- df[tolower(as.character(df[[search_col]])) == tolower(token), ]
         if (nrow(hit_rows) > 0) {
-          matched_ids <- c(matched_ids, as.character(hit_rows$id))
+          matched_ids <- c(matched_ids, as.character(hit_rows[[id_col]]))
         } else {
           unmatched_ids <- c(unmatched_ids, token)
         }
