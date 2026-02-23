@@ -600,6 +600,17 @@ statSummary_Ome_Server <- function(id,
             num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
           } else {
             pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+            if (!pval_col %in% colnames(df)) {
+              return(data.frame(
+                contrast_numerator   = numerator,
+                contrast_denominator = denominator,
+                adjP_threshold       = sig_cutoff,
+                total_features       = total_features,
+                num_DE_features      = NA_integer_,
+                pct_DE_features      = NA_real_,
+                stringsAsFactors     = FALSE
+              ))
+            }
             p_vals <- as.numeric(df[[pval_col]])
             num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
           }
@@ -629,6 +640,17 @@ statSummary_Ome_Server <- function(id,
             num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
           } else {
             pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+            if (!pval_col %in% colnames(df)) {
+              return(data.frame(
+                contrast_numerator   = group_name,
+                contrast_denominator = "reference (0)",
+                adjP_threshold       = sig_cutoff,
+                total_features       = total_features,
+                num_DE_features      = NA_integer_,
+                pct_DE_features      = NA_real_,
+                stringsAsFactors     = FALSE
+              ))
+            }
             p_vals <- as.numeric(df[[pval_col]])
             num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
           }
@@ -648,6 +670,7 @@ statSummary_Ome_Server <- function(id,
 
       } else if (test_type == "Moderated F test") {
         adjP_col <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)[1]
+        req(!is.na(adjP_col))
         vals <- as.numeric(df[[adjP_col]])
         total_features <- sum(!is.na(vals))
 
@@ -655,6 +678,7 @@ statSummary_Ome_Server <- function(id,
           num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
         } else {
           pval_col <- grep("(?i)P\\.Value", colnames(df), value = TRUE, perl = TRUE)[1]
+          req(!is.na(pval_col))
           p_vals <- as.numeric(df[[pval_col]])
           num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
         }
@@ -847,6 +871,7 @@ statSummary_Ome_Server <- function(id,
       sig_stat   <- stat_params()[[ome]]$stat
 
       adjP_cols <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)
+      if (length(adjP_cols) == 0) return()
 
       summary_df <- do.call(rbind, lapply(adjP_cols, function(col) {
         if (test_type == "Two-sample Moderated T-test") {
@@ -869,6 +894,7 @@ statSummary_Ome_Server <- function(id,
           num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
         } else {
           pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+          if (!pval_col %in% colnames(df)) return(NULL)
           p_vals <- as.numeric(df[[pval_col]])
           num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
         }
@@ -885,6 +911,8 @@ statSummary_Ome_Server <- function(id,
           stringsAsFactors     = FALSE
         )
       }))
+
+      if (is.null(summary_df) || nrow(summary_df) == 0) return()
 
       write.csv(
         summary_df,
