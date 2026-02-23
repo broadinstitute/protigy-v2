@@ -1137,9 +1137,23 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           full_data <- extract_protigy_id(full_data, input$spectronaut_id_source_column, sep)
         }
         if (!is.null(spectronaut_condition_data())) {
-          apply_spectronaut_condition_setup(full_data, spectronaut_condition_data(),
-                                            input$spectronaut_quant_suffix,
-                                            isTRUE(input$spectronaut_merge_condition_replicate))
+          withCallingHandlers(
+            apply_spectronaut_condition_setup(full_data, spectronaut_condition_data(),
+                                              input$spectronaut_quant_suffix,
+                                              isTRUE(input$spectronaut_merge_condition_replicate)),
+            warning = function(w) {
+              # Intercepts replicateNAWarning emitted by buildExpDesignFromConditionSetup
+              # via apply_spectronaut_condition_setup. Coupled to the custom condition
+              # class defined in sidebar_setup_helpers_spectronaut.R.
+              if (inherits(w, "replicateNAWarning")) {
+                showNotification(
+                  ui = HTML(paste0("<b>Warning: Replicate column issue</b><br>", conditionMessage(w))),
+                  type = "warning", duration = NULL, closeButton = TRUE
+                )
+                invokeRestart("muffleWarning")
+              }
+            }
+          )
         } else {
           full_data
         }

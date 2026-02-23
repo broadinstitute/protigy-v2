@@ -52,6 +52,14 @@ read_spectronaut_condition_setup <- function(file_path) {
     stop("Condition setup file is missing required columns: ",
          paste(missing_cols, collapse = ", "))
   }
+
+  na_cols <- c("Run Label", "Condition")
+  has_na <- sapply(na_cols, function(col) any(is.na(data[[col]])))
+  if (any(has_na)) {
+    stop("NA values found in required columns: ",
+         paste(na_cols[has_na], collapse = ", "))
+  }
+
   data
 }
 
@@ -115,16 +123,13 @@ apply_spectronaut_condition_setup <- function(data, condition_setup, selected_su
   }
 
   # Build rename map for selected suffix
+  exp_design <- buildExpDesignFromConditionSetup(condition_setup, merge_condition_replicate)
+  col_names_vec <- exp_design$columnName
   rename_map <- list()
   for (i in seq_along(run_labels)) {
     old_name <- find_col(run_labels[i], selected_suffix)
     if (length(old_name) == 1L && nchar(old_name) > 0) {
-      new_name <- if (isTRUE(merge_condition_replicate)) {
-        paste0(conditions[i], "_R", replicates[i])
-      } else {
-        conditions[i]
-      }
-      rename_map[[old_name]] <- new_name
+      rename_map[[old_name]] <- col_names_vec[i]
     }
   }
 
@@ -155,6 +160,16 @@ apply_spectronaut_condition_setup <- function(data, condition_setup, selected_su
   data
 }
 
+# Construct a named warning condition for NA Replicate situations.
+# Using a custom class allows callers to intercept this specific warning
+# without fragile message-text matching.
+.replicateNAWarning <- function(message) {
+  structure(
+    class = c("replicateNAWarning", "warning", "condition"),
+    list(message = message)
+  )
+}
+
 #' Build experimental design data.frame from condition setup
 #'
 #' Produces a data.frame with columnName, Condition, Replicate (and Fraction if present)
@@ -168,8 +183,26 @@ buildExpDesignFromConditionSetup <- function(condition_data, merge_condition_rep
   conditions <- condition_data[["Condition"]]
   replicates <- condition_data[["Replicate"]]
 
+  if (any(is.na(conditions))) {
+    stop("Condition column has NA values. All rows must have a Condition.")
+  }
+
   column_names <- if (isTRUE(merge_condition_replicate)) {
-    paste0(conditions, "_R", replicates)
+    if (any(is.na(replicates))) {
+      if (length(unique(conditions)) == length(conditions)) {
+        warning(.replicateNAWarning(
+          "Replicate is NA for one or more rows. Conditions are unique; using Condition only as column names."
+        ))
+        conditions
+      } else {
+        warning(.replicateNAWarning(
+          "Replicate is NA for one or more rows. Conditions are not unique; keeping original Run Label as column names."
+        ))
+        run_labels
+      }
+    } else {
+      paste0(conditions, "_R", replicates)
+    }
   } else {
     conditions
   }

@@ -69,7 +69,7 @@ app_UI <- function(request) {dashboardPage(
     # Separator between experimental design and data preview
     conditionalPanel(
       condition = "output['setupSidebar-showDataPreview']",
-      hr(style = "margin: 8px 15px;")
+      hr(style = "margin: 4px 15px;")
     ),
 
     # Data preview panel - shown when a CSV/Excel file is uploaded

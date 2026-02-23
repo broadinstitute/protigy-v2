@@ -680,7 +680,7 @@ test_that("buildExpDesignFromConditionSetup errors on NA Condition", {
   )
 })
 
-test_that("buildExpDesignFromConditionSetup warns on NA Replicate and uses Condition-only", {
+test_that("buildExpDesignFromConditionSetup warns on NA Replicate and uses Condition-only when unique", {
   condition_data <- data.frame(
     "Run Label" = c("Run1", "Run2"),
     "Condition" = c("Control", "Treatment"),
@@ -697,8 +697,26 @@ test_that("buildExpDesignFromConditionSetup warns on NA Replicate and uses Condi
   result <- suppressWarnings(
     buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE)
   )
-  # Row with NA replicate should use Condition only
-  expect_equal(result$columnName, c("Control_R1", "Treatment"))
+  # Conditions are unique — all rows should use Condition only
+  expect_equal(result$columnName, c("Control", "Treatment"))
+})
+
+test_that("buildExpDesignFromConditionSetup uses Run Label when Conditions not unique and Replicate NA", {
+  condition_data <- data.frame(
+    "Run Label" = c("Run1", "Run2"),
+    "Condition" = c("Control", "Control"),
+    "Replicate" = c(1L, NA),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  expect_warning(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE),
+    "Replicate is NA"
+  )
+  result <- suppressWarnings(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE)
+  )
+  expect_equal(result$columnName, c("Run1", "Run2"))
 })
 
 test_that("read_spectronaut_condition_setup errors on NA in required columns", {
