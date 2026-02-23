@@ -292,10 +292,7 @@ test_that("get_volcano_cols resolves correct columns for one-sample test", {
   expect_equal(result$logfc, "logFC.GroupA")
   expect_equal(result$logp,  "Log.P.Value.GroupA")
   expect_equal(result$adjp,  "adj.P.Val.GroupA")
-  # The pval pattern "(?i)(?=.*GroupA)(?=.*P\.value\.)" also matches
-  # "Log.P.Value.GroupA" (which contains "P.Value"), and that column appears
-  # first in the data frame, so grep returns it at index [1].
-  expect_equal(result$pval,  "Log.P.Value.GroupA")
+  expect_equal(result$pval,  "P.value.GroupA")
   expect_equal(result$id,    "id")
   expect_equal(result$gs,    "geneSymbol")
 })
@@ -309,10 +306,7 @@ test_that("get_volcano_cols resolves correct columns for two-sample test", {
   expect_equal(result$logfc, "logFC.GroupA_over_GroupB")
   expect_equal(result$logp,  "Log.P.Value.GroupA_over_GroupB")
   expect_equal(result$adjp,  "adj.P.Val.GroupA_over_GroupB")
-  # The pval pattern "P\.value.*GroupA_over_GroupB" also matches
-  # "Log.P.Value.GroupA_over_GroupB" (which starts with "Log.P.Value", containing
-  # "P.Value"), and that column appears first in the data frame.
-  expect_equal(result$pval,  "Log.P.Value.GroupA_over_GroupB")
+  expect_equal(result$pval,  "P.value.GroupA_over_GroupB")
 })
 
 test_that("get_volcano_cols returns NA for id when id column is absent", {
@@ -431,4 +425,18 @@ test_that("build_volcano_df uses id as geneSymbol fallback when gs col is absent
 
   result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
   expect_equal(result$geneSymbol, result$id)
+})
+
+test_that("build_volcano_df sets all Significant to FALSE when no rows pass adj.p.val cutoff", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(2.0, -1.5, 0.1)
+  df_raw[["Log.P.Value.GroupA"]] <- c(4.0,  3.0,  1.0)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.1,  0.2,  0.5)  # none pass cutoff of 0.05
+  df_raw[["P.value.GroupA"]]     <- c(0.05, 0.1,  0.2)
+
+  cols   <- make_cols_one_sample()
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "adj.p.val")
+
+  expect_true(all(!result$Significant))
+  expect_equal(attr(result, "y_cutoff"), Inf)
 })

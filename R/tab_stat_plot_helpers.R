@@ -246,14 +246,14 @@ get_volcano_cols <- function(df, test, volcano_groups, volcano_contrasts) {
     logfc_col  <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*logFC\\.)"),       colnames(df), value = TRUE, perl = TRUE)[1]
     logp_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*Log\\.P\\.Value\\.)"), colnames(df), value = TRUE, perl = TRUE)[1]
     adjp_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val\\.)"),   colnames(df), value = TRUE, perl = TRUE)[1]
-    pval_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*P\\.value\\.)"),        colnames(df), value = TRUE, perl = TRUE)[1]
+    pval_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*(?<!Log\\.)P\\.value\\.)"), colnames(df), value = TRUE, perl = TRUE)[1]
   } else {
     groups        <- unlist(strsplit(as.character(volcano_contrasts), " / "))
     contrast_name <- regex_escape(paste0(groups[1], "_over_", groups[2]))
     logfc_col  <- grep(paste0("logFC.*", contrast_name),          colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
     logp_col   <- grep(paste0("Log\\.P\\.Value.*", contrast_name), colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
     adjp_col   <- grep(paste0("adj\\.P\\.Val.*", contrast_name),   colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-    pval_col   <- grep(paste0("P\\.value.*", contrast_name),       colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
+    pval_col   <- grep(paste0("(?<!Log\\.)P\\.value.*", contrast_name), colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
   }
 
   id_col <- grep("^id$", colnames(df), value = TRUE, ignore.case = TRUE)[1]
