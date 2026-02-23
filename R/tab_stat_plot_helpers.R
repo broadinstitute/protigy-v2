@@ -227,6 +227,13 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
 # Protein Search & Labeling Helpers
 ################################################################################
 
+# Escape all PCRE metacharacters so the string can be used as a literal
+# pattern inside grep/grepl/sub/gsub with perl = TRUE.
+# Note: \\ matches literal backslash; \] matches literal ] without closing the class.
+regex_escape <- function(s) {
+  gsub(r"(([.\\|()[\]{}^$*+?#]))", "\\\\\\1", s, perl = TRUE)
+}
+
 # Resolve the stat-result column names needed for a given test/group/contrast.
 # Returns a named list: logfc_col, logp_col, adjp_col, pval_col, id_col, gs_col
 # df: stat_results()[[ome]]
@@ -235,14 +242,14 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
 # volcano_contrasts: contrast string "A / B" for two-sample test (or NULL)
 get_volcano_cols <- function(df, test, volcano_groups, volcano_contrasts) {
   if (test == "One-sample Moderated T-test") {
-    keyword    <- volcano_groups
+    keyword    <- regex_escape(volcano_groups)
     logfc_col  <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*logFC\\.)"),       colnames(df), value = TRUE, perl = TRUE)[1]
     logp_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*Log\\.P\\.Value\\.)"), colnames(df), value = TRUE, perl = TRUE)[1]
     adjp_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*adj\\.P\\.Val\\.)"),   colnames(df), value = TRUE, perl = TRUE)[1]
     pval_col   <- grep(paste0("(?i)(?=.*", keyword, ")(?=.*P\\.value\\.)"),        colnames(df), value = TRUE, perl = TRUE)[1]
   } else {
     groups        <- unlist(strsplit(as.character(volcano_contrasts), " / "))
-    contrast_name <- paste0(groups[1], "_over_", groups[2])
+    contrast_name <- regex_escape(paste0(groups[1], "_over_", groups[2]))
     logfc_col  <- grep(paste0("logFC.*", contrast_name),          colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
     logp_col   <- grep(paste0("Log\\.P\\.Value.*", contrast_name), colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
     adjp_col   <- grep(paste0("adj\\.P\\.Val.*", contrast_name),   colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]

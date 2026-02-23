@@ -186,3 +186,71 @@ test_that("add_volcano_labels handles NA in Significant column gracefully", {
                        y_cutoff = 2, hidden_count_rv = rv)
   )
 })
+
+## regex_escape ###############################################################
+
+test_that("regex_escape escapes PCRE metacharacters", {
+  expect_equal(regex_escape("Group(A)"),    "Group\\(A\\)")
+  expect_equal(regex_escape("T=2.5h"),      "T=2\\.5h")
+  expect_equal(regex_escape("Control+Drug"), "Control\\+Drug")
+  expect_equal(regex_escape("back\\slash"), "back\\\\slash")
+  expect_equal(regex_escape("plain"),       "plain")
+  expect_equal(regex_escape(""),            "")
+})
+
+## get_volcano_cols — metacharacter safety ####################################
+
+test_that("get_volcano_cols handles group names with regex metacharacters", {
+  group_name <- "Group(A)"
+
+  col_names <- c(
+    "id",
+    paste0("logFC.", group_name),
+    paste0("Log.P.Value.", group_name),
+    paste0("adj.P.Val.", group_name),
+    paste0("P.value.", group_name),
+    "geneSymbol"
+  )
+  df <- setNames(
+    as.data.frame(matrix(NA_real_, nrow = 1, ncol = length(col_names))),
+    col_names
+  )
+  df$id         <- "prot_1"
+  df$geneSymbol <- "GENE1"
+
+  result <- get_volcano_cols(df, "One-sample Moderated T-test",
+                              volcano_groups    = group_name,
+                              volcano_contrasts = NULL)
+
+  expect_false(is.na(result$logfc), info = "logfc col not found — metacharacter escaping likely missing")
+  expect_false(is.na(result$logp),  info = "logp col not found")
+  expect_false(is.na(result$adjp),  info = "adjp col not found")
+  expect_false(is.na(result$pval),  info = "pval col not found")
+})
+
+test_that("get_volcano_cols handles contrast names with regex metacharacters (two-sample)", {
+  contrast_name_col <- "Group(A)_over_Group(B)"
+  col_names <- c(
+    "id",
+    paste0("logFC.", contrast_name_col),
+    paste0("Log.P.Value.", contrast_name_col),
+    paste0("adj.P.Val.", contrast_name_col),
+    paste0("P.value.", contrast_name_col),
+    "geneSymbol"
+  )
+  df <- setNames(
+    as.data.frame(matrix(NA_real_, nrow = 1, ncol = length(col_names))),
+    col_names
+  )
+  df$id         <- "prot_1"
+  df$geneSymbol <- "GENE1"
+
+  result <- get_volcano_cols(df, "Two-sample Moderated T-test",
+                              volcano_groups    = NULL,
+                              volcano_contrasts = "Group(A) / Group(B)")
+
+  expect_false(is.na(result$logfc), info = "logfc col not found for metacharacter contrast")
+  expect_false(is.na(result$logp))
+  expect_false(is.na(result$adjp))
+  expect_false(is.na(result$pval))
+})
