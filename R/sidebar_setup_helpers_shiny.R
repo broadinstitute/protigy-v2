@@ -268,6 +268,7 @@ validate_labels <- function(all_labels) {
 
 actionButton_icon_right <- function(inputId, label, icon, width = NULL) {
   button <- shiny::actionButton(inputId, label, icon, width)
-  button$children[[1]] <- rev(button$children[[1]])
+  button$attribs$`aria-label` <- label
+  button$children <- rev(button$children)
   return(button)
 }
