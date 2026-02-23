@@ -191,7 +191,7 @@ statPlot_Ome_Server <- function(id,
             shinydashboardPlus::box(
               plotlyOutput(ns("volcano_plot")),
               status = "primary",
-              width = 12,
+              width = NULL,
               title = "Volcano Plot",
               headerBorder = TRUE,
               solidHeader = TRUE
@@ -200,7 +200,7 @@ statPlot_Ome_Server <- function(id,
           column(4,
             shinydashboardPlus::box(
               uiOutput(ns("volcano_sidebar_contents")),
-              width = 12,
+              width = NULL,
               title = "Plot Controls",
               headerBorder = TRUE
             )
