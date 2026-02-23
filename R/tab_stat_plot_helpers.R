@@ -317,12 +317,13 @@ get_clicked_feature_id <- function(click, df, tol = 0.01) {
 
 
 # Tokenize a raw search string into a character vector of protein IDs.
-# Accepts space, comma, semicolon, and newline as delimiters. Drops empty tokens.
+# Accepts space (including newlines/tabs), comma, and semicolon as delimiters.
+# Drops empty tokens.
 parse_protein_search_input <- function(raw) {
   if (is.null(raw) || nchar(trimws(raw)) == 0) {
     return(character(0))
   }
-  tokens <- unlist(strsplit(raw, "[,;\n\r\\s]+", perl = TRUE))
+  tokens <- unlist(strsplit(raw, "[,;\\s]+", perl = TRUE))
   tokens <- trimws(tokens)
   tokens[nchar(tokens) > 0]
 }
