@@ -40,8 +40,8 @@ setupSidebarUI <- function(id = "setupSidebar") {
       
       # navigation buttons on the bottom left/right of sidebar
       fluidRow(
-        column(6, uiOutput(ns('leftButton'))),
-        column(6, uiOutput(ns('rightButton')))
+        column(6, div(style = "text-align: left;",  uiOutput(ns('leftButton')))),
+        column(6, div(style = "text-align: right;", uiOutput(ns('rightButton'))))
       )
     )
   )
@@ -1014,7 +1014,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         df <- exp_design_df()
         if (!is.null(df) && ncol(df) > 1) {
           actionButton(ns("processCSVExcel"), "Process Files",
-                       class = "btn btn-primary btn-block")
+                       class = "btn btn-primary btn-block",
+                       style = "width: 80%;")
         } else {
           p(style = "color:#888; font-size:0.9em;",
             "Fill in the Experimental Design table, then click Process Files.")
@@ -1062,7 +1063,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
       if (place == length(spectronaut_indices)) {
         output$rightButton <- renderUI({
-          actionButton(ns("submitSpectronautParseButton"), "Preprocess",
+          actionButton(ns("submitSpectronautParseButton"), "Next",
                        class = "btn btn-primary")
         })
       } else {

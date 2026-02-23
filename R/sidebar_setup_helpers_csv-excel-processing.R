@@ -66,7 +66,7 @@ csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels, preprocessed_data =
       if (length(unique_columns) > 0) {
         div(
           h5(paste("Dataset:", label)),
-          p(paste("File:", file_name)),
+          p(paste("File:", file_name), style = "word-break: break-all;"),
           div(
             class = "small-input",
             selectInput(
@@ -81,7 +81,7 @@ csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels, preprocessed_data =
       } else {
         div(
           h5(paste("Dataset:", label)),
-          p(paste("File:", file_name)),
+          p(paste("File:", file_name), style = "word-break: break-all;"),
           p(paste("No suitable identifier columns found in", file_name, ". All columns are either numeric, contain duplicate values, or are empty. Please check your file and ensure at least one character column has unique values."), style = "color: red;"),
           hr()
         )
