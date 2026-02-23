@@ -529,7 +529,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
                                                    GCTs = GCTs_unprocessed_internal_reactive(),
-                                                   is_spectronaut = isTRUE(is_spectronaut_reactive()))})
+                                                   is_spectronaut = isTRUE(any(is_spectronaut_reactive())))})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -979,23 +979,25 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # Experimental design setup step
     csvExcelExpDesignSetup <- function(identifier_columns, labels) {
       # Build sample names: prefer preprocessed data (Spectronaut), else raw file
+      # Exclude identifier columns so only actual sample/metadata columns appear
       preprocessed <- spectronaut_processed_data()
       all_samples <- c()
       for (i in seq_len(nrow(accumulated_files()))) {
         lbl       <- labels[i]
+        id_col    <- identifier_columns[i]
         file_ext  <- tools::file_ext(tolower(accumulated_files()$name[i]))
         file_path <- accumulated_files()$datapath[i]
         if (!is.null(preprocessed) && !is.null(preprocessed[[lbl]])) {
-          all_samples <- c(all_samples, names(preprocessed[[lbl]]))
+          all_samples <- c(all_samples, setdiff(names(preprocessed[[lbl]]), id_col))
         } else if (file_ext == "csv") {
           data <- readr::read_csv(file_path, n_max = 1, show_col_types = FALSE)
-          all_samples <- c(all_samples, names(data))
+          all_samples <- c(all_samples, setdiff(names(data), id_col))
         } else if (file_ext == "tsv") {
           data <- readr::read_tsv(file_path, n_max = 1, show_col_types = FALSE)
-          all_samples <- c(all_samples, names(data))
+          all_samples <- c(all_samples, setdiff(names(data), id_col))
         } else if (file_ext %in% c("xlsx", "xls")) {
           data <- readxl::read_excel(file_path, n_max = 1)
-          all_samples <- c(all_samples, names(data))
+          all_samples <- c(all_samples, setdiff(names(data), id_col))
         }
       }
       sample_names <- if (length(all_samples) > 0) unique(all_samples) else template_sample_names()
@@ -1464,7 +1466,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             parameters_internal_reactive(csv_excel_result$parameters)
 
             # Mark as spectronaut in each label's parameters
-            if (isTRUE(is_spectronaut_reactive())) {
+            if (isTRUE(any(is_spectronaut_reactive()))) {
               params <- parameters_internal_reactive()
               for (lbl in names(params)) {
                 params[[lbl]]$is_spectronaut <- TRUE
