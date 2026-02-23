@@ -924,7 +924,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     csvExcelIdentifierSelection <- function(labels) {
       output$sideBarMain <- renderUI({csvExcelIdentifierSetupUI(ns = ns,
                                                                dataFiles = accumulated_files(),
-                                                               labels = labels)})
+                                                               labels = labels,
+                                                               preprocessed_data = spectronaut_processed_data())})
       output$rightButton <- renderUI({actionButton(ns("submitCSVExcelIdentifiersButton"), 
                                                    "Next",
                                                    class = "btn btn-primary")})
@@ -968,13 +969,37 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
 
-      csvExcelExpDesignSetup(identifier_columns)
+      labels <- sapply(accumulated_files()$name, function(file) {
+        input[[paste0('CSVExcelLabel_', file)]]
+      })
+
+      csvExcelExpDesignSetup(identifier_columns, labels)
     })
 
     # Experimental design setup step
-    csvExcelExpDesignSetup <- function(identifier_columns) {
-      # Initialise the inline table with sample names and default Condition/Replicate columns
-      sample_names <- template_sample_names()
+    csvExcelExpDesignSetup <- function(identifier_columns, labels) {
+      # Build sample names: prefer preprocessed data (Spectronaut), else raw file
+      preprocessed <- spectronaut_processed_data()
+      all_samples <- c()
+      for (i in seq_len(nrow(accumulated_files()))) {
+        lbl       <- labels[i]
+        file_ext  <- tools::file_ext(tolower(accumulated_files()$name[i]))
+        file_path <- accumulated_files()$datapath[i]
+        if (!is.null(preprocessed) && !is.null(preprocessed[[lbl]])) {
+          all_samples <- c(all_samples, names(preprocessed[[lbl]]))
+        } else if (file_ext == "csv") {
+          data <- readr::read_csv(file_path, n_max = 1, show_col_types = FALSE)
+          all_samples <- c(all_samples, names(data))
+        } else if (file_ext == "tsv") {
+          data <- readr::read_tsv(file_path, n_max = 1, show_col_types = FALSE)
+          all_samples <- c(all_samples, names(data))
+        } else if (file_ext %in% c("xlsx", "xls")) {
+          data <- readxl::read_excel(file_path, n_max = 1)
+          all_samples <- c(all_samples, names(data))
+        }
+      }
+      sample_names <- if (length(all_samples) > 0) unique(all_samples) else template_sample_names()
+
       exp_design_df(data.frame(
         columnName = sample_names,
         Condition  = rep(NA_character_, length(sample_names)),
@@ -1035,7 +1060,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
       if (place == length(spectronaut_indices)) {
         output$rightButton <- renderUI({
-          actionButton(ns("submitSpectronautParseButton"), "Preprocess & Continue",
+          actionButton(ns("submitSpectronautParseButton"), "Preprocess",
                        class = "btn btn-primary")
         })
       } else {
@@ -1099,6 +1124,15 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
       processed <- tryCatch({
         full_data <- read_uploaded_data_preview(current_file$datapath, file_ext, n_max = Inf)
+        # Apply protigy_id extraction first (if requested)
+        if (isTRUE(input$spectronaut_create_id) &&
+            !is.null(input$spectronaut_id_source_column) &&
+            input$spectronaut_id_source_column %in% names(full_data)) {
+          sep <- if (!is.null(input$spectronaut_id_separator) &&
+                     nchar(trimws(input$spectronaut_id_separator)) > 0)
+            input$spectronaut_id_separator else ";"
+          full_data <- extract_protigy_id(full_data, input$spectronaut_id_source_column, sep)
+        }
         if (!is.null(spectronaut_condition_data())) {
           apply_spectronaut_condition_setup(full_data, spectronaut_condition_data(),
                                             input$spectronaut_quant_suffix,
@@ -1231,13 +1265,17 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       req(exp_design_df())
       df <- exp_design_df()
 
+      max_chars  <- max(nchar(as.character(df[[1]])), na.rm = TRUE)
+      col1_width <- max(120, min(300, max_chars * 8 + 20))
+
       ht <- rhandsontable::rhandsontable(
         df,
         rowHeaders  = NULL,
         useTypes    = FALSE,
-        stretchH    = "all",
+        stretchH    = "last",
         contextMenu = TRUE,
-        width       = "100%"
+        width       = "100%",
+        colWidths   = c(col1_width, rep(100, ncol(df) - 1))
       )
 
       # Make first column (columnName) read-only with gray background

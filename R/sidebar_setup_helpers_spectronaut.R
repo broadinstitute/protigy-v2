@@ -101,11 +101,24 @@ apply_spectronaut_condition_setup <- function(data, condition_setup, selected_su
   # Detect all suffixes present
   all_suffixes <- detect_quant_suffixes(names(data), run_labels)
 
+  # Build a helper: given a run_label + suffix pattern, find matching column names
+  # (handles optional "[N] " index prefix that Spectronaut adds)
+  find_col <- function(run_label, suffix) {
+    pattern <- paste0(run_label, suffix)
+    # exact match first
+    if (pattern %in% names(data)) return(pattern)
+    # fallback: column that ends with run_label+suffix (covers "[N] " prefix)
+    matches <- names(data)[endsWith(names(data), pattern)]
+    if (length(matches) == 1L) return(matches[1L])
+    if (length(matches) > 1L) return(matches[1L])  # take first if ambiguous
+    character(0)
+  }
+
   # Build rename map for selected suffix
   rename_map <- list()
   for (i in seq_along(run_labels)) {
-    old_name <- paste0(run_labels[i], selected_suffix)
-    if (old_name %in% names(data)) {
+    old_name <- find_col(run_labels[i], selected_suffix)
+    if (length(old_name) == 1L && nchar(old_name) > 0) {
       new_name <- if (isTRUE(merge_condition_replicate)) {
         paste0(conditions[i], "_R", replicates[i])
       } else {
@@ -120,8 +133,8 @@ apply_spectronaut_condition_setup <- function(data, condition_setup, selected_su
   for (rl in run_labels) {
     for (sfx in all_suffixes) {
       if (sfx != selected_suffix) {
-        col <- paste0(rl, sfx)
-        if (col %in% names(data)) {
+        col <- find_col(rl, sfx)
+        if (length(col) == 1L && nchar(col) > 0) {
           cols_to_drop <- c(cols_to_drop, col)
         }
       }

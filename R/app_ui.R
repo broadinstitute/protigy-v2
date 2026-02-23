@@ -74,7 +74,7 @@ app_UI <- function(request) {dashboardPage(
 
     # Data preview panel - shown when a CSV/Excel file is uploaded
     conditionalPanel(
-      condition = "output.showDataPreview",
+      condition = "output['setupSidebar-showDataPreview']",
       div(id = "data-preview-panel", style = "padding: 10px 15px;",
         div(style = "display:flex; align-items:center; gap:8px; margin-bottom:6px;",
           tags$strong(shiny::icon("table"), " Data Preview (first 20 rows)"),

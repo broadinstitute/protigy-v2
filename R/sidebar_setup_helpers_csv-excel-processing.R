@@ -21,36 +21,41 @@ csvExcelLabelSetupUI <- function(ns, dataFileNames) {
 }
 
 # UI function for CSV/Excel/TSV identifier column selection (per dataset)
-csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels) {
+csvExcelIdentifierSetupUI <- function(ns, dataFiles, labels, preprocessed_data = NULL) {
   tagList(
     h4('Select ID column'),
-    
+
     lapply(seq_len(nrow(dataFiles)), function(i) {
       file_name <- dataFiles$name[i]
       file_path <- dataFiles$datapath[i]
       file_ext <- tools::file_ext(tolower(file_name))
       label <- labels[i]
-      
+
       # Read data and find unique columns for this file
       unique_columns <- tryCatch({
-        # Check if file exists and is readable
-        if (!file.exists(file_path)) {
-          stop("File does not exist: ", file_path)
-        }
-        
-        # Read the full data (not just column names)
-        if (file_ext == "csv") {
-          data <- readr::read_csv(file_path, show_col_types = FALSE)
-        } else if (file_ext == "tsv") {
-          data <- readr::read_tsv(file_path, show_col_types = FALSE)
-        } else if (file_ext == "ssv") {
-          data <- readr::read_delim(file_path, delim = ";", show_col_types = FALSE)
-        } else if (file_ext %in% c("xlsx", "xls")) {
-          data <- readxl::read_excel(file_path)
+        # Use preprocessed data if available (e.g., Spectronaut files)
+        if (!is.null(preprocessed_data) && !is.null(preprocessed_data[[label]])) {
+          data <- preprocessed_data[[label]]
         } else {
-          stop("Unsupported file format: ", file_ext)
+          # Check if file exists and is readable
+          if (!file.exists(file_path)) {
+            stop("File does not exist: ", file_path)
+          }
+
+          # Read the full data (not just column names)
+          if (file_ext == "csv") {
+            data <- readr::read_csv(file_path, show_col_types = FALSE)
+          } else if (file_ext == "tsv") {
+            data <- readr::read_tsv(file_path, show_col_types = FALSE)
+          } else if (file_ext == "ssv") {
+            data <- readr::read_delim(file_path, delim = ";", show_col_types = FALSE)
+          } else if (file_ext %in% c("xlsx", "xls")) {
+            data <- readxl::read_excel(file_path)
+          } else {
+            stop("Unsupported file format: ", file_ext)
+          }
         }
-        
+
         # Find columns with unique values
         getUniqueColumns(data)
       }, error = function(e) {
