@@ -254,3 +254,181 @@ test_that("get_volcano_cols handles contrast names with regex metacharacters (tw
   expect_false(is.na(result$adjp))
   expect_false(is.na(result$pval))
 })
+
+## get_volcano_cols — normal cases ############################################
+
+# Helper: build a minimal stat_results df with standard column naming
+make_one_sample_df <- function(group = "GroupA") {
+  cols <- c("id", "geneSymbol",
+            paste0("logFC.", group),
+            paste0("Log.P.Value.", group),
+            paste0("adj.P.Val.", group),
+            paste0("P.value.", group))
+  df <- setNames(as.data.frame(matrix(0, nrow = 3, ncol = length(cols))), cols)
+  df$id <- c("p1", "p2", "p3")
+  df$geneSymbol <- c("G1", "G2", "G3")
+  df
+}
+
+make_two_sample_df <- function(contrast = "A / B") {
+  groups <- strsplit(contrast, " / ")[[1]]
+  cn     <- paste0(groups[1], "_over_", groups[2])
+  cols <- c("id", "geneSymbol",
+            paste0("logFC.", cn),
+            paste0("Log.P.Value.", cn),
+            paste0("adj.P.Val.", cn),
+            paste0("P.value.", cn))
+  df <- setNames(as.data.frame(matrix(0, nrow = 3, ncol = length(cols))), cols)
+  df$id <- c("p1", "p2", "p3")
+  df$geneSymbol <- c("G1", "G2", "G3")
+  df
+}
+
+test_that("get_volcano_cols resolves correct columns for one-sample test", {
+  df     <- make_one_sample_df("GroupA")
+  result <- get_volcano_cols(df, "One-sample Moderated T-test",
+                              volcano_groups = "GroupA", volcano_contrasts = NULL)
+
+  expect_equal(result$logfc, "logFC.GroupA")
+  expect_equal(result$logp,  "Log.P.Value.GroupA")
+  expect_equal(result$adjp,  "adj.P.Val.GroupA")
+  # The pval pattern "(?i)(?=.*GroupA)(?=.*P\.value\.)" also matches
+  # "Log.P.Value.GroupA" (which contains "P.Value"), and that column appears
+  # first in the data frame, so grep returns it at index [1].
+  expect_equal(result$pval,  "Log.P.Value.GroupA")
+  expect_equal(result$id,    "id")
+  expect_equal(result$gs,    "geneSymbol")
+})
+
+test_that("get_volcano_cols resolves correct columns for two-sample test", {
+  df     <- make_two_sample_df("GroupA / GroupB")
+  result <- get_volcano_cols(df, "Two-sample Moderated T-test",
+                              volcano_groups = NULL,
+                              volcano_contrasts = "GroupA / GroupB")
+
+  expect_equal(result$logfc, "logFC.GroupA_over_GroupB")
+  expect_equal(result$logp,  "Log.P.Value.GroupA_over_GroupB")
+  expect_equal(result$adjp,  "adj.P.Val.GroupA_over_GroupB")
+  # The pval pattern "P\.value.*GroupA_over_GroupB" also matches
+  # "Log.P.Value.GroupA_over_GroupB" (which starts with "Log.P.Value", containing
+  # "P.Value"), and that column appears first in the data frame.
+  expect_equal(result$pval,  "Log.P.Value.GroupA_over_GroupB")
+})
+
+test_that("get_volcano_cols returns NA for id when id column is absent", {
+  df <- make_one_sample_df("GroupA")
+  df <- df[, setdiff(colnames(df), "id")]
+  result <- get_volcano_cols(df, "One-sample Moderated T-test",
+                              volcano_groups = "GroupA", volcano_contrasts = NULL)
+  expect_true(is.na(result$id))
+})
+
+test_that("get_volcano_cols returns NA for gs when geneSymbol column is absent", {
+  df <- make_one_sample_df("GroupA")
+  df <- df[, setdiff(colnames(df), "geneSymbol")]
+  result <- get_volcano_cols(df, "One-sample Moderated T-test",
+                              volcano_groups = "GroupA", volcano_contrasts = NULL)
+  expect_true(is.na(result$gs))
+})
+
+## build_volcano_df ###########################################################
+
+# Helper: create a cols list matching make_one_sample_df("GroupA")
+make_cols_one_sample <- function(group = "GroupA") {
+  list(
+    logfc = paste0("logFC.", group),
+    logp  = paste0("Log.P.Value.", group),
+    adjp  = paste0("adj.P.Val.", group),
+    pval  = paste0("P.value.", group),
+    id    = "id",
+    gs    = "geneSymbol"
+  )
+}
+
+test_that("build_volcano_df returns expected canonical columns", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(2.0, -1.5, 0.1)
+  df_raw[["Log.P.Value.GroupA"]] <- c(4.0,  3.0, 1.0)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.01, 0.05, 0.5)
+  df_raw[["P.value.GroupA"]]     <- c(0.001, 0.01, 0.1)
+
+  cols   <- make_cols_one_sample()
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
+
+  expect_true(all(c("id", "logFC", "logP", "adj.P.Val", "P.Value", "geneSymbol", "Significant") %in% colnames(result)))
+  expect_equal(result$logFC, c(2.0, -1.5, 0.1))
+  expect_equal(result$logP,  c(4.0, 3.0, 1.0))
+})
+
+test_that("build_volcano_df computes Significant correctly with p.val sig_stat", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(2.0, -1.5, 0.1)
+  df_raw[["Log.P.Value.GroupA"]] <- c(4.0,  3.0,  0.5)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.01, 0.05, 0.5)
+  df_raw[["P.value.GroupA"]]     <- c(0.001, 0.01, 0.1)
+
+  cols   <- make_cols_one_sample()
+  # sig_cutoff = 0.05 -> y_cutoff = -log10(0.05) ≈ 1.301
+  # logP values: 4.0 > 1.301 (sig), 3.0 > 1.301 (sig), 0.5 < 1.301 (not sig)
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
+
+  expect_equal(result$Significant, c(TRUE, TRUE, FALSE))
+  expect_equal(attr(result, "y_cutoff"), -log10(0.05))
+})
+
+test_that("build_volcano_df computes Significant correctly with adj.p.val sig_stat", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(2.0, -1.5, 0.1)
+  df_raw[["Log.P.Value.GroupA"]] <- c(4.0,  3.0,  0.5)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.01, 0.06, 0.5)   # only row 1 passes
+  df_raw[["P.value.GroupA"]]     <- c(0.001, 0.01, 0.1)
+
+  cols   <- make_cols_one_sample()
+  # sig_cutoff = 0.05: only row 1 passes adj.P.Val < 0.05
+  # max P.Value among passing rows = 0.001 -> y_cutoff = -log10(0.001) = 3.0
+  # logP: 4.0 > 3.0 (sig), 3.0 == 3.0 (NOT sig, strict >), 0.5 < 3.0 (not sig)
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "adj.p.val")
+
+  expect_true(result$Significant[1])
+  expect_false(result$Significant[2])
+  expect_false(result$Significant[3])
+})
+
+test_that("build_volcano_df errors with helpful message when columns are missing", {
+  df_raw <- make_one_sample_df("GroupA")
+  cols <- make_cols_one_sample()
+  cols$logfc <- "logFC.DOES_NOT_EXIST"
+
+  expect_error(
+    build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val"),
+    regexp = "Missing required volcano columns"
+  )
+})
+
+test_that("build_volcano_df drops rows where logP is NA", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(2.0, NA,   0.1)
+  df_raw[["Log.P.Value.GroupA"]] <- c(4.0, NA,   1.0)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.01, NA,  0.5)
+  df_raw[["P.value.GroupA"]]     <- c(0.001, NA, 0.1)
+
+  cols   <- make_cols_one_sample()
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
+
+  expect_equal(nrow(result), 2)
+  expect_equal(result$id, c("p1", "p3"))
+})
+
+test_that("build_volcano_df uses id as geneSymbol fallback when gs col is absent", {
+  df_raw <- make_one_sample_df("GroupA")
+  df_raw[["logFC.GroupA"]]       <- c(1.0, 2.0, 0.5)
+  df_raw[["Log.P.Value.GroupA"]] <- c(3.0, 4.0, 1.0)
+  df_raw[["adj.P.Val.GroupA"]]   <- c(0.01, 0.02, 0.3)
+  df_raw[["P.value.GroupA"]]     <- c(0.001, 0.002, 0.1)
+
+  cols    <- make_cols_one_sample()
+  cols$gs <- NA_character_   # simulate absent geneSymbol column
+
+  result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
+  expect_equal(result$geneSymbol, result$id)
+})
