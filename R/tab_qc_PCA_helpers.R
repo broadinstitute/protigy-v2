@@ -243,8 +243,8 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   
   g <- ggplot(pca_df, plot_aes) +
     geom_point(size = 2) +
-    geom_hline(yintercept = 0, lty = "longdash", color = "darkgrey") +
-    geom_vline(xintercept = 0, lty = "longdash", color = "darkgrey") +
+    geom_hline(yintercept = 0, linetype = "longdash", color = "darkgrey") +
+    geom_vline(xintercept = 0, linetype = "longdash", color = "darkgrey") +
     theme_bw() +
     theme(text = element_text(size = 12)) +
     ggtitle(plot_title) +

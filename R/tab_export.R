@@ -259,8 +259,8 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         } else {
           notification_ui <- HTML(paste0(
             "<div style='text-align: left'>",
-            "Analysis results successfully saved!", br(), br(),
-            strong("Could not save:"), br(),
+            "Analysis results successfully saved!<br><br>",
+            "<strong>Could not save:</strong><br>",
             "<ul><li>",
             paste(error_exports, collapse = "</li><li>"),
             "</li></ul></div>"
