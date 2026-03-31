@@ -78,6 +78,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     gctsGO <- reactiveVal(0)
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
     sample_filter_input_state <- reactiveValues()
+    row_filter_input_state <- reactiveValues()
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
@@ -637,14 +638,55 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         server = FALSE
       )
     })
+
+    # update row filter values choices when row filter column changes
+    observe({
+      req(parameters_internal_reactive(), GCTs_unprocessed_internal_reactive())
+      current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+      req(current_label)
+      selected_column <- input[[paste0(current_label, "_row_filter_column")]]
+      req(selected_column, selected_column != "")
+      gct <- GCTs_unprocessed_internal_reactive()[[current_label]]
+      req(gct, selected_column %in% names(gct@rdesc))
+
+      choices <- sort(unique(as.character(gct@rdesc[[selected_column]])))
+      choices <- choices[!is.na(choices)]
+      selected_values <- isolate(input[[paste0(current_label, "_row_filter_values")]])
+      if (is.null(selected_values)) {
+        selected_values <- character(0)
+      }
+      selected_values <- intersect(selected_values, choices)
+
+      # Avoid re-sending the same input payload repeatedly (prevents UI flicker).
+      next_state <- list(
+        column = selected_column,
+        choices = choices,
+        selected = selected_values
+      )
+      current_state <- isolate(row_filter_input_state[[current_label]])
+      if (identical(current_state, next_state)) {
+        return(invisible(NULL))
+      }
+      row_filter_input_state[[current_label]] <- next_state
+
+      updateSelectizeInput(
+        inputId = paste0(current_label, "_row_filter_values"),
+        choices = choices,
+        selected = selected_values,
+        server = FALSE
+      )
+    })
     
     
     # reset applyToAll to FALSE if it is not a valid option
     groups_in_all_omes <- reactive({
       base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@cdesc)))
     })
+    rdesc_in_all_omes <- reactive({
+      base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@rdesc)))
+    })
     observe({
-      req(parameters_internal_reactive(), groups_in_all_omes())
+      req(parameters_internal_reactive(), groups_in_all_omes(), rdesc_in_all_omes())
       
       # get relevant inputs
       current_label <- names(parameters_internal_reactive())[backNextLogic$place]
@@ -653,16 +695,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       current_group_norm_selection <- input[[paste0(current_label, "_group_normalization")]]
       current_sample_filter_enabled <- input[[paste0(current_label, "_sample_filter_enabled")]]
       current_sample_filter_column <- input[[paste0(current_label, "_sample_filter_column")]]
+      current_row_filter_enabled <- input[[paste0(current_label, "_row_filter_enabled")]]
+      current_row_filter_column <- input[[paste0(current_label, "_row_filter_column")]]
       
       # get the groups/columns that are present in all omes
       groups_in_all <- isolate(groups_in_all_omes())
+      rdesc_in_all <- isolate(rdesc_in_all_omes())
       
       # condition for when to update applyToAll to false
       # NOTE: if something changes here, also check out the `gctSetupUI()`
       # function to determine when applyToAll actually shows up in the UI
       condition <- !(current_annotation_column %in% groups_in_all) |
         (current_group_norm_selection & !(current_group_norm_column %in% groups_in_all)) |
-        (isTRUE(current_sample_filter_enabled) & !(current_sample_filter_column %in% groups_in_all))
+        (isTRUE(current_sample_filter_enabled) &
+           !(identical(current_sample_filter_column, "") || current_sample_filter_column %in% groups_in_all)) |
+        (isTRUE(current_row_filter_enabled) &
+           !(identical(current_row_filter_column, "") || current_row_filter_column %in% rdesc_in_all))
       
       # update applyToAll to FALSE if necessary
       if (TRUE %in% condition) {
@@ -843,7 +891,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                            'gene_symbol_column',
                            'sample_filter_enabled',
                            'sample_filter_column',
-                           'sample_filter_values')
+                           'sample_filter_values',
+                           'row_filter_enabled',
+                           'row_filter_column',
+                           'row_filter_values')
 
       # assign new user selections
       # NOTE: there are fields in `new_parameters` that aren't updated here,
@@ -860,6 +911,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             input_value <- ""
           }
           if (param == "sample_filter_values" && is.null(input_value)) {
+            input_value <- character(0)
+          }
+          if (param == "row_filter_column" && is.null(input_value)) {
+            input_value <- ""
+          }
+          if (param == "row_filter_values" && is.null(input_value)) {
             input_value <- character(0)
           }
 

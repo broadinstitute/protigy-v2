@@ -347,6 +347,48 @@ test_that("apply_sample_filter errors when no samples remain", {
   )
 })
 
+test_that("apply_row_filter keeps only selected rdesc values", {
+  test_data <- matrix(1:12, nrow = 3, ncol = 4)
+  rownames(test_data) <- c("gene1", "gene2", "gene3")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4")
+  test_rdesc <- data.frame(
+    Species = c("HOMO SAPIENS", "MUS MUSCULUS", "HOMO SAPIENS"),
+    row.names = rownames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    row_filter_values = c("HOMO SAPIENS")
+  )
+
+  filtered <- apply_row_filter(test_data, test_rdesc, params, ome = "proteome")
+  expect_equal(rownames(filtered$data), c("gene1", "gene3"))
+  expect_equal(rownames(filtered$rdesc), c("gene1", "gene3"))
+  expect_true(all(filtered$rdesc$Species == "HOMO SAPIENS"))
+})
+
+test_that("apply_row_filter errors when no rows remain", {
+  test_data <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(test_data) <- c("gene1", "gene2", "gene3")
+  colnames(test_data) <- c("s1", "s2", "s3")
+  test_rdesc <- data.frame(
+    Species = c("MUS MUSCULUS", "RATTUS NORVEGICUS", "BOS TAURUS"),
+    row.names = rownames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    row_filter_values = c("HOMO SAPIENS")
+  )
+
+  expect_error(
+    apply_row_filter(test_data, test_rdesc, params, ome = "proteome"),
+    "No rows remain after filtering"
+  )
+})
+
 test_that("merge_processed_gcts keeps union of samples after per-ome filtering", {
   make_gct <- function(ome_name, sample_ids, feature_ids) {
     mat <- matrix(
@@ -396,7 +438,7 @@ test_that("merge_processed_gcts keeps union of samples after per-ome filtering",
   expect_true(all(is.na(merged@mat[phospho_rows, "s1"])))
 })
 
-test_that("setup defaults include sample filter parameters", {
+test_that("setup defaults include sample and row filter parameters", {
   defaults_path <- system.file(
     "setup_parameters",
     "setupDefaults.yaml",
@@ -412,5 +454,9 @@ test_that("setup defaults include sample filter parameters", {
   expect_true("sample_filter_enabled" %in% names(defaults))
   expect_true("sample_filter_column" %in% names(defaults))
   expect_true("sample_filter_values" %in% names(defaults))
+  expect_true("row_filter_enabled" %in% names(defaults))
+  expect_true("row_filter_column" %in% names(defaults))
+  expect_true("row_filter_values" %in% names(defaults))
   expect_identical(defaults$sample_filter_enabled, FALSE)
+  expect_identical(defaults$row_filter_enabled, FALSE)
 })

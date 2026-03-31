@@ -60,6 +60,16 @@ Filtering is applied independently to each uploaded ome before preprocessing and
 - If a sample is retained in at least one ome, it remains present in the merged multi-ome output.
 - For omes where that sample was filtered out, merged matrix entries are `NA` for those ome-specific features.
 
+## Row Filtering by Column
+
+You can optionally filter rows (features) within each dataset using a metadata column from `rdesc` (for example `Species`).
+
+- Enable **Filter rows by column** in setup.
+- Choose the **Row filter column**.
+- Select one or more values in **Keep rows with selected values** (for example keep `Homo sapiens`).
+
+Filtering behavior is fixed: **selected values are kept, and all unselected values are discarded**.
+
 ## Data Preprocessing Options
 
 The following sections explain the data preprocessing options available for normalizing and filtering your dataset before statistical analysis.

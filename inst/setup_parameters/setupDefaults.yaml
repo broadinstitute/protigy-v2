@@ -12,6 +12,9 @@ gene_symbol_column: "None"
 sample_filter_enabled: False
 sample_filter_column: ""
 sample_filter_values: []
+row_filter_enabled: False
+row_filter_column: ""
+row_filter_values: []
 
 # Plot export dimensions (in inches)
 plot_export_width: 8

@@ -13,7 +13,7 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ### 🔧 **Data Processing**
 - **Normalization**: Multiple methods including median, quantile, and VSN normalization
-- **Filtering**: Apply sample-level metadata filters (e.g., keep selected `QC.status` values) and remove missing data, low-variance features, and non-reproducible measurements
+- **Filtering**: Apply sample-level metadata filters (e.g., keep selected `QC.status` values), row-level metadata filters (e.g., keep `Species == Homo sapiens`), and remove missing data, low-variance features, and non-reproducible measurements
 - **Transformation**: Log transformation and other data preprocessing options
 
 ### 📁 **Data Import & Export**

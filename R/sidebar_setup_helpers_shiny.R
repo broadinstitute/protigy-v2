@@ -76,6 +76,33 @@ gctSetupUI <- function(ns,
   if (is.null(sample_filter_values_selected)) {
     sample_filter_values_selected <- character(0)
   }
+
+  # row-filter column choices pulled from rdesc (discrete columns preferred)
+  all_rdesc_columns <- names(GCTs[[label]]@rdesc)
+  row_filter_columns_choices <- all_rdesc_columns[vapply(
+    GCTs[[label]]@rdesc[all_rdesc_columns],
+    function(col) is.discrete(col),
+    logical(1)
+  )]
+  if (length(row_filter_columns_choices) == 0) {
+    row_filter_columns_choices <- all_rdesc_columns
+  }
+
+  row_filter_column_selected <- parameters[[label]]$row_filter_column
+  if (is.null(row_filter_column_selected)) {
+    row_filter_column_selected <- ""
+  }
+  row_filter_values_choices <- character(0)
+  if (row_filter_column_selected %in% names(GCTs[[label]]@rdesc)) {
+    row_filter_values_choices <- sort(
+      unique(as.character(GCTs[[label]]@rdesc[[row_filter_column_selected]]))
+    )
+    row_filter_values_choices <- row_filter_values_choices[!is.na(row_filter_values_choices)]
+  }
+  row_filter_values_selected <- parameters[[label]]$row_filter_values
+  if (is.null(row_filter_values_selected)) {
+    row_filter_values_selected <- character(0)
+  }
   
   tagList(
     h4('Setup for ',
@@ -233,6 +260,43 @@ gctSetupUI <- function(ns,
       p("Only selected values are kept. Unselected values are discarded."),
       ns = ns
     ),
+
+    ## row filtering input
+    add_css_attributes(
+      checkboxInput(
+        ns(paste0(label, '_row_filter_enabled')),
+        label = 'Filter rows by column',
+        value = isTRUE(parameters[[label]]$row_filter_enabled)),
+      classes = "small-input"),
+
+    ## row filtering column
+    conditionalPanel(
+      condition = paste0("input['", label, "_row_filter_enabled']"),
+      add_css_attributes(
+        selectInput(
+          ns(paste0(label, '_row_filter_column')),
+          label = "Row filter column",
+          choices = c("", row_filter_columns_choices),
+          selected = row_filter_column_selected),
+        classes = "small-input"),
+      ns = ns
+    ),
+
+    ## row filtering values
+    conditionalPanel(
+      condition = paste0("input['", label, "_row_filter_enabled'] && input['", label, "_row_filter_column'] != ''"),
+      add_css_attributes(
+        selectizeInput(
+          ns(paste0(label, '_row_filter_values')),
+          label = "Keep rows with selected values",
+          choices = row_filter_values_choices,
+          selected = row_filter_values_selected,
+          multiple = TRUE,
+          options = list(plugins = list("remove_button"))),
+        classes = "small-input"),
+      p("Only selected values are kept. Unselected values are discarded."),
+      ns = ns
+    ),
     
     ## apply to all checkbox
     if (max_place > 1) {
@@ -248,7 +312,11 @@ gctSetupUI <- function(ns,
                            " && (!input['", label, "_sample_filter_enabled'] || ",
                            "input['", label, "_sample_filter_column'] == '' || ",
                            "['", paste(groups_choices_all_omes, collapse = "', '"),
-                           "'].includes(input['", label, "_sample_filter_column']))"),
+                           "'].includes(input['", label, "_sample_filter_column']))",
+                           " && (!input['", label, "_row_filter_enabled'] || ",
+                           "input['", label, "_row_filter_column'] == '' || ",
+                           "['", paste(base::Reduce(base::intersect, lapply(GCTs, function(gct) names(gct@rdesc))), collapse = "', '"),
+                           "'].includes(input['", label, "_row_filter_column']))"),
         add_css_attributes(
           checkboxInput(ns('applyToAll'), 'Apply settings to all datasets'),
           classes = "small-input"),

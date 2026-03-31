@@ -127,6 +127,38 @@ apply_sample_filter <- function(data, cdesc, params, ome) {
   return(list(data = data, cdesc = cdesc))
 }
 
+# Apply row-level filtering using rdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_row_filter <- function(data, rdesc, params, ome) {
+  if (!isTRUE(params$row_filter_enabled)) {
+    return(list(data = data, rdesc = rdesc))
+  }
+
+  filter_column <- params$row_filter_column
+  filter_values <- params$row_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Row filtering is enabled, but no row filter column was selected.")
+  }
+  if (!(filter_column %in% names(rdesc))) {
+    stop("Row filter column '", filter_column, "' was not found in rdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Row filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_rows <- as.character(rdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(rdesc)[keep_rows]
+  if (length(keep_ids) == 0) {
+    stop("No rows remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[keep_ids, , drop = FALSE]
+  rdesc <- rdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, rdesc = rdesc))
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -171,6 +203,16 @@ transformGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## row filtering
+              row_filter_out <- apply_row_filter(
+                data = data,
+                rdesc = rdesc,
+                params = params,
+                ome = ome
+              )
+              data <- row_filter_out$data
+              rdesc <- row_filter_out$rdesc
 
               ## sample filtering
               sample_filter_out <- apply_sample_filter(
@@ -278,6 +320,16 @@ processGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## row filtering
+              row_filter_out <- apply_row_filter(
+                data = data,
+                rdesc = rdesc,
+                params = params,
+                ome = ome
+              )
+              data <- row_filter_out$data
+              rdesc <- row_filter_out$rdesc
 
               ## sample filtering
               sample_filter_out <- apply_sample_filter(

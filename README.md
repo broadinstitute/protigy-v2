@@ -42,7 +42,7 @@ Protigy::launchApp()
 
 ### 🔧 **Data Processing**
 - **Normalization**: Multiple methods including median, quantile, and VSN normalization
-- **Filtering**: Apply sample-level metadata filters (e.g., keep selected `QC.status` values) and remove missing data, low-variance features, and non-reproducible measurements
+- **Filtering**: Apply sample-level metadata filters (e.g., keep selected `QC.status` values), row-level metadata filters (e.g., keep `Species == Homo sapiens`), and remove missing data, low-variance features, and non-reproducible measurements
 - **Transformation**: Log transformation and other data preprocessing options
 
 ### 📁 **Data Import & Export**
@@ -132,8 +132,9 @@ For CSV/TSV/Excel files, you'll also need to:
 - Select statistical tests based on your experimental design
 - View results across multiple Statistics subtabs
 
-### 5a. **Optional: Filter Samples During Setup**
+### 5a. **Optional: Filter Samples/Rows During Setup**
 - In dataset setup, enable **Filter samples by column** to filter each ome by sample metadata (for example `QC.status`)
+- Enable **Filter rows by column** to filter each ome by feature metadata in `rdesc` (for example keep `Species == Homo sapiens`)
 - Select one or more values to keep; selected values are retained and unselected values are discarded
 - In multi-ome analysis, merged outputs keep samples present in at least one ome; filtered ome/sample combinations are represented as `NA`
 

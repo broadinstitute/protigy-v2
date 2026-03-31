@@ -49,6 +49,16 @@ Behavior is fixed: **selected values are always kept, and unselected values are 
 
 For multi-ome workflows, filtering is done per ome before analysis. In merged outputs, a sample is retained if it remains in at least one ome; ome/sample combinations removed by filtering appear as `NA`.
 
+#### Row filtering by metadata column
+
+You can also filter rows by selecting a row metadata column from `rdesc` (for example `Species`) and choosing values to keep.
+
+- Enable row filtering in setup.
+- Select a row metadata column.
+- Select the values to retain (for example `Homo sapiens`).
+
+Behavior is fixed: **selected values are always kept, and unselected values are discarded**.
+
 #### Select test
 
 You can choose between a one-sample, two-sample moderate T-tests, moderated F-test or no testing.
