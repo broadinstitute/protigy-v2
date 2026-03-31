@@ -204,26 +204,6 @@ transformGCTs <- function(GCTs, parameters) {
                 params$data_filter_sd_pct <- NULL
               }
 
-              ## row filtering
-              row_filter_out <- apply_row_filter(
-                data = data,
-                rdesc = rdesc,
-                params = params,
-                ome = ome
-              )
-              data <- row_filter_out$data
-              rdesc <- row_filter_out$rdesc
-
-              ## sample filtering
-              sample_filter_out <- apply_sample_filter(
-                data = data,
-                cdesc = cdesc,
-                params = params,
-                ome = ome
-              )
-              data <- sample_filter_out$data
-              cdesc <- sample_filter_out$cdesc
-              
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
               

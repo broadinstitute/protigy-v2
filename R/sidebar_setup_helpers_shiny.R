@@ -48,7 +48,6 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
-  
   # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
   norm_choices <- parameter_choices$data_normalization$intensity_data_no
   n_samples <- ncol(GCTs[[label]]@mat)
@@ -228,7 +227,7 @@ gctSetupUI <- function(ns,
     add_css_attributes(
       checkboxInput(
         ns(paste0(label, '_sample_filter_enabled')),
-        label = 'Filter samples by column',
+        label = 'Filter samples (columns)',
         value = isTRUE(parameters[[label]]$sample_filter_enabled)),
       classes = "small-input"),
 
@@ -257,7 +256,6 @@ gctSetupUI <- function(ns,
           multiple = TRUE,
           options = list(plugins = list("remove_button"))),
         classes = "small-input"),
-      p("Only selected values are kept. Unselected values are discarded."),
       ns = ns
     ),
 
@@ -265,7 +263,7 @@ gctSetupUI <- function(ns,
     add_css_attributes(
       checkboxInput(
         ns(paste0(label, '_row_filter_enabled')),
-        label = 'Filter rows by column',
+        label = 'Filter features (rows)',
         value = isTRUE(parameters[[label]]$row_filter_enabled)),
       classes = "small-input"),
 
@@ -294,7 +292,6 @@ gctSetupUI <- function(ns,
           multiple = TRUE,
           options = list(plugins = list("remove_button"))),
         classes = "small-input"),
-      p("Only selected values are kept. Unselected values are discarded."),
       ns = ns
     ),
     
@@ -308,15 +305,7 @@ gctSetupUI <- function(ns,
                            "'].includes(input['", label, "_annotation_column']) ",
                            "&& (!input['", label, "_group_normalization'] || ",
                            "['", paste(groups_choices_all_omes, collapse = "', '"), 
-                           "'].includes(input['", label, "_group_normalization_column']))",
-                           " && (!input['", label, "_sample_filter_enabled'] || ",
-                           "input['", label, "_sample_filter_column'] == '' || ",
-                           "['", paste(groups_choices_all_omes, collapse = "', '"),
-                           "'].includes(input['", label, "_sample_filter_column']))",
-                           " && (!input['", label, "_row_filter_enabled'] || ",
-                           "input['", label, "_row_filter_column'] == '' || ",
-                           "['", paste(base::Reduce(base::intersect, lapply(GCTs, function(gct) names(gct@rdesc))), collapse = "', '"),
-                           "'].includes(input['", label, "_row_filter_column']))"),
+                           "'].includes(input['", label, "_group_normalization_column']))"),
         add_css_attributes(
           checkboxInput(ns('applyToAll'), 'Apply settings to all datasets'),
           classes = "small-input"),

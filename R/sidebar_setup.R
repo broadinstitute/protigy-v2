@@ -3,6 +3,90 @@
 # Main shiny functions (server and UI)
 ################################################################################
 
+# Whether current setup choices allow copying settings to every dataset.
+# Returns list(ok = TRUE) or list(ok = FALSE, msg = <user-facing string>).
+gct_setup_apply_to_all_valid <- function(
+    annotation_column,
+    group_normalization,
+    group_normalization_column,
+    sample_filter_enabled,
+    sample_filter_column,
+    row_filter_enabled,
+    row_filter_column,
+    groups_in_all,
+    rdesc_in_all) {
+  if (is.null(annotation_column)) {
+    annotation_column <- NA_character_
+  }
+  if (is.null(group_normalization_column)) {
+    group_normalization_column <- NA_character_
+  }
+  if (is.null(sample_filter_column)) {
+    sample_filter_column <- ""
+  }
+  if (is.null(row_filter_column)) {
+    row_filter_column <- ""
+  }
+  if (length(groups_in_all) == 0L) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose consistent shared annotation/filter columns across datasets to enable this setting."
+      )
+    ))
+  }
+  if (!(annotation_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose a consistent analysis annotation column that exists in all datasets to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(group_normalization) && !(group_normalization_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose a consistent group normalization column that exists in all datasets to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(sample_filter_enabled) && nzchar(sample_filter_column) &&
+        !(sample_filter_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Sample filter column '", sample_filter_column,
+        "' is not available in all datasets. Choose a consistent column to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(row_filter_enabled) && nzchar(row_filter_column)) {
+    if (length(rdesc_in_all) == 0L || !(row_filter_column %in% rdesc_in_all)) {
+      return(list(
+        ok = FALSE,
+        msg = if (length(rdesc_in_all) == 0L) {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Choose consistent shared row metadata columns across datasets to enable this setting."
+          )
+        } else {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Row filter column '", row_filter_column,
+            "' is not available in all datasets. Choose a consistent column to enable this setting."
+          )
+        }
+      ))
+    }
+  }
+  list(ok = TRUE, msg = NA_character_)
+}
+
 # UI for the sidebar setup
 setupSidebarUI <- function(id = "setupSidebar") {
   # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
@@ -686,7 +770,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@rdesc)))
     })
     observe({
-      req(parameters_internal_reactive(), groups_in_all_omes(), rdesc_in_all_omes())
+      req(parameters_internal_reactive(), GCTs_unprocessed_internal_reactive())
+      # Do not use req() on intersect vectors: length-0 intersect is valid and must still invalidate apply-to-all.
+      groups_in_all <- isolate(groups_in_all_omes())
+      rdesc_in_all <- isolate(rdesc_in_all_omes())
       
       # get relevant inputs
       current_label <- names(parameters_internal_reactive())[backNextLogic$place]
@@ -697,24 +784,32 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       current_sample_filter_column <- input[[paste0(current_label, "_sample_filter_column")]]
       current_row_filter_enabled <- input[[paste0(current_label, "_row_filter_enabled")]]
       current_row_filter_column <- input[[paste0(current_label, "_row_filter_column")]]
+      if (is.null(current_sample_filter_column)) {
+        current_sample_filter_column <- ""
+      }
+      if (is.null(current_row_filter_column)) {
+        current_row_filter_column <- ""
+      }
       
-      # get the groups/columns that are present in all omes
-      groups_in_all <- isolate(groups_in_all_omes())
-      rdesc_in_all <- isolate(rdesc_in_all_omes())
-      
-      # condition for when to update applyToAll to false
-      # NOTE: if something changes here, also check out the `gctSetupUI()`
-      # function to determine when applyToAll actually shows up in the UI
-      condition <- !(current_annotation_column %in% groups_in_all) |
-        (current_group_norm_selection & !(current_group_norm_column %in% groups_in_all)) |
-        (isTRUE(current_sample_filter_enabled) &
-           !(identical(current_sample_filter_column, "") || current_sample_filter_column %in% groups_in_all)) |
-        (isTRUE(current_row_filter_enabled) &
-           !(identical(current_row_filter_column, "") || current_row_filter_column %in% rdesc_in_all))
+      valid <- gct_setup_apply_to_all_valid(
+        annotation_column = current_annotation_column,
+        group_normalization = current_group_norm_selection,
+        group_normalization_column = current_group_norm_column,
+        sample_filter_enabled = current_sample_filter_enabled,
+        sample_filter_column = current_sample_filter_column,
+        row_filter_enabled = current_row_filter_enabled,
+        row_filter_column = current_row_filter_column,
+        groups_in_all = groups_in_all,
+        rdesc_in_all = rdesc_in_all
+      )
       
       # update applyToAll to FALSE if necessary
-      if (TRUE %in% condition) {
-        updateCheckboxInput(inputId = "applyToAll", value = FALSE)
+      if (!isTRUE(valid$ok)) {
+        was_on <- isTRUE(isolate(input$applyToAll))
+        updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+        if (was_on) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+        }
       }
     })
     
@@ -722,6 +817,31 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # change next/back buttons if applyToAll == TRUE
     observeEvent(input$applyToAll, {
+      if (isTRUE(input$applyToAll)) {
+        current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+        groups_in_all <- isolate(groups_in_all_omes())
+        rdesc_in_all <- isolate(rdesc_in_all_omes())
+        sc <- input[[paste0(current_label, "_sample_filter_column")]]
+        rc <- input[[paste0(current_label, "_row_filter_column")]]
+        if (is.null(sc)) sc <- ""
+        if (is.null(rc)) rc <- ""
+        valid <- gct_setup_apply_to_all_valid(
+          annotation_column = input[[paste0(current_label, "_annotation_column")]],
+          group_normalization = input[[paste0(current_label, "_group_normalization")]],
+          group_normalization_column = input[[paste0(current_label, "_group_normalization_column")]],
+          sample_filter_enabled = input[[paste0(current_label, "_sample_filter_enabled")]],
+          sample_filter_column = sc,
+          row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
+          row_filter_column = rc,
+          groups_in_all = groups_in_all,
+          rdesc_in_all = rdesc_in_all
+        )
+        if (!isTRUE(valid$ok)) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+          updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+          return()
+        }
+      }
       
       # change next button to submit
       if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
@@ -875,6 +995,28 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
       # select labels for assignment
       applyToAll <- ifelse(is.null(input$applyToAll), FALSE, input$applyToAll)
+      if (applyToAll) {
+        sc <- input[[paste0(current_label, "_sample_filter_column")]]
+        rc <- input[[paste0(current_label, "_row_filter_column")]]
+        if (is.null(sc)) sc <- ""
+        if (is.null(rc)) rc <- ""
+        valid <- gct_setup_apply_to_all_valid(
+          annotation_column = input[[paste0(current_label, "_annotation_column")]],
+          group_normalization = input[[paste0(current_label, "_group_normalization")]],
+          group_normalization_column = input[[paste0(current_label, "_group_normalization_column")]],
+          sample_filter_enabled = input[[paste0(current_label, "_sample_filter_enabled")]],
+          sample_filter_column = sc,
+          row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
+          row_filter_column = rc,
+          groups_in_all = isolate(groups_in_all_omes()),
+          rdesc_in_all = isolate(rdesc_in_all_omes())
+        )
+        if (!isTRUE(valid$ok)) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+          updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+          applyToAll <- FALSE
+        }
+      }
       if (applyToAll) {
         assignment_labels = all_labels # all labels
       } else {
