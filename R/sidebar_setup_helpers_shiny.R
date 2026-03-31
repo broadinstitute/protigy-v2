@@ -60,6 +60,22 @@ gctSetupUI <- function(ns,
   if (n_samples > 20 && norm_selected == "2-component") {
     norm_selected <- "None"
   }
+
+  sample_filter_column_selected <- parameters[[label]]$sample_filter_column
+  if (is.null(sample_filter_column_selected)) {
+    sample_filter_column_selected <- ""
+  }
+  sample_filter_values_choices <- character(0)
+  if (sample_filter_column_selected %in% names(GCTs[[label]]@cdesc)) {
+    sample_filter_values_choices <- sort(
+      unique(as.character(GCTs[[label]]@cdesc[[sample_filter_column_selected]]))
+    )
+    sample_filter_values_choices <- sample_filter_values_choices[!is.na(sample_filter_values_choices)]
+  }
+  sample_filter_values_selected <- parameters[[label]]$sample_filter_values
+  if (is.null(sample_filter_values_selected)) {
+    sample_filter_values_selected <- character(0)
+  }
   
   tagList(
     h4('Setup for ',
@@ -180,6 +196,43 @@ gctSetupUI <- function(ns,
         classes = "small-input"),
       ns = ns
     ),
+
+    ## sample filtering input
+    add_css_attributes(
+      checkboxInput(
+        ns(paste0(label, '_sample_filter_enabled')),
+        label = 'Filter samples by column',
+        value = isTRUE(parameters[[label]]$sample_filter_enabled)),
+      classes = "small-input"),
+
+    ## sample filtering column
+    conditionalPanel(
+      condition = paste0("input['", label, "_sample_filter_enabled']"),
+      add_css_attributes(
+        selectInput(
+          ns(paste0(label, '_sample_filter_column')),
+          label = "Sample filter column",
+          choices = c("", groups_choices),
+          selected = sample_filter_column_selected),
+        classes = "small-input"),
+      ns = ns
+    ),
+
+    ## sample filtering values
+    conditionalPanel(
+      condition = paste0("input['", label, "_sample_filter_enabled'] && input['", label, "_sample_filter_column'] != ''"),
+      add_css_attributes(
+        selectizeInput(
+          ns(paste0(label, '_sample_filter_values')),
+          label = "Keep samples with selected values",
+          choices = sample_filter_values_choices,
+          selected = sample_filter_values_selected,
+          multiple = TRUE,
+          options = list(plugins = list("remove_button"))),
+        classes = "small-input"),
+      p("Only selected values are kept. Unselected values are discarded."),
+      ns = ns
+    ),
     
     ## apply to all checkbox
     if (max_place > 1) {
@@ -191,7 +244,11 @@ gctSetupUI <- function(ns,
                            "'].includes(input['", label, "_annotation_column']) ",
                            "&& (!input['", label, "_group_normalization'] || ",
                            "['", paste(groups_choices_all_omes, collapse = "', '"), 
-                           "'].includes(input['", label, "_group_normalization_column']))"),
+                           "'].includes(input['", label, "_group_normalization_column']))",
+                           " && (!input['", label, "_sample_filter_enabled'] || ",
+                           "input['", label, "_sample_filter_column'] == '' || ",
+                           "['", paste(groups_choices_all_omes, collapse = "', '"),
+                           "'].includes(input['", label, "_sample_filter_column']))"),
         add_css_attributes(
           checkboxInput(ns('applyToAll'), 'Apply settings to all datasets'),
           classes = "small-input"),
@@ -246,8 +303,3 @@ validate_labels <- function(all_labels) {
   return(TRUE)
 }
 
-actionButton_icon_right <- function(inputId, label, icon, width = NULL) {
-  button <- shiny::actionButton(inputId, label, icon, width)
-  button$children[[1]] <- rev(button$children[[1]])
-  return(button)
-}

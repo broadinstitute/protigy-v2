@@ -304,3 +304,113 @@ test_that("merge_processed_gcts prevents ome prefix duplication", {
   # Verify rdesc rownames match rid (consistency check)
   expect_equal(rownames(GCTs_merged@rdesc), GCTs_merged@rid)
 })
+
+test_that("apply_sample_filter keeps only selected cdesc values", {
+  test_data <- matrix(1:8, nrow = 2, ncol = 4)
+  rownames(test_data) <- c("gene1", "gene2")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4")
+  test_cdesc <- data.frame(
+    QC.status = c("PASS", "FAIL", "PASS", "WARN"),
+    row.names = colnames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    sample_filter_values = c("PASS")
+  )
+
+  filtered <- apply_sample_filter(test_data, test_cdesc, params, ome = "proteome")
+  expect_equal(colnames(filtered$data), c("s1", "s3"))
+  expect_equal(rownames(filtered$cdesc), c("s1", "s3"))
+  expect_true(all(filtered$cdesc$QC.status == "PASS"))
+})
+
+test_that("apply_sample_filter errors when no samples remain", {
+  test_data <- matrix(1:6, nrow = 2, ncol = 3)
+  rownames(test_data) <- c("gene1", "gene2")
+  colnames(test_data) <- c("s1", "s2", "s3")
+  test_cdesc <- data.frame(
+    QC.status = c("FAIL", "FAIL", "WARN"),
+    row.names = colnames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    sample_filter_values = c("PASS")
+  )
+
+  expect_error(
+    apply_sample_filter(test_data, test_cdesc, params, ome = "proteome"),
+    "No samples remain after filtering"
+  )
+})
+
+test_that("merge_processed_gcts keeps union of samples after per-ome filtering", {
+  make_gct <- function(ome_name, sample_ids, feature_ids) {
+    mat <- matrix(
+      seq_along(feature_ids) * 10 + seq_along(sample_ids),
+      nrow = length(feature_ids),
+      ncol = length(sample_ids),
+      dimnames = list(feature_ids, sample_ids)
+    )
+    rdesc <- data.frame(
+      id = feature_ids,
+      row.names = feature_ids,
+      stringsAsFactors = FALSE
+    )
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      QC.status = rep("PASS", length(sample_ids)),
+      row.names = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    gct <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+    gct@rdesc$protigy.ome <- rep(ome_name, nrow(gct@rdesc))
+    gct
+  }
+
+  # Simulate post-filtered per-ome sample sets:
+  # proteome keeps s1/s2, phospho keeps s2/s3
+  proteome <- make_gct("proteome", c("s1", "s2"), c("f1", "f2"))
+  phospho <- make_gct("phosphoproteome", c("s2", "s3"), c("f1", "f2"))
+  GCTs_processed <- list(proteome = proteome, phosphoproteome = phospho)
+  parameters_updated <- list(
+    proteome = list(dataset_label = "proteome"),
+    phosphoproteome = list(dataset_label = "phosphoproteome")
+  )
+
+  session <- shiny::MockShinySession$new()
+  merged <- shiny::withReactiveDomain(
+    session,
+    merge_processed_gcts(GCTs_processed, parameters_updated)
+  )
+  expect_true(all(c("s1", "s2", "s3") %in% rownames(merged@cdesc)))
+
+  proteome_rows <- grepl("^proteome_", merged@rid)
+  phospho_rows <- grepl("^phosphoproteome_", merged@rid)
+
+  # Missing OME/sample combinations should be NA in merged matrix
+  expect_true(all(is.na(merged@mat[proteome_rows, "s3"])))
+  expect_true(all(is.na(merged@mat[phospho_rows, "s1"])))
+})
+
+test_that("setup defaults include sample filter parameters", {
+  defaults_path <- system.file(
+    "setup_parameters",
+    "setupDefaults.yaml",
+    package = "Protigy"
+  )
+  if (identical(defaults_path, "")) {
+    defaults_path <- testthat::test_path(
+      "..", "..", "inst", "setup_parameters", "setupDefaults.yaml"
+    )
+  }
+
+  defaults <- yaml::read_yaml(defaults_path)
+  expect_true("sample_filter_enabled" %in% names(defaults))
+  expect_true("sample_filter_column" %in% names(defaults))
+  expect_true("sample_filter_values" %in% names(defaults))
+  expect_identical(defaults$sample_filter_enabled, FALSE)
+})

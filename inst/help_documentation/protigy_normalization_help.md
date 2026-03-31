@@ -43,6 +43,23 @@ If your dataset contains gene symbol information, you can specify which column c
 - If `geneSymbol` already exists and you select "None" or "geneSymbol" itself, the existing `geneSymbol` column will be kept unchanged.
 - **Blank gene symbols**: Blank or empty gene symbol values are converted to `NA` and all rows are preserved. Features without gene symbols are kept in the analysis.
 
+## Sample Filtering by Column
+
+You can optionally filter samples within each dataset using a metadata column from `cdesc` (for example `QC.status`).
+
+- Enable **Filter samples by column** in setup.
+- Choose the **Sample filter column**.
+- Select one or more values in **Keep samples with selected values**.
+
+Filtering behavior is fixed: **selected values are kept, and all unselected values are discarded**.
+
+### Multi-ome behavior after filtering
+
+Filtering is applied independently to each uploaded ome before preprocessing and analysis.
+
+- If a sample is retained in at least one ome, it remains present in the merged multi-ome output.
+- For omes where that sample was filtered out, merged matrix entries are `NA` for those ome-specific features.
+
 ## Data Preprocessing Options
 
 The following sections explain the data preprocessing options available for normalizing and filtering your dataset before statistical analysis.

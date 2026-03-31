@@ -95,6 +95,38 @@ fix_gene_symbols <- function(rdesc) {
   return(list(rdesc = rdesc, removed_rids = removed_rids))
 }
 
+# Apply sample-level filtering using cdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_sample_filter <- function(data, cdesc, params, ome) {
+  if (!isTRUE(params$sample_filter_enabled)) {
+    return(list(data = data, cdesc = cdesc))
+  }
+
+  filter_column <- params$sample_filter_column
+  filter_values <- params$sample_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Sample filtering is enabled, but no sample filter column was selected.")
+  }
+  if (!(filter_column %in% names(cdesc))) {
+    stop("Sample filter column '", filter_column, "' was not found in cdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Sample filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_samples <- as.character(cdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(cdesc)[keep_samples]
+  if (length(keep_ids) == 0) {
+    stop("No samples remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[, keep_ids, drop = FALSE]
+  cdesc <- cdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, cdesc = cdesc))
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -139,6 +171,16 @@ transformGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## sample filtering
+              sample_filter_out <- apply_sample_filter(
+                data = data,
+                cdesc = cdesc,
+                params = params,
+                ome = ome
+              )
+              data <- sample_filter_out$data
+              cdesc <- sample_filter_out$cdesc
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
@@ -236,6 +278,16 @@ processGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## sample filtering
+              sample_filter_out <- apply_sample_filter(
+                data = data,
+                cdesc = cdesc,
+                params = params,
+                ome = ome
+              )
+              data <- sample_filter_out$data
+              cdesc <- sample_filter_out$cdesc
               
               ## handle gene symbol column selection
               gene_symbol_col <- params$gene_symbol_column
