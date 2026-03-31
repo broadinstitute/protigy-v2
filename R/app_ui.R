@@ -70,6 +70,40 @@ app_UI <- function(request) {dashboardPage(
       });
     ")),
 
+    # Experimental design panel - shown during CSV/Excel experimental design step
+    conditionalPanel(
+      condition = "output['setupSidebar-showExpDesignPanel']",
+      div(id = "exp-design-panel", style = "padding: 10px 15px;",
+          uiOutput("setupSidebar-expDesignPanelContent")
+      )
+    ),
+
+    # Separator between experimental design and data preview
+    conditionalPanel(
+      condition = "output['setupSidebar-showDataPreview']",
+      hr(style = "margin: 4px 15px;")
+    ),
+
+    # Data preview panel - shown when a CSV/Excel file is uploaded
+    conditionalPanel(
+      condition = "output['setupSidebar-showDataPreview']",
+      div(id = "data-preview-panel", style = "padding: 10px 15px;",
+        div(style = "display:flex; align-items:center; gap:8px; margin-bottom:6px;",
+          tags$strong(shiny::icon("table"), " Data Preview (first 20 rows)"),
+          actionButton("toggleDataPreview", "Hide", class = "btn btn-xs btn-default",
+                       onclick = "$('#data-preview-content').slideToggle(); $(this).text($(this).text() === 'Hide' ? 'Show' : 'Hide');")
+        ),
+        uiOutput("setupSidebar-previewFileSelector"),
+        div(id = "data-preview-content",
+            DT::DTOutput("setupSidebar-dataPreviewTable"))
+      )
+    ),
+
+    conditionalPanel(
+      condition = "output['setupSidebar-showDataPreview']",
+      div(style = "padding-top: 20px;")
+    ),
+
     navbarPage(
       title = '',
       id = "navbar-tabs",

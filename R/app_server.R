@@ -19,6 +19,7 @@ app_server <- function(input, output, session) {
   GCTs_and_params <- sidebar_output$GCTs_and_params
   globals <- sidebar_output$globals
   GCTs_original <- sidebar_output$GCTs_original
+  column_rename_map <- sidebar_output$column_rename_map
 
 
   ## Clear all notifications functionality
@@ -37,7 +38,8 @@ app_server <- function(input, output, session) {
   all_summary_exports <- summaryTabServer(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
-    GCTs_original = GCTs_original
+    GCTs_original = GCTs_original,
+    column_rename_map = column_rename_map
   )
   
   ## QC boxplots module

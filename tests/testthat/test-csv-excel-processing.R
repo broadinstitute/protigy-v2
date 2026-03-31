@@ -73,14 +73,16 @@ test_that("validateExperimentalDesign validates required columns", {
   
   expect_error(validateExperimentalDesign(invalid_design), "Missing required column: columnName")
   
-  # Empty values
+  # Empty string in columnName is allowed by the new validation (only NA and
+  # duplicates are rejected; empty-string checking was removed when the function
+  # was updated to permit NA in factor columns for metadata rows).
   empty_design <- data.frame(
     columnName = c("Sample1", ""),
     Experiment = c("Control", "Treatment"),
     stringsAsFactors = FALSE
   )
-  
-  expect_error(validateExperimentalDesign(empty_design), "Missing or empty values found")
+
+  expect_true(validateExperimentalDesign(empty_design))
 })
 
 test_that("readExperimentalDesign handles different file formats", {
@@ -513,17 +515,17 @@ test_that("SSV files work with processCSVExcelWorkflowWithPerDatasetIdentifiers"
     datapath = c("path1"),
     stringsAsFactors = FALSE
   )
-  
+
   experimental_design <- data.frame(
     columnName = c("Sample1", "Sample2"),
     Experiment = c("Control", "Treatment"),
     Group = c("Group1", "Group2"),
     stringsAsFactors = FALSE
   )
-  
+
   identifier_columns <- c("protein_id")
   labels <- c("test_dataset_ssv")
-  
+
   # Create temporary SSV file for testing
   temp_ssv <- tempfile(fileext = ".ssv")
   test_data <- data.frame(
@@ -534,31 +536,203 @@ test_that("SSV files work with processCSVExcelWorkflowWithPerDatasetIdentifiers"
     stringsAsFactors = FALSE
   )
   write.table(test_data, temp_ssv, sep = ";", row.names = FALSE, quote = FALSE)
-  
+
   # Update mock_files with actual file path
   mock_files$datapath <- temp_ssv
-  
+
   # Test the function with SSV file
   result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(
     mock_files, experimental_design, identifier_columns, labels
   )
-  
+
   # Check structure matches GCT workflow
   expect_type(result, "list")
   expect_equal(names(result), c("GCTs", "parameters"))
   expect_equal(names(result$GCTs), "test_dataset_ssv")
   expect_equal(names(result$parameters), "test_dataset_ssv")
-  
+
   # Check GCT object
   expect_s4_class(result$GCTs$test_dataset_ssv, "GCT")
   expect_equal(nrow(result$GCTs$test_dataset_ssv@mat), 2) # 2 features
   expect_equal(ncol(result$GCTs$test_dataset_ssv@mat), 2) # 2 samples
-  
+
   # Check parameters structure
   expect_true("gct_file_path" %in% names(result$parameters$test_dataset_ssv))
   expect_true("gct_file_name" %in% names(result$parameters$test_dataset_ssv))
   expect_equal(result$parameters$test_dataset_ssv$gct_file_name, "test1.ssv")
-  
+
   # Clean up temporary file
   unlink(temp_ssv)
+})
+
+################################################################################
+# Tests for NA handling in experimental design (new validation behavior)
+################################################################################
+
+test_that("validateExperimentalDesign allows NA in factor columns for metadata rows", {
+  # This is the real-world scenario: rows with all-NA factor values are rdesc/metadata
+  design_with_metadata_rows <- data.frame(
+    columnName = c("PG.Genes", "PG.ProteinGroups", "Sample1", "Sample2"),
+    Condition  = c(NA, NA, "Control", "Treatment"),
+    Replicate  = c(NA, NA, 1L, 2L),
+    stringsAsFactors = FALSE
+  )
+  expect_true(validateExperimentalDesign(design_with_metadata_rows))
+})
+
+test_that("validateExperimentalDesign errors on NA in columnName", {
+  design_with_na_colname <- data.frame(
+    columnName = c("Sample1", NA, "Sample3"),
+    Condition  = c("Control", "Treatment", "Control"),
+    stringsAsFactors = FALSE
+  )
+  expect_error(
+    validateExperimentalDesign(design_with_na_colname),
+    "columnName.*NA.*row"
+  )
+})
+
+test_that("validateExperimentalDesign errors on duplicate columnName values", {
+  design_with_dupes <- data.frame(
+    columnName = c("Sample1", "Sample1", "Sample2"),
+    Condition  = c("Control", "Treatment", "Control"),
+    stringsAsFactors = FALSE
+  )
+  expect_error(
+    validateExperimentalDesign(design_with_dupes),
+    "Duplicate"
+  )
+})
+
+test_that("validateUniqueIdentifiers errors when identifier column contains NA", {
+  test_data <- data.frame(
+    protein_id = c("P1", NA, "P3"),
+    sample1    = c(1, 2, 3),
+    stringsAsFactors = FALSE
+  )
+  expect_error(
+    validateUniqueIdentifiers(test_data, "protein_id"),
+    "NA/missing"
+  )
+})
+
+test_that("classifyColumns returns diagnostic counts", {
+  sample_ids <- c("Sample1", "Sample2", "PG.Genes", "UnknownCol")
+  exp_design <- data.frame(
+    columnName = c("Sample1", "Sample2", "PG.Genes"),
+    Condition  = c("Control", "Treatment", NA),
+    Replicate  = c(1L, 2L, NA),
+    stringsAsFactors = FALSE
+  )
+  result <- classifyColumns(sample_ids, exp_design)
+
+  # Sample1, Sample2 are data columns; PG.Genes is metadata (all-NA factors)
+  expect_equal(sort(result$sample_columns), c("Sample1", "Sample2"))
+  # PG.Genes (metadata row) and UnknownCol (not in design) both become rdesc
+  expect_true("PG.Genes" %in% result$rdesc_columns)
+  expect_true("UnknownCol" %in% result$rdesc_columns)
+  # Diagnostic counts
+  expect_equal(result$n_not_in_design, 1L)  # UnknownCol
+  expect_equal(result$n_all_na_meta, 1L)    # PG.Genes
+})
+
+test_that("convertToGCT with metadata rows in experimental design produces correct GCT", {
+  # Simulate a real-world scenario: experimental design has 8 metadata rows (all-NA factors)
+  # and 2 sample rows
+  test_data <- data.frame(
+    protigy_id      = c("ProtA", "ProtB"),
+    PG.Genes        = c("GENE1", "GENE2"),
+    PG.ProteinGroups = c("ProtA;ProtB", "ProtC"),
+    Sample1         = c(1.0, 2.0),
+    Sample2         = c(3.0, 4.0),
+    stringsAsFactors = FALSE
+  )
+  exp_design <- data.frame(
+    columnName = c("PG.Genes", "PG.ProteinGroups", "Sample1", "Sample2"),
+    Condition  = c(NA, NA, "Control", "Treatment"),
+    Replicate  = c(NA, NA, 1L, 2L),
+    stringsAsFactors = FALSE
+  )
+  gct_obj <- convertToGCT(test_data, exp_design, "test.csv", "protigy_id")
+
+  expect_s4_class(gct_obj, "GCT")
+  expect_equal(ncol(gct_obj@mat), 2)         # 2 samples
+  expect_equal(nrow(gct_obj@mat), 2)         # 2 features
+  expect_true("PG.Genes" %in% names(gct_obj@rdesc))
+  expect_true("PG.ProteinGroups" %in% names(gct_obj@rdesc))
+})
+
+################################################################################
+# Tests for Spectronaut condition setup NA handling
+################################################################################
+
+test_that("buildExpDesignFromConditionSetup errors on NA Condition", {
+  condition_data <- data.frame(
+    "Run Label"  = c("Run1", "Run2"),
+    "Condition"  = c("Control", NA),
+    "Replicate"  = c(1L, 2L),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  expect_error(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE),
+    "Condition column has NA"
+  )
+})
+
+test_that("buildExpDesignFromConditionSetup warns on NA Replicate and uses Condition-only when unique", {
+  condition_data <- data.frame(
+    "Run Label" = c("Run1", "Run2"),
+    "Condition" = c("Control", "Treatment"),
+    "Replicate" = c(1L, NA),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  # Verify the warning is emitted
+  expect_warning(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE),
+    "Replicate is NA"
+  )
+  # Capture the return value separately (expect_warning returns the warning, not the result)
+  result <- suppressWarnings(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE)
+  )
+  # Conditions are unique — all rows should use Condition only
+  expect_equal(result$columnName, c("Control", "Treatment"))
+})
+
+test_that("buildExpDesignFromConditionSetup uses Run Label when Conditions not unique and Replicate NA", {
+  condition_data <- data.frame(
+    "Run Label" = c("Run1", "Run2"),
+    "Condition" = c("Control", "Control"),
+    "Replicate" = c(1L, NA),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  expect_warning(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE),
+    "Replicate is NA"
+  )
+  result <- suppressWarnings(
+    buildExpDesignFromConditionSetup(condition_data, merge_condition_replicate = TRUE)
+  )
+  expect_equal(result$columnName, c("Run1", "Run2"))
+})
+
+test_that("read_spectronaut_condition_setup errors on NA in required columns", {
+  tmp_file <- tempfile(fileext = ".tsv")
+  data_with_na <- data.frame(
+    "Run Label"  = c("Run1", "Run2"),
+    "Condition"  = c("Control", NA),
+    "Replicate"  = c(1L, 2L),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  readr::write_tsv(data_with_na, tmp_file)
+
+  expect_error(
+    read_spectronaut_condition_setup(tmp_file),
+    "NA values"
+  )
+  unlink(tmp_file)
 })

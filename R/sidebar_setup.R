@@ -164,14 +164,17 @@ setupSidebarUI <- function(id = "setupSidebar") {
       uiOutput(ns("fileUploadSection")),
 
       hr(),
-      
+
+      # Step indicator for multi-step CSV/Excel workflow
+      uiOutput(ns('csvStepIndicator')),
+
       # the main body of the sidebar, contents assigned in setupSidebarServer
       uiOutput(ns('sideBarMain')),
       
       # navigation buttons on the bottom left/right of sidebar
       fluidRow(
-        column(6, uiOutput(ns('leftButton'))),
-        column(6, uiOutput(ns('rightButton')))
+        column(6, div(style = "text-align: left;",  uiOutput(ns('leftButton')))),
+        column(6, div(style = "text-align: right;", uiOutput(ns('rightButton'))))
       )
     )
   )
@@ -212,7 +215,18 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # Labels that just received default_parameters; after first parse, gene_symbol_column
     # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
     gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
-    
+    exp_design_df                  <- reactiveVal(NULL)
+    show_exp_design_panel          <- reactiveVal(FALSE)
+    is_spectronaut_reactive        <- reactiveVal(list())
+    spectronaut_processed_data     <- reactiveVal(NULL)
+    spectronaut_processed_data_pristine <- reactiveVal(NULL)  # immutable copy, never renamed
+    preview_data_reactive          <- reactiveVal(NULL)
+    preview_all_data               <- reactiveVal(list())  # named list of data frames keyed by filename
+    condition_setup_mappings       <- reactiveVal(list())  # per-label mapping from condition setup
+    column_rename_map              <- reactiveVal(character(0))  # final old->new column name map
+    raw_column_names_per_label     <- reactiveVal(list())  # original raw column names per label, before any renaming
+    condition_file_observers_registered <- reactiveVal(list())  # guard against duplicate observers
+
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
     parameter_choices <- read_yaml(system.file('setup_parameters/setupChoices.yaml', package = 'Protigy'))
@@ -270,7 +284,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
-                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; line-height: 1.4;",
+                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; line-height: 1.4;",
                 files$name[i]
               ),
               actionButton(
@@ -995,6 +1009,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # process GCTs 
     observeEvent(input$submitGCTButton, {
+      shinyjs::runjs("$('#data-preview-content').hide(); $('#toggleDataPreview').text('Show');")
       parameters <- parameters_internal_reactive()
       GCTs_up <- GCTs_unprocessed_internal_reactive()
       # Work on deep clones so setup/upload GCTs are not mutated (no geneSymbol_original on upload).
@@ -1176,7 +1191,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                            'sample_filter_values',
                            'row_filter_enabled',
                            'row_filter_column',
-                           'row_filter_values')
+                           'row_filter_values',
+                           'gene_symbol_split',
+                           'gene_symbol_separator')
 
       # assign new user selections
       # NOTE: there are fields in `new_parameters` that aren't updated here,
@@ -1251,6 +1268,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # Label assignment for CSV/Excel/TSV files (same pattern as GCT workflow)
     csvExcelLabelAssignment <- function() {
+      setCsvStepIndicator(1, 4, "Assign Labels & Preprocessing")
       output$sideBarMain <- renderUI({csvExcelLabelSetupUI(ns = ns,
                                                            dataFileNames = accumulated_files()$name)})
       output$rightButton <- renderUI({actionButton(ns("submitCSVExcelLabelsButton"),
@@ -1262,6 +1280,155 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       lapply(names(parameters_internal_reactive()), function(label) {
         filename <- parameters_internal_reactive()[[label]]$gct_file_name
         updateTextInput(inputId = paste0('CSVExcelLabel_', filename), value = label)
+      })
+
+      # Populate source column dropdowns and register per-file condition setup observers.
+      # Observers are registered once per session (guard against duplicate registration
+      # on back-navigation, Bug 6).
+      lapply(seq_len(nrow(accumulated_files())), function(i) {
+        local({
+          f <- accumulated_files()$name[i]
+          file_id <- gsub("[^a-zA-Z0-9_]", "_", f)
+          file_path <- accumulated_files()$datapath[i]
+          file_ext <- tools::file_ext(tolower(f))
+
+          # Populate source column dropdown
+          cols <- tryCatch({
+            preview <- read_uploaded_data_preview(file_path, file_ext, n_max = 1)
+            if (!is.null(preview)) names(preview) else character(0)
+          }, error = function(e) character(0))
+
+          if (length(cols) > 0) {
+            updateSelectInput(session, paste0("id_source_column_", file_id), choices = cols, selected = cols[1])
+          }
+
+          # Helper: update the data preview for this file using an optionally processed data frame
+          update_file_preview <- function(df) {
+            all_data <- preview_all_data()
+            all_data[[f]] <- df
+            preview_all_data(all_data)
+            # Update live preview if this file is currently shown
+            currently_shown <- input$previewFileSelect
+            if (is.null(currently_shown) || currently_shown == f) {
+              preview_data_reactive(df)
+            }
+          }
+
+          # Only register per-file observers once to prevent duplicate firings
+          observer_key <- paste0("conditionObserver_registered_", file_id)
+          if (!isTRUE(condition_file_observers_registered()[[observer_key]])) {
+            registered <- condition_file_observers_registered()
+            registered[[observer_key]] <- TRUE
+            condition_file_observers_registered(registered)
+
+            # --- Split identifier live preview ---
+            # Reactive that computes the split preview for this file
+            split_preview_data <- reactive({
+              do_split <- isTRUE(input[[paste0("delimit_id_", file_id)]])
+              raw <- tryCatch(
+                read_uploaded_data_preview(file_path, file_ext, n_max = 20),
+                error = function(e) NULL
+              )
+              if (is.null(raw) || !do_split) return(raw)
+              src_col <- input[[paste0("id_source_column_", file_id)]]
+              sep_val <- input[[paste0("id_separator_", file_id)]]
+              if (is.null(src_col) || !src_col %in% names(raw)) return(raw)
+              sep_val <- if (!is.null(sep_val) && nchar(trimws(sep_val)) > 0) sep_val else ";"
+              tryCatch(extract_protigy_id(raw, src_col, sep_val), error = function(e) raw)
+            })
+
+            observeEvent(
+              list(
+                input[[paste0("delimit_id_", file_id)]],
+                input[[paste0("id_source_column_", file_id)]],
+                input[[paste0("id_separator_", file_id)]]
+              ),
+              {
+                df <- split_preview_data()
+                if (!is.null(df)) update_file_preview(df)
+              },
+              ignoreInit = TRUE
+            )
+
+            # --- Condition setup file upload ---
+            input_id <- paste0("conditionSetupFile_", file_id)
+            observeEvent(input[[input_id]], {
+              req(input[[input_id]])
+              tryCatch({
+                cond_data <- read_spectronaut_condition_setup(input[[input_id]]$datapath)
+
+                # Store condition data keyed by file name (label resolved at submit)
+                current_mappings <- condition_setup_mappings()
+                current_mappings[[f]] <- cond_data
+                condition_setup_mappings(current_mappings)
+
+                # Detect suffixes from this file's columns
+                all_cols <- tryCatch({
+                  preview <- read_uploaded_data_preview(file_path, file_ext, n_max = 1)
+                  if (!is.null(preview)) names(preview) else character(0)
+                }, error = function(e) character(0))
+
+                run_labels <- cond_data[["Run Label"]]
+                suffixes <- detect_quant_suffixes(all_cols, run_labels)
+
+                output[[paste0("conditionSuffixUI_", file_id)]] <- renderUI({
+                  if (length(suffixes) == 0) {
+                    p("No quantification suffixes detected. Check that run labels match column names.",
+                      style = "color: orange;")
+                  } else {
+                    selectInput(
+                      ns(paste0("conditionSuffix_", file_id)),
+                      "Quantification metric:",
+                      choices = suffixes,
+                      selected = suffixes[1]
+                    )
+                  }
+                })
+
+                # Live preview: apply condition setup rename to a small preview
+                if (length(suffixes) > 0) {
+                  tryCatch({
+                    raw <- read_uploaded_data_preview(file_path, file_ext, n_max = 20)
+                    merge_cr <- isTRUE(input[[paste0("merge_cond_rep_", file_id)]])
+                    renamed <- withCallingHandlers(
+                      apply_spectronaut_condition_setup(raw, cond_data, suffixes[1], merge_cr),
+                      warning = function(w) invokeRestart("muffleWarning")
+                    )
+                    update_file_preview(renamed)
+                  }, error = function(e) NULL)
+                }
+              }, error = function(e) {
+                showNotification(
+                  HTML(paste0("<b>Error reading condition setup file:</b><br>", e$message)),
+                  type = "error", duration = NULL, closeButton = TRUE
+                )
+              })
+            }, ignoreInit = TRUE)
+
+            # --- Re-apply condition preview when suffix or merge changes ---
+            observeEvent(
+              list(
+                input[[paste0("conditionSuffix_", file_id)]],
+                input[[paste0("merge_cond_rep_", file_id)]]
+              ),
+              {
+                cond_data <- condition_setup_mappings()[[f]]
+                sel_suffix <- input[[paste0("conditionSuffix_", file_id)]]
+                if (is.null(cond_data) || is.null(sel_suffix)) return()
+                tryCatch({
+                  raw <- read_uploaded_data_preview(file_path, file_ext, n_max = 20)
+                  merge_cr <- isTRUE(input[[paste0("merge_cond_rep_", file_id)]])
+                  renamed <- withCallingHandlers(
+                    apply_spectronaut_condition_setup(raw, cond_data, sel_suffix, merge_cr),
+                    warning = function(w) invokeRestart("muffleWarning")
+                  )
+                  update_file_preview(renamed)
+                }, error = function(e) NULL)
+              },
+              ignoreInit = TRUE
+            )
+          }
+        })
       })
     }
 
@@ -1304,15 +1471,227 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         ))
       }
 
-      # Move to identifier column selection
+      # Collect per-file flags: delimit_id and use_condition_setup
+      deliminate_flags <- setNames(
+        sapply(accumulated_files()$name, function(f) {
+          file_id <- gsub("[^a-zA-Z0-9_]", "_", f)
+          isTRUE(input[[paste0("delimit_id_", file_id)]])
+        }),
+        accumulated_files()$name
+      )
+      condition_flags <- setNames(
+        sapply(accumulated_files()$name, function(f) isTRUE(input[[paste0("use_condition_setup_", f)]])),
+        accumulated_files()$name
+      )
+
+      # Mark is_spectronaut for any file with either feature enabled
+      spectronaut_flags <- setNames(
+        deliminate_flags | condition_flags,
+        accumulated_files()$name
+      )
+      is_spectronaut_reactive(spectronaut_flags)
+
+      # Inline preprocessing: apply extract_protigy_id and/or condition setup per file
+      n_to_process <- sum(deliminate_flags | condition_flags)
+      if (n_to_process > 0) {
+        shinyjs::disable("submitCSVExcelLabelsButton")
+        on.exit(shinyjs::enable("submitCSVExcelLabelsButton"), add = TRUE)
+      }
+      processed <- list()
+      new_condition_mappings <- list()
+      raw_col_names <- list()
+      preprocess_error <- FALSE
+      withProgress(message = "Preprocessing files...", value = 0, {
+      for (i in seq_along(labels)) {
+        f <- accumulated_files()$name[i]
+        file_id <- gsub("[^a-zA-Z0-9_]", "_", f)
+        lbl <- labels[i]
+        file_path <- accumulated_files()$datapath[i]
+        file_ext <- tools::file_ext(tolower(f))
+
+        do_deliminate <- isTRUE(deliminate_flags[f])
+        do_condition <- isTRUE(condition_flags[f])
+
+        if (!do_deliminate && !do_condition) next
+
+        data <- tryCatch(
+          read_uploaded_data_preview(file_path, file_ext, n_max = Inf),
+          error = function(e) {
+            showNotification(
+              HTML(paste0("<b>Error reading ", f, ":</b><br>", e$message)),
+              type = "error", duration = NULL, closeButton = TRUE
+            )
+            NULL
+          }
+        )
+        if (is.null(data)) next
+
+        if (do_deliminate) {
+          src_col <- input[[paste0("id_source_column_", file_id)]]
+          sep_val <- input[[paste0("id_separator_", file_id)]]
+          if (!is.null(src_col) && src_col %in% names(data)) {
+            sep_val <- if (!is.null(sep_val) && nchar(trimws(sep_val)) > 0) sep_val else ";"
+            data <- extract_protigy_id(data, src_col, sep_val)
+          }
+        }
+
+        # Capture column names before Spectronaut renaming (but after split-id which adds protigy_id)
+        pre_condition_names <- names(data)
+
+        if (do_condition) {
+          # Condition data is stored by file name (f) in condition_setup_mappings
+          cond_data <- condition_setup_mappings()[[f]]
+          sel_suffix <- input[[paste0("conditionSuffix_", file_id)]]
+          merge_cr <- isTRUE(input[[paste0("merge_cond_rep_", file_id)]])
+          if (is.null(cond_data)) {
+            showNotification(
+              HTML(paste0("<b>Error: Missing condition setup for ", lbl, "</b><br>",
+                          "Please upload a condition setup file before proceeding.")),
+              type = "error", duration = NULL, closeButton = TRUE
+            )
+            preprocess_error <- TRUE
+            break
+          }
+          if (is.null(sel_suffix)) {
+            showNotification(
+              HTML(paste0("<b>Error: No quantification metric selected for ", lbl, "</b><br>",
+                          "The suffix dropdown may still be loading. Please wait and try again.")),
+              type = "error", duration = NULL, closeButton = TRUE
+            )
+            preprocess_error <- TRUE
+            break
+          }
+          if (!is.null(cond_data) && !is.null(sel_suffix)) {
+            data <- tryCatch(
+              withCallingHandlers(
+                apply_spectronaut_condition_setup(data, cond_data, sel_suffix, merge_cr),
+                warning = function(w) {
+                  if (inherits(w, "replicateNAWarning")) {
+                    showNotification(
+                      HTML(paste0("<b>Warning: Replicate column issue</b><br>", conditionMessage(w))),
+                      type = "warning", duration = NULL, closeButton = TRUE
+                    )
+                    invokeRestart("muffleWarning")
+                  }
+                }
+              ),
+              error = function(e) {
+                showNotification(
+                  HTML(paste0("<b>Error applying condition setup for ", lbl, ":</b><br>", e$message)),
+                  type = "error", duration = NULL, closeButton = TRUE
+                )
+                data
+              }
+            )
+            # Store the condition->column mapping for sample_annotation auto-population
+            # Include original run labels so sample_annotation shows traceable names
+            exp_design_from_condition <- tryCatch(
+              buildExpDesignFromConditionSetup(cond_data, merge_cr),
+              error = function(e) NULL
+            )
+            if (!is.null(exp_design_from_condition)) {
+              exp_design_from_condition$original_run_label <- cond_data[["Run Label"]]
+              new_condition_mappings[[lbl]] <- exp_design_from_condition
+            }
+          }
+        }
+
+        # Build mapping: post-processing column name -> original raw column name.
+        # Columns that survived processing are matched by position against pre-condition names.
+        # Columns dropped by Spectronaut won't appear; columns unchanged keep their raw name.
+        post_names <- names(data)
+        # For columns that existed before condition rename, build the map.
+        # apply_spectronaut_condition_setup renames in-place and drops columns,
+        # but does NOT reorder. Surviving columns are a subset in original order,
+        # so we can reconstruct the map by tracking which raw columns survived.
+        # Columns not renamed (non-run columns) have the same name in both.
+        # Columns renamed have different names but same positional slot.
+        survived_raw <- pre_condition_names[pre_condition_names %in% pre_condition_names]
+        # Build by matching: for each column in post_names, find its raw predecessor.
+        # Since apply_spectronaut_condition_setup only renames+drops (no reorder),
+        # the surviving columns maintain order. We can match by finding which raw columns
+        # are still present (same name) and which were renamed (different name, same position).
+        raw_map <- character(0)
+        if (do_condition) {
+          # Columns that weren't renamed: same name in both pre and post
+          unchanged <- intersect(pre_condition_names, post_names)
+          raw_map <- setNames(unchanged, unchanged)
+          # Columns that were renamed: in pre but not in post by name
+          # The rename_map from condition setup maps old_raw_col -> new_col
+          # Reconstruct it from the condition setup data
+          if (!is.null(cond_data) && !is.null(sel_suffix)) {
+            exp_d <- tryCatch(buildExpDesignFromConditionSetup(cond_data, merge_cr),
+                              error = function(e) NULL)
+            if (!is.null(exp_d)) {
+              run_labels <- cond_data[["Run Label"]]
+              for (j in seq_along(run_labels)) {
+                # Find the raw column name that matches this run label + suffix
+                pattern <- paste0(run_labels[j], sel_suffix)
+                raw_col <- pre_condition_names[pre_condition_names == pattern]
+                if (length(raw_col) == 0) {
+                  raw_col <- pre_condition_names[endsWith(pre_condition_names, pattern)]
+                }
+                if (length(raw_col) >= 1 && exp_d$columnName[j] %in% post_names) {
+                  raw_map[exp_d$columnName[j]] <- raw_col[1]
+                }
+              }
+            }
+          }
+        } else {
+          # No condition rename — raw names are the post names
+          raw_map <- setNames(post_names, post_names)
+        }
+        raw_col_names[[lbl]] <- raw_map
+
+        processed[[lbl]] <- data
+        setProgress(i / length(labels), detail = paste("Processed", lbl))
+      }
+      }) # end withProgress
+
+      # Abort if any preprocessing step failed — do not mutate downstream state
+      if (preprocess_error) return()
+
+      pristine <- if (length(processed) > 0) processed else NULL
+      spectronaut_processed_data(pristine)
+      spectronaut_processed_data_pristine(pristine)
+      condition_setup_mappings(new_condition_mappings)
+      raw_column_names_per_label(raw_col_names)
+      # Clear stored identifier columns — preprocessing may have changed available columns (Bug 8)
+      csvExcel_identifier_columns_reactive(NULL)
+
+      # Update data preview to reflect preprocessed data (keyed by label → filename)
+      if (length(processed) > 0) {
+        all_previews <- preview_all_data()
+        for (i in seq_along(labels)) {
+          lbl <- labels[i]
+          fname <- accumulated_files()$name[i]
+          if (!is.null(processed[[lbl]])) {
+            # Show first 20 rows in preview
+            all_previews[[fname]] <- head(processed[[lbl]], 20)
+          }
+        }
+        preview_all_data(all_previews)
+        # Refresh the currently displayed preview
+        currently_shown <- input$previewFileSelect
+        first_file <- accumulated_files()$name[1]
+        show_file <- if (!is.null(currently_shown) && currently_shown %in% names(all_previews)) {
+          currently_shown
+        } else {
+          first_file
+        }
+        preview_data_reactive(all_previews[[show_file]])
+      }
+
       csvExcelIdentifierSelection(labels)
     })
 
     # Identifier column selection step
     csvExcelIdentifierSelection <- function(labels) {
+      setCsvStepIndicator(2, 4, "Select Identifier Column")
       output$sideBarMain <- renderUI({csvExcelIdentifierSetupUI(ns = ns,
                                                                dataFiles = accumulated_files(),
-                                                               labels = labels)})
+                                                               labels = labels,
+                                                               preprocessed_data = spectronaut_processed_data())})
       output$rightButton <- renderUI({actionButton(ns("submitCSVExcelIdentifiersButton"), 
                                                    "Next",
                                                    class = "btn btn-primary")})
@@ -1334,12 +1713,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # Handle identifier column submission
     observeEvent(input$submitCSVExcelIdentifiersButton, {
       # Collect identifier columns for each file
-      identifier_columns <- sapply(seq_len(nrow(accumulated_files())), function(i) {
+      # Use lapply (not sapply) to preserve NULLs when a selectInput was never rendered
+      identifier_columns <- lapply(seq_len(nrow(accumulated_files())), function(i) {
         input[[paste0("identifierColumn_", i)]]
       })
 
       # Validate identifier columns
-      if (any(is.null(identifier_columns)) || any(identifier_columns == "")) {
+      if (any(sapply(identifier_columns, is.null)) || any(identifier_columns == "")) {
         showNotification(
           ui = HTML(paste0("<b>Error</b><br>", "Please select identifier columns for all datasets.")),
           type = "error",
@@ -1349,27 +1729,206 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         return()
       }
 
+      # Convert to character vector now that NULLs are confirmed absent
+      identifier_columns <- unlist(identifier_columns)
+
       # Store identifier columns for later retrieval
       csvExcel_identifier_columns_reactive(identifier_columns)
 
-      # Move to experimental design setup
-      csvExcelExpDesignSetup(identifier_columns)
+      labels <- sapply(accumulated_files()$name, function(file) {
+        input[[paste0('CSVExcelLabel_', file)]]
+      })
+
+      csvExcelExpDesignSetup(identifier_columns, labels)
     })
 
     # Experimental design setup step
-    csvExcelExpDesignSetup <- function(identifier_columns) {
+    csvExcelExpDesignSetup <- function(identifier_columns, labels) {
+      # Build sample names: prefer preprocessed data (Spectronaut), else raw file
+      # Include all columns (including identifier) so the full data shape is visible
+      preprocessed <- spectronaut_processed_data()
+      all_samples <- c()
+      for (i in seq_len(nrow(accumulated_files()))) {
+        lbl       <- labels[i]
+        file_ext  <- tools::file_ext(tolower(accumulated_files()$name[i]))
+        file_path <- accumulated_files()$datapath[i]
+        if (!is.null(preprocessed) && !is.null(preprocessed[[lbl]])) {
+          all_samples <- c(all_samples, names(preprocessed[[lbl]]))
+        } else if (file_ext == "csv") {
+          data <- readr::read_csv(file_path, n_max = 1, show_col_types = FALSE)
+          all_samples <- c(all_samples, names(data))
+        } else if (file_ext == "tsv") {
+          data <- readr::read_tsv(file_path, n_max = 1, show_col_types = FALSE)
+          all_samples <- c(all_samples, names(data))
+        } else if (file_ext %in% c("xlsx", "xls")) {
+          data <- readxl::read_excel(file_path, n_max = 1)
+          all_samples <- c(all_samples, names(data))
+        }
+      }
+      # Warn if the same column name appears in multiple files — unique() would silently
+      # merge them into one exp design row (Bug 10)
+      if (length(all_samples) > 0 && anyDuplicated(all_samples) > 0) {
+        dup_names <- unique(all_samples[duplicated(all_samples)])
+        dup_display <- if (length(dup_names) <= 5) {
+          paste(dup_names, collapse = ", ")
+        } else {
+          paste0(paste(head(dup_names, 5), collapse = ", "),
+                 ", \u2026 and ", length(dup_names) - 5, " more")
+        }
+        showNotification(
+          HTML(paste0(
+            "<b>Warning: Duplicate column names across files</b><br>",
+            length(dup_names), " column name(s) appear in more than one uploaded file: ",
+            dup_display,
+            ". They will share a single row in the experimental design. ",
+            "If these represent different samples, rename the columns in the source files."
+          )),
+          type = "warning", duration = NULL, closeButton = TRUE
+        )
+      }
+      sample_names <- if (length(all_samples) > 0) unique(all_samples) else template_sample_names()
 
-      output$sideBarMain <- renderUI({csvExcelExpDesignSetupUI(ns = ns,
-                                                      dataFiles = accumulated_files(),
-                                                              labels = sapply(accumulated_files()$name, function(file) {
-                                                                input[[paste0('CSVExcelLabel_', file)]]
-                                                              }))})
+      # Build initial experimental design data frame
+      # If condition setup mappings exist, auto-populate sample_annotation
+      cond_mappings <- condition_setup_mappings()
+      has_condition_mappings <- length(cond_mappings) > 0
+
+      # Merge all condition mappings into a lookup: renamed_column -> original_run_label
+      # After condition setup, data columns are already renamed (columnName = new names).
+      # sample_annotation should show the original run labels for traceability.
+      annotation_lookup <- character(0)
+      if (has_condition_mappings) {
+        for (lbl in names(cond_mappings)) {
+          mapping_df <- cond_mappings[[lbl]]
+          if (is.data.frame(mapping_df) && "columnName" %in% names(mapping_df) &&
+              "original_run_label" %in% names(mapping_df)) {
+            new_names <- setNames(mapping_df$original_run_label, mapping_df$columnName)
+            annotation_lookup <- c(annotation_lookup, new_names)
+          }
+        }
+      }
+
+      base_df <- data.frame(
+        columnName = sample_names,
+        stringsAsFactors = FALSE
+      )
+
+      # Insert sample_annotation as 2nd column if condition mappings exist
+      if (has_condition_mappings) {
+        base_df$sample_annotation <- annotation_lookup[sample_names]
+      }
+
+      base_df$Condition <- rep(NA_character_, length(sample_names))
+      base_df$Replicate <- rep(NA_character_, length(sample_names))
+
+      exp_design_df(base_df)
+
+      show_exp_design_panel(TRUE)
+      setCsvStepIndicator(3, 4, "Experimental Design")
+      output$sideBarMain <- renderUI({
+        df <- exp_design_df()
+        if (!is.null(df) && ncol(df) > 1) {
+          actionButton(ns("processCSVExcel"), "Process Files",
+                       class = "btn btn-primary btn-block",
+                       style = "width: 80%;")
+        } else {
+          p(style = "color:#888; font-size:0.9em;",
+            "Fill in the Experimental Design table, then click Process Files.")
+        }
+      })
       output$rightButton <- NULL
       output$leftButton <- renderUI({actionButton(ns("backToCSVExcelIdentifiersButton"),
                                                   "Back",
                                                   icon = icon("chevron-left"),
                                                   class = "btn btn-default")})
+
+      # Auto-check rename checkbox and show guidance when condition mappings were provided (UX 4)
+      if (has_condition_mappings) {
+        updateCheckboxInput(session, "rename_to_sample_annotation", value = TRUE)
+        showNotification(
+          HTML(paste0(
+            "<b>Condition setup detected</b><br>",
+            "Your condition setup file provided sample names. ",
+            "The <em>sample_annotation</em> column shows original run labels for traceability. ",
+            "\"Use friendly sample names\" has been enabled automatically."
+          )),
+          type = "message", duration = 8, closeButton = TRUE
+        )
+      }
     }
+
+    # Helper: render step indicator for CSV/Excel workflow (UX 6)
+    setCsvStepIndicator <- function(step, total = 4, label = "") {
+      output$csvStepIndicator <- renderUI({
+        tags$p(
+          style = paste0(
+            "color:#888; font-size:0.82em; margin:0 0 4px 0; ",
+            "border-bottom:1px solid #ddd; padding-bottom:4px;"
+          ),
+          paste0("Step ", step, " of ", total, ": ", label)
+        )
+      })
+    }
+    clearCsvStepIndicator <- function() {
+      output$csvStepIndicator <- renderUI(NULL)
+    }
+
+    # Data preview table output
+    output$dataPreviewTable <- DT::renderDT({
+      req(preview_data_reactive())
+      DT::datatable(
+        preview_data_reactive(),
+        options = list(scrollX = TRUE, pageLength = 20, dom = 'tip'),
+        rownames = FALSE
+      )
+    })
+    output$showDataPreview <- reactive({ !is.null(preview_data_reactive()) })
+    outputOptions(output, "showDataPreview", suspendWhenHidden = FALSE)
+
+    output$showExpDesignPanel <- reactive({ isTRUE(show_exp_design_panel()) })
+    outputOptions(output, "showExpDesignPanel", suspendWhenHidden = FALSE)
+
+    output$expDesignPanelContent <- renderUI({
+      req(show_exp_design_panel())
+      csvExcelExpDesignSetupUI(ns = ns)
+    })
+
+    # Update preview when files are first uploaded — load all files for multi-file selector
+    observeEvent(accumulated_files(), {
+      req(accumulated_files())
+      all_previews <- list()
+      for (i in seq_len(nrow(accumulated_files()))) {
+        f <- accumulated_files()[i, ]
+        file_ext <- tools::file_ext(tolower(f$name))
+        all_previews[[f$name]] <- tryCatch(
+          read_uploaded_data_preview(f$datapath, file_ext),
+          error = function(e) NULL
+        )
+      }
+      preview_all_data(all_previews)
+      # Show first file by default
+      first_name <- accumulated_files()$name[1]
+      preview_data_reactive(all_previews[[first_name]])
+    }, ignoreNULL = TRUE)
+
+    # Render file selector for data preview (only when >1 file uploaded)
+    output$previewFileSelector <- renderUI({
+      files <- accumulated_files()
+      if (is.null(files) || nrow(files) <= 1) return(NULL)
+      selectInput(ns("previewFileSelect"), label = "Preview file:",
+                  choices = files$name, selected = files$name[1],
+                  width = "100%")
+    })
+
+    # Switch preview when user selects a different file
+    observeEvent(input$previewFileSelect, {
+      req(input$previewFileSelect)
+      all_data <- preview_all_data()
+      sel <- input$previewFileSelect
+      if (sel %in% names(all_data)) {
+        preview_data_reactive(all_data[[sel]])
+      }
+    })
 
     # Handle back navigation
     observeEvent(input$backToCSVExcelLabelsButton, {
@@ -1377,12 +1936,328 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     })
 
     observeEvent(input$backToCSVExcelIdentifiersButton, {
+      show_exp_design_panel(FALSE)
       labels <- sapply(accumulated_files()$name, function(file) {
         input[[paste0('CSVExcelLabel_', file)]]
       })
       csvExcelIdentifierSelection(labels)
     })
-    
+
+    ### INLINE EXPERIMENTAL DESIGN TABLE ###
+
+    # Render editable rhandsontable (supports clipboard paste and fill-down)
+    output$exp_design_table <- rhandsontable::renderRHandsontable({
+      req(exp_design_df())
+      df <- exp_design_df()
+
+      max_chars  <- max(nchar(as.character(df[[1]])), na.rm = TRUE)
+      col1_width <- max(120, min(300, max_chars * 8 + 20))
+
+      # Build custom context menu: standard edit items + "Remove this column" on header right-click
+      ns_prefix <- ns("")
+      ht <- rhandsontable::rhandsontable(
+        df,
+        rowHeaders  = NULL,
+        useTypes    = FALSE,
+        stretchH    = "last",
+        width       = "100%",
+        colWidths   = c(col1_width, rep(100, ncol(df) - 1))
+      )
+      # Set contextMenu directly on the widget to avoid hot_table's broken && check
+      # (hot_table does `if (!is.null(contextMenu) && contextMenu)` which fails for lists)
+      ht$x$contextMenu <- list(
+        items = list(
+          undo = list(name = "Undo"),
+          redo = list(name = "Redo"),
+          sep1 = list(name = "---------"),
+          copy = list(name = "Copy"),
+          cut  = list(name = "Cut"),
+          sep2 = list(name = "---------"),
+          remove_col = list(
+            name = "Remove this column",
+            disabled = htmlwidgets::JS(paste0(
+              "function() {",
+              "  var sel = this.getSelectedRangeLast();",
+              "  if (!sel) return true;",
+              "  var col = sel.from.col;",
+              "  var colName = this.getColHeader(col);",
+              "  return colName === 'columnName';",
+              "}"
+            )),
+            callback = htmlwidgets::JS(paste0(
+              "function(key, selection) {",
+              "  var col = selection[0].start.col;",
+              "  var colName = this.getColHeader(col);",
+              "  if (colName !== 'columnName') {",
+              "    Shiny.setInputValue('", ns_prefix, "remove_col_by_name', ",
+              "      {name: colName, ts: Date.now()});",
+              "  }",
+              "}"
+            ))
+          )
+        )
+      )
+
+      # Make first column (columnName) read-only with gray background
+      # Suppress "column types were previously not defined" warning — benign when useTypes = FALSE
+      suppressWarnings(
+        ht <- rhandsontable::hot_col(ht, col = 1, readOnly = TRUE,
+                                     renderer = "function(instance, td, row, col, prop, value, cellProperties) {
+                                       Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                       td.style.background = '#f5f5f5';
+                                       td.style.color = '#666';
+                                       return td;
+                                     }")
+      )
+      ht
+    })
+
+    # Sync table edits back to exp_design_df (entire table sent on every change)
+    observeEvent(input$exp_design_table, {
+      req(input$exp_design_table)
+      new_df <- rhandsontable::hot_to_r(input$exp_design_table)
+      # Protect columnName from user edits (read-only in widget, belt-and-suspenders).
+      # Only apply if row counts match — a mismatch means the widget is stale from a
+      # prior render cycle (e.g. after navigating Back and re-entering this step) and
+      # the update should be ignored to avoid a replacement-length crash.
+      current <- isolate(exp_design_df())
+      if (!is.null(current) && nrow(new_df) == nrow(current)) {
+        new_df[[1]] <- current[[1]]
+        exp_design_df(new_df)
+      }
+    }, ignoreInit = TRUE)
+
+    # Live preview: whenever exp_design_df changes and rename is active, rebuild the
+    # preview with up-to-date column names derived from the current sample_annotation values.
+    observeEvent(exp_design_df(), {
+      df <- exp_design_df()
+      if (is.null(df)) return()
+      if (!isTRUE(input$rename_to_sample_annotation)) return()
+      if (!"sample_annotation" %in% names(df)) return()
+
+      # Build rename map: columnName -> sample_annotation (non-empty rows only)
+      rename_rows <- df[!is.na(df$sample_annotation) &
+                          trimws(as.character(df$sample_annotation)) != "", ]
+      if (nrow(rename_rows) == 0) return()
+
+      new_names_vec <- as.character(rename_rows$sample_annotation)
+      old_names_vec <- as.character(rename_rows$columnName)
+      if (anyDuplicated(new_names_vec) > 0) return()  # skip update on invalid state
+
+      rename_map <- setNames(new_names_vec, old_names_vec)
+
+      # Apply rename from pristine processed data so edits never compound
+      pristine <- spectronaut_processed_data_pristine()
+      if (is.null(pristine)) return()
+
+      updated <- lapply(pristine, function(d) {
+        col_names <- names(d)
+        for (old_nm in names(rename_map)) {
+          idx <- which(col_names == old_nm)
+          if (length(idx) > 0) col_names[idx] <- rename_map[[old_nm]]
+        }
+        names(d) <- col_names
+        d
+      })
+
+      # Update the live preview (first 20 rows of each file)
+      all_data <- preview_all_data()
+      fnames <- accumulated_files()$name
+      labels <- sapply(fnames, function(f) input[[paste0("CSVExcelLabel_", f)]])
+      for (i in seq_along(fnames)) {
+        lbl <- labels[i]
+        if (!is.null(updated[[lbl]])) {
+          all_data[[fnames[i]]] <- head(updated[[lbl]], 20)
+        }
+      }
+      preview_all_data(all_data)
+      sel_file <- input$previewFileSelect
+      if (!is.null(sel_file) && sel_file %in% names(all_data)) {
+        preview_data_reactive(all_data[[sel_file]])
+      } else if (length(all_data) > 0) {
+        preview_data_reactive(all_data[[1]])
+      }
+    }, ignoreInit = TRUE)
+
+    # Add factor column
+    observeEvent(input$add_factor_col, {
+      req(nchar(trimws(input$new_factor_name)) > 0)
+      col_name <- trimws(input$new_factor_name)
+      df <- exp_design_df()
+      if (!is.null(df)) {
+        if (col_name %in% names(df)) {
+          showNotification(
+            paste0("A column named \"", col_name, "\" already exists."),
+            type = "warning", duration = 4, closeButton = TRUE
+          )
+        } else {
+          df[[col_name]] <- NA_character_
+          exp_design_df(df)
+          updateTextInput(session, "new_factor_name", value = "")
+        }
+      }
+    })
+
+    # Remove column via right-click context menu on column header
+    observeEvent(input$remove_col_by_name, {
+      col_name <- input$remove_col_by_name$name
+      df <- exp_design_df()
+      if (!is.null(df) && col_name %in% names(df) && col_name != "columnName") {
+        df[[col_name]] <- NULL
+        exp_design_df(df)
+      }
+    })
+
+    # CSV upload populates the inline table and optionally renames columns
+    observeEvent(input$expDesignFile, {
+      req(input$expDesignFile)
+      tryCatch({
+        # Warn user if inline edits exist and will be overwritten (UX 7)
+        existing_df <- exp_design_df()
+        has_user_edits <- !is.null(existing_df) && (
+          any(!is.na(existing_df$Condition) & trimws(as.character(existing_df$Condition)) != "") ||
+          any(!is.na(existing_df$Replicate) & trimws(as.character(existing_df$Replicate)) != "")
+        )
+        if (has_user_edits) {
+          showNotification(
+            HTML("<b>Note:</b> Your inline table edits have been replaced by the uploaded file."),
+            type = "warning", duration = 5, closeButton = TRUE
+          )
+        }
+
+        uploaded <- as.data.frame(readExperimentalDesign(input$expDesignFile$datapath))
+        exp_design_df(uploaded)
+
+        # Apply column renaming if checkbox is checked and sample_annotation column has values
+        should_rename <- isTRUE(input$rename_to_sample_annotation)
+        has_annotation <- "sample_annotation" %in% names(uploaded)
+        if (should_rename && has_annotation) {
+          # Build rename map: columnName -> sample_annotation where annotation is non-NA/non-empty
+          rename_rows <- uploaded[!is.na(uploaded$sample_annotation) &
+                                    trimws(as.character(uploaded$sample_annotation)) != "", ]
+          if (nrow(rename_rows) > 0) {
+            new_names_vec <- as.character(rename_rows$sample_annotation)
+            old_names_vec <- as.character(rename_rows$columnName)
+
+            # Validate: new names must be unique (Bug 3 - duplicate annotation values)
+            duplicate_new_names <- new_names_vec[duplicated(new_names_vec)]
+            if (length(duplicate_new_names) > 0) {
+              showNotification(
+                HTML(paste0("<b>Error: Duplicate sample_annotation values</b><br>",
+                            "The following names appear more than once in sample_annotation: ",
+                            paste(unique(duplicate_new_names), collapse = ", "),
+                            ". Each sample must have a unique name.")),
+                type = "error", duration = NULL, closeButton = TRUE
+              )
+              return()
+            }
+
+            new_rename_map <- setNames(new_names_vec, old_names_vec)
+            column_rename_map(new_rename_map)
+
+            # Always apply rename from the PRISTINE copy to prevent double-renaming (Bug 2)
+            pristine <- spectronaut_processed_data_pristine()
+            if (!is.null(pristine)) {
+              updated_processed <- lapply(pristine, function(df) {
+                new_col_names <- names(df)
+                for (old_name in names(new_rename_map)) {
+                  idx <- which(new_col_names == old_name)
+                  if (length(idx) > 0) new_col_names[idx] <- new_rename_map[[old_name]]
+                }
+                names(df) <- new_col_names
+                df
+              })
+              spectronaut_processed_data(updated_processed)
+            }
+
+            # Update exp_design_df columnName column to use the new names
+            updated_df <- uploaded
+            updated_df$columnName <- ifelse(
+              !is.na(updated_df$sample_annotation) &
+                trimws(as.character(updated_df$sample_annotation)) != "",
+              as.character(updated_df$sample_annotation),
+              as.character(updated_df$columnName)
+            )
+            exp_design_df(updated_df)
+
+            # Update all preview data frames to reflect renamed columns
+            all_data <- preview_all_data()
+            for (fname in names(all_data)) {
+              pdata <- all_data[[fname]]
+              if (!is.null(pdata)) {
+                preview_col_names <- names(pdata)
+                for (old_name in names(new_rename_map)) {
+                  idx <- which(preview_col_names == old_name)
+                  if (length(idx) > 0) preview_col_names[idx] <- new_rename_map[[old_name]]
+                }
+                names(pdata) <- preview_col_names
+                all_data[[fname]] <- pdata
+              }
+            }
+            preview_all_data(all_data)
+            # Update the currently displayed preview
+            sel_file <- input$previewFileSelect
+            if (!is.null(sel_file) && sel_file %in% names(all_data)) {
+              preview_data_reactive(all_data[[sel_file]])
+            } else if (length(all_data) > 0) {
+              preview_data_reactive(all_data[[1]])
+            }
+          }
+        } else {
+          # If rename is not active, clear any previous rename map and restore pristine data
+          column_rename_map(character(0))
+          pristine <- spectronaut_processed_data_pristine()
+          if (!is.null(pristine)) spectronaut_processed_data(pristine)
+        }
+      }, error = function(e) {
+        showNotification(paste("Upload error:", e$message), type = "error")
+      })
+    })
+
+    # Observer: toggle sample_annotation column when rename checkbox changes
+    observeEvent(input$rename_to_sample_annotation, {
+      df <- exp_design_df()
+      if (is.null(df)) return()
+      if (isTRUE(input$rename_to_sample_annotation)) {
+        # Add sample_annotation as 2nd column if not already present
+        if (!"sample_annotation" %in% names(df)) {
+          # Try to auto-populate from condition setup mappings
+          # Maps renamed column name -> original run label for traceability
+          cond_mappings <- condition_setup_mappings()
+          annotation_vals <- rep(NA_character_, nrow(df))
+          if (length(cond_mappings) > 0) {
+            annotation_lookup <- character(0)
+            for (lbl in names(cond_mappings)) {
+              mapping_df <- cond_mappings[[lbl]]
+              if (is.data.frame(mapping_df) && "columnName" %in% names(mapping_df) &&
+                  "original_run_label" %in% names(mapping_df)) {
+                annotation_lookup <- c(annotation_lookup,
+                                       setNames(mapping_df$original_run_label, mapping_df$columnName))
+              }
+            }
+            annotation_vals <- annotation_lookup[df$columnName]
+          }
+          # Insert sample_annotation as 2nd column
+          other_cols <- setdiff(names(df), "columnName")
+          df <- cbind(
+            df["columnName"],
+            data.frame(sample_annotation = annotation_vals, stringsAsFactors = FALSE),
+            df[other_cols]
+          )
+          exp_design_df(df)
+        }
+      } else {
+        # Remove sample_annotation column if present, restore pristine processed data
+        if ("sample_annotation" %in% names(df)) {
+          df$sample_annotation <- NULL
+          exp_design_df(df)
+        }
+        column_rename_map(character(0))
+        pristine <- spectronaut_processed_data_pristine()
+        if (!is.null(pristine)) spectronaut_processed_data(pristine)
+      }
+    }, ignoreInit = TRUE)
+
     # Create a reactive to store sample names for template generation
     template_sample_names <- reactive({
       req(accumulated_files())
@@ -1417,38 +2292,44 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     })
     
     # Download handler for experimental design template
+    # Uses the current inline table state so any added columns and filled values are included
     output$downloadExpDesignTemplate <- downloadHandler(
       filename = "experimental_design_template.csv",
       content = function(file) {
-        # Get sample names from reactive
-        sample_names <- template_sample_names()
-        
-        # Create template data frame with columnName, Experiment, and Group columns
-        template_df <- data.frame(
-          columnName = sample_names,
-          Experiment = rep("", length(sample_names)),
-          Group = rep("", length(sample_names)),
+        df <- exp_design_df()
+        if (is.null(df)) {
+          # Fallback: plain columnName template
+          sample_names <- template_sample_names()
+          df <- data.frame(
+            columnName = sample_names,
+            Condition  = rep("", length(sample_names)),
+            Replicate  = rep("", length(sample_names)),
             stringsAsFactors = FALSE
           )
-          
-        # Write the template to file
-        write.csv(template_df, file, row.names = FALSE)
+        }
+        # Ensure sample_annotation column is present as 2nd column when rename is enabled
+        if (isTRUE(input$rename_to_sample_annotation) && !"sample_annotation" %in% names(df)) {
+          other_cols <- setdiff(names(df), "columnName")
+          df <- cbind(
+            df["columnName"],
+            data.frame(sample_annotation = rep("", nrow(df)), stringsAsFactors = FALSE),
+            df[other_cols]
+          )
+        }
+        # Replace NAs with empty strings for a cleaner CSV template
+        df[is.na(df)] <- ""
+        readr::write_csv(df, file)
       }
     )
-    
-    # Reactive output to control process button visibility for CSV/Excel
-    output$expDesignFileUploaded <- reactive({
-      return(!is.null(input$expDesignFile))
-    })
-    outputOptions(output, "expDesignFileUploaded", suspendWhenHidden = FALSE)
     
     
     
 
-    # Process CSV/Excel data when experimental design is uploaded
+    # Process CSV/Excel data when experimental design is ready
     observeEvent(input$processCSVExcel, {
-      req(input$expDesignFile)
-      
+      shinyjs::runjs("$('#data-preview-content').hide(); $('#toggleDataPreview').text('Show');")
+      req(exp_design_df())
+
       my_shinyalert_tryCatch(
         text.error = "<b>CSV/Excel Processing Error:</b>",
         append.error = TRUE,
@@ -1458,32 +2339,153 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           # Process CSV/Excel files with progress indication
           withProgress(message = "Processing CSV/Excel files...", {
             setProgress(0.2, detail = "Reading experimental design")
-            
-            # Read experimental design
-            exp_design <- readExperimentalDesign(input$expDesignFile$datapath)
-            
+
+            # Use the inline table state as the experimental design
+            # Normalize blank/NA-string cells so metadata-only rows are correctly
+            # excluded from sample classification. rhandsontable round-trips R NA
+            # as the string "NA" (useTypes = FALSE), so we must handle both.
+            exp_design <- exp_design_df()
+            exp_design[exp_design == ""]   <- NA
+            exp_design[exp_design == "NA"] <- NA
+
+            # Guard: columnName column must not contain NA after normalization
+            if ("columnName" %in% names(exp_design) && any(is.na(exp_design$columnName))) {
+              stop("The experimental design has empty/missing values in the 'columnName' column. ",
+                   "Every row must have a valid column name.")
+            }
+
+            setProgress(0.3, detail = "Applying sample annotation renames")
+
+            # Apply sample_annotation rename at process time so inline table edits take effect.
+            # Build rename map from exp_design: columnName -> sample_annotation (where both exist).
+            should_rename <- isTRUE(input$rename_to_sample_annotation) &&
+              "sample_annotation" %in% names(exp_design)
+            if (should_rename) {
+              rename_rows <- exp_design[!is.na(exp_design$sample_annotation) &
+                                          trimws(as.character(exp_design$sample_annotation)) != "", ]
+              if (nrow(rename_rows) > 0) {
+                new_names_vec <- as.character(rename_rows$sample_annotation)
+                old_names_vec <- as.character(rename_rows$columnName)
+
+                # Validate: new names must be unique
+                dup_new <- new_names_vec[duplicated(new_names_vec)]
+                if (length(dup_new) > 0) {
+                  stop("Duplicate sample_annotation values: ",
+                       paste(unique(dup_new), collapse = ", "),
+                       ". Each sample must have a unique name.")
+                }
+
+                new_rename_map <- setNames(new_names_vec, old_names_vec)
+                column_rename_map(new_rename_map)
+
+                # Rename processed data from PRISTINE to prevent double-renaming
+                pristine <- spectronaut_processed_data_pristine()
+                if (!is.null(pristine)) {
+                  updated_processed <- lapply(pristine, function(df) {
+                    col_names <- names(df)
+                    for (old_nm in names(new_rename_map)) {
+                      idx <- which(col_names == old_nm)
+                      if (length(idx) > 0) col_names[idx] <- new_rename_map[[old_nm]]
+                    }
+                    names(df) <- col_names
+                    df
+                  })
+                  spectronaut_processed_data(updated_processed)
+                }
+
+                # Update exp_design columnName to the new (friendly) names
+                exp_design$columnName <- ifelse(
+                  !is.na(exp_design$sample_annotation) &
+                    trimws(as.character(exp_design$sample_annotation)) != "",
+                  as.character(exp_design$sample_annotation),
+                  as.character(exp_design$columnName)
+                )
+
+                # Update data preview to reflect renamed columns
+                all_data <- preview_all_data()
+                for (fname in names(all_data)) {
+                  pdata <- all_data[[fname]]
+                  if (!is.null(pdata)) {
+                    pcols <- names(pdata)
+                    for (old_nm in names(new_rename_map)) {
+                      idx <- which(pcols == old_nm)
+                      if (length(idx) > 0) pcols[idx] <- new_rename_map[[old_nm]]
+                    }
+                    names(pdata) <- pcols
+                    all_data[[fname]] <- pdata
+                  }
+                }
+                preview_all_data(all_data)
+                sel_file <- input$previewFileSelect
+                if (!is.null(sel_file) && sel_file %in% names(all_data)) {
+                  preview_data_reactive(all_data[[sel_file]])
+                } else if (length(all_data) > 0) {
+                  preview_data_reactive(all_data[[1]])
+                }
+              }
+            }
+
             setProgress(0.5, detail = "Converting data to analysis format")
-            
+
             # Process CSV/Excel files with per-dataset identifier columns
             identifier_columns <- csvExcel_identifier_columns_reactive()
-            
+
             # Validate identifier columns
             if (is.null(identifier_columns) || any(identifier_columns == "")) {
               stop("Please select identifier columns for all datasets.")
             }
-            
+
             # Get labels from input fields
             labels <- sapply(accumulated_files()$name, function(file) {
               input[[paste0('CSVExcelLabel_', file)]]
             })
 
-            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(accumulated_files(), exp_design, identifier_columns, labels)
-            
+            # Build original_cid_map: final cid -> raw column name from the very original file.
+            # Compose: (sample_annotation rename) ∘ (Spectronaut rename) → raw name.
+            raw_names <- raw_column_names_per_label()  # per-label: named vec (post-spectronaut -> raw)
+            sa_rename <- column_rename_map()             # named vec: old (condition name) -> new (friendly)
+            original_cid_map <- character(0)
+            if (length(raw_names) > 0) {
+              for (lbl in names(raw_names)) {
+                spectronaut_to_raw <- raw_names[[lbl]]  # named: condition_name -> raw_name
+                for (cond_name in names(spectronaut_to_raw)) {
+                  raw_name <- spectronaut_to_raw[[cond_name]]
+                  # Check if this condition_name was further renamed by sample_annotation
+                  if (cond_name %in% names(sa_rename)) {
+                    final_name <- sa_rename[[cond_name]]
+                  } else {
+                    final_name <- cond_name
+                  }
+                  original_cid_map[final_name] <- raw_name
+                }
+              }
+            }
+
+            csv_excel_result <- processCSVExcelWorkflowWithPerDatasetIdentifiers(
+              accumulated_files(), exp_design, identifier_columns, labels,
+              preprocessed_data = spectronaut_processed_data(),
+              original_cid_map = original_cid_map
+            )
+
+            # Surface sample mismatch warnings as in-app notifications
+            for (w in csv_excel_result$warnings) {
+              showNotification(HTML(w), type = "warning", duration = 15, closeButton = TRUE)
+            }
+
             setProgress(0.8, detail = "Setting up analysis parameters")
             
             # Store converted GCT objects and parameters for later processing (same as GCT workflow)
             GCTs_unprocessed_internal_reactive(csv_excel_result$GCTs)
             parameters_internal_reactive(csv_excel_result$parameters)
+
+            # Mark as spectronaut in each label's parameters
+            if (isTRUE(any(is_spectronaut_reactive()))) {
+              params <- parameters_internal_reactive()
+              for (lbl in names(params)) {
+                params[[lbl]]$is_spectronaut <- TRUE
+              }
+              parameters_internal_reactive(params)
+            }
             
             # Set up back/next navigation logic for parameter setup
             backNextLogic$place <- 1
@@ -1515,6 +2517,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           ")
           
           # Trigger the standard parameter setup workflow (same as GCT files)
+          show_exp_design_panel(FALSE)
+          clearCsvStepIndicator()
           labelsGO(labelsGO() + 1)
         }
       )
@@ -1523,7 +2527,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # return GCTs and parameters together in one list
     return(list(GCTs_and_params = GCTs_and_params,
                 globals = globals,
-                GCTs_original = GCTs_original))
+                GCTs_original = GCTs_original,
+                column_rename_map = column_rename_map))
     
   }) # end moduleServer
 } # end setupSidebarServer

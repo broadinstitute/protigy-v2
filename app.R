@@ -6,5 +6,9 @@
 # 2. run: `rsconnect::deployApp()` OR use the blue button on top of this file
 ################################################################################
 
+# Spectronaut UI flag
+# Set to TRUE to show the Spectronaut-related UI, including condition setup parsing.
+options(protigy.enable_spectronaut = FALSE)
+
 pkgload::load_all(export_all = FALSE, helpers = FALSE, attach_testthat = FALSE)
 launchApp()

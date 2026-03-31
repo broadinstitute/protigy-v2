@@ -25,11 +25,11 @@ labelSetupUI <- function(ns, gctFileNames) {
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the 
 # setupDefaults.yaml!
-gctSetupUI <- function(ns, 
-                       label, 
-                       parameter_choices, 
-                       parameters, 
-                       current_place, 
+gctSetupUI <- function(ns,
+                       label,
+                       parameter_choices,
+                       parameters,
+                       current_place,
                        max_place,
                        GCTs) {
   # groups column choices pulled from cdesc
@@ -185,7 +185,21 @@ gctSetupUI <- function(ns,
       ),
       ns = ns
     ),
-    
+    checkboxInput(
+      ns(paste0(label, '_gene_symbol_split')),
+      "Extract first gene symbol from delimited values",
+      value = isTRUE(parameters[[label]]$gene_symbol_split)
+    ),
+    conditionalPanel(
+      condition = paste0("input['", ns(paste0(label, '_gene_symbol_split')), "']"),
+      textInput(
+        ns(paste0(label, '_gene_symbol_separator')),
+        "Separator",
+        value = if (!is.null(parameters[[label]]$gene_symbol_separator))
+          parameters[[label]]$gene_symbol_separator else ";"
+      )
+    ),
+
     ## intensity data input
     add_css_attributes(
       checkboxInput(
@@ -414,3 +428,9 @@ validate_labels <- function(all_labels) {
   return(TRUE)
 }
 
+actionButton_icon_right <- function(inputId, label, icon, width = NULL) {
+  button <- shiny::actionButton(inputId, label, icon, width)
+  button$attribs$`aria-label` <- label
+  button$children <- rev(button$children)
+  return(button)
+}

@@ -11,7 +11,7 @@ Description: A tool for multiomics data analysis and visualization.
 License: BSD_3_clause + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Imports:
     AnnotationDbi,
     circlize,
@@ -60,7 +60,8 @@ Imports:
     snakecase,
     shinyjs,
     future,
-    furrr
+    furrr,
+    rhandsontable
 Depends:
     R (>= 4.0.0),
     shiny

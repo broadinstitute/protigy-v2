@@ -24,3 +24,5 @@ pkg.lock
 firebase-debug.log
 
 docs/
+
+.observer.lock

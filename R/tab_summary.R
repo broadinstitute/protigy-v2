@@ -20,10 +20,11 @@ summaryTabUI <- function(id = "summaryTab") {
 # server for the summary tab
 # contains the structure for the big tabbed box with omes
 summaryTabServer <- function(id = "summaryTab",
-                             GCTs_and_params, 
-                             globals, 
-                             GCTs_original) { 
-  
+                             GCTs_and_params,
+                             globals,
+                             GCTs_original,
+                             column_rename_map = NULL) {
+
   ## module function
   moduleServer(id, function (input, output, session) {
     
@@ -107,7 +108,8 @@ summaryTabServer <- function(id = "summaryTab",
           parameters = reactive(parameters()[[ome]]),
           GCT_original = reactive(GCTs_original()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
-          color_map = reactive(custom_colors()[[ome]])
+          color_map = reactive(custom_colors()[[ome]]),
+          column_rename_map = column_rename_map
         )
       }, simplify = FALSE)
       
@@ -189,7 +191,8 @@ summaryOmeServer <- function(id, ome,
                              parameters,
                              GCT_original,
                              default_annotation_column,
-                             color_map) {
+                             color_map,
+                             column_rename_map = NULL) {
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -352,15 +355,77 @@ summaryOmeServer <- function(id, ome,
         appenddim = FALSE
       )
     }
-    
-    
-    
-    
+
+    GCT_original_originalColNames_export_function <- function(dir_name) {
+      gct_orig <- GCT_original()
+      if (is.null(gct_orig)) return(invisible(NULL))
+
+      # Determine original column names from two sources:
+      # 1. cdesc$original_column_name: raw file column names (before Spectronaut + sample_annotation)
+      # 2. column_rename_map: sample_annotation rename map (condition_name -> friendly_name)
+      # Either source indicates columns were renamed and we should export the original-name version.
+      rename_map <- if (is.reactive(column_rename_map)) column_rename_map() else column_rename_map
+      has_rename_map <- !is.null(rename_map) && length(rename_map) > 0
+      has_original_col <- "original_column_name" %in% names(gct_orig@cdesc) &&
+        any(!is.na(gct_orig@cdesc$original_column_name))
+
+      if (!has_rename_map && !has_original_col) return(invisible(NULL))
+
+      orig_mat <- gct_orig@mat
+      orig_cid <- gct_orig@cid
+      orig_cdesc <- gct_orig@cdesc
+
+      # Build reverse map: current cid -> original raw column name.
+      # Prefer cdesc$original_column_name (captures the full rename chain including Spectronaut).
+      # Fall back to reversing column_rename_map (sample_annotation only).
+      if (has_original_col) {
+        raw_names <- orig_cdesc$original_column_name
+        new_cid <- vapply(seq_along(orig_cid), function(i) {
+          if (!is.na(raw_names[i])) raw_names[i] else orig_cid[i]
+        }, character(1), USE.NAMES = FALSE)
+      } else {
+        # Validate rename map is bijective before building reverse (Bug 7)
+        new_names <- as.character(rename_map)
+        if (anyDuplicated(new_names) > 0) {
+          warning("column_rename_map is not bijective (duplicate new names); ",
+                  "original_GCT_originalColNames export may have incorrect column names.")
+        }
+        reverse_map <- setNames(names(rename_map), new_names)
+        new_cid <- vapply(orig_cid, function(n) {
+          if (n %in% names(reverse_map)) reverse_map[[n]] else n
+        }, character(1), USE.NAMES = FALSE)
+      }
+
+      colnames(orig_mat) <- new_cid
+      rownames(orig_cdesc) <- new_cid
+
+      # Store the current (renamed) cid in cdesc for traceability
+      orig_cdesc$renamed_column_name <- orig_cid
+
+      gct_with_orig_names <- GCT(
+        mat   = orig_mat,
+        rdesc = gct_orig@rdesc,
+        cdesc = orig_cdesc,
+        rid   = rownames(orig_mat),
+        cid   = new_cid
+      )
+
+      write_gct(
+        ds    = gct_with_orig_names,
+        ofile = file.path(dir_name, paste0("original_GCT_originalColNames_", ome, ".gct")),
+        appenddim = FALSE
+      )
+    }
+
+
+
+
     return(list(
       quant_features_plot = quant_features_plot_export_function,
       missing_value_distribution = missing_value_distribution_export_function,
       GCT_original_export = GCT_original_export_function,
-      GCT_processed_export = GCT_processed_export_function
+      GCT_processed_export = GCT_processed_export_function,
+      GCT_original_originalColNames_export = GCT_original_originalColNames_export_function
     ))
   })
 }

@@ -583,6 +583,14 @@ transformGCTs <- function(GCTs, parameters) {
               rdesc <- gs_out$rdesc
               params <- gs_out$params
               
+              ## Extract first gene symbol from delimited values
+              if (isTRUE(params$gene_symbol_split) &&
+                  !is.null(params$gene_symbol_separator) &&
+                  "geneSymbol" %in% names(rdesc)) {
+                rdesc <- split_gene_symbol_column(rdesc, "geneSymbol",
+                                                  params$gene_symbol_separator)
+              }
+
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
@@ -590,7 +598,7 @@ transformGCTs <- function(GCTs, parameters) {
                 # No rows are removed - blank geneSymbol values are converted to NA
                 # removed_rids is kept for backward compatibility but should be empty
               }
-              
+
               incProgress(1, detail = "log transformation")
               
               ## log transformation
@@ -683,6 +691,14 @@ processGCTs <- function(GCTs, parameters) {
               rdesc <- gs_out$rdesc
               params <- gs_out$params
               
+              ## Extract first gene symbol from delimited values
+              if (isTRUE(params$gene_symbol_split) &&
+                  !is.null(params$gene_symbol_separator) &&
+                  "geneSymbol" %in% names(rdesc)) {
+                rdesc <- split_gene_symbol_column(rdesc, "geneSymbol",
+                                                  params$gene_symbol_separator)
+              }
+
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
                 fix_result <- fix_gene_symbols(rdesc)
@@ -690,7 +706,7 @@ processGCTs <- function(GCTs, parameters) {
                 # No rows are removed - blank geneSymbol values are converted to NA
                 # removed_rids is kept for backward compatibility but should be empty
               }
-              
+
               incProgress(1, detail = "log transformation")
               
               ## log transformation
