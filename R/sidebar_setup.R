@@ -13,6 +13,9 @@ gct_setup_apply_to_all_valid <- function(
     sample_filter_column,
     row_filter_enabled,
     row_filter_column,
+    gene_symbol_column,
+    convert_ids_to_gene_symbol,
+    id_source_column,
     groups_in_all,
     rdesc_in_all) {
   if (is.null(annotation_column)) {
@@ -26,6 +29,12 @@ gct_setup_apply_to_all_valid <- function(
   }
   if (is.null(row_filter_column)) {
     row_filter_column <- ""
+  }
+  if (is.null(gene_symbol_column)) {
+    gene_symbol_column <- "None"
+  }
+  if (is.null(id_source_column)) {
+    id_source_column <- ""
   }
   if (length(groups_in_all) == 0L) {
     return(list(
@@ -78,6 +87,43 @@ gct_setup_apply_to_all_valid <- function(
           paste0(
             "'Apply settings to all datasets' was disabled. ",
             "Row filter column '", row_filter_column,
+            "' is not available in all datasets. Choose a consistent column to enable this setting."
+          )
+        }
+      ))
+    }
+  }
+  if (isTRUE(convert_ids_to_gene_symbol)) {
+    if (!identical(gene_symbol_column, "None")) {
+      return(list(
+        ok = FALSE,
+        msg = paste0(
+          "'Apply settings to all datasets' was disabled. ",
+          "ID-to-gene-symbol conversion requires Gene symbol column to be set to None when apply-to-all is used."
+        )
+      ))
+    }
+    if (!nzchar(id_source_column)) {
+      return(list(
+        ok = FALSE,
+        msg = paste0(
+          "'Apply settings to all datasets' was disabled. ",
+          "Choose an ID source column for mapping to gene symbols to enable this setting."
+        )
+      ))
+    }
+    if (length(rdesc_in_all) == 0L || !(id_source_column %in% rdesc_in_all)) {
+      return(list(
+        ok = FALSE,
+        msg = if (length(rdesc_in_all) == 0L) {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Choose consistent shared row metadata columns across datasets to enable this setting."
+          )
+        } else {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "ID source column '", id_source_column,
             "' is not available in all datasets. Choose a consistent column to enable this setting."
           )
         }
@@ -784,11 +830,17 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       current_sample_filter_column <- input[[paste0(current_label, "_sample_filter_column")]]
       current_row_filter_enabled <- input[[paste0(current_label, "_row_filter_enabled")]]
       current_row_filter_column <- input[[paste0(current_label, "_row_filter_column")]]
+      current_gene_symbol_column <- input[[paste0(current_label, "_gene_symbol_column")]]
+      current_convert_ids <- input[[paste0(current_label, "_convert_ids_to_gene_symbol")]]
+      current_id_source_column <- input[[paste0(current_label, "_id_source_column")]]
       if (is.null(current_sample_filter_column)) {
         current_sample_filter_column <- ""
       }
       if (is.null(current_row_filter_column)) {
         current_row_filter_column <- ""
+      }
+      if (is.null(current_id_source_column)) {
+        current_id_source_column <- ""
       }
       
       valid <- gct_setup_apply_to_all_valid(
@@ -799,6 +851,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         sample_filter_column = current_sample_filter_column,
         row_filter_enabled = current_row_filter_enabled,
         row_filter_column = current_row_filter_column,
+        gene_symbol_column = current_gene_symbol_column,
+        convert_ids_to_gene_symbol = current_convert_ids,
+        id_source_column = current_id_source_column,
         groups_in_all = groups_in_all,
         rdesc_in_all = rdesc_in_all
       )
@@ -825,6 +880,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         rc <- input[[paste0(current_label, "_row_filter_column")]]
         if (is.null(sc)) sc <- ""
         if (is.null(rc)) rc <- ""
+        idsc <- input[[paste0(current_label, "_id_source_column")]]
+        if (is.null(idsc)) idsc <- ""
         valid <- gct_setup_apply_to_all_valid(
           annotation_column = input[[paste0(current_label, "_annotation_column")]],
           group_normalization = input[[paste0(current_label, "_group_normalization")]],
@@ -833,6 +890,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           sample_filter_column = sc,
           row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
           row_filter_column = rc,
+          gene_symbol_column = input[[paste0(current_label, "_gene_symbol_column")]],
+          convert_ids_to_gene_symbol = input[[paste0(current_label, "_convert_ids_to_gene_symbol")]],
+          id_source_column = idsc,
           groups_in_all = groups_in_all,
           rdesc_in_all = rdesc_in_all
         )
@@ -914,12 +974,42 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # call processGCTs function in a tryCatch
       processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
       
-      # also transform the original GCTs
-      transformation_output <- transformGCTs(GCTs = GCTs, parameters = parameters)
+      # Use updated parameters (e.g. ID conversion turned off after failed mapping)
+      parameters_after_process <- parameters
+      if (!is.null(processing_output)) {
+        parameters_after_process <- processing_output$parameters
+      }
+      transformation_output <- transformGCTs(GCTs = GCTs, parameters = parameters_after_process)
       
       if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
-        GCTs_and_params(processing_output) 
+        GCTs_and_params(processing_output)
+        
+        # Notify if ID conversion was auto-disabled for any dataset (details in warnings)
+        for (ome in names(processing_output$parameters)) {
+          if (ome %in% names(parameters) &&
+              isTRUE(parameters[[ome]]$convert_ids_to_gene_symbol) &&
+              !isTRUE(processing_output$parameters[[ome]]$convert_ids_to_gene_symbol)) {
+            showNotification(
+              paste0(
+                "Dataset ", ome, ": \"Convert IDs to gene symbols\" was turned off because ",
+                "no gene symbols could be resolved. Check the R console for message() details."
+              ),
+              type = "warning",
+              duration = 8,
+              session = session
+            )
+          }
+        }
+        
+        # Keep sidebar setup parameters in sync with processing (conversion flags, etc.)
+        merged_params <- parameters_internal_reactive()
+        if (!is.null(merged_params)) {
+          for (ome in names(processing_output$parameters)) {
+            merged_params[[ome]] <- processing_output$parameters[[ome]]
+          }
+          parameters_internal_reactive(merged_params)
+        }
         
         # save the original GCTs for output
         # these have been log transformed if selected
@@ -1000,6 +1090,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         rc <- input[[paste0(current_label, "_row_filter_column")]]
         if (is.null(sc)) sc <- ""
         if (is.null(rc)) rc <- ""
+        idsc <- input[[paste0(current_label, "_id_source_column")]]
+        if (is.null(idsc)) idsc <- ""
         valid <- gct_setup_apply_to_all_valid(
           annotation_column = input[[paste0(current_label, "_annotation_column")]],
           group_normalization = input[[paste0(current_label, "_group_normalization")]],
@@ -1008,6 +1100,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           sample_filter_column = sc,
           row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
           row_filter_column = rc,
+          gene_symbol_column = input[[paste0(current_label, "_gene_symbol_column")]],
+          convert_ids_to_gene_symbol = input[[paste0(current_label, "_convert_ids_to_gene_symbol")]],
+          id_source_column = idsc,
           groups_in_all = isolate(groups_in_all_omes()),
           rdesc_in_all = isolate(rdesc_in_all_omes())
         )
@@ -1060,6 +1155,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           }
           if (param == "row_filter_values" && is.null(input_value)) {
             input_value <- character(0)
+          }
+          if (param == "id_source_column" && is.null(input_value)) {
+            input_value <- ""
           }
 
           new_parameters[[label]][[param]] <- input_value

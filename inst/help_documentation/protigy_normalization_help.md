@@ -31,11 +31,17 @@ This is the default annotation column used for all analysis in ProTIGY. This col
 
 ## Gene Symbol Column
 
+**Recommendation:** Whenever possible, supply gene symbols in your input data (for example in a `geneSymbol` column or another row-metadata field you select in setup). Symbols from your own pipeline or publication are **always preferred** over automatic ID-to-symbol mapping, which depends on database versions and heuristics and may not match your feature definitions.
+
 If your dataset contains gene symbol information, you can specify which column contains the gene symbols:
 
 - **Default**: If a column named "geneSymbol" exists, it will be automatically selected
 - **Custom**: You can select any other column from your dataset's row metadata (rdesc) to use as gene symbols
 - **None**: If no gene symbol column is available, select "None"
+
+### Map IDs to gene symbols
+
+If **Gene symbol column** is **None**, you can turn on **Map IDs to gene symbols**, pick an ID column and species, and submit setup so the app can try to fill `geneSymbol` for you. Use this only when you cannot put symbols in the file yourself.
 
 **Note**: 
 - If `geneSymbol` does not exist and you select another column, that column's values will be copied to create a `geneSymbol` column, and the original column will be preserved in the dataset.

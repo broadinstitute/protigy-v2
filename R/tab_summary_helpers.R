@@ -135,6 +135,7 @@ summary_workflow <- function(params) {
   params_to_display <- list(
     "File name" = "gct_file_name",
     "Annotation column" = "annotation_column",
+    "Gene symbol column" = "gene_symbol_column",
     "Intensity data" = "intensity_data",
     "Log transformation" = "log_transformation",
     "Data normalization" = "data_normalization",
@@ -143,6 +144,20 @@ summary_workflow <- function(params) {
     "Max missing %" = "max_missing"
   )
   
+  if (isTRUE(params$convert_ids_to_gene_symbol) && identical(params$gene_symbol_column, "None")) {
+    params_to_display <- append(
+      params_to_display,
+      list(
+        "Map IDs to symbols" = "convert_ids_to_gene_symbol",
+        "ID column for mapping" = "id_source_column",
+        "ID mapping species" = "id_mapping_species",
+        "Detected ID keytype" = "id_mapping_keytype",
+        "Gene symbols mapped" = "id_mapping_n_unmapped"
+      ),
+      after = which(params_to_display == "gene_symbol_column")
+    )
+  }
+
   if (isTRUE(params$sample_filter_enabled)) {
     params_to_display <- append(
       params_to_display,
@@ -187,7 +202,21 @@ summary_workflow <- function(params) {
 
   displayed_values <- vapply(
     as.character(params_to_display),
-    function(param_name) format_param_value(params[[param_name]]),
+    function(param_name) {
+      if (param_name == "convert_ids_to_gene_symbol") {
+        return(if (isTRUE(params[[param_name]])) "Yes" else "No")
+      }
+      if (param_name == "id_mapping_n_unmapped") {
+        tot <- params$id_mapping_n_total
+        bad <- params$id_mapping_n_unmapped
+        if (is.null(tot) || is.null(bad)) {
+          return("")
+        }
+        mapped <- tot - bad
+        return(paste0(mapped, " / ", tot))
+      }
+      format_param_value(params[[param_name]])
+    },
     character(1)
   )
 

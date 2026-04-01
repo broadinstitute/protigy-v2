@@ -204,27 +204,10 @@ transformGCTs <- function(GCTs, parameters) {
                 params$data_filter_sd_pct <- NULL
               }
 
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              ## gene symbol column, optional ID -> symbol mapping
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
@@ -321,27 +304,10 @@ processGCTs <- function(GCTs, parameters) {
               data <- sample_filter_out$data
               cdesc <- sample_filter_out$cdesc
               
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              ## gene symbol column, optional ID -> symbol mapping
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {

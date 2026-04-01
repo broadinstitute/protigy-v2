@@ -102,7 +102,15 @@ gctSetupUI <- function(ns,
   if (is.null(row_filter_values_selected)) {
     row_filter_values_selected <- character(0)
   }
-  
+
+  id_source_column_selected <- parameters[[label]]$id_source_column
+  if (is.null(id_source_column_selected)) {
+    id_source_column_selected <- ""
+  }
+  id_mapping_species_selected <- parameters[[label]]$id_mapping_species
+  if (is.null(id_mapping_species_selected)) {
+    id_mapping_species_selected <- "Homo sapiens"
+  }
   tagList(
     h4('Setup for ',
        strong(span(label, style = "color:#a4dc84")),
@@ -131,6 +139,42 @@ gctSetupUI <- function(ns,
             ifelse("geneSymbol" %in% names(GCTs[[label]]@rdesc), "geneSymbol", "None"),
             parameters[[label]]$gene_symbol_column)),
         classes = "small-input"),
+
+    ## Map IDs to gene symbols (when Gene symbol column is None)
+    conditionalPanel(
+      condition = paste0("input['", label, "_gene_symbol_column'] == 'None'"),
+      tagList(
+        add_css_attributes(
+          checkboxInput(
+            ns(paste0(label, "_convert_ids_to_gene_symbol")),
+            label = "Convert IDs to gene symbols",
+            value = isTRUE(parameters[[label]]$convert_ids_to_gene_symbol)),
+          classes = "small-input"),
+        conditionalPanel(
+          condition = paste0(
+            "input['", label, "_gene_symbol_column'] == 'None' && input['", label, "_convert_ids_to_gene_symbol']"
+          ),
+          tagList(
+            add_css_attributes(
+              selectInput(
+                ns(paste0(label, "_id_source_column")),
+                label = "ID column for mapping",
+                choices = c("", names(GCTs[[label]]@rdesc)),
+                selected = id_source_column_selected),
+              classes = "small-input"),
+            add_css_attributes(
+              selectInput(
+                ns(paste0(label, "_id_mapping_species")),
+                label = "Species (for ID mapping)",
+                choices = c("Homo sapiens", "Mus musculus"),
+                selected = id_mapping_species_selected),
+              classes = "small-input")
+          ),
+          ns = ns
+        )
+      ),
+      ns = ns
+    ),
     
     ## intensity data input
     add_css_attributes(

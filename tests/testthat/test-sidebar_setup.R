@@ -499,8 +499,15 @@ test_that("setup defaults include sample and row filter parameters", {
   expect_true("row_filter_enabled" %in% names(defaults))
   expect_true("row_filter_column" %in% names(defaults))
   expect_true("row_filter_values" %in% names(defaults))
+  expect_true("convert_ids_to_gene_symbol" %in% names(defaults))
+  expect_true("id_source_column" %in% names(defaults))
+  expect_true("id_mapping_species" %in% names(defaults))
+  expect_true("id_mapping_keytype" %in% names(defaults))
+  expect_true("id_mapping_n_total" %in% names(defaults))
+  expect_true("id_mapping_n_unmapped" %in% names(defaults))
   expect_identical(defaults$sample_filter_enabled, FALSE)
   expect_identical(defaults$row_filter_enabled, FALSE)
+  expect_identical(defaults$convert_ids_to_gene_symbol, FALSE)
 })
 
 test_that("gct_setup_apply_to_all_valid allows shared columns only", {
@@ -512,6 +519,9 @@ test_that("gct_setup_apply_to_all_valid allows shared columns only", {
     sample_filter_column = "QC.status",
     row_filter_enabled = TRUE,
     row_filter_column = "Species",
+    gene_symbol_column = "None",
+    convert_ids_to_gene_symbol = FALSE,
+    id_source_column = "",
     groups_in_all = c("group", "QC.status"),
     rdesc_in_all = c("Species", "geneSymbol")
   )
@@ -525,6 +535,9 @@ test_that("gct_setup_apply_to_all_valid allows shared columns only", {
     sample_filter_column = "QC.status",
     row_filter_enabled = TRUE,
     row_filter_column = "Species",
+    gene_symbol_column = "None",
+    convert_ids_to_gene_symbol = FALSE,
+    id_source_column = "",
     groups_in_all = c("group", "QC.status"),
     rdesc_in_all = c("geneSymbol")
   )
@@ -556,6 +569,9 @@ test_that("transformGCTs keeps original dimensions when row/sample filters are s
       data_filter = "None",
       data_filter_sd_pct = 10,
       gene_symbol_column = "None",
+      convert_ids_to_gene_symbol = FALSE,
+      id_source_column = "",
+      id_mapping_species = "Homo sapiens",
       sample_filter_enabled = TRUE,
       sample_filter_column = "QC.status",
       sample_filter_values = "PASS",
