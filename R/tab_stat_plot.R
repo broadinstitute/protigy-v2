@@ -248,7 +248,11 @@ statPlot_Ome_Server <- function(id,
         checkboxGroupInput(
           ns("label_mode"),
           label    = NULL,
-          choices  = c("Proteins of interest" = "poi", "All significant" = "significant"),
+          choices  = c(
+            "Proteins of interest" = "poi",
+            "Top 20 significant"   = "significant_top20",
+            "All significant"      = "significant"
+          ),
           selected = character(0)
         ),
 

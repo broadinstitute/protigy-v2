@@ -205,37 +205,37 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   if (is.null(second_col_of_interest)) {
     # Single variable - use existing logic
     plot_aes <- aes(
-      x = .data[[paste0("PC", comp.x)]],
-      y = .data[[paste0("PC", comp.y)]],
-      color = .data[[col_of_interest]],
-      text = .data$tooltip
+      x = !!rlang::sym(paste0("PC", comp.x)),
+      y = !!rlang::sym(paste0("PC", comp.y)),
+      color = !!rlang::sym(col_of_interest),
+      text = !!rlang::sym("tooltip")
     )
     plot_title <- paste0("PCA plot by ", col_of_interest, ": ", ome)
   } else {
     # Two variables - create appropriate aesthetic mapping
     if (var1_display == "color" && var2_display == "shape") {
       plot_aes <- aes(
-        x = .data[[paste0("PC", comp.x)]],
-        y = .data[[paste0("PC", comp.y)]],
-        color = .data[[col_of_interest]],
-        shape = .data[[second_col_of_interest]],
-        text = .data$tooltip
+        x = !!rlang::sym(paste0("PC", comp.x)),
+        y = !!rlang::sym(paste0("PC", comp.y)),
+        color = !!rlang::sym(col_of_interest),
+        shape = !!rlang::sym(second_col_of_interest),
+        text = !!rlang::sym("tooltip")
       )
     } else if (var1_display == "shape" && var2_display == "color") {
       plot_aes <- aes(
-        x = .data[[paste0("PC", comp.x)]],
-        y = .data[[paste0("PC", comp.y)]],
-        color = .data[[second_col_of_interest]],
-        shape = .data[[col_of_interest]],
-        text = .data$tooltip
+        x = !!rlang::sym(paste0("PC", comp.x)),
+        y = !!rlang::sym(paste0("PC", comp.y)),
+        color = !!rlang::sym(second_col_of_interest),
+        shape = !!rlang::sym(col_of_interest),
+        text = !!rlang::sym("tooltip")
       )
     } else {
       # Default fallback
       plot_aes <- aes(
-        x = .data[[paste0("PC", comp.x)]],
-        y = .data[[paste0("PC", comp.y)]],
-        color = .data[[col_of_interest]],
-        text = .data$tooltip
+        x = !!rlang::sym(paste0("PC", comp.x)),
+        y = !!rlang::sym(paste0("PC", comp.y)),
+        color = !!rlang::sym(col_of_interest),
+        text = !!rlang::sym("tooltip")
       )
     }
     plot_title <- paste0("PCA plot by ", col_of_interest, " and ", second_col_of_interest, ": ", ome)

@@ -1,5 +1,6 @@
 # Tests for volcano plot protein search & labeling helpers
-# Covers: get_clicked_feature_id, parse_protein_search_input, add_volcano_labels
+# Covers: get_clicked_feature_id, parse_protein_search_input,
+#         volcano_label_top_significant_subset, add_volcano_labels
 
 ## get_clicked_feature_id ####################################################
 
@@ -90,6 +91,82 @@ test_that("parse_protein_search_input returns empty vector for blank input", {
 test_that("parse_protein_search_input handles newlines as delimiters", {
   result <- parse_protein_search_input("ProtA\nProtB\nProtC")
   expect_equal(result, c("ProtA", "ProtB", "ProtC"))
+})
+
+## volcano_label_top_significant_subset ########################################
+
+test_that("volcano_label_top_significant_subset returns top n by logP among significant", {
+  df <- data.frame(
+    id          = letters[1:10],
+    logFC       = 1:10,
+    logP        = 1:10,
+    Significant = c(rep(TRUE, 8), FALSE, FALSE),
+    stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 3L)
+  expect_equal(nrow(sub), 3L)
+  expect_equal(as.character(sub$id), c("h", "g", "f"))
+  expect_equal(sub$logP, c(8, 7, 6))
+})
+
+test_that("volcano_label_top_significant_subset returns fewer than n when not enough sig", {
+  df <- data.frame(
+    id = c("a", "b"), logFC = c(1, 2), logP = c(5, 4),
+    Significant = c(TRUE, TRUE), stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 20L)
+  expect_equal(nrow(sub), 2L)
+})
+
+test_that("volcano_label_top_significant_subset excludes NA logP and NA Significant", {
+  df <- data.frame(
+    id = c("a", "b", "c", "d"),
+    logFC = 1:4,
+    logP = c(10, NA, 8, 7),
+    Significant = c(TRUE, TRUE, TRUE, NA),
+    stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 10L)
+  expect_equal(as.character(sub$id), c("a", "c"))
+  expect_equal(sub$logP, c(10, 8))
+})
+
+test_that("volcano_label_top_significant_subset breaks logP ties by larger abs(logFC) first", {
+  df <- data.frame(
+    id = c("low_fc", "mid_fc", "high_fc"),
+    logFC = c(1, 2, 3),
+    logP = c(5, 5, 5),
+    Significant = c(TRUE, TRUE, TRUE),
+    stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 2L)
+  expect_equal(as.character(sub$id), c("high_fc", "mid_fc"))
+})
+
+test_that("volcano_label_top_significant_subset ties + and - logFC with same magnitude", {
+  df <- data.frame(
+    id = c("neg", "pos"),
+    logFC = c(-2, 2),
+    logP = c(5, 5),
+    Significant = c(TRUE, TRUE),
+    stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 1L)
+  expect_equal(nrow(sub), 2L)
+  expect_setequal(as.character(sub$id), c("neg", "pos"))
+})
+
+test_that("volcano_label_top_significant_subset keeps all rows tied on logP and abs(logFC)", {
+  df <- data.frame(
+    id = c("r1", "r2", "r3"),
+    logFC = c(1, 1, 1),
+    logP = c(5, 5, 5),
+    Significant = c(TRUE, TRUE, TRUE),
+    stringsAsFactors = FALSE
+  )
+  sub <- volcano_label_top_significant_subset(df, 2L)
+  expect_equal(nrow(sub), 3L)
+  expect_setequal(as.character(sub$id), c("r1", "r2", "r3"))
 })
 
 ## add_volcano_labels ##########################################################
@@ -185,6 +262,30 @@ test_that("add_volcano_labels handles NA in Significant column gracefully", {
     add_volcano_labels(p, df, poi = character(0), label_mode = "significant",
                        y_cutoff = 2, hidden_count_rv = rv)
   )
+})
+
+test_that("add_volcano_labels with significant_top20 caps labeled significant rows", {
+  skip_if_not_installed("plotly")
+  n_sig <- 25L
+  df <- data.frame(
+    id          = sprintf("P%02d", seq_len(n_sig)),
+    logFC       = seq_len(n_sig),
+    logP        = seq_len(n_sig),
+    Significant = rep(TRUE, n_sig),
+    geneSymbol  = sprintf("G%02d", seq_len(n_sig)),
+    stringsAsFactors = FALSE
+  )
+  p <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(
+    p, df, poi = character(0), label_mode = "significant_top20",
+    y_cutoff = 0, hidden_count_rv = rv
+  )
+  expect_s3_class(result, "plotly")
+  # layout() stores annotations in layoutAttrs until plotly_build() merges x$layout
+  built <- plotly::plotly_build(result)
+  n_ann <- length(built$x$layout$annotations %||% list())
+  expect_equal(n_ann, 20L)
 })
 
 ## regex_escape ###############################################################

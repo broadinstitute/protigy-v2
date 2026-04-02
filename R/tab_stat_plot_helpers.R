@@ -4,6 +4,10 @@
 # Allow users to see the Volcano plot of their results
 ################################################################################
 
+# Magenta for all volcano protein labels (POI, top-20, and all-significant);
+# contrasts with darkred significant scatter points (plotVolcano sig.col).
+.volcano_label_hex <- "#FF00FF"
+
 # #Input parameters- 
 # ome- ome that plot is run on
 # volcano_groups- current group selected in the plot sidebar
@@ -170,14 +174,18 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     )
 
     if ("significant" %in% label_mode) {
-      sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, ]
-      if (nrow(sig_rows) > 0) {
-        label_df_gg <- rbind(label_df_gg, data.frame(
-          id = sig_rows$id, logFC = sig_rows$logFC, logP = sig_rows$logP,
-          label_txt = sig_rows$geneSymbol, label_col = "#FF00FF",
-          stringsAsFactors = FALSE
-        ))
-      }
+      sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, , drop = FALSE]
+    } else if ("significant_top20" %in% label_mode) {
+      sig_rows <- volcano_label_top_significant_subset(df, 20L)
+    } else {
+      sig_rows <- df[FALSE, , drop = FALSE]
+    }
+    if (nrow(sig_rows) > 0) {
+      label_df_gg <- rbind(label_df_gg, data.frame(
+        id = sig_rows$id, logFC = sig_rows$logFC, logP = sig_rows$logP,
+          label_txt = sig_rows$geneSymbol, label_col = .volcano_label_hex,
+        stringsAsFactors = FALSE
+      ))
     }
 
     if ("poi" %in% label_mode && length(label_proteins) > 0) {
@@ -186,7 +194,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
         label_df_gg <- label_df_gg[!label_df_gg$id %in% poi_rows$id, ]
         label_df_gg <- rbind(label_df_gg, data.frame(
           id = poi_rows$id, logFC = poi_rows$logFC, logP = poi_rows$logP,
-          label_txt = poi_rows$geneSymbol, label_col = "#28a745",
+          label_txt = poi_rows$geneSymbol, label_col = .volcano_label_hex,
           stringsAsFactors = FALSE
         ))
       }
@@ -335,13 +343,50 @@ parse_protein_search_input <- function(raw) {
   tokens[nchar(tokens) > 0]
 }
 
+# Among Significant rows with non-NA logP, keep up to n: sort by decreasing logP,
+# then decreasing abs(logFC). Ties on (logP, abs(logFC)): keep all matching rows
+# at the cutoff (may exceed n).
+# @noRd
+volcano_label_top_significant_subset <- function(df, n = 20L) {
+  n <- as.integer(n)[1L]
+  if (is.na(n) || n < 1L || nrow(df) == 0L) {
+    return(df[FALSE, , drop = FALSE])
+  }
+  sig <- df[!is.na(df$Significant) & df$Significant == TRUE, , drop = FALSE]
+  if (nrow(sig) == 0L) {
+    return(sig)
+  }
+  sig <- sig[!is.na(sig$logP), , drop = FALSE]
+  if (nrow(sig) == 0L) {
+    return(sig)
+  }
+  ord <- order(sig$logP, abs(sig$logFC), decreasing = c(TRUE, TRUE), na.last = TRUE)
+  sig <- sig[ord, , drop = FALSE]
+  abs_fc <- abs(sig$logFC)
+  if (nrow(sig) <= n) {
+    return(sig)
+  }
+  p_n <- sig$logP[n]
+  abs_n <- abs_fc[n]
+  lp <- sig$logP
+  lf <- sig$logFC
+  abs_lf <- abs(lf)
+  take <- if (is.na(abs_n)) {
+    lp > p_n | (lp == p_n & is.na(lf))
+  } else {
+    lp > p_n | (lp == p_n & !is.na(abs_lf) & abs_lf >= abs_n)
+  }
+  sig[take, , drop = FALSE]
+}
+
 
 # Add color-coded protein labels as Plotly annotations.
 #
 # p               - plotly object (output of ggplotly)
 # df              - data frame with columns: id, logFC, logP, Significant, geneSymbol
-# poi             - character vector of feature IDs to label as POI (green)
-# label_mode      - character vector; "poi" and/or "significant"
+# poi             - character vector of feature IDs to label as POI
+# label_mode      - character vector; "poi", "significant_top20", and/or "significant"
+#                 ("significant" includes all sig; if both sig modes are set, all wins)
 # y_cutoff        - significance y threshold (used to identify Significant points)
 # hidden_count_rv - reactiveVal or mock_rv; updated with count of hidden labels
 # min_dist        - minimum normalized distance between labels (0 to 1 scale)
@@ -350,8 +395,9 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
 
   show_poi <- "poi" %in% label_mode
   show_sig <- "significant" %in% label_mode
+  show_sig_top <- "significant_top20" %in% label_mode
 
-  if (!show_poi && !show_sig) {
+  if (!show_poi && !show_sig && !show_sig_top) {
     hidden_count_rv(0L)
     return(p)
   }
@@ -367,17 +413,21 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
   )
 
   if (show_sig) {
-    sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, ]
-    if (nrow(sig_rows) > 0) {
-      label_df <- rbind(label_df, data.frame(
-        id        = sig_rows$id,
-        logFC     = sig_rows$logFC,
-        logP      = sig_rows$logP,
-        label_col = "#FF00FF",
-        label_txt = if (!is.null(sig_rows$geneSymbol)) sig_rows$geneSymbol else sig_rows$id,
-        stringsAsFactors = FALSE
-      ))
-    }
+    sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, , drop = FALSE]
+  } else if (show_sig_top) {
+    sig_rows <- volcano_label_top_significant_subset(df, 20L)
+  } else {
+    sig_rows <- df[FALSE, , drop = FALSE]
+  }
+  if (nrow(sig_rows) > 0) {
+    label_df <- rbind(label_df, data.frame(
+      id        = sig_rows$id,
+      logFC     = sig_rows$logFC,
+      logP      = sig_rows$logP,
+        label_col = .volcano_label_hex,
+      label_txt = if (!is.null(sig_rows$geneSymbol)) sig_rows$geneSymbol else sig_rows$id,
+      stringsAsFactors = FALSE
+    ))
   }
 
   if (show_poi && length(poi) > 0) {
@@ -389,7 +439,7 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
         id        = poi_rows$id,
         logFC     = poi_rows$logFC,
         logP      = poi_rows$logP,
-        label_col = "#28a745",
+        label_col = .volcano_label_hex,
         label_txt = if (!is.null(poi_rows$geneSymbol)) poi_rows$geneSymbol else poi_rows$id,
         stringsAsFactors = FALSE
       ))

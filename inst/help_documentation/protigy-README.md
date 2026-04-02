@@ -1,36 +1,150 @@
 # ProTIGY - Proteogenomics Toolset for Integrative Data Analysis
 
-ProTIGY is a Shiny app for matrices of features (e.g. proteins, genes) by samples. You can upload several related datasets (multi-omics), explore them with QC plots, run optional statistics, and export figures and tables.
+ProTIGY is a Shiny application that supports datasets organized as a matrix with features (proteins, genes, transcripts) measured across samples (experimental conditions, replicates). ProTIGY can analyze various omics data types including proteomics, post-translational modifications (PTMs), RNA-seq, metabolomics, and other quantitative molecular datasets. ProTIGY allows you to upload and process multiple data types from the same experiment simultaneously (e.g., RNA-seq, proteome, and phosphoproteome data from the same samples), enabling integrated multi-omics analysis.
 
-## Key features
+## Key Features
 
-- **QC and plots**: Boxplots, profiles, correlation, PCA, and more (with plot options via the cogwheel icon).
-- **Statistics**: Optional moderated tests and volcano plots (**Statistics** tab).
-- **Processing**: Normalization, filters, log transform—configured in setup (see **Help → Dataset Setup** for options including gene symbols).
-- **Import/export**: GCT v1.3, CSV, TSV, SSV, Excel; export PDFs, GCTs, and CSV results.
-- **Customize**: Color schemes for annotations (**Customize** tab; details in **Help → Customization**).
+### 📊 **Data Analysis & Visualization**
+- **Quality Control (QC)**: Boxplots, profile plots, correlation analysis, and PCA plots
+- **Statistical Analysis**: Moderated t-tests, F-tests, and volcano plots
+- **Interactive Plots**: Zoom, pan, and explore your data
+- **Summary Statistics**: Data overview and sample information
+- **Color Customization**: Fully customize color schemes for all annotation columns across all datasets
 
-## Using the app
+### 🔧 **Data Processing**
+- **Normalization**: Multiple methods including median, quantile, and VSN normalization
+- **Filtering**: Sample- and row-metadata filters, missing/low-variance filters, and related options
+- **Transformation**: Log transformation and other preprocessing
+- Setup details (gene symbols, filters, etc.): **Help → Dataset Setup** in the app
 
-- Use the **sidebar** to upload data and open **Back to Setup** to change preprocessing and the default annotation.
-- Multiple datasets appear as tabs on each page; pick the default dataset from the sidebar.
+### 📁 **Data Import & Export**
+- **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
+- **Supported Formats**: GCT v1.3, CSV, TSV, and Excel files
+- **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
 
-## Getting started
+## Volcano plots (Statistics tab)
 
-1. Upload your files in one session (same type: all GCT or all CSV, etc.).
-2. Assign a short unique label per dataset.
-3. For CSV/TSV/SSV/Excel: set feature ID columns and upload sample metadata (**Help → CSV/TSV/SSV/Excel Processing**).
-4. Complete **Setup**, then explore **QC** and optional **Statistics**.
-5. **Export** when ready.
+After you run statistics, open **Statistics → Volcano Plot** for **one-sample** and **two-sample** moderated *t*-tests (not for the moderated F-test).
 
-## More help
+- **Cutoff** (nominal or adjusted *p*-value and numeric threshold) is the same as in **Statistics → Summary** and controls the horizontal significance line on the volcano plot.
+- **Label proteins** (optional): turn on any combination of **Proteins of interest** (paste or search feature IDs, or click points on the plot to add/remove), **Top 20 significant** (among features above the line, ranked by significance with ties broken by absolute log2 fold change), and **All significant** (every feature above the line; can be crowded).
+- Labels and point highlights use **magenta** so they stand out from significant points (dark red) and non-significant points (gray).
+- You can **export** volcano PDFs and a proteins-of-interest list from the app export options when available.
 
-Use the other **Help** tabs (**Dataset Setup**, **Statistics**, **Multi-ome**, **Customization**) for step-by-step detail.
+## UI Navigation
 
-## Technical notes
+### Sidebar Controls
+- Use the **Sidebar** to upload your dataset(s) and configure analysis settings
+- Click the **arrow icon** (← Collapse / → Expand) next to the sidebar to close/open the sidebar
+- You may change the default dataset anytime using the sidebar
 
-- **R**: 4.0.0+; **RAM**: 8 GB minimum, 16 GB+ for large matrices. [RStudio](https://posit.co/download/rstudio-desktop/) is convenient for running the app.
+### Multiple Dataset Tabs
+If multiple datasets are uploaded, there will be multiple tabs on each page allowing you to view the plots for each dataset separately. You can change the default dataset using the sidebar.
+
+### Plot Customization
+Many plots have a **double cogwheel** icon in the top right corner. Clicking this icon provides customization options for the plots. Your customization options will be saved and used for exports.
+
+### Color Customization
+The **Customize** tab allows you to fully customize color schemes for all annotation columns across all datasets. You can:
+- Maintain consistent colors across datasets (multi-ome mode) or customize each dataset independently (per-ome mode)
+- Import and export color schemes as YAML files
+- Restore default colors or reset to original app-generated colorblind-safe palettes
+- Customize colors for any discrete annotation column in your data
+
+See the **Help → Customization** tab for detailed instructions.
+
+### Changing Settings
+If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
+
+## Quick Start
+
+### 1. **Upload Your Data**
+- Upload one or more files from the same experiment (e.g., different omes such as RNA-seq, prot, phos)
+- Files should have overlapping samples but not all samples need to be in all files
+
+**Supported Formats:**
+- **GCT**: Gene Cluster Text format (`.gct`) - v1.3 format
+- **CSV**: Comma-separated values (`.csv`)
+- **TSV**: Tab-separated values (`.tsv`) 
+- **Excel**: Microsoft Excel files (`.xlsx`, `.xls`)
+
+**File Requirements:**
+- **GCT files**: Must follow GCT v1.3 format specification
+- **CSV/TSV/Excel files**: First row must contain column headers
+- Data should have features as rows, samples as columns
+- Missing values should be empty cells or `NA`
+- All files must be the same type
+
+**Test Data Available:**
+- Sample datasets are included in `inst/extdata/` for testing and learning
+- Includes GCT files: `brca_retrospective_v5.0_*_gct.rda` (proteome, phosphoproteome, RNA-seq)
+- Also includes CSV, TSV, and Excel versions of sample data for testing different file formats
+- Use these files to explore ProTIGY's features before uploading your own data
+
+### 2. **Assign Labels**
+Assign meaningful labels to each of your uploaded files. These labels will be used throughout the analysis to identify your datasets.
+
+**Examples of good labels:**
+- "prot" (for proteome)
+- "phos" (for phosphoproteome) 
+- "acetyl" (for acetylome)
+- "RNA-seq"
+
+**Requirements:**
+- Each label must be unique
+- Labels cannot be empty
+- Keep labels concise (e.g., "prot" instead of "proteome")
+
+### 3. **Additional Setup for CSV/TSV/Excel Files**
+For CSV/TSV/Excel files, you'll also need to:
+- Select identifier columns (choose which column contains unique feature identifiers)
+- Upload experimental design metadata (sample information and experimental conditions)
+
+### 4. **Configure and process each dataset (Setup)**
+After upload (and CSV/Excel design, if applicable), work through **Setup** in the sidebar for each dataset before analysis:
+
+- **Normalization** (e.g. median, quantile, VSN) and **transformation** (e.g. log2) suited to your data type
+- **Filtering**: remove samples or features using metadata rules, missing-value cutoffs, low-variance options, and related controls
+- **Default annotation**: pick the sample annotation column used for coloring QC plots and for statistical grouping (it must match your experimental design)
+- Optional: **Gene symbol** column and **ID-to-symbol mapping** for display and results (see **Help → Dataset Setup** for detail)
+- **Submit** (or equivalent) when ready so ProTIGY builds the processed matrices used in **QC**, **Statistics**, and **Export**. Use **Back to Setup** later if you need to change these steps.
+
+### 5. **Explore Your Data**
+- Use the **QC** tabs to examine data quality:
+  - **Boxplots**: Check data distribution across samples
+  - **Profile Plots**: Visualize individual feature profiles
+  - **Correlation**: Assess sample relationships
+  - **PCA**: Identify patterns and outliers
+
+### 6. **Run Statistical Analysis** (Optional)
+- Statistical analysis is optional - you can use ProTIGY just for QC and data export
+- Navigate to **Statistics** → **Setup** to configure your analysis
+- Select statistical tests based on your experimental design
+- View results across multiple Statistics subtabs (including **Summary**, **Volcano Plot**, and others)
+
+### 7. **Export Results**
+- Export high-quality figures (PDF), data files (GCT), and statistical results (CSV)
+- Select which datasets and which modules to export using the dropdown menus
+
+## Technical Requirements
+
+- **R Version**: 4.0.0 or higher
+- **Memory**: Minimum 8GB RAM recommended; 16GB+ for large datasets (>10,000 features and >50 samples)
+
+## Recommended Software
+
+- **RStudio**: [Download RStudio](https://www.rstudio.com/products/rstudio/download/) (recommended for running ProTIGY)
+
+## Getting Help
+
+- **General Help**: The application includes comprehensive help documentation accessible through the Help tab
+- **Analysis Help**: Detailed guidance on analysis parameters and options is available within the application
+- **Technical Support**: For technical support or feature requests, please submit via [GitHub Issues](https://github.com/broadinstitute/protigy-v2/issues)
+
+## Development
+
+This is a revamp of the original [Protigy app](https://github.com/broadinstitute/protigy) with enhanced multi-omics capabilities and improved user interface.
 
 ---
 
-*ProTIGY — Broad Proteomics Platform. Support and issues: [GitHub](https://github.com/broadinstitute/protigy-v2).*
+*ProTIGY is developed and maintained by the Broad Proteomics Platform. For technical support or feature requests, please submit via [GitHub](https://github.com/broadinstitute/protigy-v2).*

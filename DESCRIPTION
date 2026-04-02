@@ -1,6 +1,6 @@
 Package: Protigy
 Title: Proteomics Toolset for Integrative Data Analysis
-Version: 2.3.2
+Version: 2.4.0
 Authors@R: c(
     person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
     person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),
@@ -11,7 +11,7 @@ Description: A tool for multiomics data analysis and visualization.
 License: BSD_3_clause + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
+RoxygenNote: 7.3.2
 Imports:
     AnnotationDbi,
     circlize,
@@ -21,6 +21,7 @@ Imports:
     dplyr,
     DT,
     ggplot2,
+    ggrepel,
     khroma,
     plotly (>= 4.10.1),
     RColorBrewer,
@@ -59,8 +60,7 @@ Imports:
     snakecase,
     shinyjs,
     future,
-    furrr,
-    ggrepel
+    furrr
 Depends:
     R (>= 4.0.0),
     shiny

@@ -21,7 +21,7 @@ myComplexHeatmap <- function(
   cluster_rows <- if (is.null(params$cluster_rows)) FALSE else as.logical(params$cluster_rows)
   
   # extract genes
-  genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
+  genes.all <- extractGenes(genes.char, dplyr::select(merged_rdesc, dplyr::all_of("geneSymbol")), GENEMAX)
   genes.vec <- genes.all$genes.vec
   
   # Check if any genes were found

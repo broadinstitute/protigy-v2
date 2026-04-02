@@ -804,8 +804,8 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
       
       
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
-        dplyr::mutate(new_columns, .after = .data[[col]]) %>% 
-        dplyr::select(-.data[[col]])
+        dplyr::mutate(new_columns, .after = dplyr::all_of(col)) %>%
+        dplyr::select(-dplyr::all_of(col))
     }
     
     # Add missing columns logic
