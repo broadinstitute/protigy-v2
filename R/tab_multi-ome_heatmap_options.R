@@ -158,6 +158,12 @@ options_multiomeHeatmapTabServer <- function(id, merged_rdesc, sample_anno, setu
         } else {
           default_annotation
         }
+        if (length(available_choices) > 0L &&
+            !is.null(saved_sort) &&
+            !saved_sort %in% available_choices) {
+          # Selected annotations may omit the prior sort column; pick a valid default
+          saved_sort <- available_choices[[1L]]
+        }
         
         updateSelectInput(
           session,

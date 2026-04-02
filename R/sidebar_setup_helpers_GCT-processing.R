@@ -95,6 +95,133 @@ fix_gene_symbols <- function(rdesc) {
   return(list(rdesc = rdesc, removed_rids = removed_rids))
 }
 
+# Apply sample-level filtering using cdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_sample_filter <- function(data, cdesc, params, ome) {
+  if (!isTRUE(params$sample_filter_enabled)) {
+    return(list(data = data, cdesc = cdesc))
+  }
+
+  filter_column <- params$sample_filter_column
+  filter_values <- params$sample_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Sample filtering is enabled, but no sample filter column was selected.")
+  }
+  if (!(filter_column %in% names(cdesc))) {
+    stop("Sample filter column '", filter_column, "' was not found in cdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Sample filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_samples <- as.character(cdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(cdesc)[keep_samples]
+  if (length(keep_ids) == 0) {
+    stop("No samples remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[, keep_ids, drop = FALSE]
+  cdesc <- cdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, cdesc = cdesc))
+}
+
+# Apply row-level filtering using rdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_row_filter <- function(data, rdesc, params, ome) {
+  if (!isTRUE(params$row_filter_enabled)) {
+    return(list(data = data, rdesc = rdesc))
+  }
+
+  filter_column <- params$row_filter_column
+  filter_values <- params$row_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Row filtering is enabled, but no row filter column was selected.")
+  }
+  if (!(filter_column %in% names(rdesc))) {
+    stop("Row filter column '", filter_column, "' was not found in rdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Row filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_rows <- as.character(rdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(rdesc)[keep_rows]
+  if (length(keep_ids) == 0) {
+    stop("No rows remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[keep_ids, , drop = FALSE]
+  rdesc <- rdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, rdesc = rdesc))
+}
+
+# Deep copy of a data.frame (row metadata) — avoids shared columns with the source object.
+# @noRd
+df_deep_copy <- function(df) {
+  if (is.null(df)) {
+    return(NULL)
+  }
+  if (!is.data.frame(df)) {
+    df <- as.data.frame(df, stringsAsFactors = FALSE)
+  }
+  unserialize(serialize(df, connection = NULL))
+}
+
+# Full GCT copy for the processing pipeline so reactive uploads are never mutated.
+# Preserves cmapR::GCT slots: mat, rid, cid, rdesc, cdesc, version, src.
+# @noRd
+deep_clone_gct <- function(gct) {
+  m <- gct@mat
+  d <- dim(m)
+  m_cp <- matrix(as.vector(m), nrow = d[1L], ncol = d[2L], dimnames = dimnames(m))
+  out <- cmapR::GCT(
+    mat = m_cp,
+    rdesc = df_deep_copy(gct@rdesc),
+    cdesc = df_deep_copy(gct@cdesc)
+  )
+  out@rid <- gct@rid
+  out@cid <- gct@cid
+  out@version <- gct@version
+  out@src <- gct@src
+  out
+}
+
+# Remove backup columns created when remapping gene symbols (not part of the user's file).
+# @noRd
+strip_gene_symbol_mapping_columns <- function(rdesc) {
+  if (is.null(rdesc) || !is.data.frame(rdesc)) {
+    return(rdesc)
+  }
+  nm <- names(rdesc)
+  drop <- nm[grepl("^geneSymbol_original", nm)]
+  if (length(drop)) {
+    rdesc <- rdesc[, setdiff(nm, drop), drop = FALSE]
+  }
+  rdesc
+}
+
+# For QC/export "original" GCTs: use upload rdesc (same row order as transformed mat) so
+# geneSymbol_original and other pipeline-only columns never appear in exports.
+# @noRd
+repackage_transformed_gct_with_upload_rdesc <- function(gct_transformed, gct_upload) {
+  if (is.null(gct_transformed) || is.null(gct_upload)) {
+    return(gct_transformed)
+  }
+  rids <- rownames(gct_transformed@mat)
+  ru <- df_deep_copy(gct_upload@rdesc)
+  rn <- rownames(ru)
+  if (!is.null(rn) && length(rids) > 0L && all(rids %in% rn)) {
+    gct_transformed@rdesc <- ru[rids, , drop = FALSE]
+  } else {
+    gct_transformed@rdesc <- strip_gene_symbol_mapping_columns(gct_transformed@rdesc)
+  }
+  gct_transformed
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -139,28 +266,11 @@ transformGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
-              
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+
+              ## gene symbol column, optional ID -> symbol mapping
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
@@ -236,28 +346,31 @@ processGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## row filtering
+              row_filter_out <- apply_row_filter(
+                data = data,
+                rdesc = rdesc,
+                params = params,
+                ome = ome
+              )
+              data <- row_filter_out$data
+              rdesc <- row_filter_out$rdesc
+
+              ## sample filtering
+              sample_filter_out <- apply_sample_filter(
+                data = data,
+                cdesc = cdesc,
+                params = params,
+                ome = ome
+              )
+              data <- sample_filter_out$data
+              cdesc <- sample_filter_out$cdesc
               
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              ## gene symbol column, optional ID -> symbol mapping
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {

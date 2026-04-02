@@ -42,8 +42,9 @@ Protigy::launchApp()
 
 ### 🔧 **Data Processing**
 - **Normalization**: Multiple methods including median, quantile, and VSN normalization
-- **Filtering**: Remove missing data, low-variance features, and non-reproducible measurements
-- **Transformation**: Log transformation and other data preprocessing options
+- **Filtering**: Sample- and row-metadata filters, missing/low-variance filters, and related options
+- **Transformation**: Log transformation and other preprocessing
+- Setup details (gene symbols, filters, etc.): **Help → Dataset Setup** in the app
 
 ### 📁 **Data Import & Export**
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
@@ -131,6 +132,9 @@ For CSV/TSV/Excel files, you'll also need to:
 - Navigate to **Statistics** → **Setup** to configure your analysis
 - Select statistical tests based on your experimental design
 - View results across multiple Statistics subtabs
+
+### 5a. **Optional: Extra setup (filters, gene symbols, etc.)**
+- Use **Help → Dataset Setup** in the app when you need filters, gene symbol columns, or ID-to-symbol mapping.
 
 ### 6. **Export Results**
 - Export high-quality figures (PDF), data files (GCT), and statistical results (CSV)

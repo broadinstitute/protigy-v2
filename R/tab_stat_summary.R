@@ -365,7 +365,37 @@ statSummary_Ome_Server <- function(id,
       
       # Base parameters
       descriptions <- c("Test", "Cutoff", "Stat")
-      counts <- c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+      counts <- c(
+        stat_params()[[ome]]$test,
+        stat_params()[[ome]]$cutoff,
+        stat_params()[[ome]]$stat
+      )
+      
+      if (isTRUE(parameters()$sample_filter_enabled)) {
+        descriptions <- c(
+          descriptions,
+          "Column filter column",
+          "Column filter values"
+        )
+        counts <- c(
+          counts,
+          parameters()$sample_filter_column,
+          paste(parameters()$sample_filter_values, collapse = ", ")
+        )
+      }
+      
+      if (isTRUE(parameters()$row_filter_enabled)) {
+        descriptions <- c(
+          descriptions,
+          "Row filter column",
+          "Row filter values"
+        )
+        counts <- c(
+          counts,
+          parameters()$row_filter_column,
+          paste(parameters()$row_filter_values, collapse = ", ")
+        )
+      }
       
       # Add groups or contrasts based on test type
       if (test_type == "One-sample Moderated T-test") {

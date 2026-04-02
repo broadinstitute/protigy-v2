@@ -31,17 +31,50 @@ This is the default annotation column used for all analysis in ProTIGY. This col
 
 ## Gene Symbol Column
 
+**Recommendation:** Whenever possible, supply gene symbols in your input data (for example in a `geneSymbol` column or another row-metadata field you select in setup). Symbols from your own pipeline or publication are **always preferred** over automatic ID-to-symbol mapping, which depends on database versions and heuristics and may not match your feature definitions.
+
 If your dataset contains gene symbol information, you can specify which column contains the gene symbols:
 
 - **Default**: If a column named "geneSymbol" exists, it will be automatically selected
 - **Custom**: You can select any other column from your dataset's row metadata (rdesc) to use as gene symbols
 - **None**: If no gene symbol column is available, select "None"
 
+### Map IDs to gene symbols
+
+If **Gene symbol column** is **None**, you can turn on **Map IDs to gene symbols**, pick an ID column and species, and submit setup so the app can try to fill `geneSymbol` for you. Use this only when you cannot put symbols in the file yourself.
+
 **Note**: 
 - If `geneSymbol` does not exist and you select another column, that column's values will be copied to create a `geneSymbol` column, and the original column will be preserved in the dataset.
 - If `geneSymbol` already exists and you select a different column, the original `geneSymbol` column will be preserved as `geneSymbol_original`, and the selected column will become the new `geneSymbol` column. The selected column will also be preserved in the dataset.
 - If `geneSymbol` already exists and you select "None" or "geneSymbol" itself, the existing `geneSymbol` column will be kept unchanged.
 - **Blank gene symbols**: Blank or empty gene symbol values are converted to `NA` and all rows are preserved. Features without gene symbols are kept in the analysis.
+
+## Sample Filtering by Column
+
+You can optionally filter samples within each dataset using a metadata column from `cdesc` (for example `QC.status`).
+
+- Enable **Filter samples by column** in setup.
+- Choose the **Sample filter column**.
+- Select one or more values in **Keep samples with selected values**.
+
+Filtering behavior is fixed: **selected values are kept, and all unselected values are discarded**.
+
+### Multi-ome behavior after filtering
+
+Filtering is applied independently to each uploaded ome before preprocessing and analysis.
+
+- If a sample is retained in at least one ome, it remains present in the merged multi-ome output.
+- For omes where that sample was filtered out, merged matrix entries are `NA` for those ome-specific features.
+
+## Row Filtering by Column
+
+You can optionally filter rows (features) within each dataset using a metadata column from `rdesc` (for example `Species`).
+
+- Enable **Filter rows by column** in setup.
+- Choose the **Row filter column**.
+- Select one or more values in **Keep rows with selected values** (for example keep `Homo sapiens`).
+
+Filtering behavior is fixed: **selected values are kept, and all unselected values are discarded**.
 
 ## Data Preprocessing Options
 

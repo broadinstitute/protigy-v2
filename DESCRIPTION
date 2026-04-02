@@ -13,6 +13,7 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
+    AnnotationDbi,
     circlize,
     cmapR,
     colourpicker,
@@ -42,6 +43,8 @@ Imports:
     preprocessCore,
     mixtools,
     mclust,
+    org.Hs.eg.db,
+    org.Mm.eg.db,
     markdown,
     utils,
     rlang,

@@ -3,6 +3,136 @@
 # Main shiny functions (server and UI)
 ################################################################################
 
+# Whether current setup choices allow copying settings to every dataset.
+# Returns list(ok = TRUE) or list(ok = FALSE, msg = <user-facing string>).
+gct_setup_apply_to_all_valid <- function(
+    annotation_column,
+    group_normalization,
+    group_normalization_column,
+    sample_filter_enabled,
+    sample_filter_column,
+    row_filter_enabled,
+    row_filter_column,
+    gene_symbol_column,
+    convert_ids_to_gene_symbol,
+    id_source_column,
+    groups_in_all,
+    rdesc_in_all) {
+  if (is.null(annotation_column)) {
+    annotation_column <- NA_character_
+  }
+  if (is.null(group_normalization_column)) {
+    group_normalization_column <- NA_character_
+  }
+  if (is.null(sample_filter_column)) {
+    sample_filter_column <- ""
+  }
+  if (is.null(row_filter_column)) {
+    row_filter_column <- ""
+  }
+  if (is.null(gene_symbol_column)) {
+    gene_symbol_column <- "None"
+  }
+  if (is.null(id_source_column)) {
+    id_source_column <- ""
+  }
+  if (length(groups_in_all) == 0L) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose consistent shared annotation/filter columns across datasets to enable this setting."
+      )
+    ))
+  }
+  if (!(annotation_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose a consistent analysis annotation column that exists in all datasets to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(group_normalization) && !(group_normalization_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Choose a consistent group normalization column that exists in all datasets to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(sample_filter_enabled) && nzchar(sample_filter_column) &&
+        !(sample_filter_column %in% groups_in_all)) {
+    return(list(
+      ok = FALSE,
+      msg = paste0(
+        "'Apply settings to all datasets' was disabled. ",
+        "Sample filter column '", sample_filter_column,
+        "' is not available in all datasets. Choose a consistent column to enable this setting."
+      )
+    ))
+  }
+  if (isTRUE(row_filter_enabled) && nzchar(row_filter_column)) {
+    if (length(rdesc_in_all) == 0L || !(row_filter_column %in% rdesc_in_all)) {
+      return(list(
+        ok = FALSE,
+        msg = if (length(rdesc_in_all) == 0L) {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Choose consistent shared row metadata columns across datasets to enable this setting."
+          )
+        } else {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Row filter column '", row_filter_column,
+            "' is not available in all datasets. Choose a consistent column to enable this setting."
+          )
+        }
+      ))
+    }
+  }
+  if (isTRUE(convert_ids_to_gene_symbol)) {
+    if (!identical(gene_symbol_column, "None")) {
+      return(list(
+        ok = FALSE,
+        msg = paste0(
+          "'Apply settings to all datasets' was disabled. ",
+          "ID-to-gene-symbol conversion requires Gene symbol column to be set to None when apply-to-all is used."
+        )
+      ))
+    }
+    if (!nzchar(id_source_column)) {
+      return(list(
+        ok = FALSE,
+        msg = paste0(
+          "'Apply settings to all datasets' was disabled. ",
+          "Choose an ID source column for mapping to gene symbols to enable this setting."
+        )
+      ))
+    }
+    if (length(rdesc_in_all) == 0L || !(id_source_column %in% rdesc_in_all)) {
+      return(list(
+        ok = FALSE,
+        msg = if (length(rdesc_in_all) == 0L) {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "Choose consistent shared row metadata columns across datasets to enable this setting."
+          )
+        } else {
+          paste0(
+            "'Apply settings to all datasets' was disabled. ",
+            "ID source column '", id_source_column,
+            "' is not available in all datasets. Choose a consistent column to enable this setting."
+          )
+        }
+      ))
+    }
+  }
+  list(ok = TRUE, msg = NA_character_)
+}
+
 # UI for the sidebar setup
 setupSidebarUI <- function(id = "setupSidebar") {
   # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
@@ -77,6 +207,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     labelsGO <- reactiveVal(0)
     gctsGO <- reactiveVal(0)
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
+    sample_filter_input_state <- reactiveValues()
+    row_filter_input_state <- reactiveValues()
+    # Labels that just received default_parameters; after first parse, gene_symbol_column
+    # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
+    gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
@@ -379,6 +514,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       eventExpr = input$backToLabelsButton,
       ignoreInit = TRUE,
       handlerExpr = {
+        # Save current setup widgets before leaving (Back from dataset 1 only runs here;
+        # Next/Back between datasets already run collectInputs).
+        # Do not run after analysis (advanced settings): inputs are not mounted and would
+        # NULL-out parameters.
+        if (is.null(GCTs_and_params())) {
+          collectInputs()
+        }
         # Reset GCTs_and_params to allow file upload/removal again
         GCTs_and_params(NULL)
         labelAssignment()
@@ -430,9 +572,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (!is.null(existing_params) && length(existing_params) > 0) {
         # CSV/Excel case: parameters already have labels and structure, no need to rebuild
         message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
+        gene_symbol_defaults_pending_labels(character(0))
       } else {
         # GCT case: build parameters from file uploads and user-provided labels
         new_parameters <- list()
+        defaults_pending <- character(0)
         apply(accumulated_files(), 1, function(file) {
           file <- as.list(file)
           
@@ -453,9 +597,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             new_parameters[[label]] <<- c(gct_file_path = file$datapath,
                                           gct_file_name = file$name,
                                           default_parameters)
+            defaults_pending <<- c(defaults_pending, label)
           }
         })
         parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
+        gene_symbol_defaults_pending_labels(defaults_pending)
       }
     }, ignoreInit = TRUE)
     
@@ -498,7 +644,20 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         
         if (!is.null(GCTs)) {
           # update reactiveVal
-          GCTs_unprocessed_internal_reactive(GCTs) 
+          GCTs_unprocessed_internal_reactive(GCTs)
+          
+          pending <- gene_symbol_defaults_pending_labels()
+          if (length(pending) > 0) {
+            pm <- parameters_internal_reactive()
+            for (nm in names(GCTs)) {
+              if (nm %in% pending) {
+                rdesc_n <- names(GCTs[[nm]]@rdesc)
+                pm[[nm]]$gene_symbol_column <- if ("geneSymbol" %in% rdesc_n) "geneSymbol" else "None"
+              }
+            }
+            parameters_internal_reactive(pm)
+            gene_symbol_defaults_pending_labels(setdiff(pending, names(GCTs)))
+          }
           
           # indicates if place or something about GCT files changed
           backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
@@ -541,8 +700,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                          "Submit",
                          class = "btn btn-primary")})
         } else {
-          output$rightButton <- renderUI({actionButton_icon_right(
-            ns("nextButton"), "Next", icon = icon("chevron-right"))})
+          output$rightButton <- renderUI({
+            actionButton(ns("nextButton"), "Next >", class = "btn btn-primary")
+          })
         }
       })
     
@@ -596,6 +756,82 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
+    }, ignoreInit = TRUE)
+
+    # update sample filter values choices when sample filter column changes
+    observe({
+      req(parameters_internal_reactive(), GCTs_unprocessed_internal_reactive())
+      current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+      req(current_label)
+      selected_column <- input[[paste0(current_label, "_sample_filter_column")]]
+      req(selected_column, selected_column != "")
+      gct <- GCTs_unprocessed_internal_reactive()[[current_label]]
+      req(gct, selected_column %in% names(gct@cdesc))
+
+      choices <- sort(unique(as.character(gct@cdesc[[selected_column]])))
+      choices <- choices[!is.na(choices)]
+      selected_values <- isolate(input[[paste0(current_label, "_sample_filter_values")]])
+      if (is.null(selected_values)) {
+        selected_values <- character(0)
+      }
+      selected_values <- intersect(selected_values, choices)
+
+      # Avoid re-sending the same input payload repeatedly (prevents UI flicker).
+      next_state <- list(
+        column = selected_column,
+        choices = choices,
+        selected = selected_values
+      )
+      current_state <- isolate(sample_filter_input_state[[current_label]])
+      if (identical(current_state, next_state)) {
+        return(invisible(NULL))
+      }
+      sample_filter_input_state[[current_label]] <- next_state
+
+      updateSelectizeInput(
+        inputId = paste0(current_label, "_sample_filter_values"),
+        choices = choices,
+        selected = selected_values,
+        server = FALSE
+      )
+    })
+
+    # update row filter values choices when row filter column changes
+    observe({
+      req(parameters_internal_reactive(), GCTs_unprocessed_internal_reactive())
+      current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+      req(current_label)
+      selected_column <- input[[paste0(current_label, "_row_filter_column")]]
+      req(selected_column, selected_column != "")
+      gct <- GCTs_unprocessed_internal_reactive()[[current_label]]
+      req(gct, selected_column %in% names(gct@rdesc))
+
+      choices <- sort(unique(as.character(gct@rdesc[[selected_column]])))
+      choices <- choices[!is.na(choices)]
+      selected_values <- isolate(input[[paste0(current_label, "_row_filter_values")]])
+      if (is.null(selected_values)) {
+        selected_values <- character(0)
+      }
+      selected_values <- intersect(selected_values, choices)
+
+      # Avoid re-sending the same input payload repeatedly (prevents UI flicker).
+      next_state <- list(
+        column = selected_column,
+        choices = choices,
+        selected = selected_values
+      )
+      current_state <- isolate(row_filter_input_state[[current_label]])
+      if (identical(current_state, next_state)) {
+        return(invisible(NULL))
+      }
+      row_filter_input_state[[current_label]] <- next_state
+
+      updateSelectizeInput(
+        inputId = paste0(current_label, "_row_filter_values"),
+        choices = choices,
+        selected = selected_values,
+        server = FALSE
+      )
     })
     
     
@@ -603,27 +839,59 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     groups_in_all_omes <- reactive({
       base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@cdesc)))
     })
+    rdesc_in_all_omes <- reactive({
+      base::Reduce(base::intersect, lapply(GCTs_unprocessed_internal_reactive(), function(gct) names(gct@rdesc)))
+    })
     observe({
-      req(parameters_internal_reactive(), groups_in_all_omes())
+      req(parameters_internal_reactive(), GCTs_unprocessed_internal_reactive())
+      # Do not use req() on intersect vectors: length-0 intersect is valid and must still invalidate apply-to-all.
+      groups_in_all <- isolate(groups_in_all_omes())
+      rdesc_in_all <- isolate(rdesc_in_all_omes())
       
       # get relevant inputs
       current_label <- names(parameters_internal_reactive())[backNextLogic$place]
       current_annotation_column <- input[[paste0(current_label, "_annotation_column")]]
       current_group_norm_column <- input[[paste0(current_label, "_group_normalization_column")]]
       current_group_norm_selection <- input[[paste0(current_label, "_group_normalization")]]
+      current_sample_filter_enabled <- input[[paste0(current_label, "_sample_filter_enabled")]]
+      current_sample_filter_column <- input[[paste0(current_label, "_sample_filter_column")]]
+      current_row_filter_enabled <- input[[paste0(current_label, "_row_filter_enabled")]]
+      current_row_filter_column <- input[[paste0(current_label, "_row_filter_column")]]
+      current_gene_symbol_column <- input[[paste0(current_label, "_gene_symbol_column")]]
+      current_convert_ids <- input[[paste0(current_label, "_convert_ids_to_gene_symbol")]]
+      current_id_source_column <- input[[paste0(current_label, "_id_source_column")]]
+      if (is.null(current_sample_filter_column)) {
+        current_sample_filter_column <- ""
+      }
+      if (is.null(current_row_filter_column)) {
+        current_row_filter_column <- ""
+      }
+      if (is.null(current_id_source_column)) {
+        current_id_source_column <- ""
+      }
       
-      # get the groups/columns that are present in all omes
-      groups_in_all <- isolate(groups_in_all_omes())
-      
-      # condition for when to update applyToAll to false
-      # NOTE: if something changes here, also check out the `gctSetupUI()`
-      # function to determine when applyToAll actually shows up in the UI
-      condition <- !(current_annotation_column %in% groups_in_all) |
-        (current_group_norm_selection & !(current_group_norm_column %in% groups_in_all))
+      valid <- gct_setup_apply_to_all_valid(
+        annotation_column = current_annotation_column,
+        group_normalization = current_group_norm_selection,
+        group_normalization_column = current_group_norm_column,
+        sample_filter_enabled = current_sample_filter_enabled,
+        sample_filter_column = current_sample_filter_column,
+        row_filter_enabled = current_row_filter_enabled,
+        row_filter_column = current_row_filter_column,
+        gene_symbol_column = current_gene_symbol_column,
+        convert_ids_to_gene_symbol = current_convert_ids,
+        id_source_column = current_id_source_column,
+        groups_in_all = groups_in_all,
+        rdesc_in_all = rdesc_in_all
+      )
       
       # update applyToAll to FALSE if necessary
-      if (TRUE %in% condition) {
-        updateCheckboxInput(inputId = "applyToAll", value = FALSE)
+      if (!isTRUE(valid$ok)) {
+        was_on <- isTRUE(isolate(input$applyToAll))
+        updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+        if (was_on) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+        }
       }
     })
     
@@ -631,6 +899,36 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     
     # change next/back buttons if applyToAll == TRUE
     observeEvent(input$applyToAll, {
+      if (isTRUE(input$applyToAll)) {
+        current_label <- names(parameters_internal_reactive())[backNextLogic$place]
+        groups_in_all <- isolate(groups_in_all_omes())
+        rdesc_in_all <- isolate(rdesc_in_all_omes())
+        sc <- input[[paste0(current_label, "_sample_filter_column")]]
+        rc <- input[[paste0(current_label, "_row_filter_column")]]
+        if (is.null(sc)) sc <- ""
+        if (is.null(rc)) rc <- ""
+        idsc <- input[[paste0(current_label, "_id_source_column")]]
+        if (is.null(idsc)) idsc <- ""
+        valid <- gct_setup_apply_to_all_valid(
+          annotation_column = input[[paste0(current_label, "_annotation_column")]],
+          group_normalization = input[[paste0(current_label, "_group_normalization")]],
+          group_normalization_column = input[[paste0(current_label, "_group_normalization_column")]],
+          sample_filter_enabled = input[[paste0(current_label, "_sample_filter_enabled")]],
+          sample_filter_column = sc,
+          row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
+          row_filter_column = rc,
+          gene_symbol_column = input[[paste0(current_label, "_gene_symbol_column")]],
+          convert_ids_to_gene_symbol = input[[paste0(current_label, "_convert_ids_to_gene_symbol")]],
+          id_source_column = idsc,
+          groups_in_all = groups_in_all,
+          rdesc_in_all = rdesc_in_all
+        )
+        if (!isTRUE(valid$ok)) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+          updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+          return()
+        }
+      }
       
       # change next button to submit
       if (input$applyToAll | backNextLogic$place == backNextLogic$maxPlace) {
@@ -638,8 +936,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                      "Submit", 
                                                      class = "btn btn-primary")})
       } else {
-        output$rightButton <- renderUI({actionButton_icon_right(
-          ns("nextButton"), "Next", icon = icon("chevron-right"))})
+        output$rightButton <- renderUI({
+          actionButton(ns("nextButton"), "Next >", class = "btn btn-primary")
+        })
       }
       
       # change back button to "back to labels"
@@ -697,17 +996,65 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- parameters_internal_reactive()
-      GCTs <- GCTs_unprocessed_internal_reactive()
+      GCTs_up <- GCTs_unprocessed_internal_reactive()
+      # Work on deep clones so setup/upload GCTs are not mutated (no geneSymbol_original on upload).
+      GCTs_work <- stats::setNames(
+        lapply(names(GCTs_up), function(nm) deep_clone_gct(GCTs_up[[nm]])),
+        names(GCTs_up)
+      )
       
       # call processGCTs function in a tryCatch
-      processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
+      processing_output <- processGCTs(GCTs = GCTs_work, parameters = parameters)
       
-      # also transform the original GCTs
-      transformation_output <- transformGCTs(GCTs = GCTs, parameters = parameters)
+      # Use updated parameters (e.g. ID conversion turned off after failed mapping)
+      parameters_after_process <- parameters
+      if (!is.null(processing_output)) {
+        parameters_after_process <- processing_output$parameters
+      }
+      transformation_output <- transformGCTs(GCTs = GCTs_work, parameters = parameters_after_process)
+      # Original GCTs for export/QC: log-transformed mat but row metadata as uploaded (no mapping backups)
+      if (!is.null(transformation_output)) {
+        for (nm in names(transformation_output)) {
+          te <- transformation_output[[nm]]
+          if (!is.null(te) && nm %in% names(GCTs_up)) {
+            transformation_output[[nm]] <- repackage_transformed_gct_with_upload_rdesc(te, GCTs_up[[nm]])
+          }
+        }
+      }
       
       if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
-        GCTs_and_params(processing_output) 
+        GCTs_and_params(processing_output)
+        
+        # Notify if ID conversion was auto-disabled for any dataset (details in warnings)
+        for (ome in names(processing_output$parameters)) {
+          if (ome %in% names(parameters) &&
+              isTRUE(parameters[[ome]]$convert_ids_to_gene_symbol) &&
+              !isTRUE(processing_output$parameters[[ome]]$convert_ids_to_gene_symbol)) {
+            showNotification(
+              paste0(
+                "Dataset ", ome, ": \"Convert IDs to gene symbols\" was turned off because ",
+                "no gene symbols could be resolved. Check the R console for message() details."
+              ),
+              type = "warning",
+              duration = 8,
+              session = session
+            )
+          }
+        }
+        
+        # Keep sidebar setup parameters in sync with processing (conversion flags, etc.)
+        merged_params <- parameters_internal_reactive()
+        if (!is.null(merged_params)) {
+          for (ome in names(processing_output$parameters)) {
+            merged_params[[ome]] <- processing_output$parameters[[ome]]
+            # User's setup choice must survive processing (same list is mutated in pipeline)
+            if (ome %in% names(parameters)) {
+              merged_params[[ome]]$gene_symbol_column <- parameters[[ome]]$gene_symbol_column
+            }
+          }
+          parameters_internal_reactive(merged_params)
+        }
         
         # save the original GCTs for output
         # these have been log transformed if selected
@@ -784,6 +1131,33 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # select labels for assignment
       applyToAll <- ifelse(is.null(input$applyToAll), FALSE, input$applyToAll)
       if (applyToAll) {
+        sc <- input[[paste0(current_label, "_sample_filter_column")]]
+        rc <- input[[paste0(current_label, "_row_filter_column")]]
+        if (is.null(sc)) sc <- ""
+        if (is.null(rc)) rc <- ""
+        idsc <- input[[paste0(current_label, "_id_source_column")]]
+        if (is.null(idsc)) idsc <- ""
+        valid <- gct_setup_apply_to_all_valid(
+          annotation_column = input[[paste0(current_label, "_annotation_column")]],
+          group_normalization = input[[paste0(current_label, "_group_normalization")]],
+          group_normalization_column = input[[paste0(current_label, "_group_normalization_column")]],
+          sample_filter_enabled = input[[paste0(current_label, "_sample_filter_enabled")]],
+          sample_filter_column = sc,
+          row_filter_enabled = input[[paste0(current_label, "_row_filter_enabled")]],
+          row_filter_column = rc,
+          gene_symbol_column = input[[paste0(current_label, "_gene_symbol_column")]],
+          convert_ids_to_gene_symbol = input[[paste0(current_label, "_convert_ids_to_gene_symbol")]],
+          id_source_column = idsc,
+          groups_in_all = isolate(groups_in_all_omes()),
+          rdesc_in_all = isolate(rdesc_in_all_omes())
+        )
+        if (!isTRUE(valid$ok)) {
+          showNotification(valid$msg, type = "warning", duration = 8, session = session)
+          updateCheckboxInput(session = session, inputId = "applyToAll", value = FALSE)
+          applyToAll <- FALSE
+        }
+      }
+      if (applyToAll) {
         assignment_labels = all_labels # all labels
       } else {
         assignment_labels <- current_label # just the current label
@@ -796,7 +1170,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       parameter_names <- c(names(default_parameters),
                            'annotation_column',
                            'group_normalization_column',
-                           'gene_symbol_column')
+                           'gene_symbol_column',
+                           'sample_filter_enabled',
+                           'sample_filter_column',
+                           'sample_filter_values',
+                           'row_filter_enabled',
+                           'row_filter_column',
+                           'row_filter_values')
 
       # assign new user selections
       # NOTE: there are fields in `new_parameters` that aren't updated here,
@@ -805,9 +1185,38 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         for (param in parameter_names) {
           input_value <- input[[paste0(current_label, '_', param)]]
 
+          # Keep stored values when inputs are absent (first paint, UI rebuild) or when
+          # the field has no widget (e.g. id_mapping_* stats from processing). Otherwise
+          # NULL overwrites break gene symbol / ID mapping persistence.
+          if (is.null(input_value) && param %in% c(
+                "gene_symbol_column",
+                "convert_ids_to_gene_symbol",
+                "id_source_column",
+                "id_mapping_species",
+                "id_mapping_keytype",
+                "id_mapping_n_total",
+                "id_mapping_n_unmapped")) {
+            next
+          }
+
           # Convert intensity_data checkbox boolean to "Yes"/"No" string
           if (param == "intensity_data" && is.logical(input_value)) {
             input_value <- if (input_value) "Yes" else "No"
+          }
+          if (param == "sample_filter_column" && is.null(input_value)) {
+            input_value <- ""
+          }
+          if (param == "sample_filter_values" && is.null(input_value)) {
+            input_value <- character(0)
+          }
+          if (param == "row_filter_column" && is.null(input_value)) {
+            input_value <- ""
+          }
+          if (param == "row_filter_values" && is.null(input_value)) {
+            input_value <- character(0)
+          }
+          if (param == "id_source_column" && is.null(input_value)) {
+            input_value <- ""
           }
 
           new_parameters[[label]][[param]] <- input_value
