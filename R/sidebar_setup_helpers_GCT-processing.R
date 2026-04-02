@@ -159,6 +159,69 @@ apply_row_filter <- function(data, rdesc, params, ome) {
   return(list(data = data, rdesc = rdesc))
 }
 
+# Deep copy of a data.frame (row metadata) — avoids shared columns with the source object.
+# @noRd
+df_deep_copy <- function(df) {
+  if (is.null(df)) {
+    return(NULL)
+  }
+  if (!is.data.frame(df)) {
+    df <- as.data.frame(df, stringsAsFactors = FALSE)
+  }
+  unserialize(serialize(df, connection = NULL))
+}
+
+# Full GCT copy for the processing pipeline so reactive uploads are never mutated.
+# Preserves cmapR::GCT slots: mat, rid, cid, rdesc, cdesc, version, src.
+# @noRd
+deep_clone_gct <- function(gct) {
+  m <- gct@mat
+  d <- dim(m)
+  m_cp <- matrix(as.vector(m), nrow = d[1L], ncol = d[2L], dimnames = dimnames(m))
+  out <- cmapR::GCT(
+    mat = m_cp,
+    rdesc = df_deep_copy(gct@rdesc),
+    cdesc = df_deep_copy(gct@cdesc)
+  )
+  out@rid <- gct@rid
+  out@cid <- gct@cid
+  out@version <- gct@version
+  out@src <- gct@src
+  out
+}
+
+# Remove backup columns created when remapping gene symbols (not part of the user's file).
+# @noRd
+strip_gene_symbol_mapping_columns <- function(rdesc) {
+  if (is.null(rdesc) || !is.data.frame(rdesc)) {
+    return(rdesc)
+  }
+  nm <- names(rdesc)
+  drop <- nm[grepl("^geneSymbol_original", nm)]
+  if (length(drop)) {
+    rdesc <- rdesc[, setdiff(nm, drop), drop = FALSE]
+  }
+  rdesc
+}
+
+# For QC/export "original" GCTs: use upload rdesc (same row order as transformed mat) so
+# geneSymbol_original and other pipeline-only columns never appear in exports.
+# @noRd
+repackage_transformed_gct_with_upload_rdesc <- function(gct_transformed, gct_upload) {
+  if (is.null(gct_transformed) || is.null(gct_upload)) {
+    return(gct_transformed)
+  }
+  rids <- rownames(gct_transformed@mat)
+  ru <- df_deep_copy(gct_upload@rdesc)
+  rn <- rownames(ru)
+  if (!is.null(rn) && length(rids) > 0L && all(rids %in% rn)) {
+    gct_transformed@rdesc <- ru[rids, , drop = FALSE]
+  } else {
+    gct_transformed@rdesc <- strip_gene_symbol_mapping_columns(gct_transformed@rdesc)
+  }
+  gct_transformed
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization

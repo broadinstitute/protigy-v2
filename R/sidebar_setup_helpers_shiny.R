@@ -128,19 +128,29 @@ gctSetupUI <- function(ns,
             parameters[[label]]$annotation_column)),
         classes = "small-input"),
     
-    ## gene symbol column selection
+    ## gene symbol column selection (selected value = stored parameters only; defaults
+    ## are applied once after parse in sidebar_setup.R, not here)
     add_css_attributes(
         selectInput(
           ns(paste0(label, '_gene_symbol_column')),
           "Gene symbol column",
           choices = c("None", names(GCTs[[label]]@rdesc)),
-          selected = ifelse(
-            is.null(parameters[[label]]$gene_symbol_column) || parameters[[label]]$gene_symbol_column == "None",
-            ifelse("geneSymbol" %in% names(GCTs[[label]]@rdesc), "geneSymbol", "None"),
-            parameters[[label]]$gene_symbol_column)),
+          selected = {
+            gsc_raw <- parameters[[label]]$gene_symbol_column
+            gsc <- if (is.null(gsc_raw) || (length(gsc_raw) == 1L && is.na(gsc_raw))) {
+              "None"
+            } else {
+              as.character(gsc_raw)[[1L]]
+            }
+            choices_gs <- c("None", names(GCTs[[label]]@rdesc))
+            if (gsc %in% choices_gs) gsc else "None"
+          }),
         classes = "small-input"),
 
     ## Map IDs to gene symbols (when Gene symbol column is None)
+    # Use unqualified input names here; `ns = ns` lets conditionalPanel namespace them
+    # correctly in JS. Do not call ns() inside the condition string — that double-
+    # namespaces and the panel never shows when "None" is selected.
     conditionalPanel(
       condition = paste0("input['", label, "_gene_symbol_column'] == 'None'"),
       tagList(

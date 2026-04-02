@@ -209,6 +209,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     csvExcel_identifier_columns_reactive <- reactiveVal(NULL)
     sample_filter_input_state <- reactiveValues()
     row_filter_input_state <- reactiveValues()
+    # Labels that just received default_parameters; after first parse, gene_symbol_column
+    # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
+    gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
     
     # read in default settings and choices from yamls
     default_parameters <- read_yaml(system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy'))
@@ -511,6 +514,13 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       eventExpr = input$backToLabelsButton,
       ignoreInit = TRUE,
       handlerExpr = {
+        # Save current setup widgets before leaving (Back from dataset 1 only runs here;
+        # Next/Back between datasets already run collectInputs).
+        # Do not run after analysis (advanced settings): inputs are not mounted and would
+        # NULL-out parameters.
+        if (is.null(GCTs_and_params())) {
+          collectInputs()
+        }
         # Reset GCTs_and_params to allow file upload/removal again
         GCTs_and_params(NULL)
         labelAssignment()
@@ -562,9 +572,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (!is.null(existing_params) && length(existing_params) > 0) {
         # CSV/Excel case: parameters already have labels and structure, no need to rebuild
         message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
+        gene_symbol_defaults_pending_labels(character(0))
       } else {
         # GCT case: build parameters from file uploads and user-provided labels
         new_parameters <- list()
+        defaults_pending <- character(0)
         apply(accumulated_files(), 1, function(file) {
           file <- as.list(file)
           
@@ -585,9 +597,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             new_parameters[[label]] <<- c(gct_file_path = file$datapath,
                                           gct_file_name = file$name,
                                           default_parameters)
+            defaults_pending <<- c(defaults_pending, label)
           }
         })
         parameters_internal_reactive(new_parameters) # update GCT parameters reactiveVal
+        gene_symbol_defaults_pending_labels(defaults_pending)
       }
     }, ignoreInit = TRUE)
     
@@ -630,7 +644,20 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         
         if (!is.null(GCTs)) {
           # update reactiveVal
-          GCTs_unprocessed_internal_reactive(GCTs) 
+          GCTs_unprocessed_internal_reactive(GCTs)
+          
+          pending <- gene_symbol_defaults_pending_labels()
+          if (length(pending) > 0) {
+            pm <- parameters_internal_reactive()
+            for (nm in names(GCTs)) {
+              if (nm %in% pending) {
+                rdesc_n <- names(GCTs[[nm]]@rdesc)
+                pm[[nm]]$gene_symbol_column <- if ("geneSymbol" %in% rdesc_n) "geneSymbol" else "None"
+              }
+            }
+            parameters_internal_reactive(pm)
+            gene_symbol_defaults_pending_labels(setdiff(pending, names(GCTs)))
+          }
           
           # indicates if place or something about GCT files changed
           backNextLogic$placeChanged <- backNextLogic$placeChanged + 1 
@@ -729,7 +756,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
-    })
+    }, ignoreInit = TRUE)
 
     # update sample filter values choices when sample filter column changes
     observe({
@@ -969,17 +996,31 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     # process GCTs 
     observeEvent(input$submitGCTButton, {
       parameters <- parameters_internal_reactive()
-      GCTs <- GCTs_unprocessed_internal_reactive()
+      GCTs_up <- GCTs_unprocessed_internal_reactive()
+      # Work on deep clones so setup/upload GCTs are not mutated (no geneSymbol_original on upload).
+      GCTs_work <- stats::setNames(
+        lapply(names(GCTs_up), function(nm) deep_clone_gct(GCTs_up[[nm]])),
+        names(GCTs_up)
+      )
       
       # call processGCTs function in a tryCatch
-      processing_output <- processGCTs(GCTs = GCTs, parameters = parameters)
+      processing_output <- processGCTs(GCTs = GCTs_work, parameters = parameters)
       
       # Use updated parameters (e.g. ID conversion turned off after failed mapping)
       parameters_after_process <- parameters
       if (!is.null(processing_output)) {
         parameters_after_process <- processing_output$parameters
       }
-      transformation_output <- transformGCTs(GCTs = GCTs, parameters = parameters_after_process)
+      transformation_output <- transformGCTs(GCTs = GCTs_work, parameters = parameters_after_process)
+      # Original GCTs for export/QC: log-transformed mat but row metadata as uploaded (no mapping backups)
+      if (!is.null(transformation_output)) {
+        for (nm in names(transformation_output)) {
+          te <- transformation_output[[nm]]
+          if (!is.null(te) && nm %in% names(GCTs_up)) {
+            transformation_output[[nm]] <- repackage_transformed_gct_with_upload_rdesc(te, GCTs_up[[nm]])
+          }
+        }
+      }
       
       if (!is.null(processing_output)) {
         # set GCTs_and_params reactiveVal
@@ -1007,6 +1048,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         if (!is.null(merged_params)) {
           for (ome in names(processing_output$parameters)) {
             merged_params[[ome]] <- processing_output$parameters[[ome]]
+            # User's setup choice must survive processing (same list is mutated in pipeline)
+            if (ome %in% names(parameters)) {
+              merged_params[[ome]]$gene_symbol_column <- parameters[[ome]]$gene_symbol_column
+            }
           }
           parameters_internal_reactive(merged_params)
         }
@@ -1139,6 +1184,20 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       for (label in assignment_labels) {
         for (param in parameter_names) {
           input_value <- input[[paste0(current_label, '_', param)]]
+
+          # Keep stored values when inputs are absent (first paint, UI rebuild) or when
+          # the field has no widget (e.g. id_mapping_* stats from processing). Otherwise
+          # NULL overwrites break gene symbol / ID mapping persistence.
+          if (is.null(input_value) && param %in% c(
+                "gene_symbol_column",
+                "convert_ids_to_gene_symbol",
+                "id_source_column",
+                "id_mapping_species",
+                "id_mapping_keytype",
+                "id_mapping_n_total",
+                "id_mapping_n_unmapped")) {
+            next
+          }
 
           # Convert intensity_data checkbox boolean to "Yes"/"No" string
           if (param == "intensity_data" && is.logical(input_value)) {
