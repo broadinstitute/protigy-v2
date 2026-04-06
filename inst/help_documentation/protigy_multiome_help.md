@@ -11,3 +11,4 @@ The multi-ome heatmap displays multiple datasets in a single visualization, allo
 - Datasets must share at least one sample
 - Datasets must share at least one categorical annotation
 - Features must have a shared identifier (e.g., gene symbol)
+- Prefer gene symbols in your data; otherwise use **Map IDs to gene symbols** in **Dataset Setup** if needed. See **Help → Dataset Setup**.

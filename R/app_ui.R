@@ -32,8 +32,20 @@ app_UI <- function(request) {dashboardPage(
     # JavaScript to manage Clear All Notifications button visibility
     tags$script(HTML("
       $(document).ready(function() {
+        var MAX_NOTIFICATIONS = 10;
+
+        // Shiny appends new notifications; earliest in DOM are oldest - drop excess first.
+        function trimNotificationsToMax() {
+          var notifications = $('.shiny-notification');
+          var extra = notifications.length - MAX_NOTIFICATIONS;
+          if (extra > 0) {
+            notifications.slice(0, extra).remove();
+          }
+        }
+
         // Function to update button visibility based on notification presence
         function updateClearButton() {
+          trimNotificationsToMax();
           var notifications = $('.shiny-notification');
           if (notifications.length > 0) {
             $('#clear_all_notifications_header').show();

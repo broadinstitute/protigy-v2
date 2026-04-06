@@ -13,13 +13,23 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ### 🔧 **Data Processing**
 - **Normalization**: Multiple methods including median, quantile, and VSN normalization
-- **Filtering**: Remove missing data, low-variance features, and non-reproducible measurements
-- **Transformation**: Log transformation and other data preprocessing options
+- **Filtering**: Sample- and row-metadata filters, missing/low-variance filters, and related options
+- **Transformation**: Log transformation and other preprocessing
+- Setup details (gene symbols, filters, etc.): **Help → Dataset Setup** in the app
 
 ### 📁 **Data Import & Export**
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
-- **Supported Formats**: GCT v1.3, CSV, TSV, SSV (semicolon-separated), and Excel files
+- **Supported Formats**: GCT v1.3, CSV, TSV, and Excel files
 - **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
+
+## Volcano plots (Statistics tab)
+
+After you run statistics, open **Statistics → Volcano Plot** for **one-sample** and **two-sample** moderated *t*-tests (not for the moderated F-test).
+
+- **Cutoff** (nominal or adjusted *p*-value and numeric threshold) is the same as in **Statistics → Summary** and controls the horizontal significance line on the volcano plot.
+- **Label proteins** (optional): turn on any combination of **Proteins of interest** (paste or search feature IDs, or click points on the plot to add/remove), **Top 20 significant** (among features above the line, ranked by significance with ties broken by absolute log2 fold change), and **All significant** (every feature above the line; can be crowded).
+- Labels and point highlights use **magenta** so they stand out from significant points (dark red) and non-significant points (gray).
+- You can **export** volcano PDFs and a proteins-of-interest list from the app export options when available.
 
 ## UI Navigation
 
@@ -46,17 +56,16 @@ See the **Help → Customization** tab for detailed instructions.
 ### Changing Settings
 If you need to change settings such as normalization/filtering or the default annotation, use the "Back to Setup" button in the sidebar to modify these options.
 
-## Getting Started
+## Quick Start
 
 ### 1. **Upload Your Data**
-- Upload one or more files from the same experiment (e.g., different omes such as RNA-seq, prot, phos). Files should have overlapping samples but not all samples need to be in all files.
-- **Important**: All files must be uploaded at the same time from the same directory. ProTIGY requires all files to be selected together in a single upload session.
+- Upload one or more files from the same experiment (e.g., different omes such as RNA-seq, prot, phos)
+- Files should have overlapping samples but not all samples need to be in all files
 
 **Supported Formats:**
 - **GCT**: Gene Cluster Text format (`.gct`) - v1.3 format
 - **CSV**: Comma-separated values (`.csv`)
-- **TSV**: Tab-separated values (`.tsv`)
-- **SSV**: Semicolon-separated values (`.ssv`)
+- **TSV**: Tab-separated values (`.tsv`) 
 - **Excel**: Microsoft Excel files (`.xlsx`, `.xls`)
 
 **File Requirements:**
@@ -65,6 +74,12 @@ If you need to change settings such as normalization/filtering or the default an
 - Data should have features as rows, samples as columns
 - Missing values should be empty cells or `NA`
 - All files must be the same type
+
+**Test Data Available:**
+- Sample datasets are included in `inst/extdata/` for testing and learning
+- Includes GCT files: `brca_retrospective_v5.0_*_gct.rda` (proteome, phosphoproteome, RNA-seq)
+- Also includes CSV, TSV, and Excel versions of sample data for testing different file formats
+- Use these files to explore ProTIGY's features before uploading your own data
 
 ### 2. **Assign Labels**
 Assign meaningful labels to each of your uploaded files. These labels will be used throughout the analysis to identify your datasets.
@@ -85,27 +100,31 @@ For CSV/TSV/Excel files, you'll also need to:
 - Select identifier columns (choose which column contains unique feature identifiers)
 - Upload experimental design metadata (sample information and experimental conditions)
 
-### 4. **Explore Your Data**
+### 4. **Configure and process each dataset (Setup)**
+After upload (and CSV/Excel design, if applicable), work through **Setup** in the sidebar for each dataset before analysis:
+
+- **Normalization** (e.g. median, quantile, VSN) and **transformation** (e.g. log2) suited to your data type
+- **Filtering**: remove samples or features using metadata rules, missing-value cutoffs, low-variance options, and related controls
+- **Default annotation**: pick the sample annotation column used for coloring QC plots and for statistical grouping (it must match your experimental design)
+- Optional: **Gene symbol** column and **ID-to-symbol mapping** for display and results (see **Help → Dataset Setup** for detail)
+- **Submit** (or equivalent) when ready so ProTIGY builds the processed matrices used in **QC**, **Statistics**, and **Export**. Use **Back to Setup** later if you need to change these steps.
+
+### 5. **Explore Your Data**
 - Use the **QC** tabs to examine data quality:
   - **Boxplots**: Check data distribution across samples
   - **Profile Plots**: Visualize individual feature profiles
   - **Correlation**: Assess sample relationships
   - **PCA**: Identify patterns and outliers
 
-### 5. **Run Statistical Analysis** (Optional)
+### 6. **Run Statistical Analysis** (Optional)
 - Statistical analysis is optional - you can use ProTIGY just for QC and data export
 - Navigate to **Statistics** → **Setup** to configure your analysis
 - Select statistical tests based on your experimental design
-- View results across multiple Statistics subtabs
+- View results across multiple Statistics subtabs (including **Summary**, **Volcano Plot**, and others)
 
-### 6. **Export Results**
-- Export high-quality figures (PDF), data files (GCT), and statistical results (CSV). You can select which datasets and which modules to export using the dropdown menus.
-
-## Need Help?
-
-- **General Help**: This tab provides an overview of ProTIGY's capabilities
-- **Analysis Help**: Detailed guidance on analysis parameters and options
-- **Customization Help**: Step-by-step instructions for customizing color schemes
+### 7. **Export Results**
+- Export high-quality figures (PDF), data files (GCT), and statistical results (CSV)
+- Select which datasets and which modules to export using the dropdown menus
 
 ## Technical Requirements
 
@@ -115,6 +134,16 @@ For CSV/TSV/Excel files, you'll also need to:
 ## Recommended Software
 
 - **RStudio**: [Download RStudio](https://www.rstudio.com/products/rstudio/download/) (recommended for running ProTIGY)
+
+## Getting Help
+
+- **General Help**: The application includes comprehensive help documentation accessible through the Help tab
+- **Analysis Help**: Detailed guidance on analysis parameters and options is available within the application
+- **Technical Support**: For technical support or feature requests, please submit via [GitHub Issues](https://github.com/broadinstitute/protigy-v2/issues)
+
+## Development
+
+This is a revamp of the original [Protigy app](https://github.com/broadinstitute/protigy) with enhanced multi-omics capabilities and improved user interface.
 
 ---
 

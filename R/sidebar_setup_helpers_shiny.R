@@ -48,7 +48,6 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
-  
   # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
   norm_choices <- parameter_choices$data_normalization$intensity_data_no
   n_samples <- ncol(GCTs[[label]]@mat)
@@ -60,7 +59,58 @@ gctSetupUI <- function(ns,
   if (n_samples > 20 && norm_selected == "2-component") {
     norm_selected <- "None"
   }
-  
+
+  sample_filter_column_selected <- parameters[[label]]$sample_filter_column
+  if (is.null(sample_filter_column_selected)) {
+    sample_filter_column_selected <- ""
+  }
+  sample_filter_values_choices <- character(0)
+  if (sample_filter_column_selected %in% names(GCTs[[label]]@cdesc)) {
+    sample_filter_values_choices <- sort(
+      unique(as.character(GCTs[[label]]@cdesc[[sample_filter_column_selected]]))
+    )
+    sample_filter_values_choices <- sample_filter_values_choices[!is.na(sample_filter_values_choices)]
+  }
+  sample_filter_values_selected <- parameters[[label]]$sample_filter_values
+  if (is.null(sample_filter_values_selected)) {
+    sample_filter_values_selected <- character(0)
+  }
+
+  # row-filter column choices pulled from rdesc (discrete columns preferred)
+  all_rdesc_columns <- names(GCTs[[label]]@rdesc)
+  row_filter_columns_choices <- all_rdesc_columns[vapply(
+    GCTs[[label]]@rdesc[all_rdesc_columns],
+    function(col) is.discrete(col),
+    logical(1)
+  )]
+  if (length(row_filter_columns_choices) == 0) {
+    row_filter_columns_choices <- all_rdesc_columns
+  }
+
+  row_filter_column_selected <- parameters[[label]]$row_filter_column
+  if (is.null(row_filter_column_selected)) {
+    row_filter_column_selected <- ""
+  }
+  row_filter_values_choices <- character(0)
+  if (row_filter_column_selected %in% names(GCTs[[label]]@rdesc)) {
+    row_filter_values_choices <- sort(
+      unique(as.character(GCTs[[label]]@rdesc[[row_filter_column_selected]]))
+    )
+    row_filter_values_choices <- row_filter_values_choices[!is.na(row_filter_values_choices)]
+  }
+  row_filter_values_selected <- parameters[[label]]$row_filter_values
+  if (is.null(row_filter_values_selected)) {
+    row_filter_values_selected <- character(0)
+  }
+
+  id_source_column_selected <- parameters[[label]]$id_source_column
+  if (is.null(id_source_column_selected)) {
+    id_source_column_selected <- ""
+  }
+  id_mapping_species_selected <- parameters[[label]]$id_mapping_species
+  if (is.null(id_mapping_species_selected)) {
+    id_mapping_species_selected <- "Homo sapiens"
+  }
   tagList(
     h4('Setup for ',
        strong(span(label, style = "color:#a4dc84")),
@@ -78,17 +128,63 @@ gctSetupUI <- function(ns,
             parameters[[label]]$annotation_column)),
         classes = "small-input"),
     
-    ## gene symbol column selection
+    ## gene symbol column selection (selected value = stored parameters only; defaults
+    ## are applied once after parse in sidebar_setup.R, not here)
     add_css_attributes(
         selectInput(
           ns(paste0(label, '_gene_symbol_column')),
           "Gene symbol column",
           choices = c("None", names(GCTs[[label]]@rdesc)),
-          selected = ifelse(
-            is.null(parameters[[label]]$gene_symbol_column) || parameters[[label]]$gene_symbol_column == "None",
-            ifelse("geneSymbol" %in% names(GCTs[[label]]@rdesc), "geneSymbol", "None"),
-            parameters[[label]]$gene_symbol_column)),
+          selected = {
+            gsc_raw <- parameters[[label]]$gene_symbol_column
+            gsc <- if (is.null(gsc_raw) || (length(gsc_raw) == 1L && is.na(gsc_raw))) {
+              "None"
+            } else {
+              as.character(gsc_raw)[[1L]]
+            }
+            choices_gs <- c("None", names(GCTs[[label]]@rdesc))
+            if (gsc %in% choices_gs) gsc else "None"
+          }),
         classes = "small-input"),
+
+    ## Map IDs to gene symbols (when Gene symbol column is None)
+    # Use unqualified input names here; `ns = ns` lets conditionalPanel namespace them
+    # correctly in JS. Do not call ns() inside the condition string — that double-
+    # namespaces and the panel never shows when "None" is selected.
+    conditionalPanel(
+      condition = paste0("input['", label, "_gene_symbol_column'] == 'None'"),
+      tagList(
+        add_css_attributes(
+          checkboxInput(
+            ns(paste0(label, "_convert_ids_to_gene_symbol")),
+            label = "Convert IDs to gene symbols",
+            value = isTRUE(parameters[[label]]$convert_ids_to_gene_symbol)),
+          classes = "small-input"),
+        conditionalPanel(
+          condition = paste0(
+            "input['", label, "_gene_symbol_column'] == 'None' && input['", label, "_convert_ids_to_gene_symbol']"
+          ),
+          tagList(
+            add_css_attributes(
+              selectInput(
+                ns(paste0(label, "_id_source_column")),
+                label = "ID column for mapping",
+                choices = c("", names(GCTs[[label]]@rdesc)),
+                selected = id_source_column_selected),
+              classes = "small-input"),
+            add_css_attributes(
+              selectInput(
+                ns(paste0(label, "_id_mapping_species")),
+                label = "Species (for ID mapping)",
+                choices = c("Homo sapiens", "Mus musculus"),
+                selected = id_mapping_species_selected),
+              classes = "small-input")
+          ),
+          ns = ns
+        )
+      ),
+      ns = ns
+    ),
     
     ## intensity data input
     add_css_attributes(
@@ -180,6 +276,78 @@ gctSetupUI <- function(ns,
         classes = "small-input"),
       ns = ns
     ),
+
+    ## sample filtering input
+    add_css_attributes(
+      checkboxInput(
+        ns(paste0(label, '_sample_filter_enabled')),
+        label = 'Filter samples (columns)',
+        value = isTRUE(parameters[[label]]$sample_filter_enabled)),
+      classes = "small-input"),
+
+    ## sample filtering column
+    conditionalPanel(
+      condition = paste0("input['", label, "_sample_filter_enabled']"),
+      add_css_attributes(
+        selectInput(
+          ns(paste0(label, '_sample_filter_column')),
+          label = "Sample filter column",
+          choices = c("", groups_choices),
+          selected = sample_filter_column_selected),
+        classes = "small-input"),
+      ns = ns
+    ),
+
+    ## sample filtering values
+    conditionalPanel(
+      condition = paste0("input['", label, "_sample_filter_enabled'] && input['", label, "_sample_filter_column'] != ''"),
+      add_css_attributes(
+        selectizeInput(
+          ns(paste0(label, '_sample_filter_values')),
+          label = "Keep samples with selected values",
+          choices = sample_filter_values_choices,
+          selected = sample_filter_values_selected,
+          multiple = TRUE,
+          options = list(plugins = list("remove_button"))),
+        classes = "small-input"),
+      ns = ns
+    ),
+
+    ## row filtering input
+    add_css_attributes(
+      checkboxInput(
+        ns(paste0(label, '_row_filter_enabled')),
+        label = 'Filter features (rows)',
+        value = isTRUE(parameters[[label]]$row_filter_enabled)),
+      classes = "small-input"),
+
+    ## row filtering column
+    conditionalPanel(
+      condition = paste0("input['", label, "_row_filter_enabled']"),
+      add_css_attributes(
+        selectInput(
+          ns(paste0(label, '_row_filter_column')),
+          label = "Row filter column",
+          choices = c("", row_filter_columns_choices),
+          selected = row_filter_column_selected),
+        classes = "small-input"),
+      ns = ns
+    ),
+
+    ## row filtering values
+    conditionalPanel(
+      condition = paste0("input['", label, "_row_filter_enabled'] && input['", label, "_row_filter_column'] != ''"),
+      add_css_attributes(
+        selectizeInput(
+          ns(paste0(label, '_row_filter_values')),
+          label = "Keep rows with selected values",
+          choices = row_filter_values_choices,
+          selected = row_filter_values_selected,
+          multiple = TRUE,
+          options = list(plugins = list("remove_button"))),
+        classes = "small-input"),
+      ns = ns
+    ),
     
     ## apply to all checkbox
     if (max_place > 1) {
@@ -246,8 +414,3 @@ validate_labels <- function(all_labels) {
   return(TRUE)
 }
 
-actionButton_icon_right <- function(inputId, label, icon, width = NULL) {
-  button <- shiny::actionButton(inputId, label, icon, width)
-  button$children[[1]] <- rev(button$children[[1]])
-  return(button)
-}

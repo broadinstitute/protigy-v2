@@ -304,3 +304,307 @@ test_that("merge_processed_gcts prevents ome prefix duplication", {
   # Verify rdesc rownames match rid (consistency check)
   expect_equal(rownames(GCTs_merged@rdesc), GCTs_merged@rid)
 })
+
+test_that("apply_sample_filter keeps only selected cdesc values", {
+  test_data <- matrix(1:8, nrow = 2, ncol = 4)
+  rownames(test_data) <- c("gene1", "gene2")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4")
+  test_cdesc <- data.frame(
+    QC.status = c("PASS", "FAIL", "PASS", "WARN"),
+    row.names = colnames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    sample_filter_values = c("PASS")
+  )
+
+  filtered <- apply_sample_filter(test_data, test_cdesc, params, ome = "proteome")
+  expect_equal(colnames(filtered$data), c("s1", "s3"))
+  expect_equal(rownames(filtered$cdesc), c("s1", "s3"))
+  expect_true(all(filtered$cdesc$QC.status == "PASS"))
+})
+
+test_that("apply_sample_filter keeps samples matching any selected values", {
+  test_data <- matrix(1:10, nrow = 2, ncol = 5)
+  rownames(test_data) <- c("gene1", "gene2")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4", "s5")
+  test_cdesc <- data.frame(
+    QC.status = c("PASS", "FAIL", "WARN", "PASS", "WARN"),
+    row.names = colnames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    sample_filter_values = c("PASS", "WARN")
+  )
+
+  filtered <- apply_sample_filter(test_data, test_cdesc, params, ome = "proteome")
+  expect_equal(colnames(filtered$data), c("s1", "s3", "s4", "s5"))
+  expect_equal(rownames(filtered$cdesc), c("s1", "s3", "s4", "s5"))
+  expect_true(all(filtered$cdesc$QC.status %in% c("PASS", "WARN")))
+})
+
+test_that("apply_sample_filter errors when no samples remain", {
+  test_data <- matrix(1:6, nrow = 2, ncol = 3)
+  rownames(test_data) <- c("gene1", "gene2")
+  colnames(test_data) <- c("s1", "s2", "s3")
+  test_cdesc <- data.frame(
+    QC.status = c("FAIL", "FAIL", "WARN"),
+    row.names = colnames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    sample_filter_values = c("PASS")
+  )
+
+  expect_error(
+    apply_sample_filter(test_data, test_cdesc, params, ome = "proteome"),
+    "No samples remain after filtering"
+  )
+})
+
+test_that("apply_row_filter keeps only selected rdesc values", {
+  test_data <- matrix(1:12, nrow = 3, ncol = 4)
+  rownames(test_data) <- c("gene1", "gene2", "gene3")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4")
+  test_rdesc <- data.frame(
+    Species = c("HOMO SAPIENS", "MUS MUSCULUS", "HOMO SAPIENS"),
+    row.names = rownames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    row_filter_values = c("HOMO SAPIENS")
+  )
+
+  filtered <- apply_row_filter(test_data, test_rdesc, params, ome = "proteome")
+  expect_equal(rownames(filtered$data), c("gene1", "gene3"))
+  expect_equal(rownames(filtered$rdesc), c("gene1", "gene3"))
+  expect_true(all(filtered$rdesc$Species == "HOMO SAPIENS"))
+})
+
+test_that("apply_row_filter keeps rows matching any selected values", {
+  test_data <- matrix(1:16, nrow = 4, ncol = 4)
+  rownames(test_data) <- c("gene1", "gene2", "gene3", "gene4")
+  colnames(test_data) <- c("s1", "s2", "s3", "s4")
+  test_rdesc <- data.frame(
+    Species = c("HOMO SAPIENS", "MUS MUSCULUS", "BOS TAURUS", "HOMO SAPIENS"),
+    row.names = rownames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    row_filter_values = c("HOMO SAPIENS", "BOS TAURUS")
+  )
+
+  filtered <- apply_row_filter(test_data, test_rdesc, params, ome = "proteome")
+  expect_equal(rownames(filtered$data), c("gene1", "gene3", "gene4"))
+  expect_equal(rownames(filtered$rdesc), c("gene1", "gene3", "gene4"))
+  expect_true(all(filtered$rdesc$Species %in% c("HOMO SAPIENS", "BOS TAURUS")))
+})
+
+test_that("apply_row_filter errors when no rows remain", {
+  test_data <- matrix(1:9, nrow = 3, ncol = 3)
+  rownames(test_data) <- c("gene1", "gene2", "gene3")
+  colnames(test_data) <- c("s1", "s2", "s3")
+  test_rdesc <- data.frame(
+    Species = c("MUS MUSCULUS", "RATTUS NORVEGICUS", "BOS TAURUS"),
+    row.names = rownames(test_data),
+    stringsAsFactors = FALSE
+  )
+  params <- list(
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    row_filter_values = c("HOMO SAPIENS")
+  )
+
+  expect_error(
+    apply_row_filter(test_data, test_rdesc, params, ome = "proteome"),
+    "No rows remain after filtering"
+  )
+})
+
+test_that("merge_processed_gcts keeps union of samples after per-ome filtering", {
+  make_gct <- function(ome_name, sample_ids, feature_ids) {
+    mat <- matrix(
+      seq_along(feature_ids) * 10 + seq_along(sample_ids),
+      nrow = length(feature_ids),
+      ncol = length(sample_ids),
+      dimnames = list(feature_ids, sample_ids)
+    )
+    rdesc <- data.frame(
+      id = feature_ids,
+      row.names = feature_ids,
+      stringsAsFactors = FALSE
+    )
+    cdesc <- data.frame(
+      Sample.ID = sample_ids,
+      QC.status = rep("PASS", length(sample_ids)),
+      row.names = sample_ids,
+      stringsAsFactors = FALSE
+    )
+    gct <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+    gct@rdesc$protigy.ome <- rep(ome_name, nrow(gct@rdesc))
+    gct
+  }
+
+  # Simulate post-filtered per-ome sample sets:
+  # proteome keeps s1/s2, phospho keeps s2/s3
+  proteome <- make_gct("proteome", c("s1", "s2"), c("f1", "f2"))
+  phospho <- make_gct("phosphoproteome", c("s2", "s3"), c("f1", "f2"))
+  GCTs_processed <- list(proteome = proteome, phosphoproteome = phospho)
+  parameters_updated <- list(
+    proteome = list(dataset_label = "proteome"),
+    phosphoproteome = list(dataset_label = "phosphoproteome")
+  )
+
+  session <- shiny::MockShinySession$new()
+  merged <- shiny::withReactiveDomain(
+    session,
+    merge_processed_gcts(GCTs_processed, parameters_updated)
+  )
+  expect_true(all(c("s1", "s2", "s3") %in% rownames(merged@cdesc)))
+
+  proteome_rows <- grepl("^proteome_", merged@rid)
+  phospho_rows <- grepl("^phosphoproteome_", merged@rid)
+
+  # Missing OME/sample combinations should be NA in merged matrix
+  expect_true(all(is.na(merged@mat[proteome_rows, "s3"])))
+  expect_true(all(is.na(merged@mat[phospho_rows, "s1"])))
+})
+
+test_that("setup defaults include sample and row filter parameters", {
+  defaults_path <- system.file(
+    "setup_parameters",
+    "setupDefaults.yaml",
+    package = "Protigy"
+  )
+  if (identical(defaults_path, "")) {
+    defaults_path <- testthat::test_path(
+      "..", "..", "inst", "setup_parameters", "setupDefaults.yaml"
+    )
+  }
+
+  defaults <- yaml::read_yaml(defaults_path)
+  expect_true("sample_filter_enabled" %in% names(defaults))
+  expect_true("sample_filter_column" %in% names(defaults))
+  expect_true("sample_filter_values" %in% names(defaults))
+  expect_true("row_filter_enabled" %in% names(defaults))
+  expect_true("row_filter_column" %in% names(defaults))
+  expect_true("row_filter_values" %in% names(defaults))
+  expect_true("convert_ids_to_gene_symbol" %in% names(defaults))
+  expect_true("id_source_column" %in% names(defaults))
+  expect_true("id_mapping_species" %in% names(defaults))
+  expect_true("id_mapping_keytype" %in% names(defaults))
+  expect_true("id_mapping_n_total" %in% names(defaults))
+  expect_true("id_mapping_n_unmapped" %in% names(defaults))
+  expect_identical(defaults$sample_filter_enabled, FALSE)
+  expect_identical(defaults$row_filter_enabled, FALSE)
+  expect_identical(defaults$convert_ids_to_gene_symbol, FALSE)
+})
+
+test_that("gct_setup_apply_to_all_valid allows shared columns only", {
+  ok <- gct_setup_apply_to_all_valid(
+    annotation_column = "group",
+    group_normalization = FALSE,
+    group_normalization_column = NA_character_,
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    gene_symbol_column = "None",
+    convert_ids_to_gene_symbol = FALSE,
+    id_source_column = "",
+    groups_in_all = c("group", "QC.status"),
+    rdesc_in_all = c("Species", "geneSymbol")
+  )
+  expect_true(ok$ok)
+
+  bad <- gct_setup_apply_to_all_valid(
+    annotation_column = "group",
+    group_normalization = FALSE,
+    group_normalization_column = NA_character_,
+    sample_filter_enabled = TRUE,
+    sample_filter_column = "QC.status",
+    row_filter_enabled = TRUE,
+    row_filter_column = "Species",
+    gene_symbol_column = "None",
+    convert_ids_to_gene_symbol = FALSE,
+    id_source_column = "",
+    groups_in_all = c("group", "QC.status"),
+    rdesc_in_all = c("geneSymbol")
+  )
+  expect_false(bad$ok)
+  expect_match(bad$msg, "Row filter column")
+})
+
+test_that("transformGCTs keeps original dimensions when row/sample filters are set", {
+  mat <- matrix(1:12, nrow = 3, ncol = 4)
+  rownames(mat) <- c("gene1", "gene2", "gene3")
+  colnames(mat) <- c("s1", "s2", "s3", "s4")
+  cdesc <- data.frame(
+    Sample.ID = colnames(mat),
+    QC.status = c("PASS", "FAIL", "PASS", "FAIL"),
+    row.names = colnames(mat),
+    stringsAsFactors = FALSE
+  )
+  rdesc <- data.frame(
+    id = rownames(mat),
+    Species = c("HOMO SAPIENS", "MUS MUSCULUS", "HOMO SAPIENS"),
+    row.names = rownames(mat),
+    stringsAsFactors = FALSE
+  )
+  gct <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+  params <- list(
+    ome1 = list(
+      log_transformation = "None",
+      group_normalization = FALSE,
+      data_filter = "None",
+      data_filter_sd_pct = 10,
+      gene_symbol_column = "None",
+      convert_ids_to_gene_symbol = FALSE,
+      id_source_column = "",
+      id_mapping_species = "Homo sapiens",
+      sample_filter_enabled = TRUE,
+      sample_filter_column = "QC.status",
+      sample_filter_values = "PASS",
+      row_filter_enabled = TRUE,
+      row_filter_column = "Species",
+      row_filter_values = "HOMO SAPIENS"
+    )
+  )
+  session <- shiny::MockShinySession$new()
+  transformed <- shiny::withReactiveDomain(
+    session,
+    transformGCTs(GCTs = list(ome1 = gct), parameters = params)
+  )
+  expect_equal(nrow(transformed$ome1@mat), 3)
+  expect_equal(ncol(transformed$ome1@mat), 4)
+})
+
+test_that("summary_dataset reports original and post-filtering expression columns", {
+  original <- cmapR::GCT(
+    mat = matrix(1:12, nrow = 3, ncol = 4, dimnames = list(c("g1", "g2", "g3"), c("s1", "s2", "s3", "s4"))),
+    rdesc = data.frame(id = c("g1", "g2", "g3"), row.names = c("g1", "g2", "g3"), stringsAsFactors = FALSE),
+    cdesc = data.frame(group = c("A", "A", "B", "B"), row.names = c("s1", "s2", "s3", "s4"), stringsAsFactors = FALSE)
+  )
+  processed <- cmapR::GCT(
+    mat = matrix(1:4, nrow = 2, ncol = 2, dimnames = list(c("g1", "g3"), c("s1", "s3"))),
+    rdesc = data.frame(id = c("g1", "g3"), row.names = c("g1", "g3"), stringsAsFactors = FALSE),
+    cdesc = data.frame(group = c("A", "B"), row.names = c("s1", "s3"), stringsAsFactors = FALSE)
+  )
+  out <- summary_dataset(
+    params = list(annotation_column = "group"),
+    gct_original = original,
+    gct_processed = processed
+  )
+  expect_equal(out["Expression columns (original)", "Number"], 4)
+  expect_equal(out["Expression columns (post-filtering)", "Number"], 2)
+})

@@ -122,9 +122,20 @@ summary_missing_value_distribution_to_ggplotly <- function(gg) {
 
 # workflow parameters tables
 summary_workflow <- function(params) {
+  format_param_value <- function(x) {
+    if (is.null(x) || length(x) == 0) {
+      return("")
+    }
+    if (length(x) == 1) {
+      return(as.character(x))
+    }
+    paste(as.character(x), collapse = ", ")
+  }
+  
   params_to_display <- list(
     "File name" = "gct_file_name",
     "Annotation column" = "annotation_column",
+    "Gene symbol column" = "gene_symbol_column",
     "Intensity data" = "intensity_data",
     "Log transformation" = "log_transformation",
     "Data normalization" = "data_normalization",
@@ -132,6 +143,46 @@ summary_workflow <- function(params) {
     "Data filter" = "data_filter",
     "Max missing %" = "max_missing"
   )
+  
+  if (isTRUE(params$convert_ids_to_gene_symbol) && identical(params$gene_symbol_column, "None")) {
+    params_to_display <- append(
+      params_to_display,
+      list(
+        "Map IDs to symbols" = "convert_ids_to_gene_symbol",
+        "ID column for mapping" = "id_source_column",
+        "ID mapping species" = "id_mapping_species",
+        "Detected ID keytype" = "id_mapping_keytype",
+        "Gene symbols mapped" = "id_mapping_n_unmapped"
+      ),
+      after = which(params_to_display == "gene_symbol_column")
+    )
+  }
+
+  if (isTRUE(params$sample_filter_enabled)) {
+    params_to_display <- append(
+      params_to_display,
+      list(
+        "Column filter column" = "sample_filter_column",
+        "Column filter values" = "sample_filter_values"
+      ),
+      after = which(params_to_display == "annotation_column")
+    )
+  }
+  
+  if (isTRUE(params$row_filter_enabled)) {
+    row_insert_after <- "annotation_column"
+    if ("sample_filter_values" %in% as.character(params_to_display)) {
+      row_insert_after <- "sample_filter_values"
+    }
+    params_to_display <- append(
+      params_to_display,
+      list(
+        "Row filter column" = "row_filter_column",
+        "Row filter values" = "row_filter_values"
+      ),
+      after = which(params_to_display == row_insert_after)
+    )
+  }
     
   # include group normalization column
   if (params$group_normalization) {
@@ -148,11 +199,33 @@ summary_workflow <- function(params) {
       list("Std. Dev. filter percentile" = "data_filter_sd_pct"),
       after = which(params_to_display == "data_filter"))
   }
-  
-  df <- t(as.data.frame(params))
-  df <- df[as.character(params_to_display), , drop = FALSE]
-  rownames(df) <- names(params_to_display)
-  
+
+  displayed_values <- vapply(
+    as.character(params_to_display),
+    function(param_name) {
+      if (param_name == "convert_ids_to_gene_symbol") {
+        return(if (isTRUE(params[[param_name]])) "Yes" else "No")
+      }
+      if (param_name == "id_mapping_n_unmapped") {
+        tot <- params$id_mapping_n_total
+        bad <- params$id_mapping_n_unmapped
+        if (is.null(tot) || is.null(bad)) {
+          return("")
+        }
+        mapped <- tot - bad
+        return(paste0(mapped, " / ", tot))
+      }
+      format_param_value(params[[param_name]])
+    },
+    character(1)
+  )
+
+  df <- data.frame(
+    Value = displayed_values,
+    row.names = names(params_to_display),
+    stringsAsFactors = FALSE
+  )
+
   return(df)
 }
 
@@ -162,7 +235,8 @@ summary_dataset <- function(params, gct_original, gct_processed) {
   dataset_summary <- list(
     "Features (original)" = nrow(gct_original@mat),
     "Features (post-filtering)" = nrow(gct_processed@mat),
-    "Expression columns" = dim(gct_processed@mat)[2],
+    "Expression columns (original)" = ncol(gct_original@mat),
+    "Expression columns (post-filtering)" = ncol(gct_processed@mat),
     "Groups" = length(unique(gct_processed@cdesc[[params$annotation_column]]))
   )
   

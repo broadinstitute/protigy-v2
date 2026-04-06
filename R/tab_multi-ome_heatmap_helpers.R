@@ -21,7 +21,7 @@ myComplexHeatmap <- function(
   cluster_rows <- if (is.null(params$cluster_rows)) FALSE else as.logical(params$cluster_rows)
   
   # extract genes
-  genes.all <- extractGenes(genes.char, select(merged_rdesc, .data$geneSymbol), GENEMAX)
+  genes.all <- extractGenes(genes.char, dplyr::select(merged_rdesc, dplyr::all_of("geneSymbol")), GENEMAX)
   genes.vec <- genes.all$genes.vec
   
   # Check if any genes were found
@@ -99,12 +99,15 @@ myComplexHeatmap <- function(
   }
   
   # make matrix to feed into heatmap
+  if (ncol(genes.Table) <= 3L) {
+    stop("Heatmap table has no sample columns (only geneSymbol / ome / row_label). Check gene selection and data.")
+  }
   # z-score rows if requested
   if (zscore == "row") {
-    genes.Matrix <- t(apply(genes.Table[,-(1:3)], 1,
+    genes.Matrix <- t(apply(genes.Table[, -(1:3), drop = FALSE], 1,
                             function(x)(x-mean(x, na.rm=T))/sd(x, na.rm=T)))
   } else {
-    genes.Matrix <- as.matrix(genes.Table[,-(1:3)])
+    genes.Matrix <- as.matrix(genes.Table[, -(1:3), drop = FALSE])
   }
   rownames(genes.Matrix) <- make.unique(genes.Table$row_label)
   
@@ -126,7 +129,10 @@ myComplexHeatmap <- function(
   }
   
   # Remove Sample.ID column for heatmap display
-  anno.fig <- anno.fig[, -(which(names(anno.fig) == "Sample.ID")), drop = FALSE]
+  sid_col <- which(names(anno.fig) == "Sample.ID")
+  if (length(sid_col) > 0L) {
+    anno.fig <- anno.fig[, -sid_col, drop = FALSE]
+  }
 
   
   # get custom color palette and convert to ComplexHeatmap format
@@ -219,11 +225,12 @@ myComplexHeatmap <- function(
     # anno.fig[, numeric_cols] <- sapply(anno.fig[, numeric_cols], as.numeric)
     
     # combine annotation table with genes.Table for final output
+    # genes.Table columns 1:3 are geneSymbol, ome, row_label; column 4+ are sample IDs (same as colnames(genes.Matrix))
     anno.fig.new <- data.frame(matrix(ncol=ncol(genes.Table),
                                       nrow=ncol(anno.fig)))
     names(anno.fig.new) <- names(genes.Table)
     rownames(anno.fig.new) <- names(anno.fig)
-    anno.fig.new[, -(1:4)] <- t(anno.fig)
+    anno.fig.new[, -(1:3)] <- t(anno.fig)
     final.Table <- rbind(anno.fig.new, genes.Table)
     
     HM.anno <- HeatmapAnnotation(df = anno.fig,
@@ -235,7 +242,13 @@ myComplexHeatmap <- function(
                                  annotation_legend_param = list(
                                    direction = 'horizontal'),
                                  height = unit(0.5, 'cm') * nrow(anno.fig))
-    column.to.sort <- anno.fig[, sort.after]
+    # sort.after must still be present in anno.fig (it is filtered to selected_annotations / max.levels)
+    sa <- if (is.null(sort.after)) "" else as.character(sort.after)
+    if (nzchar(sa) && sa %in% names(anno.fig)) {
+      column.to.sort <- anno.fig[, sa, drop = FALSE]
+    } else {
+      column.to.sort <- NULL
+    }
   }
   
   # define color map for heatmap

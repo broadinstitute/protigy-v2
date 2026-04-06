@@ -274,15 +274,6 @@ test_that("advancedSettingsUI creates correct structure", {
   expect_null(result_single)
 })
 
-test_that("actionButton_icon_right creates correct structure", {
-  result <- actionButton_icon_right("test_button", "Test Label", icon("test"))
-  
-  expect_s3_class(result, "shiny.tag")
-  expect_equal(result$name, "button")
-  expect_equal(result$attribs$id, "test_button")
-  expect_equal(result$attribs$class, "btn btn-default action-button")
-})
-
 test_that("gctSetupUI handles missing parameters gracefully", {
   # Create mock GCT object using proper GCT structure
   mock_gct <- new("GCT",

@@ -37,6 +37,28 @@ Remove features that were not reproducibly quantified across replicate measureme
 **StdDev:**\
 Remove features with low standard deviation across all samples. Only useful if applied to sample cohorts that were quantified against a common reference. The percentile ***P*** you specify in the slider refers to the ***P*** percent of features having the **lowest standard deviation** across sample columns which will be **excluded prior to analyis**. Using this type of filter is useful to explore result of unsupervised clustering of the data without running a statistical test.
 
+#### Sample filtering by metadata column
+
+You can also filter samples by selecting a metadata column (commonly `QC.status`) and choosing values to keep.
+
+- Enable sample filtering in setup.
+- Select a sample metadata column.
+- Select the values to retain.
+
+Behavior is fixed: **selected values are always kept, and unselected values are discarded**.
+
+For multi-ome workflows, filtering is done per ome before analysis. In merged outputs, a sample is retained if it remains in at least one ome; ome/sample combinations removed by filtering appear as `NA`.
+
+#### Row filtering by metadata column
+
+You can also filter rows by selecting a row metadata column from `rdesc` (for example `Species`) and choosing values to keep.
+
+- Enable row filtering in setup.
+- Select a row metadata column.
+- Select the values to retain (for example `Homo sapiens`).
+
+Behavior is fixed: **selected values are always kept, and unselected values are discarded**.
+
 #### Select test
 
 You can choose between a one-sample, two-sample moderate T-tests, moderated F-test or no testing.

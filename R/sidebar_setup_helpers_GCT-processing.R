@@ -95,6 +95,444 @@ fix_gene_symbols <- function(rdesc) {
   return(list(rdesc = rdesc, removed_rids = removed_rids))
 }
 
+# Apply sample-level filtering using cdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_sample_filter <- function(data, cdesc, params, ome) {
+  if (!isTRUE(params$sample_filter_enabled)) {
+    return(list(data = data, cdesc = cdesc))
+  }
+
+  filter_column <- params$sample_filter_column
+  filter_values <- params$sample_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Sample filtering is enabled, but no sample filter column was selected.")
+  }
+  if (!(filter_column %in% names(cdesc))) {
+    stop("Sample filter column '", filter_column, "' was not found in cdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Sample filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_samples <- as.character(cdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(cdesc)[keep_samples]
+  if (length(keep_ids) == 0) {
+    stop("No samples remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[, keep_ids, drop = FALSE]
+  cdesc <- cdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, cdesc = cdesc))
+}
+
+# Apply row-level filtering using rdesc column values.
+# Selected values are always kept; all other values are discarded.
+apply_row_filter <- function(data, rdesc, params, ome) {
+  if (!isTRUE(params$row_filter_enabled)) {
+    return(list(data = data, rdesc = rdesc))
+  }
+
+  filter_column <- params$row_filter_column
+  filter_values <- params$row_filter_values
+  if (is.null(filter_column) || identical(filter_column, "")) {
+    stop("Row filtering is enabled, but no row filter column was selected.")
+  }
+  if (!(filter_column %in% names(rdesc))) {
+    stop("Row filter column '", filter_column, "' was not found in rdesc for ", ome, ".")
+  }
+  if (is.null(filter_values) || length(filter_values) == 0) {
+    stop("Row filtering is enabled, but no filter values were selected for ", ome, ".")
+  }
+
+  filter_values <- as.character(filter_values)
+  keep_rows <- as.character(rdesc[[filter_column]]) %in% filter_values
+  keep_ids <- rownames(rdesc)[keep_rows]
+  if (length(keep_ids) == 0) {
+    stop("No rows remain after filtering ", ome, " by ", filter_column, ".")
+  }
+
+  data <- data[keep_ids, , drop = FALSE]
+  rdesc <- rdesc[keep_ids, , drop = FALSE]
+
+  return(list(data = data, rdesc = rdesc))
+}
+
+################################################################################
+# Gene symbol column selection and ID -> gene symbol mapping (org.*.eg.db)
+# Legacy logic adapted from broadinstitute/protigy global.R::mapIDs (mapIds + try).
+################################################################################
+
+#' Split a single cell into ID tokens (common proteomics delimiters).
+#' @noRd
+tokenize_id_cell <- function(x) {
+  if (is.null(x) || length(x) != 1L) {
+    return(character(0))
+  }
+  x <- as.character(x)
+  if (is.na(x) || !nzchar(trimws(x))) {
+    return(character(0))
+  }
+  parts <- unlist(strsplit(x, "\\|", fixed = FALSE))
+  parts <- unlist(strsplit(parts, ";", fixed = TRUE))
+  parts <- unlist(strsplit(parts, ",", fixed = TRUE))
+  parts <- trimws(parts)
+  parts[nzchar(parts)]
+}
+
+#' All unique ID tokens from an rdesc column (after splitting on delimiters).
+#' @noRd
+unique_tokens_from_rdesc_column <- function(rdesc, id_column) {
+  if (!id_column %in% names(rdesc)) {
+    return(character(0))
+  }
+  col <- rdesc[[id_column]]
+  if (is.list(col)) {
+    col <- vapply(col, function(x) paste(as.character(x), collapse = "|"), character(1))
+  }
+  col <- as.character(col)
+  unique(unlist(lapply(col, tokenize_id_cell), use.names = FALSE))
+}
+
+#' Deep-enough copy of rdesc row metadata for safe revert after failed mapping.
+#' @noRd
+safe_copy_rdesc <- function(rdesc) {
+  out <- as.data.frame(rdesc, stringsAsFactors = FALSE)
+  rownames(out) <- rownames(rdesc)
+  out
+}
+
+#' Turn off ID conversion and clear related setup fields (after skip or failure).
+#' @noRd
+disable_id_conversion_in_params <- function(params) {
+  params$convert_ids_to_gene_symbol <- FALSE
+  params$id_source_column <- ""
+  params$id_mapping_keytype <- NULL
+  params$id_mapping_n_total <- NULL
+  params$id_mapping_n_unmapped <- NULL
+  params
+}
+
+#' Resolve species label to org.*.eg.db object.
+#' @noRd
+org_db_for_species <- function(species) {
+  sp <- as.character(species)[1]
+  if (is.na(sp) || !nzchar(sp)) {
+    stop("Species must be set for ID-to-gene-symbol mapping.")
+  }
+  if (sp %in% c("Homo sapiens", "human", "Hs", "hs")) {
+    return(org.Hs.eg.db::org.Hs.eg.db)
+  }
+  if (sp %in% c("Mus musculus", "mouse", "Mm", "mm")) {
+    return(org.Mm.eg.db::org.Mm.eg.db)
+  }
+  stop("Unsupported species for ID mapping: ", sp, ". Use Homo sapiens or Mus musculus.")
+}
+
+#' Detect AnnotationDbi keytype from ID strings (Protigy v1 global.R mapIDs).
+#' Uses sequential `if` assignments so later rules overwrite earlier ones (e.g. ENSP…
+#' matches `^E` for UniProt-style but must still resolve to ENSEMBLPROT).
+#' @noRd
+protigy_legacy_detect_keytype <- function(ids) {
+  ids <- trimws(as.character(ids))
+  ids <- ids[!is.na(ids) & nzchar(ids)]
+  if (length(ids) == 0L) {
+    return("UNKNOWN")
+  }
+  keytype <- "UNKNOWN"
+  if (length(grep("^(Q|P|O|A|E|H|F)", ids)) > 0L) {
+    keytype <- "UNIPROT"
+  }
+  if (length(grep("^(NP_|NM_|NR_|NC_|NG_|NW_|NZ_|NT_|AC_|XM_|XR_|XP_|YP_|WP_)", ids)) > 0L) {
+    keytype <- "REFSEQ"
+  }
+  if (length(grep("ENSP", ids)) > 0L) {
+    keytype <- "ENSEMBLPROT"
+  }
+  if (length(grep("^ENSG[0-9]+", ids)) > 0L) {
+    keytype <- "ENSEMBL"
+  }
+  if (length(ids) > 0L && all(grepl("^[0-9]+$", ids))) {
+    keytype <- "ENTREZID"
+  }
+  keytype
+}
+
+#' Strip IDs to query keys (same rules as Protigy v1 mapIDs).
+#' @noRd
+protigy_legacy_id_query <- function(ids, keytype) {
+  ids <- as.character(ids)
+  if (keytype == "UNIPROT") {
+    sub("(-|;|\\.|_|\\|).*", "", ids)
+  } else if (keytype %in% c("REFSEQ", "ENSEMBLPROT", "ENSEMBL")) {
+    sub("(\\.|;).*", "", ids)
+  } else {
+    trimws(ids)
+  }
+}
+
+#' Map a character vector of row IDs to gene symbols using one keytype + mapIds (Protigy-style).
+#'
+#' @return `list(symbols = character, keytype = character, n_total = int, n_unmapped = int)`.
+#' @noRd
+protigy_legacy_map_ids_to_symbols <- function(ids, species) {
+  n <- length(ids)
+  ids <- as.character(ids)
+  keytype <- protigy_legacy_detect_keytype(ids)
+  if (keytype == "UNKNOWN") {
+    return(list(
+      symbols = rep(NA_character_, n),
+      keytype = keytype,
+      n_total = n,
+      n_unmapped = n
+    ))
+  }
+  org_db <- org_db_for_species(species)
+  if (!(keytype %in% AnnotationDbi::keytypes(org_db))) {
+    return(list(
+      symbols = rep(NA_character_, n),
+      keytype = keytype,
+      n_total = n,
+      n_unmapped = n
+    ))
+  }
+
+  idq <- toupper(trimws(protigy_legacy_id_query(ids, keytype)))
+  idq[is.na(idq) | !nzchar(idq)] <- NA_character_
+
+  symbols <- rep(NA_character_, n)
+  valid <- !is.na(idq) & nzchar(idq)
+  if (!any(valid)) {
+    return(list(
+      symbols = symbols,
+      keytype = keytype,
+      n_total = n,
+      n_unmapped = n
+    ))
+  }
+
+  ukeys <- unique(idq[valid])
+  mapped <- suppressWarnings(
+    try(
+      AnnotationDbi::mapIds(
+        org_db,
+        keys = ukeys,
+        column = "SYMBOL",
+        keytype = keytype,
+        multiVals = "first",
+        ifNotFound = NA
+      ),
+      silent = TRUE
+    )
+  )
+  if (inherits(mapped, "try-error")) {
+    return(list(
+      symbols = symbols,
+      keytype = keytype,
+      n_total = n,
+      n_unmapped = n
+    ))
+  }
+  # as.character(mapIds(...)) drops names; keep them for keyed lookup
+  nm_map <- names(mapped)
+  mapped <- as.character(mapped)
+  if (!is.null(nm_map) && length(nm_map) == length(mapped)) {
+    names(mapped) <- nm_map
+  } else if (length(mapped) == length(ukeys)) {
+    names(mapped) <- ukeys
+  }
+  symbols[valid] <- unname(mapped[as.character(idq[valid])])
+  symbols[is.na(symbols) | symbols == ""] <- NA_character_
+  n_unmapped <- sum(is.na(symbols) | !nzchar(symbols))
+  list(
+    symbols = symbols,
+    keytype = keytype,
+    n_total = n,
+    n_unmapped = as.integer(n_unmapped)
+  )
+}
+
+#' Copy existing geneSymbol to a collision-safe backup column before overwriting.
+#' @noRd
+preserve_gene_symbol_for_id_mapping <- function(rdesc) {
+  if (!"geneSymbol" %in% names(rdesc)) {
+    return(rdesc)
+  }
+  base <- "geneSymbol_original"
+  nm <- base
+  existing <- names(rdesc)
+  i <- 1L
+  while (nm %in% existing) {
+    nm <- paste0(base, "_", i)
+    i <- i + 1L
+  }
+  rdesc[[nm]] <- rdesc$geneSymbol
+  rdesc
+}
+
+#' Map IDs from `id_column` to `geneSymbol` using legacy Protigy mapIDs / mapIds logic.
+#'
+#' @return `list(rdesc, id_mapping_keytype, id_mapping_n_total, id_mapping_n_unmapped)`.
+#' @noRd
+map_rdesc_ids_to_gene_symbols <- function(rdesc, id_column, species) {
+  if (!id_column %in% names(rdesc)) {
+    stop("ID source column '", id_column, "' not found in row metadata.")
+  }
+  col <- rdesc[[id_column]]
+  if (is.list(col)) {
+    col <- vapply(col, function(x) paste(as.character(x), collapse = "|"), character(1))
+  }
+  col <- as.character(col)
+
+  out <- protigy_legacy_map_ids_to_symbols(col, species)
+  rdesc$geneSymbol <- out$symbols
+  list(
+    rdesc = rdesc,
+    id_mapping_keytype = out$keytype,
+    id_mapping_n_total = out$n_total,
+    id_mapping_n_unmapped = out$n_unmapped
+  )
+}
+
+#' @return `list(rdesc = rdesc, params = params)`.
+#' @noRd
+apply_gene_symbol_from_params <- function(rdesc, params, ome) {
+  gene_symbol_col <- params$gene_symbol_column
+  convert_on <- isTRUE(params$convert_ids_to_gene_symbol)
+
+  if (convert_on && identical(gene_symbol_col, "None")) {
+    id_src <- params$id_source_column
+    if (is.null(id_src) || !nzchar(id_src)) {
+      stop("Convert IDs to gene symbols is enabled but no ID source column was selected for ", ome, ".")
+    }
+    species <- params$id_mapping_species
+    if (is.null(species) || !nzchar(as.character(species)[1])) {
+      species <- "Homo sapiens"
+    } else {
+      species <- as.character(species)[1]
+    }
+
+    tokens <- unique_tokens_from_rdesc_column(rdesc, id_src)
+    if (length(tokens) == 0) {
+      message(
+        "Gene symbol ID conversion skipped for dataset ", ome, ": ",
+        "no ID tokens in column \"", id_src, "\". ",
+        "Convert IDs to gene symbols was turned off."
+      )
+      return(list(rdesc = rdesc, params = disable_id_conversion_in_params(params)))
+    }
+
+    rdesc_backup <- safe_copy_rdesc(rdesc)
+    rdesc <- safe_copy_rdesc(rdesc)
+    rdesc <- preserve_gene_symbol_for_id_mapping(rdesc)
+    map_out <- map_rdesc_ids_to_gene_symbols(rdesc, id_src, species)
+    rdesc <- map_out$rdesc
+    params$id_mapping_keytype <- map_out$id_mapping_keytype
+    params$id_mapping_n_total <- map_out$id_mapping_n_total
+    params$id_mapping_n_unmapped <- map_out$id_mapping_n_unmapped
+
+    gs <- rdesc$geneSymbol
+    if (length(gs) == 0L || all(is.na(gs) | !nzchar(gs))) {
+      message(
+        "Gene symbol ID conversion skipped for dataset ", ome, ": ",
+        "no gene symbols resolved from \"", id_src, "\" (keytype was ",
+        map_out$id_mapping_keytype, "). ",
+        "Convert IDs to gene symbols was turned off."
+      )
+      return(list(rdesc = rdesc_backup, params = disable_id_conversion_in_params(params)))
+    }
+
+    n_tot <- map_out$id_mapping_n_total
+    n_bad <- map_out$id_mapping_n_unmapped
+    n_ok <- n_tot - n_bad
+    message(
+      "Dataset ", ome, ": ID mapping used AnnotationDbi keytype ",
+      map_out$id_mapping_keytype, ". ",
+      n_ok, "/", n_tot, " rows mapped to gene symbols; ",
+      n_bad, " row(s) could not be converted."
+    )
+
+    return(list(rdesc = rdesc, params = params))
+  }
+  if ("geneSymbol" %in% names(rdesc)) {
+    if (!is.null(gene_symbol_col) && gene_symbol_col != "None" &&
+        gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
+      message(
+        "Gene symbol column already exists; original preserved as geneSymbol_original."
+      )
+      rdesc$geneSymbol_original <- rdesc$geneSymbol
+      rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+    }
+  } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
+    rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
+  }
+  list(rdesc = rdesc, params = params)
+}
+
+# Deep copy of a data.frame (row metadata) — avoids shared columns with the source object.
+# @noRd
+df_deep_copy <- function(df) {
+  if (is.null(df)) {
+    return(NULL)
+  }
+  if (!is.data.frame(df)) {
+    df <- as.data.frame(df, stringsAsFactors = FALSE)
+  }
+  unserialize(serialize(df, connection = NULL))
+}
+
+# Full GCT copy for the processing pipeline so reactive uploads are never mutated.
+# Preserves cmapR::GCT slots: mat, rid, cid, rdesc, cdesc, version, src.
+# @noRd
+deep_clone_gct <- function(gct) {
+  m <- gct@mat
+  d <- dim(m)
+  m_cp <- matrix(as.vector(m), nrow = d[1L], ncol = d[2L], dimnames = dimnames(m))
+  out <- cmapR::GCT(
+    mat = m_cp,
+    rdesc = df_deep_copy(gct@rdesc),
+    cdesc = df_deep_copy(gct@cdesc)
+  )
+  out@rid <- gct@rid
+  out@cid <- gct@cid
+  out@version <- gct@version
+  out@src <- gct@src
+  out
+}
+
+# Remove backup columns created when remapping gene symbols (not part of the user's file).
+# @noRd
+strip_gene_symbol_mapping_columns <- function(rdesc) {
+  if (is.null(rdesc) || !is.data.frame(rdesc)) {
+    return(rdesc)
+  }
+  nm <- names(rdesc)
+  drop <- nm[grepl("^geneSymbol_original", nm)]
+  if (length(drop)) {
+    rdesc <- rdesc[, setdiff(nm, drop), drop = FALSE]
+  }
+  rdesc
+}
+
+# For QC/export "original" GCTs: use upload rdesc (same row order as transformed mat) so
+# geneSymbol_original and other pipeline-only columns never appear in exports.
+# @noRd
+repackage_transformed_gct_with_upload_rdesc <- function(gct_transformed, gct_upload) {
+  if (is.null(gct_transformed) || is.null(gct_upload)) {
+    return(gct_transformed)
+  }
+  rids <- rownames(gct_transformed@mat)
+  ru <- df_deep_copy(gct_upload@rdesc)
+  rn <- rownames(ru)
+  if (!is.null(rn) && length(rids) > 0L && all(rids %in% rn)) {
+    gct_transformed@rdesc <- ru[rids, , drop = FALSE]
+  } else {
+    gct_transformed@rdesc <- strip_gene_symbol_mapping_columns(gct_transformed@rdesc)
+  }
+  gct_transformed
+}
+
 # function to transform original GCT file so it is comparable to processed GCT file
 # INPUT: parameters list from setup, list of parsed GCTs
 # OUTPUT: transformed GCTs without filtering or normalization
@@ -139,28 +577,11 @@ transformGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
-              
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+
+              ## Handle gene symbol column selection (and optional ID -> geneSymbol mapping).
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
@@ -236,28 +657,31 @@ processGCTs <- function(GCTs, parameters) {
               if (params$data_filter != "StdDev") {
                 params$data_filter_sd_pct <- NULL
               }
+
+              ## row filtering
+              row_filter_out <- apply_row_filter(
+                data = data,
+                rdesc = rdesc,
+                params = params,
+                ome = ome
+              )
+              data <- row_filter_out$data
+              rdesc <- row_filter_out$rdesc
+
+              ## sample filtering
+              sample_filter_out <- apply_sample_filter(
+                data = data,
+                cdesc = cdesc,
+                params = params,
+                ome = ome
+              )
+              data <- sample_filter_out$data
+              cdesc <- sample_filter_out$cdesc
               
-              ## handle gene symbol column selection
-              gene_symbol_col <- params$gene_symbol_column
-              
-              # If geneSymbol already exists in input, preserve it unless user explicitly selects a different column
-              if ("geneSymbol" %in% names(rdesc)) {
-                # User selected a different column - preserve original as geneSymbol_original
-                if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && 
-                    gene_symbol_col != "geneSymbol" && gene_symbol_col %in% names(rdesc)) {
-                  warning("Gene symbol column already exists. Original geneSymbol column will be preserved as 'geneSymbol_original'. The selected column will also be preserved in the dataset.")
-                  rdesc$geneSymbol_original <- rdesc$geneSymbol
-                  rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-                  # Preserve the selected column (don't remove it)
-                }
-                # If user selected "None" or geneSymbol itself, keep existing geneSymbol
-                # (no action needed - geneSymbol already exists)
-              } else if (!is.null(gene_symbol_col) && gene_symbol_col != "None" && gene_symbol_col %in% names(rdesc)) {
-                # geneSymbol doesn't exist - create it from selected column
-                # Preserve the original column (don't remove it)
-                rdesc$geneSymbol <- rdesc[[gene_symbol_col]]
-              }
-              # If geneSymbol doesn't exist and user selected "None" or column doesn't exist, geneSymbol won't be created
+              ## Handle gene symbol column selection (and optional ID -> geneSymbol mapping).
+              gs_out <- apply_gene_symbol_from_params(rdesc = rdesc, params = params, ome = ome)
+              rdesc <- gs_out$rdesc
+              params <- gs_out$params
               
               ## fix gene symbol formatting (replace semicolons with pipes, clean up)
               if ("geneSymbol" %in% names(rdesc)) {
@@ -691,8 +1115,8 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
       
       
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
-        dplyr::mutate(new_columns, .after = .data[[col]]) %>% 
-        dplyr::select(-.data[[col]])
+        dplyr::mutate(new_columns, .after = dplyr::all_of(col)) %>%
+        dplyr::select(-dplyr::all_of(col))
     }
     
     # Add missing columns logic

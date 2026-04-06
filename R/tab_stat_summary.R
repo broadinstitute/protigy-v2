@@ -196,17 +196,7 @@ statSummary_Ome_Server <- function(id,
             headerBorder = TRUE
           ),
           
-          # Dataset information box
-          shinydashboardPlus::box(
-            tableOutput(ns("dataset_table")),
-            title = "Dataset Information",
-            status = "primary",
-            solidHeader = TRUE,
-            width = 6,
-            headerBorder = TRUE
-          ),
-          
-          # Data workflow box
+          # Workflow Parameters (same position as former Dataset Information)
           shinydashboardPlus::box(
             tableOutput(ns("workflow_table")),
             title = "Workflow Parameters",
@@ -214,17 +204,35 @@ statSummary_Ome_Server <- function(id,
             solidHeader = TRUE,
             width = 6,
             headerBorder = TRUE
-          ),
-          
+          )
+
+        ), # end fluidRow
+
+        fluidRow(
+
+          # Differential Expression Summary box
+          shinydashboardPlus::box(
+            tableOutput(ns("de_summary_table")),
+            title = "Differential Expression Summary",
+            status = "primary",
+            solidHeader = TRUE,
+            width = 12,
+            headerBorder = TRUE
+          )
+
+        ), # end fluidRow
+
+        fluidRow(
+
           # P.val histogram box
           shinydashboardPlus::box(
             fluidRow(
-              column(6, 
+              column(6,
                 div(style = "overflow-x: auto; width: 100%;",
                   plotlyOutput(ns("adj_pval_hist_plot"), height = "400px")
                 )
               ),
-              column(6, 
+              column(6,
                 div(style = "overflow-x: auto; width: 100%;",
                   plotlyOutput(ns("nom_pval_hist_plot"), height = "400px")
                 )
@@ -243,11 +251,12 @@ statSummary_Ome_Server <- function(id,
             headerBorder = TRUE,
             solidHeader = TRUE
           )
-          
-        ) # end fluidRow
+
+        ), # end fluidRow
+
       )
     })
-    
+
     ## ADJUSTMENTS INFO #######################################################
     
     output$adjustments_table <- renderUI({
@@ -343,7 +352,37 @@ statSummary_Ome_Server <- function(id,
       
       # Base parameters
       descriptions <- c("Test", "Cutoff", "Stat")
-      counts <- c(stat_params()[[ome]]$test, stat_params()[[ome]]$cutoff, stat_params()[[ome]]$stat)
+      counts <- c(
+        stat_params()[[ome]]$test,
+        stat_params()[[ome]]$cutoff,
+        stat_params()[[ome]]$stat
+      )
+      
+      if (isTRUE(parameters()$sample_filter_enabled)) {
+        descriptions <- c(
+          descriptions,
+          "Column filter column",
+          "Column filter values"
+        )
+        counts <- c(
+          counts,
+          parameters()$sample_filter_column,
+          paste(parameters()$sample_filter_values, collapse = ", ")
+        )
+      }
+      
+      if (isTRUE(parameters()$row_filter_enabled)) {
+        descriptions <- c(
+          descriptions,
+          "Row filter column",
+          "Row filter values"
+        )
+        counts <- c(
+          counts,
+          parameters()$row_filter_column,
+          paste(parameters()$row_filter_values, collapse = ", ")
+        )
+      }
       
       # Add groups or contrasts based on test type
       if (test_type == "One-sample Moderated T-test") {
@@ -428,132 +467,123 @@ statSummary_Ome_Server <- function(id,
     })
     
     
-    ## DATASET INFO #######################################################
-    output$dataset_table <- renderTable({
+    ## DE SUMMARY TABLE #######################################################
+    output$de_summary_table <- renderTable({
       req(stat_params(), stat_results())
       df <- stat_results()[[ome]]
-      
       test_type <- stat_params()[[ome]]$test
       sig_cutoff <- stat_params()[[ome]]$cutoff
-      sig_stat <- stat_params()[[ome]]$stat
-      
-      # Filter to only rows with at least one non-NA numeric value
-      numeric_cols <- sapply(df, is.numeric)
-      df_filtered <- df[rowSums(!is.na(df[, numeric_cols, drop=FALSE])) > 0, ]
-      
-      # Create results dataframe starting with features tested
-      results_df <- data.frame(
-        Description = "Features tested",
-        Value = nrow(df_filtered),
-        stringsAsFactors = FALSE
-      )
-      
-      if (test_type == "One-sample Moderated T-test") {
-        # Find all adj.P.Val columns for all groups
-        adjP_cols <- grep("(?i)(?=.*adj\\.P\\.Val)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
-        pval_cols <- grep("(?i)(?=.*P\\.Value)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
-        
-        # Count significant features for each group individually
-        for (i in seq_along(adjP_cols)) {
-          adj.P.Val <- as.numeric(df[[adjP_cols[i]]])
-          P.Value <- as.numeric(df[[pval_cols[i]]])
-          
-          significant <- rep(FALSE, length(P.Value))
+      sig_stat   <- stat_params()[[ome]]$stat
+
+      if (test_type == "Two-sample Moderated T-test") {
+        adjP_cols <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)
+
+        do.call(rbind, lapply(adjP_cols, function(col) {
+          contrast_raw <- sub("^adj\\.P\\.Val\\.", "", col, ignore.case = TRUE)
+          parts <- strsplit(contrast_raw, "_over_")[[1]]
+          numerator   <- if (length(parts) >= 1) parts[1] else contrast_raw
+          denominator <- if (length(parts) >= 2) parts[2] else ""
+
+          vals <- as.numeric(df[[col]])
+          total_features <- sum(!is.na(vals))
+
           if (sig_stat == "adj.p.val") {
-            significant <- adj.P.Val < sig_cutoff
-          } else if (sig_stat == "nom.p.val") {
-            significant <- P.Value < sig_cutoff
+            num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
+          } else {
+            pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+            if (!pval_col %in% colnames(df)) {
+              return(data.frame(
+                Numerator            = numerator,
+                Denominator          = denominator,
+                `Features tested`    = total_features,
+                `DE features`        = NA_integer_,
+                `Pct DE features`    = NA_real_,
+                check.names          = FALSE,
+                stringsAsFactors     = FALSE
+              ))
+            }
+            p_vals <- as.numeric(df[[pval_col]])
+            num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
           }
-          
-          significant <- significant[!is.na(significant)]
-          sig_count <- sum(significant)
-          
-          # Extract group name from column name (remove adj.P.Val or P.Value suffix)
-          group_name <- gsub("(?i)(\\.adj\\.P\\.Val|\\.P\\.Value)$", "", adjP_cols[i], perl = TRUE)
-          
-          # Remove any remaining prefixes like "adj.P.Val." or "P.Value."
-          group_name <- gsub("^(adj\\.P\\.Val\\.|P\\.Value\\.)", "", group_name, perl = TRUE)
-          
-          # Add to results
-          results_df <- rbind(results_df, data.frame(
-            Description = paste0("Significant features (", group_name, ")"),
-            Value = sig_count,
-            stringsAsFactors = FALSE
-          ))
-        }
-        
-      } else if (test_type == "Two-sample Moderated T-test") {
-        # Find all adj.P.Val columns for all contrasts
-        adjP_cols <- grep("(?i)(?=.*adj\\.P\\.Val)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
-        pval_cols <- grep("(?i)(?=.*P\\.Value)", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)
-        
-        # Count significant features for each contrast individually
-        for (i in seq_along(adjP_cols)) {
-          adj.P.Val <- as.numeric(df[[adjP_cols[i]]])
-          P.Value <- as.numeric(df[[pval_cols[i]]])
-          
-          significant <- rep(FALSE, length(P.Value))
+
+          pct_DE <- if (total_features > 0) round(num_DE / total_features * 100, 2) else NA
+
+          data.frame(
+            Numerator            = numerator,
+            Denominator          = denominator,
+            `Features tested`    = total_features,
+            `DE features`        = num_DE,
+            `Pct DE features`    = pct_DE,
+            check.names          = FALSE,
+            stringsAsFactors     = FALSE
+          )
+        }))
+
+      } else if (test_type == "One-sample Moderated T-test") {
+        adjP_cols <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)
+
+        do.call(rbind, lapply(adjP_cols, function(col) {
+          group_name <- sub("^adj\\.P\\.Val\\.", "", col, ignore.case = TRUE)
+          vals <- as.numeric(df[[col]])
+          total_features <- sum(!is.na(vals))
+
           if (sig_stat == "adj.p.val") {
-            significant <- adj.P.Val < sig_cutoff
-          } else if (sig_stat == "nom.p.val") {
-            significant <- P.Value < sig_cutoff
+            num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
+          } else {
+            pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+            if (!pval_col %in% colnames(df)) {
+              return(data.frame(
+                Group                = group_name,
+                `Features tested`    = total_features,
+                `DE features`        = NA_integer_,
+                `Pct DE features`    = NA_real_,
+                check.names          = FALSE,
+                stringsAsFactors     = FALSE
+              ))
+            }
+            p_vals <- as.numeric(df[[pval_col]])
+            num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
           }
-          
-          significant <- significant[!is.na(significant)]
-          sig_count <- sum(significant)
-          
-          # Extract contrast name from column name (remove adj.P.Val or P.Value suffix)
-          contrast_name <- gsub("(?i)(\\.adj\\.P\\.Val|\\.P\\.Value)$", "", adjP_cols[i], perl = TRUE)
-          
-          # Convert _over_ syntax to / for display
-          contrast_name <- gsub("_over_", "/", contrast_name)
-          
-          # Remove any remaining prefixes like "adj.P.Val." or "P.Value."
-          contrast_name <- gsub("^(adj\\.P\\.Val\\.|P\\.Value\\.)", "", contrast_name, perl = TRUE)
-          
-          # Add to results
-          results_df <- rbind(results_df, data.frame(
-            Description = paste0("Significant features (", contrast_name, ")"),
-            Value = sig_count,
-            stringsAsFactors = FALSE
-          ))
-        }
-        
+
+          pct_DE <- if (total_features > 0) round(num_DE / total_features * 100, 2) else NA
+
+          data.frame(
+            Group                = group_name,
+            `Features tested`    = total_features,
+            `DE features`        = num_DE,
+            `Pct DE features`    = pct_DE,
+            check.names          = FALSE,
+            stringsAsFactors     = FALSE
+          )
+        }))
+
       } else if (test_type == "Moderated F test") {
-        # For F-test, there's only one p-value column
-        adjP_pattern <- paste0("(?i)(?=.*adj\\.P\\.Val)")
-        pval_pattern <- paste0("(?i)(?=.*P\\.Value)")
-        
-        adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-        pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-        
-        req(!is.na(adjP_col), !is.na(pval_col))
-        
-        adj.P.Val <- as.numeric(df[[adjP_col]])
-        P.Value <- as.numeric(df[[pval_col]])
-        
-        significant <- rep(FALSE, length(P.Value))
+        adjP_col <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)[1]
+        req(!is.na(adjP_col))
+        vals <- as.numeric(df[[adjP_col]])
+        total_features <- sum(!is.na(vals))
+
         if (sig_stat == "adj.p.val") {
-          significant <- adj.P.Val < sig_cutoff
-        } else if (sig_stat == "nom.p.val") {
-          significant <- P.Value < sig_cutoff
+          num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
+        } else {
+          pval_col <- grep("(?i)P\\.Value", colnames(df), value = TRUE, perl = TRUE)[1]
+          req(!is.na(pval_col))
+          p_vals <- as.numeric(df[[pval_col]])
+          num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
         }
-        
-        significant <- significant[!is.na(significant)]
-        sig_count <- sum(significant)
-        
-        # Add to results
-        results_df <- rbind(results_df, data.frame(
-          Description = "Significant features (F-test)",
-          Value = sig_count,
-          stringsAsFactors = FALSE
-        ))
+
+        pct_DE <- if (total_features > 0) round(num_DE / total_features * 100, 2) else NA
+
+        data.frame(
+          `Features tested`    = total_features,
+          `DE features`        = num_DE,
+          `Pct DE features`    = pct_DE,
+          check.names          = FALSE,
+          stringsAsFactors     = FALSE
+        )
       }
-      
-      #RETURN DATAFRAME#
-      results_df
     })
-    
+
     ## COMPILE EXPORTS #######################################################
     adj_pval_hist_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
@@ -717,11 +747,84 @@ statSummary_Ome_Server <- function(id,
       )
     }
     
+    de_summary_export_function <- function(dir_name) {
+      test_type <- stat_params()[[ome]]$test
+      if (is.null(test_type) || test_type == "None") {
+        return()
+      }
+
+      df <- stat_results()[[ome]]
+      sig_cutoff <- stat_params()[[ome]]$cutoff
+      sig_stat   <- stat_params()[[ome]]$stat
+
+      adjP_cols <- grep("(?i)adj\\.P\\.Val", colnames(df), value = TRUE, perl = TRUE)
+      if (length(adjP_cols) == 0) return()
+
+      summary_df <- do.call(rbind, lapply(adjP_cols, function(col) {
+        vals <- as.numeric(df[[col]])
+        total_features <- sum(!is.na(vals))
+
+        if (sig_stat == "adj.p.val") {
+          num_DE <- sum(vals < sig_cutoff, na.rm = TRUE)
+        } else {
+          pval_col <- sub("adj\\.P\\.Val", "P.Value", col, ignore.case = TRUE)
+          if (!pval_col %in% colnames(df)) return(NULL)
+          p_vals <- as.numeric(df[[pval_col]])
+          num_DE <- sum(p_vals < sig_cutoff, na.rm = TRUE)
+        }
+
+        pct_DE <- if (total_features > 0) round(num_DE / total_features * 100, 4) else NA
+
+        if (test_type == "Two-sample Moderated T-test") {
+          contrast_raw <- sub("^adj\\.P\\.Val\\.", "", col, ignore.case = TRUE)
+          parts <- strsplit(contrast_raw, "_over_")[[1]]
+          numerator   <- if (length(parts) >= 1) parts[1] else contrast_raw
+          denominator <- if (length(parts) >= 2) parts[2] else ""
+          data.frame(
+            Numerator            = numerator,
+            Denominator          = denominator,
+            `Features tested`    = total_features,
+            `DE features`        = num_DE,
+            `Pct DE features`    = pct_DE,
+            check.names          = FALSE,
+            stringsAsFactors     = FALSE
+          )
+        } else if (test_type == "One-sample Moderated T-test") {
+          group_name <- sub("^adj\\.P\\.Val\\.", "", col, ignore.case = TRUE)
+          data.frame(
+            Group                = group_name,
+            `Features tested`    = total_features,
+            `DE features`        = num_DE,
+            `Pct DE features`    = pct_DE,
+            check.names          = FALSE,
+            stringsAsFactors     = FALSE
+          )
+        } else {
+          data.frame(
+            `Features tested`    = total_features,
+            `DE features`        = num_DE,
+            `Pct DE features`    = pct_DE,
+            check.names          = FALSE,
+            stringsAsFactors     = FALSE
+          )
+        }
+      }))
+
+      if (is.null(summary_df) || nrow(summary_df) == 0) return()
+
+      write.csv(
+        summary_df,
+        file = file.path(dir_name, paste0("differential_expression_summary_", ome, ".csv")),
+        row.names = FALSE
+      )
+    }
+
     return(list(
-      adj_pval_hist_plot = adj_pval_hist_plot_export_function,
-      nom_pval_hist_plot = nom_pval_hist_plot_export_function,
-      stat_results = stat_results_export_function,
-      workflow_parameters = workflow_parameters_export_function
+      adj_pval_hist_plot  = adj_pval_hist_plot_export_function,
+      nom_pval_hist_plot  = nom_pval_hist_plot_export_function,
+      stat_results        = stat_results_export_function,
+      workflow_parameters = workflow_parameters_export_function,
+      de_summary          = de_summary_export_function
     ))
     
   })
