@@ -493,7 +493,7 @@ test_that("processCSVExcelWorkflowWithPerDatasetIdentifiers returns compatible f
   
   # Check structure matches GCT workflow
   expect_type(result, "list")
-  expect_equal(names(result), c("GCTs", "parameters"))
+  expect_equal(names(result), c("GCTs", "parameters", "warnings"))
   expect_equal(names(result$GCTs), "test_dataset")
   expect_equal(names(result$parameters), "test_dataset")
   
@@ -547,7 +547,7 @@ test_that("SSV files work with processCSVExcelWorkflowWithPerDatasetIdentifiers"
 
   # Check structure matches GCT workflow
   expect_type(result, "list")
-  expect_equal(names(result), c("GCTs", "parameters"))
+  expect_equal(names(result), c("GCTs", "parameters", "warnings"))
   expect_equal(names(result$GCTs), "test_dataset_ssv")
   expect_equal(names(result$parameters), "test_dataset_ssv")
 
