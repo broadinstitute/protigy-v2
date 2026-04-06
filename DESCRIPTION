@@ -61,7 +61,8 @@ Imports:
     shinyjs,
     future,
     furrr,
-    rhandsontable
+    rhandsontable,
+    htmlwidgets
 Depends:
     R (>= 4.0.0),
     shiny

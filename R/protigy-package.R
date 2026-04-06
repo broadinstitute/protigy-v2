@@ -38,6 +38,7 @@
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput DTOutput renderDT
 #' @import rhandsontable
+#' @importFrom htmlwidgets JS
 #' @importFrom future plan availableCores
 #' @importFrom furrr future_map future_map2
 #' @importFrom Matrix Matrix

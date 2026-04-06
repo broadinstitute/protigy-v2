@@ -1480,7 +1480,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         accumulated_files()$name
       )
       condition_flags <- setNames(
-        sapply(accumulated_files()$name, function(f) isTRUE(input[[paste0("use_condition_setup_", f)]])),
+        sapply(accumulated_files()$name, function(f) {
+          file_id <- gsub("[^a-zA-Z0-9_]", "_", f)
+          isTRUE(input[[paste0("use_condition_setup_", file_id)]])
+        }),
         accumulated_files()$name
       )
 

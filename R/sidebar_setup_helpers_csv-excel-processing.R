@@ -39,12 +39,12 @@ csvExcelLabelSetupUI <- function(ns, dataFileNames) {
         if (isTRUE(getOption("protigy.enable_spectronaut", default = FALSE))) {
           tagList(
             checkboxInput(
-              ns(paste0("use_condition_setup_", file)),
+              ns(paste0("use_condition_setup_", file_id)),
               "Use Spectronaut condition setup file to rename column headers",
               value = FALSE
             ),
             conditionalPanel(
-              condition = paste0("input['", ns(paste0("use_condition_setup_", file)), "']"),
+              condition = paste0("input['", ns(paste0("use_condition_setup_", file_id)), "']"),
               div(
                 fileInput(
                   ns(paste0("conditionSetupFile_", file_id)),
