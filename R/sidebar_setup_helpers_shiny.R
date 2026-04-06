@@ -191,13 +191,14 @@ gctSetupUI <- function(ns,
       value = isTRUE(parameters[[label]]$gene_symbol_split)
     ),
     conditionalPanel(
-      condition = paste0("input['", ns(paste0(label, '_gene_symbol_split')), "']"),
+      condition = paste0("input['", label, "_gene_symbol_split']"),
       textInput(
         ns(paste0(label, '_gene_symbol_separator')),
         "Separator",
         value = if (!is.null(parameters[[label]]$gene_symbol_separator))
           parameters[[label]]$gene_symbol_separator else ";"
-      )
+      ),
+      ns = ns
     ),
 
     ## intensity data input
