@@ -379,6 +379,43 @@ volcano_label_top_significant_subset <- function(df, n = 20L) {
   sig[take, , drop = FALSE]
 }
 
+#' Feature IDs that receive volcano labels for one group/contrast (mirrors `add_volcano_labels`).
+#'
+#' @param df_plot Output of `build_volcano_df()` (columns include `id`, `Significant`, ...).
+#' @param label_mode Character vector; may include `"poi"`, `"significant_top20"`, `"significant"`.
+#' @param poi Character vector of manually selected POI feature IDs.
+#' @return `character()` of unique feature IDs (empty if nothing would be labeled).
+#' @noRd
+volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
+  if (is.null(label_mode) || length(label_mode) == 0) {
+    label_mode <- character(0)
+  }
+  poi <- unique(as.character(poi))
+  show_poi <- "poi" %in% label_mode
+  show_sig <- "significant" %in% label_mode
+  show_sig_top <- "significant_top20" %in% label_mode
+
+  if (!show_poi && !show_sig && !show_sig_top) {
+    return(character(0))
+  }
+
+  sig_ids <- character(0)
+  if (show_sig) {
+    sig_rows <- df_plot[!is.na(df_plot$Significant) & df_plot$Significant == TRUE, , drop = FALSE]
+    sig_ids <- as.character(sig_rows$id)
+  } else if (show_sig_top) {
+    sig_rows <- volcano_label_top_significant_subset(df_plot, 20L)
+    sig_ids <- as.character(sig_rows$id)
+  }
+
+  poi_ids <- character(0)
+  if (show_poi && length(poi) > 0) {
+    poi_ids <- as.character(df_plot$id[as.character(df_plot$id) %in% poi])
+  }
+
+  unique(c(sig_ids, poi_ids))
+}
+
 
 # Add color-coded protein labels as Plotly annotations.
 #

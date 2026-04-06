@@ -588,40 +588,84 @@ statPlot_Ome_Server <- function(id,
       cat("Saved volcano plots for", ome, "to:", pdf_path, "\n")
     }
 
-    ## POI CSV EXPORT ##
-    poi_export_function <- function(dir_name) {
+    ## Volcano labeled proteins CSV (POI + any significant / top-20 labels matching the plot)
+    labeled_volcano_csv_export_function <- function(dir_name) {
       tryCatch({
-        pois <- proteins_of_interest()
-        if (length(pois) == 0) return()
-
-        df_results <- stat_results()[[ome]]
-        if (is.null(df_results)) {
-          message("POI export skipped: no stat results for ome ", ome)
+        test <- stat_params()[[ome]]$test
+        if (is.null(test) || test == "None" || test == "Moderated F test") {
           return()
         }
 
-        id_col <- grep("^id$", colnames(df_results), value = TRUE, ignore.case = TRUE)[1]
+        label_mode_export <- isolate(input$label_mode) %||% character(0)
+        poi <- isolate(proteins_of_interest())
+
+        show_poi <- "poi" %in% label_mode_export
+        show_sig <- "significant" %in% label_mode_export
+        show_sig_top <- "significant_top20" %in% label_mode_export
+        if (!show_poi && !show_sig && !show_sig_top) {
+          message(
+            "Volcano labeled export skipped for ", ome,
+            ": enable at least one label option (POI, Top 20, or All significant)."
+          )
+          return()
+        }
+
+        df_raw <- stat_results()[[ome]]
+        if (is.null(df_raw) || nrow(df_raw) == 0) {
+          message("Volcano labeled export skipped: no stat results for ome ", ome)
+          return()
+        }
+
+        sp <- stat_params()[[ome]]
+        sig_cutoff <- sp$cutoff
+        sig_stat <- sp$stat
+
+        all_ids <- character(0)
+
+        if (test == "One-sample Moderated T-test") {
+          groups <- sp$groups
+          for (group in groups) {
+            cols <- get_volcano_cols(df_raw, test, group, NULL)
+            df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+          }
+        } else if (test == "Two-sample Moderated T-test") {
+          contrasts <- sp$contrasts
+          for (contrast in contrasts) {
+            cols <- get_volcano_cols(df_raw, test, NULL, contrast)
+            df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+          }
+        } else {
+          message("Volcano labeled export not supported for test type: ", test)
+          return()
+        }
+
+        if (length(all_ids) == 0) {
+          message("Volcano labeled export: no proteins matched label criteria for ", ome)
+          return()
+        }
+
+        id_col <- grep("^id$", colnames(df_raw), value = TRUE, ignore.case = TRUE)[1]
         if (is.na(id_col)) {
-          message("POI export skipped: no 'id' column found in stat results for ome ", ome)
+          message("Volcano labeled export skipped: no 'id' column in stat results for ", ome)
           return()
         }
 
-        poi_rows <- df_results[as.character(df_results[[id_col]]) %in% pois, ]
-
-        write.csv(
-          poi_rows,
-          file      = file.path(dir_name, paste0("proteins_of_interest_", ome, ".csv")),
-          row.names = FALSE
+        out_rows <- df_raw[as.character(df_raw[[id_col]]) %in% all_ids, , drop = FALSE]
+        out_path <- file.path(dir_name, paste0("volcano_labeled_proteins_", ome, ".csv"))
+        write.csv(out_rows, file = out_path, row.names = FALSE)
+        cat(
+          "Saved", nrow(out_rows), "volcano-labeled protein row(s) for", ome, "to:", out_path, "\n"
         )
-        cat("Saved POI list for", ome, "to:", file.path(dir_name, paste0("proteins_of_interest_", ome, ".csv")), "\n")
       }, error = function(e) {
-        message("POI export failed for ome ", ome, ": ", conditionMessage(e))
+        message("Volcano labeled export failed for ome ", ome, ": ", conditionMessage(e))
       })
     }
 
     return(list(
       volcano_plot         = volcano_plot_export_function,
-      proteins_of_interest = poi_export_function
+      proteins_of_interest = labeled_volcano_csv_export_function
     ))
   })
 }

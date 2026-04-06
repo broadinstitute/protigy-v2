@@ -169,6 +169,33 @@ test_that("volcano_label_top_significant_subset keeps all rows tied on logP and 
   expect_setequal(as.character(sub$id), c("r1", "r2", "r3"))
 })
 
+## volcano_labeled_feature_ids ##################################################
+
+test_that("volcano_labeled_feature_ids matches add_volcano_labels union (sig + poi)", {
+  df_plot <- data.frame(
+    id = c("s1", "s2", "p1", "ns"),
+    logFC = 1:4,
+    logP = 5:8,
+    Significant = c(TRUE, TRUE, FALSE, FALSE),
+    stringsAsFactors = FALSE
+  )
+  ids <- volcano_labeled_feature_ids(df_plot, c("significant", "poi"), c("p1"))
+  expect_setequal(ids, c("s1", "s2", "p1"))
+})
+
+test_that("volcano_labeled_feature_ids uses top-20 path when significant not selected", {
+  df_plot <- data.frame(
+    id = letters[1:5],
+    logFC = 1:5,
+    logP = 5:1,
+    Significant = rep(TRUE, 5),
+    stringsAsFactors = FALSE
+  )
+  ids <- volcano_labeled_feature_ids(df_plot, "significant_top20", character(0))
+  expect_true(length(ids) <= 20L)
+  expect_true(all(ids %in% letters[1:5]))
+})
+
 ## add_volcano_labels ##########################################################
 
 # Helper: create minimal plotly scatter for testing
