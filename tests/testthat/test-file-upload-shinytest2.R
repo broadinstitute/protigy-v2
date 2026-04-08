@@ -91,8 +91,9 @@ complete_csv_wizard <- function(app, file_name, label,
                                 annotation_col = NULL) {
   app$wait_for_idle(duration = 800, timeout = 20000)
 
-  # Step 1: label
+  # Step 1: label — wait for the label input to be bound first (renderUI-rendered)
   label_id <- paste0("setupSidebar-CSVExcelLabel_", file_name)
+  wait_for_input_bound(app, label_id, timeout = 20000)
   label_args <- list(wait_ = FALSE)
   label_args[[label_id]] <- label
   do.call(app$set_inputs, label_args)
@@ -142,7 +143,10 @@ complete_csv_wizard <- function(app, file_name, label,
 complete_csv_wizard_multi <- function(app, file_names, labels, annotation_col = NULL) {
   app$wait_for_idle(duration = 800, timeout = 20000)
 
-  # Step 1: labels
+  # Step 1: labels — wait for the first label input to be bound before setting
+  # any values, since these are renderUI-rendered and may not be bound immediately.
+  first_label_id <- paste0("setupSidebar-CSVExcelLabel_", file_names[[1]])
+  wait_for_input_bound(app, first_label_id, timeout = 20000)
   for (i in seq_along(file_names)) {
     label_id <- paste0("setupSidebar-CSVExcelLabel_", file_names[[i]])
     largs <- list(wait_ = FALSE)
@@ -420,31 +424,29 @@ test_that("multi-omic XLSX upload (3 files) completes successfully", {
 # Group C: Multi-omic upload, mixed extensions
 # ---------------------------------------------------------------------------
 
-test_that("multi-omic mixed-extension upload (CSV + GCT + TSV) completes successfully", {
+test_that("multi-omic mixed-extension upload (CSV + TSV + XLSX) completes successfully", {
   skip_if_no_shinytest2()
 
+  # The app supports mixing CSV/TSV/XLSX in one batch (all non-GCT).
+  # Mixing GCT with non-GCT is explicitly rejected by the upload validator.
   app <- make_app_driver(testthat::test_path("apps/full-app"))
   on.exit(app$stop(), add = TRUE)
 
-  # Upload 3 files of different types simultaneously
   app$upload_file(
     `setupSidebar-dataFiles` = c(
       get_test_file("mb-acetylome-ratio-norm-NArm.csv"),
-      get_test_file("mb-phosphoproteome-ratio-norm-NArm.gct"),
-      get_test_file("mb-proteome-ratio-norm-NArm.tsv")
+      get_test_file("mb-phosphoproteome-ratio-norm-NArm.tsv"),
+      get_test_file("mb-proteome-ratio-norm-NArm.xlsx")
     )
   )
   app$wait_for_idle(duration = 1500, timeout = 25000)
 
-  # Mixed uploads: all non-GCT files go through CSV/TSV path;
-  # the presence of even one non-GCT file routes the whole batch through CSV workflow.
-  # The app treats all files as CSV/TSV/XLSX when the batch is mixed.
   complete_csv_wizard_multi(
     app,
     file_names = c(
       "mb-acetylome-ratio-norm-NArm.csv",
-      "mb-phosphoproteome-ratio-norm-NArm.gct",
-      "mb-proteome-ratio-norm-NArm.tsv"
+      "mb-phosphoproteome-ratio-norm-NArm.tsv",
+      "mb-proteome-ratio-norm-NArm.xlsx"
     ),
     labels = c("Acetylome", "Phosphoproteome", "Proteome")
   )

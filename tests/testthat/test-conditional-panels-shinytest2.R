@@ -74,7 +74,7 @@ test_that("data_normalization != None reveals group normalization checkbox", {
   # Default: data_normalization is "Median" (non-None), so group normalization
   # checkbox should already be visible. First set to None, verify hidden.
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None")
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_hidden(app, "#setupSidebar-Proteome_group_normalization")
   expect_false(
     is_visible(app, "#setupSidebar-Proteome_group_normalization"),
     info = "Group normalization checkbox should be hidden when data_normalization = None"
@@ -82,7 +82,7 @@ test_that("data_normalization != None reveals group normalization checkbox", {
 
   # Now set to a non-None value, verify visible
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median")
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_group_normalization")
   expect_true(
     is_visible(app, "#setupSidebar-Proteome_group_normalization"),
     info = "Group normalization checkbox should be visible when data_normalization != None"
@@ -94,13 +94,13 @@ test_that("group normalization checkbox reveals column selector", {
   app <- reach_gct_setup_step()
   on.exit(app$stop(), add = TRUE)
 
-  # Ensure normalization is non-None
+  # Ensure normalization is non-None so the group normalization checkbox is visible
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median")
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_group_normalization")
 
   # Disable group normalization — column selector should be hidden
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_hidden(app, "#setupSidebar-Proteome_group_normalization_column")
   expect_false(
     is_visible(app, "#setupSidebar-Proteome_group_normalization_column"),
     info = "Group normalization column selector should be hidden when group_normalization = FALSE"
@@ -108,7 +108,7 @@ test_that("group normalization checkbox reveals column selector", {
 
   # Enable group normalization — column selector should appear
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_group_normalization_column")
   expect_true(
     is_visible(app, "#setupSidebar-Proteome_group_normalization_column"),
     info = "Group normalization column selector should be visible when group_normalization = TRUE"
@@ -122,7 +122,7 @@ test_that("data_filter StdDev reveals percentile input", {
 
   # None selected — percentile input should be hidden
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "None")
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_hidden(app, "#setupSidebar-Proteome_data_filter_sd_pct")
   expect_false(
     is_visible(app, "#setupSidebar-Proteome_data_filter_sd_pct"),
     info = "Percentile input should be hidden when data_filter = None"
@@ -130,7 +130,7 @@ test_that("data_filter StdDev reveals percentile input", {
 
   # StdDev selected — percentile input should appear
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev")
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_data_filter_sd_pct")
   expect_true(
     is_visible(app, "#setupSidebar-Proteome_data_filter_sd_pct"),
     info = "Percentile input should be visible when data_filter = StdDev"
@@ -144,7 +144,7 @@ test_that("sample_filter_enabled checkbox reveals column selector", {
 
   # Disable sample filter
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = FALSE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_hidden(app, "#setupSidebar-Proteome_sample_filter_column")
   expect_false(
     is_visible(app, "#setupSidebar-Proteome_sample_filter_column"),
     info = "Sample filter column selector should be hidden when filter disabled"
@@ -152,7 +152,7 @@ test_that("sample_filter_enabled checkbox reveals column selector", {
 
   # Enable sample filter
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_sample_filter_column")
   expect_true(
     is_visible(app, "#setupSidebar-Proteome_sample_filter_column"),
     info = "Sample filter column selector should be visible when filter enabled"
@@ -202,14 +202,14 @@ test_that("row_filter_enabled checkbox reveals column selector", {
   on.exit(app$stop(), add = TRUE)
 
   app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = FALSE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_hidden(app, "#setupSidebar-Proteome_row_filter_column")
   expect_false(
     is_visible(app, "#setupSidebar-Proteome_row_filter_column"),
     info = "Row filter column selector should be hidden when filter disabled"
   )
 
   app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE)
-  app$wait_for_idle(duration = 600)
+  wait_for_panel_visible(app, "#setupSidebar-Proteome_row_filter_column")
   expect_true(
     is_visible(app, "#setupSidebar-Proteome_row_filter_column"),
     info = "Row filter column selector should be visible when filter enabled"

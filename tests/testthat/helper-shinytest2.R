@@ -76,3 +76,43 @@ wait_for_input_bound <- function(app, input_id, timeout = 15000) {
   )
   app$wait_for_js(js, timeout = timeout)
 }
+
+#' Wait until a Shiny conditionalPanel containing a given element becomes
+#' visible (display != 'none').  Uses wait_for_js so the poll loop runs in
+#' the browser rather than a fixed sleep on the R side.
+#'
+#' @param app       AppDriver instance
+#' @param selector  CSS selector for an element *inside* the conditionalPanel,
+#'                  e.g. "#setupSidebar-Proteome_group_normalization"
+#' @param timeout   Maximum wait in ms (default 5000)
+wait_for_panel_visible <- function(app, selector, timeout = 5000) {
+  js <- paste0(
+    "(function() {",
+    "  var el = document.querySelector('", selector, "');",
+    "  if (!el) return false;",
+    "  var panel = el.closest('.shiny-panel-conditional');",
+    "  if (!panel) return true;",
+    "  return panel.style.display !== 'none';",
+    "})()"
+  )
+  app$wait_for_js(js, timeout = timeout)
+}
+
+#' Wait until a Shiny conditionalPanel containing a given element becomes
+#' hidden (display == 'none').
+#'
+#' @param app       AppDriver instance
+#' @param selector  CSS selector for an element *inside* the conditionalPanel
+#' @param timeout   Maximum wait in ms (default 5000)
+wait_for_panel_hidden <- function(app, selector, timeout = 5000) {
+  js <- paste0(
+    "(function() {",
+    "  var el = document.querySelector('", selector, "');",
+    "  if (!el) return true;",
+    "  var panel = el.closest('.shiny-panel-conditional');",
+    "  if (!panel) return false;",
+    "  return panel.style.display === 'none';",
+    "})()"
+  )
+  app$wait_for_js(js, timeout = timeout)
+}
