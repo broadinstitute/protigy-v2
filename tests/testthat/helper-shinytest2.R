@@ -66,29 +66,37 @@ make_app_driver <- function(app_dir, ...) {
 #' .shiny-bound-input class).  This is needed for renderUI-rendered buttons
 #' which may appear in the DOM before Shiny's JS binding runs.
 #'
-#' @param app   AppDriver instance
-#' @param input_id  Full namespaced input id, e.g. "setupSidebar-submitGCTButton"
-#' @param timeout   Maximum wait in ms (default 15000)
+#' Input IDs may contain dots (e.g. from file names like "foo.csv").  CSS
+#' querySelector treats dots as class selectors, so we use getElementById
+#' combined with a classList check instead of a compound CSS selector.
+#'
+#' @param app      AppDriver instance
+#' @param input_id Full namespaced input id, e.g. "setupSidebar-submitGCTButton"
+#' @param timeout  Maximum wait in ms (default 15000)
 wait_for_input_bound <- function(app, input_id, timeout = 15000) {
-  selector <- paste0("#", input_id, ".shiny-bound-input")
   js <- paste0(
-    "document.querySelector('", selector, "') !== null"
+    "(function() {",
+    "  var el = document.getElementById('", input_id, "');",
+    "  return el !== null && el.classList.contains('shiny-bound-input');",
+    "})()"
   )
   app$wait_for_js(js, timeout = timeout)
 }
 
 #' Wait until a Shiny conditionalPanel containing a given element becomes
-#' visible (display != 'none').  Uses wait_for_js so the poll loop runs in
-#' the browser rather than a fixed sleep on the R side.
+#' visible (display != 'none') and then verify visibility once more.
 #'
-#' @param app       AppDriver instance
-#' @param selector  CSS selector for an element *inside* the conditionalPanel,
-#'                  e.g. "#setupSidebar-Proteome_group_normalization"
-#' @param timeout   Maximum wait in ms (default 5000)
-wait_for_panel_visible <- function(app, selector, timeout = 5000) {
+#' Uses getElementById (safe for IDs with dots) plus closest() for the panel.
+#' Polls until the condition is true or timeout is reached (throws on timeout).
+#'
+#' @param app      AppDriver instance
+#' @param input_id The Shiny input ID of an element *inside* the panel,
+#'                 e.g. "setupSidebar-Proteome_group_normalization"
+#' @param timeout  Maximum wait in ms (default 10000)
+wait_for_panel_visible <- function(app, input_id, timeout = 10000) {
   js <- paste0(
     "(function() {",
-    "  var el = document.querySelector('", selector, "');",
+    "  var el = document.getElementById('", input_id, "');",
     "  if (!el) return false;",
     "  var panel = el.closest('.shiny-panel-conditional');",
     "  if (!panel) return true;",
@@ -101,13 +109,13 @@ wait_for_panel_visible <- function(app, selector, timeout = 5000) {
 #' Wait until a Shiny conditionalPanel containing a given element becomes
 #' hidden (display == 'none').
 #'
-#' @param app       AppDriver instance
-#' @param selector  CSS selector for an element *inside* the conditionalPanel
-#' @param timeout   Maximum wait in ms (default 5000)
-wait_for_panel_hidden <- function(app, selector, timeout = 5000) {
+#' @param app      AppDriver instance
+#' @param input_id The Shiny input ID of an element *inside* the panel
+#' @param timeout  Maximum wait in ms (default 10000)
+wait_for_panel_hidden <- function(app, input_id, timeout = 10000) {
   js <- paste0(
     "(function() {",
-    "  var el = document.querySelector('", selector, "');",
+    "  var el = document.getElementById('", input_id, "');",
     "  if (!el) return true;",
     "  var panel = el.closest('.shiny-panel-conditional');",
     "  if (!panel) return false;",
@@ -115,4 +123,25 @@ wait_for_panel_hidden <- function(app, selector, timeout = 5000) {
     "})()"
   )
   app$wait_for_js(js, timeout = timeout)
+}
+
+#' Check if the conditionalPanel wrapping the given input ID is currently
+#' visible.  Uses getElementById (safe for IDs with dots).
+#'
+#' @param app      AppDriver instance
+#' @param input_id The Shiny input ID of an element inside the panel
+is_panel_visible <- function(app, input_id) {
+  result <- tryCatch(
+    app$run_js(paste0(
+      "(function() {",
+      "  var el = document.getElementById('", input_id, "');",
+      "  if (!el) return false;",
+      "  var panel = el.closest('.shiny-panel-conditional');",
+      "  if (!panel) return true;",
+      "  return panel.style.display !== 'none';",
+      "})()"
+    )),
+    error = function(e) FALSE
+  )
+  isTRUE(result)
 }
