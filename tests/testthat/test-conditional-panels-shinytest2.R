@@ -58,19 +58,18 @@ test_that("data_normalization != None reveals group normalization checkbox", {
 
   # Default: data_normalization is "Median" (non-None), so group normalization
   # checkbox should already be visible. First set to None, verify hidden.
+  # wait_for_panel_hidden/visible throw on timeout — that IS the assertion.
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None")
-  wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization")
-  expect_false(
-    is_visible(app, "setupSidebar-Proteome_group_normalization"),
-    info = "Group normalization checkbox should be hidden when data_normalization = None"
+  expect_no_error(
+    wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization"),
+    message = "Group normalization checkbox should be hidden when data_normalization = None"
   )
 
   # Now set to a non-None value, verify visible
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median")
-  wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization")
-  expect_true(
-    is_visible(app, "setupSidebar-Proteome_group_normalization"),
-    info = "Group normalization checkbox should be visible when data_normalization != None"
+  expect_no_error(
+    wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization"),
+    message = "Group normalization checkbox should be visible when data_normalization != None"
   )
 })
 
@@ -85,18 +84,16 @@ test_that("group normalization checkbox reveals column selector", {
 
   # Disable group normalization — column selector should be hidden
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE)
-  wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization_column")
-  expect_false(
-    is_visible(app, "setupSidebar-Proteome_group_normalization_column"),
-    info = "Group normalization column selector should be hidden when group_normalization = FALSE"
+  expect_no_error(
+    wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization_column"),
+    message = "Group normalization column selector should be hidden when group_normalization = FALSE"
   )
 
   # Enable group normalization — column selector should appear
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE)
-  wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization_column")
-  expect_true(
-    is_visible(app, "setupSidebar-Proteome_group_normalization_column"),
-    info = "Group normalization column selector should be visible when group_normalization = TRUE"
+  expect_no_error(
+    wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization_column"),
+    message = "Group normalization column selector should be visible when group_normalization = TRUE"
   )
 })
 
@@ -107,18 +104,16 @@ test_that("data_filter StdDev reveals percentile input", {
 
   # None selected — percentile input should be hidden
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "None")
-  wait_for_panel_hidden(app, "setupSidebar-Proteome_data_filter_sd_pct")
-  expect_false(
-    is_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
-    info = "Percentile input should be hidden when data_filter = None"
+  expect_no_error(
+    wait_for_panel_hidden(app, "setupSidebar-Proteome_data_filter_sd_pct"),
+    message = "Percentile input should be hidden when data_filter = None"
   )
 
   # StdDev selected — percentile input should appear
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev")
-  wait_for_panel_visible(app, "setupSidebar-Proteome_data_filter_sd_pct")
-  expect_true(
-    is_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
-    info = "Percentile input should be visible when data_filter = StdDev"
+  expect_no_error(
+    wait_for_panel_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
+    message = "Percentile input should be visible when data_filter = StdDev"
   )
 })
 
@@ -129,18 +124,16 @@ test_that("sample_filter_enabled checkbox reveals column selector", {
 
   # Disable sample filter
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = FALSE)
-  wait_for_panel_hidden(app, "setupSidebar-Proteome_sample_filter_column")
-  expect_false(
-    is_visible(app, "setupSidebar-Proteome_sample_filter_column"),
-    info = "Sample filter column selector should be hidden when filter disabled"
+  expect_no_error(
+    wait_for_panel_hidden(app, "setupSidebar-Proteome_sample_filter_column"),
+    message = "Sample filter column selector should be hidden when filter disabled"
   )
 
   # Enable sample filter
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE)
-  wait_for_panel_visible(app, "setupSidebar-Proteome_sample_filter_column")
-  expect_true(
-    is_visible(app, "setupSidebar-Proteome_sample_filter_column"),
-    info = "Sample filter column selector should be visible when filter enabled"
+  expect_no_error(
+    wait_for_panel_visible(app, "setupSidebar-Proteome_sample_filter_column"),
+    message = "Sample filter column selector should be visible when filter enabled"
   )
 })
 
@@ -187,17 +180,15 @@ test_that("row_filter_enabled checkbox reveals column selector", {
   on.exit(app$stop(), add = TRUE)
 
   app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = FALSE)
-  wait_for_panel_hidden(app, "setupSidebar-Proteome_row_filter_column")
-  expect_false(
-    is_visible(app, "setupSidebar-Proteome_row_filter_column"),
-    info = "Row filter column selector should be hidden when filter disabled"
+  expect_no_error(
+    wait_for_panel_hidden(app, "setupSidebar-Proteome_row_filter_column"),
+    message = "Row filter column selector should be hidden when filter disabled"
   )
 
   app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE)
-  wait_for_panel_visible(app, "setupSidebar-Proteome_row_filter_column")
-  expect_true(
-    is_visible(app, "setupSidebar-Proteome_row_filter_column"),
-    info = "Row filter column selector should be visible when filter enabled"
+  expect_no_error(
+    wait_for_panel_visible(app, "setupSidebar-Proteome_row_filter_column"),
+    message = "Row filter column selector should be visible when filter enabled"
   )
 })
 
