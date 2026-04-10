@@ -291,7 +291,7 @@ test_that("CSV identifier delimiter toggle reveals source column input", {
   do.call(app$set_inputs, unchecked_args)
   app$wait_for_idle(duration = 600)
   expect_false(
-    is_visible(app, paste0("#", source_col_id)),
+    is_visible(app, source_col_id),
     info = "Source column input should be hidden when delimiter checkbox is unchecked"
   )
 
@@ -301,7 +301,7 @@ test_that("CSV identifier delimiter toggle reveals source column input", {
   do.call(app$set_inputs, checked_args)
   app$wait_for_idle(duration = 600)
   expect_true(
-    is_visible(app, paste0("#", source_col_id)),
+    is_visible(app, source_col_id),
     info = "Source column input should be visible when delimiter checkbox is checked"
   )
 })

@@ -14,6 +14,7 @@
 ################################################################################
 
 devtools::load_all(".", quiet = TRUE)
+library(testthat)
 
 outdir <- file.path("tests", "testthat", "fixtures")
 
