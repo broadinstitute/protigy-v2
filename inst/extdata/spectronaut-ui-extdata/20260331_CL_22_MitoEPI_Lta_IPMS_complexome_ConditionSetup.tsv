@@ -1,7 +1,0 @@
-#	Reference	Run Label	Condition	Fraction	Replicate	Quantity Correction Factor	Label	Color	File Name
-1	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_04_S4-C4_1_9528.htrms	COX5_CTS	NA	1	1	COX5_CTS	#EC1318	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_04_S4-C4_1_9528
-2	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_05_S4-C5_1_9527.htrms	COX6_CTS	NA	1	1	COX6_CTS	#EC1319	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_05_S4-C5_1_9527
-3	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_02_S4-C2_1_9526.htrms	MPP_a_CTS	NA	1	1	MPP_a_CTS	#EC1316	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_02_S4-C2_1_9526
-4	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_03_S4-C3_1_9524.htrms	QCR6_CTS	NA	1	1	QCR6_CTS	#EC1317	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_03_S4-C3_1_9524
-5	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_01_S4-C1_1_9529.htrms	WT_control	NA	1	1	WT_control	#EC1315	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_01_S4-C1_1_9529
-6	False	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_06_S4-C6_1_9525.htrms	COX10_CTS	NA	1	1	COX10_CTS	#EC1320	ME20260327_CL_22_MitoEPI_Lta_IPMS_complexome_06_S4-C6_1_9525

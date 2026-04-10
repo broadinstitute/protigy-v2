@@ -7,8 +7,8 @@
 #    ConditionSetup file completes the Spectronaut preprocessing workflow.
 #
 # Test data (from inst/extdata/spectronaut-ui-extdata/):
-#   - Pivot report: 20260331_CL_22_MitoEPI_Lta_IPMS_complexome_Report_KN_MitoEPI_Proteome_Pivot.tsv
-#   - Condition setup: 20260331_CL_22_MitoEPI_Lta_IPMS_complexome_ConditionSetup.tsv
+#   - Pivot report: spectronaut_test_pivot.tsv
+#   - Condition setup: spectronaut_test_condition_setup.tsv
 ################################################################################
 
 library(testthat)
@@ -17,14 +17,14 @@ library(testthat)
 spectronaut_pivot_file <- function() {
   get_test_file(file.path(
     "spectronaut-ui-extdata",
-    "20260331_CL_22_MitoEPI_Lta_IPMS_complexome_Report_KN_MitoEPI_Proteome_Pivot.tsv"
+    "spectronaut_test_pivot.tsv"
   ))
 }
 
 spectronaut_condition_setup_file <- function() {
   get_test_file(file.path(
     "spectronaut-ui-extdata",
-    "20260331_CL_22_MitoEPI_Lta_IPMS_complexome_ConditionSetup.tsv"
+    "spectronaut_test_condition_setup.tsv"
   ))
 }
 
@@ -32,7 +32,7 @@ spectronaut_condition_setup_file <- function() {
 spectronaut_file_id <- function() {
   gsub(
     "[^a-zA-Z0-9_]", "_",
-    "20260331_CL_22_MitoEPI_Lta_IPMS_complexome_Report_KN_MitoEPI_Proteome_Pivot.tsv"
+    "spectronaut_test_pivot.tsv"
   )
 }
 

@@ -1,0 +1,7 @@
+#	Reference	Run Label	Condition	Fraction	Replicate	Quantity Correction Factor	Label	Color	File Name
+1	False	SYN_sample_01.htrms	cond_A	NA	1	1	cond_A	#E41A1C	SYN_sample_01
+2	False	SYN_sample_02.htrms	cond_A	NA	2	1	cond_A	#E41A1C	SYN_sample_02
+3	False	SYN_sample_03.htrms	cond_B	NA	1	1	cond_B	#377EB8	SYN_sample_03
+4	False	SYN_sample_04.htrms	cond_B	NA	2	1	cond_B	#377EB8	SYN_sample_04
+5	False	SYN_sample_05.htrms	ctrl	NA	1	1	ctrl	#4DAF4A	SYN_sample_05
+6	False	SYN_sample_06.htrms	ctrl	NA	2	1	ctrl	#4DAF4A	SYN_sample_06
