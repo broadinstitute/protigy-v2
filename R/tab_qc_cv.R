@@ -216,8 +216,11 @@ QCCV_Ome_Server <- function(id,
               add_css_attributes(
                 radioButtons(
                   ns("qc_cv_min_groups"),
-                  label    = "Min groups satisfying cutoff",
-                  choices  = c("at least one group" = "one", "all groups" = "all"),
+                  label    = "Keep features where the CV cutoff is satisfied by:",
+                  choices  = c(
+                    "At least one group (keeps features reproducible in any condition)" = "one",
+                    "All groups (keeps only features reproducible across every condition)" = "all"
+                  ),
                   selected = "one"
                 ),
                 classes = "small-input"
