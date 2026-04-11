@@ -756,7 +756,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
-    }, ignoreInit = TRUE)
+    })
 
     # update sample filter values choices when sample filter column changes
     observe({

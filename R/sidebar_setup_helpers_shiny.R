@@ -48,15 +48,20 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
+  # Select normalization choices based on current intensity_data parameter
+  ind <- paste0(
+    "intensity_data_",
+    tolower(ifelse(isTRUE(parameters[[label]]$intensity_data == "Yes"), "yes", "no"))
+  )
   # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
-  norm_choices <- parameter_choices$data_normalization$intensity_data_no
+  norm_choices <- parameter_choices$data_normalization[[ind]]
   n_samples <- ncol(GCTs[[label]]@mat)
   if (n_samples > 20) {
     norm_choices <- norm_choices[norm_choices != "2-component"]
   }
-  # If current selection is 2-component but it should be disabled, use default
+  # If current selection is not in the available choices, fall back to None
   norm_selected <- parameters[[label]]$data_normalization
-  if (n_samples > 20 && norm_selected == "2-component") {
+  if (!norm_selected %in% norm_choices) {
     norm_selected <- "None"
   }
 
@@ -245,12 +250,12 @@ gctSetupUI <- function(ns,
     ## max missing value input
     add_css_attributes(
       numericInput(
-        ns(paste0(label, '_max_missing')), 
+        ns(paste0(label, '_max_missing')),
         'Max. % missing values',
-        min = parameter_choices$max_missing$intensity_data_no$min,
-        max = parameter_choices$max_missing$intensity_data_no$max,
-        step = parameter_choices$max_missing$intensity_data_no$step,
-        value = parameters[[label]]$max_missing),
+        min = parameter_choices$max_missing[[ind]]$min,
+        max = parameter_choices$max_missing[[ind]]$max,
+        step = parameter_choices$max_missing[[ind]]$step,
+        value = min(parameters[[label]]$max_missing, parameter_choices$max_missing[[ind]]$max)),
       classes = "small-input",
       styles = "padding-bottom: 5px"),
     
