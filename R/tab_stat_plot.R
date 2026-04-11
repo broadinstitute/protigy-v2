@@ -226,20 +226,52 @@ statPlot_Ome_Server <- function(id,
         NULL
       }
 
-      # --- search column choices: all non-numeric columns in stat_results ---
-      search_col_choices <- if (!is.null(stat_results()) && !is.null(stat_results()[[ome]])) {
+      # --- non-numeric columns shared by label-column selector and search selector ---
+      char_cols_available <- if (!is.null(stat_results()) && !is.null(stat_results()[[ome]])) {
         df_cols   <- stat_results()[[ome]]
-        char_cols <- names(df_cols)[!sapply(df_cols, is.numeric)]
-        if (length(char_cols) == 0) char_cols <- names(df_cols)[1]
-        default_col <- grep("^id$", char_cols, value = TRUE, ignore.case = TRUE)
-        if (length(default_col) == 0) default_col <- char_cols[1]
-        list(choices = char_cols, selected = default_col[1])
+        cols      <- names(df_cols)[!sapply(df_cols, is.numeric)]
+        if (length(cols) == 0) cols <- names(df_cols)[1]
+        cols
       } else {
-        list(choices = "id", selected = "id")
+        "id"
       }
+      id_col_default <- {
+        hit <- grep("^id$", char_cols_available, value = TRUE, ignore.case = TRUE)
+        if (length(hit) > 0) hit[1] else char_cols_available[1]
+      }
+      # Ensure "id" (or the id column) appears first in the label-column list
+      label_col_choices <- unique(c(id_col_default, char_cols_available))
+
+      search_col_choices <- list(choices = char_cols_available, selected = id_col_default)
 
       tagList(
         group_contrast_selector,
+
+        hr(),
+
+        # --- Label column selector ---
+        strong("Label column:"),
+        selectInput(
+          ns("label_column"),
+          label    = NULL,
+          choices  = label_col_choices,
+          selected = id_col_default
+        ),
+        checkboxInput(
+          ns("label_split_enabled"),
+          label = "Split label values by delimiter and extract first non-empty value",
+          value = FALSE
+        ),
+        conditionalPanel(
+          condition = "input.label_split_enabled == true",
+          textInput(
+            ns("label_split_sep"),
+            label       = NULL,
+            value       = ";",
+            placeholder = "Separator (e.g. ;)"
+          ),
+          ns = ns
+        ),
 
         hr(),
 
@@ -433,12 +465,15 @@ statPlot_Ome_Server <- function(id,
       # Build base ggplot (no labels) — wrapped in tryCatch to show friendly error
       gg <- tryCatch(
         plotVolcano(
-          ome               = ome,
-          volcano_groups    = input$volcano_groups,
-          volcano_contrasts = as.character(input$volcano_contrasts),
-          df                = stat_results()[[ome]],
-          stat_params       = stat_params,
-          stat_results      = stat_results
+          ome                 = ome,
+          volcano_groups      = input$volcano_groups,
+          volcano_contrasts   = as.character(input$volcano_contrasts),
+          df                  = stat_results()[[ome]],
+          stat_params         = stat_params,
+          stat_results        = stat_results,
+          label_column        = input$label_column        %||% "id",
+          label_split_enabled = isTRUE(input$label_split_enabled),
+          label_split_sep     = input$label_split_sep     %||% ";"
         ),
         error = function(e) {
           showNotification(
@@ -464,6 +499,21 @@ statPlot_Ome_Server <- function(id,
       )
 
       if (!is.null(df_plot)) {
+        # Apply user-selected label column to df_plot$geneSymbol before labeling
+        lbl_col_live <- input$label_column %||% "id"
+        if (lbl_col_live %in% colnames(df_raw)) {
+          # Re-index into df_raw using the id column, matching the filtered df_plot rows
+          id_col_live <- grep("^id$", colnames(df_raw), value = TRUE, ignore.case = TRUE)[1]
+          raw_vals <- df_raw[[lbl_col_live]][match(df_plot$id, as.character(df_raw[[id_col_live]]))]
+          resolved <- resolve_volcano_label_text(
+            raw_vals,
+            split_enabled = isTRUE(input$label_split_enabled),
+            separator     = input$label_split_sep %||% ";"
+          )
+          na_mask <- is.na(resolved) | !nzchar(resolved)
+          resolved[na_mask] <- df_plot$id[na_mask]
+          df_plot$geneSymbol <- resolved
+        }
         p <- add_volcano_labels(
           p,
           df              = df_plot,
@@ -539,21 +589,27 @@ statPlot_Ome_Server <- function(id,
       pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       on.exit(dev.off(), add = TRUE)
 
-      label_mode_export <- isolate(input$label_mode) %||% character(0)
+      label_mode_export   <- isolate(input$label_mode)          %||% character(0)
+      label_column_export <- isolate(input$label_column)        %||% "id"
+      label_split_export  <- isTRUE(isolate(input$label_split_enabled))
+      label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
 
       if (test == "One-sample Moderated T-test") {
         groups <- stat_params()[[ome]]$groups
         for (group in groups) {
           tryCatch({
             gg <- plotVolcano(
-              ome               = ome,
-              volcano_groups    = group,
-              volcano_contrasts = NULL,
-              df                = df,
-              stat_params       = stat_params,
-              stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              ome                 = ome,
+              volcano_groups      = group,
+              volcano_contrasts   = NULL,
+              df                  = df,
+              stat_params         = stat_params,
+              stat_results        = stat_results,
+              label_proteins      = proteins_of_interest(),
+              label_mode          = label_mode_export,
+              label_column        = label_column_export,
+              label_split_enabled = label_split_export,
+              label_split_sep     = label_sep_export
             )
             print(gg)
           }, error = function(e) {
@@ -566,14 +622,17 @@ statPlot_Ome_Server <- function(id,
         for (contrast in contrasts) {
           tryCatch({
             gg <- plotVolcano(
-              ome               = ome,
-              volcano_groups    = NULL,
-              volcano_contrasts = contrast,
-              df                = df,
-              stat_params       = stat_params,
-              stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              ome                 = ome,
+              volcano_groups      = NULL,
+              volcano_contrasts   = contrast,
+              df                  = df,
+              stat_params         = stat_params,
+              stat_results        = stat_results,
+              label_proteins      = proteins_of_interest(),
+              label_mode          = label_mode_export,
+              label_column        = label_column_export,
+              label_split_enabled = label_split_export,
+              label_split_sep     = label_sep_export
             )
             print(gg)
           }, error = function(e) {
@@ -596,7 +655,10 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        label_mode_export <- isolate(input$label_mode) %||% character(0)
+        label_mode_export   <- isolate(input$label_mode)          %||% character(0)
+        label_column_export <- isolate(input$label_column)        %||% "id"
+        label_split_export  <- isTRUE(isolate(input$label_split_enabled))
+        label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
         poi <- isolate(proteins_of_interest())
 
         show_poi <- "poi" %in% label_mode_export
@@ -652,7 +714,20 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        out_rows <- df_raw[as.character(df_raw[[id_col]]) %in% all_ids, , drop = FALSE]
+        row_mask <- as.character(df_raw[[id_col]]) %in% all_ids
+        out_rows <- df_raw[row_mask, , drop = FALSE]
+
+        # Prepend resolved plot_label column so the CSV reflects what was shown on the plot
+        lbl_src <- if (label_column_export %in% colnames(df_raw)) label_column_export else id_col
+        resolved_labels <- resolve_volcano_label_text(
+          df_raw[[lbl_src]][row_mask],
+          split_enabled = label_split_export,
+          separator     = label_sep_export
+        )
+        na_lbl <- is.na(resolved_labels) | !nzchar(resolved_labels)
+        resolved_labels[na_lbl] <- as.character(df_raw[[id_col]])[row_mask][na_lbl]
+        out_rows <- cbind(plot_label = resolved_labels, out_rows)
+
         out_path <- file.path(dir_name, paste0("volcano_labeled_proteins_", ome, ".csv"))
         write.csv(out_rows, file = out_path, row.names = FALSE)
         cat(

@@ -18,7 +18,9 @@
 
 plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params, stat_results,
                         sig.col = 'darkred', bg.col = 'gray', gene_symbol_col = "geneSymbol",
-                        label_proteins = character(0), label_mode = character(0)) {
+                        label_proteins = character(0), label_mode = character(0),
+                        label_column = "id", label_split_enabled = FALSE,
+                        label_split_sep = ";") {
   
   cat('\n-- plotVolcano --\n')
 
@@ -104,13 +106,19 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
   df$logP <- df[[logP_col]]
   df$P.Value <- if (!is.na(pval_col)) as.numeric(df[[pval_col]]) else NA_real_
   
-  # Handle geneSymbol column - create it if it exists, otherwise use ID
-  if (!is.null(geneSymbol_col) && !is.na(geneSymbol_col)) {
-    df$geneSymbol <- df[[geneSymbol_col]]
-  } else {
-    # If no geneSymbol column, use ID as fallback
-    df$geneSymbol <- df$id
-  }
+  # Resolve the user-selected label column into df$geneSymbol.
+  # NOTE: geneSymbol is repurposed as "resolved label text" — it may contain
+  # values from any rdesc column (not necessarily a literal gene symbol).
+  lbl_col <- if (!is.null(label_column) && nzchar(label_column) &&
+                   label_column %in% colnames(df)) label_column else "id"
+  df$geneSymbol <- resolve_volcano_label_text(
+    df[[lbl_col]],
+    split_enabled = isTRUE(label_split_enabled),
+    separator     = label_split_sep
+  )
+  # Fall back to feature id for any row where the resolved label is NA or empty
+  na_mask <- is.na(df$geneSymbol) | !nzchar(df$geneSymbol)
+  df$geneSymbol[na_mask] <- df$id[na_mask]
   
   ## Define significance based on chosen stat and cutoff
   sig_cutoff <- stat_params()[[ome]]$cutoff
@@ -142,8 +150,15 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     group_contrast<- volcano_groups
   }
   ## Plot
-  volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP, 
-                       text = paste("ID:", .data$id, "<br>Gene Symbol:", .data$geneSymbol))) +
+  # Hover shows the row id always; adds the selected label column on a second
+  # line only when it differs from id.
+  df$.hover_text <- if (lbl_col == "id") {
+    paste0("ID: ", df$id)
+  } else {
+    paste0("ID: ", df$id, "<br>", lbl_col, ": ", df$geneSymbol)
+  }
+  volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP,
+                       text = .data$.hover_text)) +
     geom_point(aes(color = .data$point_color), size = 1) +
     scale_color_identity() +
     geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", linewidth = 0.5) +
@@ -330,6 +345,26 @@ get_clicked_feature_id <- function(click, df, tol = 0.01) {
   as.character(df$id[idx])
 }
 
+
+# Resolve on-plot label text from a raw metadata column vector.
+# For each element: if split_enabled is FALSE (or separator is empty), return
+# as-is (coerced to character). If split_enabled is TRUE, split on separator
+# (literal), trim whitespace, drop NA / empty / whitespace-only tokens, and
+# return the first surviving token (NA_character_ if none survive).
+# Returns a character vector of the same length as `values`.
+resolve_volcano_label_text <- function(values, split_enabled = FALSE, separator = ";") {
+  values <- as.character(values)
+  if (!isTRUE(split_enabled) || is.null(separator) || !nzchar(separator)) {
+    return(values)
+  }
+  vapply(values, function(v) {
+    if (is.na(v)) return(NA_character_)
+    tokens <- strsplit(v, separator, fixed = TRUE)[[1]]
+    tokens <- trimws(tokens)
+    tokens <- tokens[!is.na(tokens) & nzchar(tokens)]
+    if (length(tokens) == 0L) NA_character_ else tokens[[1L]]
+  }, character(1L), USE.NAMES = FALSE)
+}
 
 # Tokenize a raw search string into a character vector of protein IDs.
 # Accepts space (including newlines/tabs), comma, and semicolon as delimiters.
