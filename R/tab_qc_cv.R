@@ -8,15 +8,13 @@
 # Supports:
 #  - Multi-column grouping (cross-product of selected cdesc columns)
 #  - Live group-preview table showing sample counts per group
-#  - Unfiltered histogram + violin plots
-#  - Optional cutoff-based feature filtering with filtered plots and GCT export
+#  - Unfiltered violin plot
+#  - Optional cutoff-based feature filtering with filtered violin and GCT export
 #
 # Exports (all under QCCV_exports/):
 #  - cv_results_<ome>.csv               (unfiltered CV table)
-#  - cv_hist_<ome>.pdf
 #  - cv_violin_<ome>.pdf
 #  - cv_results_filtered_<ome>_*.csv    (when filter enabled)
-#  - cv_hist_filtered_<ome>_*.pdf       (when filter enabled)
 #  - cv_violin_filtered_<ome>_*.pdf     (when filter enabled)
 #  - cv_filtered_<ome>_*.gct            (when filter enabled)
 ################################################################################
@@ -123,32 +121,23 @@ QCCV_Ome_UI <- function(id, ome) {
   tagList(
     fluidRow(
       shinydashboardPlus::box(
-        # Unfiltered section
+        # Controls — always visible
+        uiOutput(ns("qc_cv_controls")),
+        hr(),
+
+        # Unfiltered violin
         h4("CV distributions (unfiltered)"),
-        tableOutput(ns("group_preview_table")),
-        br(),
-        plotOutput(ns("cv_hist_plot")),
-        br(),
         plotOutput(ns("cv_violin_plot")),
 
-        # Filtered section (shown only when filter checkbox is on)
+        # Filtered violin (shown only when filter checkbox is on)
         conditionalPanel(
           condition = "input.qc_cv_filter_enabled == true",
           hr(),
           h4("CV distributions (filtered)"),
-          plotOutput(ns("cv_hist_filtered_plot")),
-          br(),
           plotOutput(ns("cv_violin_filtered_plot")),
           ns = ns
         ),
 
-        sidebar = boxSidebar(
-          uiOutput(ns("qc_cv_sidebar_contents")),
-          id         = ns("qc_cv_sidebar"),
-          width      = 25,
-          icon       = icon("gears", class = "fa-2xl"),
-          background = "rgba(91, 98, 104, 0.9)"
-        ),
         status      = "primary",
         width       = 12,
         title       = "Coefficient of Variation (CV)",
@@ -177,60 +166,65 @@ QCCV_Ome_Server <- function(id,
       !is.null(p) && identical(p$intensity_data, "Yes")
     })
 
-    ## Sidebar UI -------------------------------------------------------------
-    output$qc_cv_sidebar_contents <- renderUI({
+    ## Controls UI (always visible) -------------------------------------------
+    output$qc_cv_controls <- renderUI({
       req(GCT_processed())
 
       cdesc_cols <- names(GCT_processed()@cdesc)
 
       tagList(
-        # Multi-column grouping selector
-        add_css_attributes(
-          selectInput(
-            ns("qc_cv_annotation"),
-            label    = "Group by",
-            choices  = cdesc_cols,
-            selected = default_annotation_column(),
-            multiple = TRUE
-          ),
-          classes = "small-input",
-          styles  = "margin-right: 10px"
-        ),
-
-        # Filter checkbox
-        add_css_attributes(
-          checkboxInput(
-            ns("qc_cv_filter_enabled"),
-            label = "Apply CV filter",
-            value = FALSE
-          ),
-          classes = "small-input"
-        ),
-
-        # Filter options — only visible when filter is enabled
-        # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
-        conditionalPanel(
-          condition = "input.qc_cv_filter_enabled == true",
-          add_css_attributes(
-            numericInput(
-              ns("qc_cv_cutoff"),
-              label = "CV cutoff",
-              value = 0.2,
-              min   = 0,
-              step  = 0.05
+        fluidRow(
+          column(4,
+            # Multi-column grouping selector
+            add_css_attributes(
+              selectInput(
+                ns("qc_cv_annotation"),
+                label    = "Group by",
+                choices  = cdesc_cols,
+                selected = default_annotation_column(),
+                multiple = TRUE
+              ),
+              classes = "small-input"
             ),
-            classes = "small-input"
+            # Live preview table
+            tableOutput(ns("group_preview_table"))
           ),
-          add_css_attributes(
-            radioButtons(
-              ns("qc_cv_min_groups"),
-              label    = "Min groups satisfying cutoff",
-              choices  = c("at least one group" = "one", "all groups" = "all"),
-              selected = "one"
+          column(4,
+            # Filter checkbox
+            add_css_attributes(
+              checkboxInput(
+                ns("qc_cv_filter_enabled"),
+                label = "Apply CV filter",
+                value = FALSE
+              ),
+              classes = "small-input"
             ),
-            classes = "small-input"
-          ),
-          ns = ns
+            # Filter options — only visible when filter is enabled
+            # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
+            conditionalPanel(
+              condition = "input.qc_cv_filter_enabled == true",
+              add_css_attributes(
+                numericInput(
+                  ns("qc_cv_cutoff"),
+                  label = "CV cutoff",
+                  value = 0.2,
+                  min   = 0,
+                  step  = 0.05
+                ),
+                classes = "small-input"
+              ),
+              add_css_attributes(
+                radioButtons(
+                  ns("qc_cv_min_groups"),
+                  label    = "Min groups satisfying cutoff",
+                  choices  = c("at least one group" = "one", "all groups" = "all"),
+                  selected = "one"
+                ),
+                classes = "small-input"
+              ),
+              ns = ns
+            )
+          )
         )
       )
     })
@@ -292,13 +286,6 @@ QCCV_Ome_Server <- function(id,
     })
 
     ## Unfiltered plots -------------------------------------------------------
-    cv_hist_reactive <- reactive({
-      req(cv_table())
-      n_groups <- ncol(cv_table()) - 1L
-      palette  <- tol_palette(n_groups)
-      create_cv_hist_plot(cv_table(), palette = palette)
-    })
-
     cv_violin_reactive <- reactive({
       req(cv_table())
       n_groups <- ncol(cv_table()) - 1L
@@ -306,20 +293,9 @@ QCCV_Ome_Server <- function(id,
       create_cv_violin_plot(cv_table(), palette = palette)
     })
 
-    output$cv_hist_plot   <- renderPlot(cv_hist_reactive())
     output$cv_violin_plot <- renderPlot(cv_violin_reactive())
 
     ## Filtered plots ---------------------------------------------------------
-    cv_hist_filtered_reactive <- reactive({
-      req(filtered_cv())
-      label    <- paste("after filtering (cutoff",
-                        input$qc_cv_cutoff %||% 0.2,
-                        "–", input$qc_cv_min_groups %||% "one", "group)")
-      n_groups <- ncol(filtered_cv()) - 1L
-      palette  <- tol_palette(n_groups)
-      create_cv_hist_plot(filtered_cv(), title_suffix = label, palette = palette)
-    })
-
     cv_violin_filtered_reactive <- reactive({
       req(filtered_cv())
       label    <- paste("after filtering (cutoff",
@@ -330,7 +306,6 @@ QCCV_Ome_Server <- function(id,
       create_cv_violin_plot(filtered_cv(), title_suffix = label, palette = palette)
     })
 
-    output$cv_hist_filtered_plot   <- renderPlot(cv_hist_filtered_reactive())
     output$cv_violin_filtered_plot <- renderPlot(cv_violin_filtered_reactive())
 
     ## Export functions -------------------------------------------------------
@@ -340,19 +315,6 @@ QCCV_Ome_Server <- function(id,
         cv_table(),
         file      = file.path(dir_name, paste0("cv_results_", ome, ".csv")),
         row.names = FALSE
-      )
-    }
-
-    cv_hist_export <- function(dir_name) {
-      ggsave_params <- get_ggsave_params()
-      ggsave(
-        filename = paste0("cv_hist_", ome, ".pdf"),
-        plot     = cv_hist_reactive(),
-        device   = "pdf",
-        path     = dir_name,
-        width    = ggsave_params$width,
-        height   = ggsave_params$height,
-        units    = ggsave_params$units
       )
     }
 
@@ -378,22 +340,6 @@ QCCV_Ome_Server <- function(id,
         filtered_cv(),
         file      = file.path(dir_name, fn),
         row.names = FALSE
-      )
-    }
-
-    cv_hist_filtered_export <- function(dir_name) {
-      if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
-      cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
-      min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
-      ggsave_params <- get_ggsave_params()
-      ggsave(
-        filename = paste0("cv_hist_filtered_", ome, "_", cutoff, "_", min_groups, ".pdf"),
-        plot     = cv_hist_filtered_reactive(),
-        device   = "pdf",
-        path     = dir_name,
-        width    = ggsave_params$width,
-        height   = ggsave_params$height,
-        units    = ggsave_params$units
       )
     }
 
@@ -426,10 +372,8 @@ QCCV_Ome_Server <- function(id,
 
     return(list(
       cv_results_csv          = cv_results_csv_export,
-      cv_hist                 = cv_hist_export,
       cv_violin               = cv_violin_export,
       cv_results_filtered_csv = cv_results_filtered_csv_export,
-      cv_hist_filtered        = cv_hist_filtered_export,
       cv_violin_filtered      = cv_violin_filtered_export,
       cv_filtered_gct         = cv_filtered_gct_export
     ))
