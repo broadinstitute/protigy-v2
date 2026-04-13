@@ -22,6 +22,24 @@ labelSetupUI <- function(ns, gctFileNames) {
   )
 }
 
+# Whether stored `intensity_data` means the intensity ("yes") YAML branch.
+# Canonical values are "Yes"/"No" (setupDefaults + collectInputs); logical
+# TRUE/FALSE can appear from the checkbox before collectInputs runs — `TRUE == "Yes"`
+# is NA in R, so compare explicitly.
+intensity_data_param_is_yes <- function(intensity_data) {
+  if (is.null(intensity_data) || length(intensity_data) < 1L) {
+    return(FALSE)
+  }
+  v <- intensity_data[[1L]]
+  if (is.logical(v)) {
+    return(isTRUE(v))
+  }
+  if (is.character(v)) {
+    return(identical(tolower(trimws(v[1L])), "yes"))
+  }
+  FALSE
+}
+
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the 
 # setupDefaults.yaml!
@@ -51,16 +69,21 @@ gctSetupUI <- function(ns,
   # Select normalization choices based on current intensity_data parameter
   ind <- paste0(
     "intensity_data_",
-    tolower(ifelse(isTRUE(parameters[[label]]$intensity_data == "Yes"), "yes", "no"))
+    tolower(ifelse(intensity_data_param_is_yes(parameters[[label]]$intensity_data), "yes", "no"))
   )
   # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
   norm_choices <- parameter_choices$data_normalization[[ind]]
   n_samples <- ncol(GCTs[[label]]@mat)
-  if (n_samples > 20) {
+  if (n_samples > 20L) {
     norm_choices <- norm_choices[norm_choices != "2-component"]
   }
-  # If current selection is not in the available choices, fall back to None
   norm_selected <- parameters[[label]]$data_normalization
+  # Mirror server observer: if 2-component is stored but disallowed for large N, reset selection
+  if (n_samples > 20L && length(norm_selected) &&
+      identical(as.character(norm_selected)[1L], "2-component")) {
+    norm_selected <- "None"
+  }
+  # If current selection is not in the available choices, fall back to None
   if (!norm_selected %in% norm_choices) {
     norm_selected <- "None"
   }
@@ -196,7 +219,7 @@ gctSetupUI <- function(ns,
       checkboxInput(
         ns(paste0(label, '_intensity_data')),
         label = 'Intensity data',
-        value = parameters[[label]]$intensity_data == "Yes"),
+        value = intensity_data_param_is_yes(parameters[[label]]$intensity_data)),
       classes = "small-input",
       styles = "padding-top: 10px"),
 
