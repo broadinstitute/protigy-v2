@@ -4,20 +4,6 @@
 # visualization. These are free of Shiny reactivity and are fully unit-testable.
 ################################################################################
 
-# Tol color-blind-friendly palette (Tol 2018, 16 colors)
-# Source: calculate_cvs.R reference script
-TOL_PALETTE <- c(
-  '#0072b2', '#d55e00', '#cc79a7', '#f0e442', '#009e73', '#56b4e9',
-  '#e69f00', '#000000', "#6F67F8", "#BBCCEE", "#CCEEFF", "#CCDDAA",
-  "#EEEEBB", "#FFCCCC", "#DDDDDD", "#BBBBBB"
-)
-
-# Return the first n colors from the Tol palette, recycled if n > 16.
-tol_palette <- function(n) {
-  if (n == 0L) return(character(0))
-  TOL_PALETTE[((seq_len(n) - 1L) %% length(TOL_PALETTE)) + 1L]
-}
-
 # Combine one or more cdesc columns row-wise into a single grouping vector.
 # NAs in any selected column are replaced with the literal string "NA" so that
 # NA-containing rows still form a visible group rather than being silently dropped.
@@ -118,11 +104,9 @@ filter_cv_table <- function(cv_df, cutoff, min_groups = c("one", "all")) {
 #
 # @param cv_df        data.frame from compute_cv_table()
 # @param title_suffix string appended to the plot title (e.g. "after filtering")
-# @param palette      optional character vector of colors; tol_palette used if NULL
+# @param palette      character vector of colors (named or positional)
 # @return ggplot object
-create_cv_hist_plot <- function(cv_df, title_suffix = "", palette = NULL) {
-  n_groups <- ncol(cv_df) - 1L
-  if (is.null(palette)) palette <- tol_palette(n_groups)
+create_cv_hist_plot <- function(cv_df, title_suffix = "", palette) {
   title <- trimws(paste("CV distributions", title_suffix))
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   ggplot2::ggplot(long_df, ggplot2::aes(x = .data$CV, fill = .data$Group)) +
@@ -139,14 +123,12 @@ create_cv_hist_plot <- function(cv_df, title_suffix = "", palette = NULL) {
 #
 # @param cv_df        data.frame from compute_cv_table()
 # @param title_suffix string appended to the plot title
-# @param palette      optional character vector of colors; tol_palette used if NULL
+# @param palette      character vector of colors (named or positional)
 # @param log_scale    logical; if TRUE use log10 y-axis
 # @param y_range      numeric length-2 vector (ymin, ymax) for zoom, or NULL
 # @return ggplot object
-create_cv_violin_plot <- function(cv_df, title_suffix = "", palette = NULL,
+create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
                                   log_scale = FALSE, y_range = NULL) {
-  n_groups <- ncol(cv_df) - 1L
-  if (is.null(palette)) palette <- tol_palette(n_groups)
   title <- trimws(paste("CV distributions", title_suffix))
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   # Extract group label from column name (strip leading "CV_")

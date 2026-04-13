@@ -320,17 +320,22 @@ QCCV_Ome_Server <- function(id,
 
     ## Color palette reactive --------------------------------------------------
     # When a single grouping column is selected, reuse the customization color
-    # mapping for that annotation column. Otherwise fall back to the Tol palette.
+    # mapping for that annotation column. For multi-variable grouping, generate
+    # colors via set_annot_colors_discrete (same palettes as the Customize tab).
     cv_palette <- reactive({
       cols <- selected_cols()
-      n_groups <- ncol(cv_table()) - 1L
       if (length(cols) == 1L && !is.null(color_map())) {
         annot_colors <- color_map()[[cols]]
         if (!is.null(annot_colors) && isTRUE(annot_colors$is_discrete)) {
           return(stats::setNames(annot_colors$colors, annot_colors$vals))
         }
       }
-      tol_palette(n_groups)
+      # Multi-variable or missing color map: generate colors from the
+      # project's standard discrete palette system.
+      group_labels <- grouping_vector()
+      group_df <- data.frame(Group = group_labels, stringsAsFactors = FALSE)
+      color_info <- set_annot_colors_discrete(group_df, warn_for_interpolation = FALSE)[["Group"]]
+      stats::setNames(color_info$colors, color_info$vals)
     })
 
     ## Unfiltered plots -------------------------------------------------------
