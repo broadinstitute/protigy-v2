@@ -163,9 +163,9 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette = NULL,
     ggplot2::scale_fill_manual(values = palette)
 
   if (log_scale) {
-    p <- p + ggplot2::scale_y_log10(labels = scales::label_percent())
+    p <- p + ggplot2::scale_y_log10(labels = scales::label_scientific())
   } else {
-    p <- p + ggplot2::scale_y_continuous(labels = scales::label_percent())
+    p <- p + ggplot2::scale_y_continuous(labels = scales::label_scientific())
   }
 
   if (!is.null(y_range)) {
