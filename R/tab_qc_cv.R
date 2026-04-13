@@ -334,7 +334,7 @@ QCCV_Ome_Server <- function(id,
       req(filtered_cv())
       label    <- paste("after filtering (cutoff",
                         input$qc_cv_cutoff %||% 0.2,
-                        "–", input$qc_cv_min_groups %||% "one", "group)")
+                        "-", input$qc_cv_min_groups %||% "one", "group)")
       n_groups <- ncol(filtered_cv()) - 1L
       palette  <- tol_palette(n_groups)
       create_cv_violin_plot(filtered_cv(), title_suffix = label, palette = palette,
