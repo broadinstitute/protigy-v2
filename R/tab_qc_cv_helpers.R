@@ -156,6 +156,7 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette = NULL,
     ggplot2::geom_violin(show.legend = FALSE) +
     ggplot2::geom_boxplot(width = 0.1, outliers = FALSE, show.legend = FALSE) +
     ggplot2::theme_bw() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
     ggplot2::ggtitle(title) +
     ggplot2::xlab("Group") +
     ggplot2::ylab("CV") +
