@@ -318,12 +318,25 @@ QCCV_Ome_Server <- function(id,
       violin_filtered_zoom(NULL)
     })
 
+    ## Color palette reactive --------------------------------------------------
+    # When a single grouping column is selected, reuse the customization color
+    # mapping for that annotation column. Otherwise fall back to the Tol palette.
+    cv_palette <- reactive({
+      cols <- selected_cols()
+      n_groups <- ncol(cv_table()) - 1L
+      if (length(cols) == 1L && !is.null(color_map())) {
+        annot_colors <- color_map()[[cols]]
+        if (!is.null(annot_colors) && isTRUE(annot_colors$is_discrete)) {
+          return(stats::setNames(annot_colors$colors, annot_colors$vals))
+        }
+      }
+      tol_palette(n_groups)
+    })
+
     ## Unfiltered plots -------------------------------------------------------
     cv_violin_reactive <- reactive({
       req(cv_table())
-      n_groups <- ncol(cv_table()) - 1L
-      palette  <- tol_palette(n_groups)
-      create_cv_violin_plot(cv_table(), palette = palette,
+      create_cv_violin_plot(cv_table(), palette = cv_palette(),
                             log_scale = log_scale(), y_range = violin_zoom())
     })
 
@@ -335,9 +348,7 @@ QCCV_Ome_Server <- function(id,
       label    <- paste("after filtering (cutoff",
                         input$qc_cv_cutoff %||% 0.2,
                         "-", input$qc_cv_min_groups %||% "one", "group)")
-      n_groups <- ncol(filtered_cv()) - 1L
-      palette  <- tol_palette(n_groups)
-      create_cv_violin_plot(filtered_cv(), title_suffix = label, palette = palette,
+      create_cv_violin_plot(filtered_cv(), title_suffix = label, palette = cv_palette(),
                             log_scale = log_scale(), y_range = violin_filtered_zoom())
     })
 
