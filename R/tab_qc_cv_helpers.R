@@ -140,21 +140,36 @@ create_cv_hist_plot <- function(cv_df, title_suffix = "", palette = NULL) {
 # @param cv_df        data.frame from compute_cv_table()
 # @param title_suffix string appended to the plot title
 # @param palette      optional character vector of colors; tol_palette used if NULL
+# @param log_scale    logical; if TRUE use log10 y-axis
+# @param y_range      numeric length-2 vector (ymin, ymax) for zoom, or NULL
 # @return ggplot object
-create_cv_violin_plot <- function(cv_df, title_suffix = "", palette = NULL) {
+create_cv_violin_plot <- function(cv_df, title_suffix = "", palette = NULL,
+                                  log_scale = FALSE, y_range = NULL) {
   n_groups <- ncol(cv_df) - 1L
   if (is.null(palette)) palette <- tol_palette(n_groups)
   title <- trimws(paste("CV distributions", title_suffix))
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
-  ggplot2::ggplot(long_df, ggplot2::aes(x = .data$Group, y = .data$CV, fill = .data$Group)) +
+
+  p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data$Group, y = .data$CV, fill = .data$Group)) +
     ggplot2::geom_violin(show.legend = FALSE) +
     ggplot2::geom_boxplot(width = 0.1, outliers = FALSE, show.legend = FALSE) +
     ggplot2::theme_bw() +
     ggplot2::ggtitle(title) +
     ggplot2::xlab("Group") +
     ggplot2::ylab("CV") +
-    ggplot2::scale_y_continuous(labels = scales::label_percent()) +
     ggplot2::scale_fill_manual(values = palette)
+
+  if (log_scale) {
+    p <- p + ggplot2::scale_y_log10(labels = scales::label_percent())
+  } else {
+    p <- p + ggplot2::scale_y_continuous(labels = scales::label_percent())
+  }
+
+  if (!is.null(y_range)) {
+    p <- p + ggplot2::coord_cartesian(ylim = y_range)
+  }
+
+  p
 }
