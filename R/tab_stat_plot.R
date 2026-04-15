@@ -283,16 +283,17 @@ statPlot_Ome_Server <- function(id,
         ),
 
         # --- Label across contrasts ---
+        # .volcano-union-checks targets the form-group margin so spacing matches
+        # the tight checkboxGroupInput style (default form-group margin-bottom is 15px).
         strong("Label across contrasts:"),
-        checkboxInput(
-          ns("label_union_ome"),
-          label = "Current ome only",
-          value = FALSE
-        ),
-        checkboxInput(
-          ns("label_union_global"),
-          label = "Across all omes",
-          value = FALSE
+        tags$style(HTML(
+          ".volcano-union-checks .form-group { margin-bottom: 3px !important; }"
+        )),
+        tags$div(
+          class = "volcano-union-checks",
+          style = "margin-top: 5px;",
+          checkboxInput(ns("label_union_ome"),    label = "Current ome only", value = FALSE),
+          checkboxInput(ns("label_union_global"), label = "Across all omes",  value = FALSE)
         ),
 
         hr(),
@@ -391,10 +392,10 @@ statPlot_Ome_Server <- function(id,
       if (isTRUE(input$label_union_ome)) {
         updateCheckboxInput(session, "label_union_global", value = FALSE)
         shinyjs::disable("label_union_global")
-        # write FALSE to global_union_rv so other omes know global mode is off
-        if (!is.null(global_union_rv)) global_union_rv(FALSE)
       } else {
         shinyjs::enable("label_union_global")
+        # Both unchecked — revert to per-contrast behavior
+        if (!is.null(global_union_rv)) global_union_rv(FALSE)
       }
     }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
