@@ -568,3 +568,131 @@ test_that("build_volcano_df sets all Significant to FALSE when no rows pass adj.
   expect_true(all(!result$Significant))
   expect_equal(attr(result, "y_cutoff"), Inf)
 })
+
+## volcano_label_union_for_ome ##################################################
+
+# Helper: build a two-sample stat_results df with two contrasts.
+# contrast_a, contrast_b: contrast strings like "A / B"
+# Each contrast column names follow the standard pattern:
+#   logFC.<A_over_B>, Log.P.Value.<A_over_B>, adj.P.Val.<A_over_B>, P.value.<A_over_B>
+make_two_sample_stat_results <- function(contrast_a = "A / B", contrast_b = "C / D",
+                                          sig_ids_a = character(0),
+                                          sig_ids_b = character(0),
+                                          all_ids = c("p1", "p2", "p3", "p4", "p5")) {
+  cn_a <- paste0(strsplit(contrast_a, " / ")[[1]][1], "_over_", strsplit(contrast_a, " / ")[[1]][2])
+  cn_b <- paste0(strsplit(contrast_b, " / ")[[1]][1], "_over_", strsplit(contrast_b, " / ")[[1]][2])
+
+  n <- length(all_ids)
+  # logP values: 5 for sig_ids, 0.5 for the rest (p.val cutoff = 0.05 -> y_cutoff = 1.301)
+  lp_a <- ifelse(all_ids %in% sig_ids_a, 5, 0.5)
+  lp_b <- ifelse(all_ids %in% sig_ids_b, 5, 0.5)
+
+  df <- data.frame(
+    id         = all_ids,
+    geneSymbol = paste0("G", seq_len(n)),
+    stringsAsFactors = FALSE
+  )
+  df[[paste0("logFC.", cn_a)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", cn_a)]]   <- lp_a
+  df[[paste0("adj.P.Val.", cn_a)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", cn_a)]]       <- rep(0.1, n)
+  df[[paste0("logFC.", cn_b)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", cn_b)]]   <- lp_b
+  df[[paste0("adj.P.Val.", cn_b)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", cn_b)]]       <- rep(0.1, n)
+  df
+}
+
+# Helper: build a minimal stat_params list for a two-sample test
+make_two_sample_stat_params <- function(contrast_a = "A / B", contrast_b = "C / D",
+                                         sig_cutoff = 0.05) {
+  list(
+    test      = "Two-sample Moderated T-test",
+    contrasts = c(contrast_a, contrast_b),
+    cutoff    = sig_cutoff,
+    stat      = "p.val"
+  )
+}
+
+test_that("volcano_label_union_for_ome returns union of significant IDs across two contrasts", {
+  # p1, p2 are significant only in contrast A; p3, p4 only in contrast B
+  df <- make_two_sample_stat_results(
+    contrast_a = "A / B", contrast_b = "C / D",
+    sig_ids_a  = c("p1", "p2"),
+    sig_ids_b  = c("p3", "p4")
+  )
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_setequal(result, c("p1", "p2", "p3", "p4"))
+})
+
+test_that("volcano_label_union_for_ome returns only POI when label_mode is 'poi'", {
+  df <- make_two_sample_stat_results(sig_ids_a = c("p1"), sig_ids_b = c("p2"))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "poi", poi = c("p5"))
+  expect_setequal(result, "p5")
+})
+
+test_that("volcano_label_union_for_ome handles overlap: IDs significant in both contrasts appear once", {
+  df <- make_two_sample_stat_results(sig_ids_a = c("p1", "p2"), sig_ids_b = c("p2", "p3"))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(length(result), length(unique(result)))  # no duplicates
+  expect_setequal(result, c("p1", "p2", "p3"))
+})
+
+test_that("volcano_label_union_for_ome returns empty when no significant features and no POI", {
+  df <- make_two_sample_stat_results(sig_ids_a = character(0), sig_ids_b = character(0))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(result, character(0))
+})
+
+test_that("volcano_label_union_for_ome returns empty for unsupported test type", {
+  df <- make_two_sample_stat_results()
+  sp <- list(test = "Moderated F test", contrasts = c("A / B"), cutoff = 0.05, stat = "p.val")
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(result, character(0))
+})
+
+test_that("volcano_label_union_for_ome returns empty for NULL inputs", {
+  expect_equal(volcano_label_union_for_ome(NULL, NULL, "significant", character(0)), character(0))
+  df <- make_two_sample_stat_results()
+  expect_equal(volcano_label_union_for_ome(df, NULL, "significant", character(0)), character(0))
+})
+
+test_that("volcano_label_union_for_ome works for one-sample test with multiple groups", {
+  # Build a one-sample df with two groups
+  group_a <- "GroupA"
+  group_b <- "GroupB"
+  n <- 5
+  all_ids <- paste0("p", seq_len(n))
+  df <- data.frame(
+    id = all_ids, geneSymbol = paste0("G", seq_len(n)),
+    stringsAsFactors = FALSE
+  )
+  # p1, p2 sig in GroupA (logP = 5 > cutoff 1.301); p3 sig in GroupB
+  df[[paste0("logFC.", group_a)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", group_a)]]   <- c(5, 5, 0.5, 0.5, 0.5)
+  df[[paste0("adj.P.Val.", group_a)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", group_a)]]       <- rep(0.1, n)
+  df[[paste0("logFC.", group_b)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", group_b)]]   <- c(0.5, 0.5, 5, 0.5, 0.5)
+  df[[paste0("adj.P.Val.", group_b)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", group_b)]]       <- rep(0.1, n)
+
+  sp <- list(
+    test   = "One-sample Moderated T-test",
+    groups = c(group_a, group_b),
+    cutoff = 0.05,
+    stat   = "p.val"
+  )
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_setequal(result, c("p1", "p2", "p3"))
+})

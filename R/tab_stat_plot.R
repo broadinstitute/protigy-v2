@@ -110,6 +110,10 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
       updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
     
+    # Shared reactiveVal: TRUE when any ome has "Across all omes" union toggled on.
+    # Written by individual ome modules; read by all ome modules to compute global union.
+    global_union_rv <- reactiveVal(FALSE)
+
     # call the server function for each individual ome
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
@@ -123,7 +127,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map = reactive(custom_colors()[[ome]]),
           stat_params = stat_params,
-          stat_results = stat_results
+          stat_results = stat_results,
+          global_union_rv = global_union_rv
         )
       }, simplify = FALSE)
       
@@ -155,7 +160,8 @@ statPlot_Ome_Server <- function(id,
                                    default_annotation_column,
                                    color_map,
                                    stat_params,
-                                   stat_results) {
+                                   stat_results,
+                                   global_union_rv = NULL) {
   
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -169,6 +175,26 @@ statPlot_Ome_Server <- function(id,
     # hidden_label_count: count of labels suppressed by the overlap-avoidance algo.
     proteins_of_interest <- reactiveVal(character(0))
     hidden_label_count   <- reactiveVal(0L)
+
+    # union_mode: "none" | "ome" | "global"
+    # Driven by the two mutually-exclusive checkboxes in the sidebar.
+    union_mode <- reactive({
+      if (isTRUE(input$label_union_global)) return("global")
+      if (isTRUE(input$label_union_ome))    return("ome")
+      "none"
+    })
+
+    # global_union_ids: union of labeled IDs from every ome when "Across all omes" is on.
+    global_union_ids <- reactive({
+      req(union_mode() == "global", stat_results(), stat_params())
+      all_omes <- names(stat_results())
+      Reduce(union, lapply(all_omes, function(o) {
+        sp <- stat_params()[[o]]
+        sr <- stat_results()[[o]]
+        if (is.null(sp) || is.null(sr)) return(character(0))
+        volcano_label_union_for_ome(sr, sp, input$label_mode, proteins_of_interest())
+      }), init = character(0))
+    })
 
     output$ome_plot_contents <- renderUI({
       # fallback if stat_results not defined yet
@@ -254,6 +280,19 @@ statPlot_Ome_Server <- function(id,
             "All significant"      = "significant"
           ),
           selected = character(0)
+        ),
+
+        # --- Label across contrasts ---
+        strong("Label across contrasts:"),
+        checkboxInput(
+          ns("label_union_ome"),
+          label = "Current ome only",
+          value = FALSE
+        ),
+        checkboxInput(
+          ns("label_union_global"),
+          label = "Across all omes",
+          value = FALSE
         ),
 
         hr(),
@@ -345,6 +384,31 @@ statPlot_Ome_Server <- function(id,
       proteins_of_interest(character(0))
       hidden_label_count(0L)
     })
+
+    # Mutual exclusion: "Current ome only" and "Across all omes" cannot both be on.
+    # When one is checked the other is unchecked and disabled; unchecking re-enables both.
+    observeEvent(input$label_union_ome, {
+      if (isTRUE(input$label_union_ome)) {
+        updateCheckboxInput(session, "label_union_global", value = FALSE)
+        shinyjs::disable("label_union_global")
+        # write FALSE to global_union_rv so other omes know global mode is off
+        if (!is.null(global_union_rv)) global_union_rv(FALSE)
+      } else {
+        shinyjs::enable("label_union_global")
+      }
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+    observeEvent(input$label_union_global, {
+      if (isTRUE(input$label_union_global)) {
+        updateCheckboxInput(session, "label_union_ome", value = FALSE)
+        shinyjs::disable("label_union_ome")
+        # signal other omes that global union mode is now active
+        if (!is.null(global_union_rv)) global_union_rv(TRUE)
+      } else {
+        shinyjs::enable("label_union_ome")
+        if (!is.null(global_union_rv)) global_union_rv(FALSE)
+      }
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
     # Auto-enable POI checkbox when proteins are added to the list
     observeEvent(proteins_of_interest(), {
@@ -464,11 +528,31 @@ statPlot_Ome_Server <- function(id,
       )
 
       if (!is.null(df_plot)) {
+        # Compute the effective POI and label_mode based on union toggle state.
+        effective_poi <- switch(
+          union_mode(),
+          "ome" = union(
+            proteins_of_interest(),
+            volcano_label_union_for_ome(
+              stat_results()[[ome]], stat_params()[[ome]],
+              input$label_mode, proteins_of_interest()
+            )
+          ),
+          "global" = union(proteins_of_interest(), global_union_ids()),
+          proteins_of_interest()  # "none"
+        )
+        # When union POI is non-empty, force "poi" into label_mode so labels render.
+        effective_label_mode <- if (length(effective_poi) > 0) {
+          unique(c(input$label_mode, "poi"))
+        } else {
+          input$label_mode
+        }
+
         p <- add_volcano_labels(
           p,
           df              = df_plot,
-          poi             = proteins_of_interest(),
-          label_mode      = input$label_mode,
+          poi             = effective_poi,
+          label_mode      = effective_label_mode,
           y_cutoff        = attr(df_plot, "y_cutoff"),
           hidden_count_rv = hidden_label_count
         )
@@ -541,6 +625,35 @@ statPlot_Ome_Server <- function(id,
 
       label_mode_export <- isolate(input$label_mode) %||% character(0)
 
+      # Compute effective POI for export based on union toggle state.
+      export_union_mode <- isolate(union_mode())
+      export_poi <- switch(
+        export_union_mode,
+        "ome" = union(
+          isolate(proteins_of_interest()),
+          volcano_label_union_for_ome(
+            stat_results()[[ome]], stat_params()[[ome]],
+            label_mode_export, isolate(proteins_of_interest())
+          )
+        ),
+        "global" = {
+          all_omes_names <- names(stat_results())
+          Reduce(union, lapply(all_omes_names, function(o) {
+            sp <- stat_params()[[o]]
+            sr <- stat_results()[[o]]
+            if (is.null(sp) || is.null(sr)) return(character(0))
+            volcano_label_union_for_ome(sr, sp, label_mode_export, isolate(proteins_of_interest()))
+          }), init = character(0))
+        },
+        isolate(proteins_of_interest())  # "none"
+      )
+      # Force "poi" into label_mode when union POI is non-empty
+      export_label_mode <- if (length(export_poi) > 0) {
+        unique(c(label_mode_export, "poi"))
+      } else {
+        label_mode_export
+      }
+
       if (test == "One-sample Moderated T-test") {
         groups <- stat_params()[[ome]]$groups
         for (group in groups) {
@@ -552,8 +665,8 @@ statPlot_Ome_Server <- function(id,
               df                = df,
               stat_params       = stat_params,
               stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              label_proteins    = export_poi,
+              label_mode        = export_label_mode
             )
             print(gg)
           }, error = function(e) {
@@ -572,8 +685,8 @@ statPlot_Ome_Server <- function(id,
               df                = df,
               stat_params       = stat_params,
               stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              label_proteins    = export_poi,
+              label_mode        = export_label_mode
             )
             print(gg)
           }, error = function(e) {
@@ -602,7 +715,9 @@ statPlot_Ome_Server <- function(id,
         show_poi <- "poi" %in% label_mode_export
         show_sig <- "significant" %in% label_mode_export
         show_sig_top <- "significant_top20" %in% label_mode_export
-        if (!show_poi && !show_sig && !show_sig_top) {
+        # Union mode counts as "label all" even without an explicit mode selected
+        csv_union_mode <- isolate(union_mode())
+        if (!show_poi && !show_sig && !show_sig_top && csv_union_mode == "none") {
           message(
             "Volcano labeled export skipped for ", ome,
             ": enable at least one label option (POI, Top 20, or All significant)."
@@ -620,6 +735,29 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
+        # Effective label mode: force "poi" when union POI will be non-empty
+        effective_label_mode_csv <- if (csv_union_mode != "none") {
+          unique(c(label_mode_export, "poi"))
+        } else {
+          label_mode_export
+        }
+
+        # Effective POI: include union IDs from other contrasts/omes when toggled
+        effective_poi_csv <- switch(
+          csv_union_mode,
+          "ome" = union(poi, volcano_label_union_for_ome(df_raw, sp, label_mode_export, poi)),
+          "global" = {
+            all_omes_names <- names(stat_results())
+            Reduce(union, lapply(all_omes_names, function(o) {
+              sp_o <- stat_params()[[o]]
+              sr_o <- stat_results()[[o]]
+              if (is.null(sp_o) || is.null(sr_o)) return(character(0))
+              volcano_label_union_for_ome(sr_o, sp_o, label_mode_export, poi)
+            }), init = poi)
+          },
+          poi  # "none"
+        )
+
         all_ids <- character(0)
 
         if (test == "One-sample Moderated T-test") {
@@ -627,14 +765,14 @@ statPlot_Ome_Server <- function(id,
           for (group in groups) {
             cols <- get_volcano_cols(df_raw, test, group, NULL)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv))
           }
         } else if (test == "Two-sample Moderated T-test") {
           contrasts <- sp$contrasts
           for (contrast in contrasts) {
             cols <- get_volcano_cols(df_raw, test, NULL, contrast)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv))
           }
         } else {
           message("Volcano labeled export not supported for test type: ", test)

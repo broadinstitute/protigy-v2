@@ -417,6 +417,66 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
 }
 
 
+#' Compute the union of labeled feature IDs across all contrasts/groups for one ome.
+#'
+#' For each group (one-sample) or contrast (two-sample) defined in \code{stat_params_ome},
+#' calls \code{volcano_labeled_feature_ids()} and returns the union of all results.
+#' Used by the "label across contrasts" feature to build a consistent label set.
+#'
+#' @param stat_results_ome Data frame; \code{stat_results()[[ome]]}.
+#' @param stat_params_ome  Named list; \code{stat_params()[[ome]]}.
+#' @param label_mode Character vector; active label modes (e.g. \code{"poi"}, \code{"significant_top20"}).
+#' @param poi Character vector of manually selected feature IDs.
+#' @return \code{character()} of unique feature IDs (empty if nothing would be labeled).
+#' @noRd
+volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi) {
+  if (is.null(stat_results_ome) || nrow(stat_results_ome) == 0) return(character(0))
+  if (is.null(stat_params_ome)) return(character(0))
+
+  test       <- stat_params_ome$test
+  sig_cutoff <- stat_params_ome$cutoff
+  sig_stat   <- stat_params_ome$stat
+
+  if (is.null(test) || test == "None" || test == "Moderated F test") return(character(0))
+
+  all_ids <- character(0)
+
+  if (test == "One-sample Moderated T-test") {
+    groups <- stat_params_ome$groups
+    for (group in groups) {
+      cols <- tryCatch(
+        get_volcano_cols(stat_results_ome, test, group, NULL),
+        error = function(e) NULL
+      )
+      if (is.null(cols)) next
+      df_plot <- tryCatch(
+        build_volcano_df(stat_results_ome, cols, sig_cutoff, sig_stat),
+        error = function(e) NULL
+      )
+      if (is.null(df_plot)) next
+      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi))
+    }
+  } else if (test == "Two-sample Moderated T-test") {
+    contrasts <- stat_params_ome$contrasts
+    for (contrast in contrasts) {
+      cols <- tryCatch(
+        get_volcano_cols(stat_results_ome, test, NULL, contrast),
+        error = function(e) NULL
+      )
+      if (is.null(cols)) next
+      df_plot <- tryCatch(
+        build_volcano_df(stat_results_ome, cols, sig_cutoff, sig_stat),
+        error = function(e) NULL
+      )
+      if (is.null(df_plot)) next
+      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi))
+    }
+  }
+
+  all_ids
+}
+
+
 # Add color-coded protein labels as Plotly annotations.
 #
 # p               - plotly object (output of ggplotly)
