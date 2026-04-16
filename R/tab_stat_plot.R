@@ -187,20 +187,42 @@ statPlot_Ome_Server <- function(id,
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
-    ## PROTEIN SEARCH & LABELING ################################################
-    # proteins_of_interest: registry-backed accessor for this ome's POI slot.
-    # Reads/writes go through the parent-level poi_registry reactiveVal so that
-    # "Across all omes" mode can federate POI across every ome's module.
-    # hidden_label_count: count of labels suppressed by the overlap-avoidance algo.
-    proteins_of_interest <- reactive({
-      reg <- poi_registry()
-      reg[[ome]] %||% character(0)
+    ## FEATURE SEARCH & LABELING ################################################
+    # POI is stored per contrast, not per ome, so features added while viewing
+    # one contrast do not bleed into other contrasts.
+    # Registry key format: "<ome>::<contrast_key>"
+    # For one-sample tests: contrast_key = input$volcano_groups
+    # For two-sample tests: contrast_key = input$volcano_contrasts
+
+    # current_contrast_key: reactive string identifying the active contrast.
+    # Returns NULL when the contrast input is not yet available.
+    current_contrast_key <- reactive({
+      req(stat_params())
+      test <- stat_params()[[ome]]$test
+      if (is.null(test) || test == "None" || test == "Moderated F test") return(NULL)
+      if (test == "One-sample Moderated T-test") {
+        req(input$volcano_groups)
+        paste0(ome, "::", input$volcano_groups)
+      } else {
+        req(input$volcano_contrasts)
+        paste0(ome, "::", input$volcano_contrasts)
+      }
     })
 
-    # Setter helper — writes this ome's slot in the shared registry.
-    set_poi <- function(new_ids) {
+    # proteins_of_interest: reads the current contrast's slot from the registry.
+    proteins_of_interest <- reactive({
+      key <- current_contrast_key()
+      req(key)
       reg <- poi_registry()
-      reg[[ome]] <- unique(as.character(new_ids))
+      reg[[key]] %||% character(0)
+    })
+
+    # Setter helper — writes to the current contrast's slot in the shared registry.
+    set_poi <- function(new_ids) {
+      key <- isolate(current_contrast_key())
+      if (is.null(key)) return()
+      reg <- poi_registry()
+      reg[[key]] <- unique(as.character(new_ids))
       poi_registry(reg)
     }
 
@@ -215,9 +237,19 @@ statPlot_Ome_Server <- function(id,
       "none"
     })
 
-    # global_union_ids: union of labeled IDs from every ome when "Across all omes" is on.
-    # Reads each ome's OWN POI slot from the registry (bugfix vs. the previous
-    # version which passed the triggering ome's POI into every iterated ome).
+    # ome_union_poi: union of all POI slots belonging to this ome (all contrasts).
+    # Used when union_mode() == "ome" to label across contrasts within the ome.
+    ome_union_poi <- reactive({
+      req(union_mode() == "ome")
+      reg    <- poi_registry()
+      prefix <- paste0(ome, "::")
+      keys   <- names(reg)[startsWith(names(reg), prefix)]
+      Reduce(union, lapply(keys, function(k) reg[[k]] %||% character(0)), init = character(0))
+    })
+
+    # global_union_ids: union of labeled IDs from every ome/contrast when
+    # "Across all omes" is on. Reads every slot in the registry, then computes
+    # the sig-label union per ome using that ome's aggregated POI.
     global_union_ids <- reactive({
       req(union_mode() == "global", stat_results(), stat_params())
       reg <- poi_registry()
@@ -226,7 +258,11 @@ statPlot_Ome_Server <- function(id,
         sp <- stat_params()[[o]]
         sr <- stat_results()[[o]]
         if (is.null(sp) || is.null(sr)) return(character(0))
-        poi_o <- reg[[o]] %||% character(0)
+        # Aggregate all contrast slots for ome `o`
+        prefix_o <- paste0(o, "::")
+        keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
+        poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
+                           init = character(0))
         volcano_label_union_for_ome(sr, sp, input$label_mode, poi_o)
       }), init = character(0))
     })
@@ -305,14 +341,14 @@ statPlot_Ome_Server <- function(id,
         hr(),
 
         # --- Labeling mode ---
-        strong("Label Proteins:"),
+        strong("Label Features:"),
         checkboxGroupInput(
           ns("label_mode"),
           label    = NULL,
           choices  = c(
-            "Proteins of interest" = "poi",
-            "Top 20 significant"   = "significant_top20",
-            "All significant"      = "significant"
+            "Feature(s) of interest" = "poi",
+            "Top 20 significant"     = "significant_top20",
+            "All significant"        = "significant"
           ),
           selected = character(0)
         ),
@@ -334,7 +370,7 @@ statPlot_Ome_Server <- function(id,
         hr(),
 
         # --- Search section ---
-        strong("Search Proteins:"),
+        strong("Search Features:"),
         selectInput(
           ns("search_metadata_col"),
           label    = "Search column:",
@@ -352,7 +388,7 @@ statPlot_Ome_Server <- function(id,
         hr(),
 
         # --- POI list ---
-        strong("Proteins of Interest:"),
+        strong("Feature(s) of Interest:"),
         uiOutput(ns("poi_list_ui")),
 
         # --- Hidden label warning ---
@@ -365,7 +401,7 @@ statPlot_Ome_Server <- function(id,
       pois <- proteins_of_interest()
 
       if (length(pois) == 0) {
-        return(p("No proteins selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
       }
 
       poi_rows <- lapply(pois, function(pid) {
@@ -387,9 +423,14 @@ statPlot_Ome_Server <- function(id,
       )
     })
 
-    # Register per-protein remove button observers whenever POI list changes.
+    # Register per-feature remove button observers whenever POI list changes.
     # Track which buttons already have observers to avoid accumulating duplicates.
+    # Reset when the active contrast changes so each contrast gets a fresh slate.
     poi_observer_registry <- reactiveVal(character(0))
+
+    observeEvent(current_contrast_key(), {
+      poi_observer_registry(character(0))
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
     observeEvent(proteins_of_interest(), {
       pois     <- proteins_of_interest()
@@ -578,13 +619,13 @@ statPlot_Ome_Server <- function(id,
         effective_poi <- switch(
           union_mode(),
           "ome" = union(
-            proteins_of_interest(),
+            ome_union_poi(),
             volcano_label_union_for_ome(
               stat_results()[[ome]], stat_params()[[ome]],
-              input$label_mode, proteins_of_interest()
+              input$label_mode, ome_union_poi()
             )
           ),
-          "global" = global_union_ids(),  # already folds every ome's own POI
+          "global" = global_union_ids(),  # already folds every ome/contrast's POI
           proteins_of_interest()           # "none" — per-contrast baseline
         )
         # Force "poi" into label_mode when union is active and produced IDs.
@@ -675,26 +716,41 @@ statPlot_Ome_Server <- function(id,
       export_union_mode <- isolate(union_mode())
       export_poi <- switch(
         export_union_mode,
-        "ome" = union(
-          isolate(proteins_of_interest()),
-          volcano_label_union_for_ome(
-            stat_results()[[ome]], stat_params()[[ome]],
-            label_mode_export, isolate(proteins_of_interest())
+        "ome" = {
+          # Aggregate all contrast slots for this ome, then union with sig labels.
+          reg_export <- isolate(poi_registry())
+          prefix_export <- paste0(ome, "::")
+          keys_export <- names(reg_export)[startsWith(names(reg_export), prefix_export)]
+          ome_poi_export <- Reduce(union,
+            lapply(keys_export, function(k) reg_export[[k]] %||% character(0)),
+            init = character(0))
+          union(
+            ome_poi_export,
+            volcano_label_union_for_ome(
+              stat_results()[[ome]], stat_params()[[ome]],
+              label_mode_export, ome_poi_export
+            )
           )
-        ),
+        },
         "global" = {
-          # Read each ome's OWN POI from the registry (not just the triggering ome's).
+          # Aggregate all contrast slots per ome across the entire registry.
           reg <- isolate(poi_registry())
           all_omes_names <- names(stat_results())
           Reduce(union, lapply(all_omes_names, function(o) {
             sp <- stat_params()[[o]]
             sr <- stat_results()[[o]]
             if (is.null(sp) || is.null(sr)) return(character(0))
-            poi_o <- reg[[o]] %||% character(0)
+            prefix_o <- paste0(o, "::")
+            keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
+            poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
+                               init = character(0))
             volcano_label_union_for_ome(sr, sp, label_mode_export, poi_o)
           }), init = character(0))
         },
-        isolate(proteins_of_interest())  # "none"
+        {
+          # "none" — use only the current contrast's POI for export
+          isolate(proteins_of_interest())
+        }
       )
       # Force "poi" into label_mode when union is active and produced IDs.
       export_label_mode <- if (export_union_mode != "none" && length(export_poi) > 0) {
@@ -787,20 +843,32 @@ statPlot_Ome_Server <- function(id,
         # Effective POI: include union IDs from other contrasts/omes when toggled
         effective_poi_csv <- switch(
           csv_union_mode,
-          "ome" = union(poi, volcano_label_union_for_ome(df_raw, sp, label_mode_export, poi)),
+          "ome" = {
+            # Aggregate all contrast slots for this ome.
+            reg_csv <- isolate(poi_registry())
+            prefix_csv <- paste0(ome, "::")
+            keys_csv <- names(reg_csv)[startsWith(names(reg_csv), prefix_csv)]
+            ome_poi_csv <- Reduce(union,
+              lapply(keys_csv, function(k) reg_csv[[k]] %||% character(0)),
+              init = character(0))
+            union(ome_poi_csv, volcano_label_union_for_ome(df_raw, sp, label_mode_export, ome_poi_csv))
+          },
           "global" = {
-            # Read each ome's OWN POI from the registry (not just the triggering ome's).
+            # Aggregate all contrast slots per ome across the entire registry.
             reg <- isolate(poi_registry())
             all_omes_names <- names(stat_results())
             Reduce(union, lapply(all_omes_names, function(o) {
               sp_o <- stat_params()[[o]]
               sr_o <- stat_results()[[o]]
               if (is.null(sp_o) || is.null(sr_o)) return(character(0))
-              poi_o <- reg[[o]] %||% character(0)
+              prefix_o <- paste0(o, "::")
+              keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
+              poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
+                                 init = character(0))
               volcano_label_union_for_ome(sr_o, sp_o, label_mode_export, poi_o)
             }), init = character(0))
           },
-          poi  # "none"
+          poi  # "none" — current contrast's POI only
         )
         # Force "poi" into label_mode when union is active and produced IDs.
         effective_label_mode_csv <- if (csv_union_mode != "none" && length(effective_poi_csv) > 0) {
