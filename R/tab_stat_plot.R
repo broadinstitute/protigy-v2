@@ -283,9 +283,64 @@ statPlot_Ome_Server <- function(id,
     # isolate() around label_mode_for_contrast() avoids creating a reactive
     # dependency on the registry here (contrast key change is the only trigger).
     observeEvent(current_contrast_key(), {
-      updateCheckboxGroupInput(session, "label_mode",
-        selected = isolate(label_mode_for_contrast()))
+      stored <- isolate(label_mode_for_contrast())
+      updateCheckboxGroupInput(session, "label_mode", selected = stored)
+      # Re-apply mutual-exclusion disable state when switching contrasts.
+      grp_id <- ns("label_mode")
+      if ("significant" %in% stored) {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+      } else if ("significant_top20" %in% stored) {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+      } else {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"], #%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id
+        ))
+      }
     }, ignoreNULL = TRUE, ignoreInit = FALSE)
+
+    # Mutual exclusion between "All significant" and "Top significant":
+    # checking one unchecks and disables the other.
+    observeEvent(input$label_mode, {
+      grp_id <- ns("label_mode")
+      if ("significant" %in% input$label_mode) {
+        # Uncheck and disable "Top significant"
+        updateCheckboxGroupInput(session, "label_mode",
+          selected = setdiff(input$label_mode, "significant_top20"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id
+        ))
+      } else if ("significant_top20" %in% input$label_mode) {
+        # Uncheck and disable "All significant"
+        updateCheckboxGroupInput(session, "label_mode",
+          selected = setdiff(input$label_mode, "significant"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id
+        ))
+      } else {
+        # Neither checked — re-enable both
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"], #%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id
+        ))
+      }
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
     hidden_label_count <- reactiveVal(0L)
 
