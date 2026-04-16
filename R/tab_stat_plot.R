@@ -447,7 +447,7 @@ statPlot_Ome_Server <- function(id,
     # When global_union_active is set by ANY ome, keep this ome's UI in sync:
     # disable label_union_ome (can't enable local union while global is on) and
     # reflect the global state in this ome's label_union_global checkbox.
-    observe({
+    observeEvent(global_union_active(), {
       if (isTRUE(global_union_active())) {
         shinyjs::disable("label_union_ome")
         updateCheckboxInput(session, "label_union_global", value = TRUE)
@@ -455,7 +455,7 @@ statPlot_Ome_Server <- function(id,
         shinyjs::enable("label_union_ome")
         updateCheckboxInput(session, "label_union_global", value = FALSE)
       }
-    })
+    }, ignoreInit = TRUE)
 
     # Auto-enable POI checkbox when proteins are added to the list
     observeEvent(proteins_of_interest(), {
