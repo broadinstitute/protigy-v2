@@ -130,6 +130,12 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     # union_mode() reads from it so cross-ome propagation is automatic.
     global_union_active <- reactiveVal(FALSE)
 
+    # label_mode_registry: named list keyed by ome, each value is the character
+    # vector of label_mode selections for that ome (e.g. c("poi", "significant_top20")).
+    # Each ome writes its own input$label_mode here so global_union_ids() can use
+    # per-ome label_mode instead of the calling ome's selection only.
+    label_mode_registry <- reactiveVal(list())
+
     # call the server function for each individual ome
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
@@ -145,7 +151,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           stat_params = stat_params,
           stat_results = stat_results,
           poi_registry = poi_registry,
-          global_union_active = global_union_active
+          global_union_active = global_union_active,
+          label_mode_registry = label_mode_registry
         )
       }, simplify = FALSE)
       
@@ -179,7 +186,8 @@ statPlot_Ome_Server <- function(id,
                                    stat_params,
                                    stat_results,
                                    poi_registry = NULL,
-                                   global_union_active = NULL) {
+                                   global_union_active = NULL,
+                                   label_mode_registry = NULL) {
 
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -247,12 +255,23 @@ statPlot_Ome_Server <- function(id,
       Reduce(union, lapply(keys, function(k) reg[[k]] %||% character(0)), init = character(0))
     })
 
+    # Sync this ome's label_mode selection into the shared label_mode_registry
+    # so global_union_ids() can use per-ome label_mode (not the calling ome's only).
+    observeEvent(input$label_mode, {
+      if (!is.null(label_mode_registry)) {
+        lm_reg <- label_mode_registry()
+        lm_reg[[ome]] <- input$label_mode %||% character(0)
+        label_mode_registry(lm_reg)
+      }
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
     # global_union_ids: union of labeled IDs from every ome/contrast when
-    # "Across all omes" is on. Reads every slot in the registry, then computes
-    # the sig-label union per ome using that ome's aggregated POI.
+    # "Across all omes" is on. Reads poi_registry and label_mode_registry to use
+    # per-ome POI and per-ome label_mode (not just the calling ome's selection).
     global_union_ids <- reactive({
       req(union_mode() == "global", stat_results(), stat_params())
-      reg <- poi_registry()
+      reg    <- poi_registry()
+      lm_reg <- label_mode_registry()
       all_omes_names <- names(stat_results())
       Reduce(union, lapply(all_omes_names, function(o) {
         sp <- stat_params()[[o]]
@@ -263,7 +282,9 @@ statPlot_Ome_Server <- function(id,
         keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
         poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
                            init = character(0))
-        volcano_label_union_for_ome(sr, sp, input$label_mode, poi_o)
+        # Use ome `o`'s own label_mode, not the calling ome's
+        lm_o     <- lm_reg[[o]] %||% character(0)
+        volcano_label_union_for_ome(sr, sp, lm_o, poi_o)
       }), init = character(0))
     })
 
@@ -397,30 +418,70 @@ statPlot_Ome_Server <- function(id,
     })
     
     # POI list UI
+    # In "none" mode: per-contrast list with individual remove buttons.
+    # In "ome" mode: read-only union list for all contrasts in this ome.
+    # In "global" mode: read-only union list across all omes.
     output$poi_list_ui <- renderUI({
-      pois <- proteins_of_interest()
+      mode <- union_mode()
 
-      if (length(pois) == 0) {
-        return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
-      }
-
-      poi_rows <- lapply(pois, function(pid) {
-        fluidRow(
-          column(9, p(pid, style = "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;")),
-          column(3, actionButton(
-            inputId = ns(paste0("remove_poi_", make.names(pid))),
-            label   = "\u00d7",
-            class   = "btn-xs btn-danger",
-            style   = "padding: 1px 5px; margin: 0;"
-          ))
+      if (mode == "global") {
+        # Show union of all POI across every ome and contrast (read-only)
+        reg <- poi_registry()
+        all_pois <- Reduce(union, lapply(reg, function(v) v %||% character(0)), init = character(0))
+        if (length(all_pois) == 0) {
+          return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        }
+        tagList(
+          div(
+            style = "font-size: 12px; color: #555; max-height: 120px; overflow-y: auto;",
+            paste(all_pois, collapse = ", ")
+          ),
+          p("(Editing disabled in 'Across all omes' mode.)",
+            style = "font-size: 11px; color: #888; margin-top: 4px;"),
+          br(),
+          actionButton(ns("clear_all_poi"), "Clear all (current contrast)", class = "btn-xs btn-warning")
         )
-      })
 
-      tagList(
-        do.call(tagList, poi_rows),
-        br(),
-        actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
-      )
+      } else if (mode == "ome") {
+        # Show union of all contrast slots in this ome (read-only)
+        pois <- ome_union_poi()
+        if (length(pois) == 0) {
+          return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        }
+        tagList(
+          div(
+            style = "font-size: 12px; color: #555; max-height: 120px; overflow-y: auto;",
+            paste(pois, collapse = ", ")
+          ),
+          p("(Editing disabled in 'Current ome only' mode.)",
+            style = "font-size: 11px; color: #888; margin-top: 4px;"),
+          br(),
+          actionButton(ns("clear_all_poi"), "Clear all (current contrast)", class = "btn-xs btn-warning")
+        )
+
+      } else {
+        # "none" — per-contrast list with individual remove buttons
+        pois <- proteins_of_interest()
+        if (length(pois) == 0) {
+          return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        }
+        poi_rows <- lapply(pois, function(pid) {
+          fluidRow(
+            column(9, p(pid, style = "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;")),
+            column(3, actionButton(
+              inputId = ns(paste0("remove_poi_", make.names(pid))),
+              label   = "\u00d7",
+              class   = "btn-xs btn-danger",
+              style   = "padding: 1px 5px; margin: 0;"
+            ))
+          )
+        })
+        tagList(
+          do.call(tagList, poi_rows),
+          br(),
+          actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
+        )
+      }
     })
 
     # Register per-feature remove button observers whenever POI list changes.
@@ -486,12 +547,20 @@ statPlot_Ome_Server <- function(id,
     }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
     # When global_union_active is set by ANY ome, keep this ome's UI in sync:
-    # disable label_union_ome (can't enable local union while global is on) and
-    # reflect the global state in this ome's label_union_global checkbox.
+    # disable label_union_ome (can't enable local union while global is on),
+    # reflect the global state in this ome's label_union_global checkbox, and
+    # auto-enable "poi" in label_mode if any POI exist in the registry.
     observeEvent(global_union_active(), {
       if (isTRUE(global_union_active())) {
         shinyjs::disable("label_union_ome")
         updateCheckboxInput(session, "label_union_global", value = TRUE)
+        # Auto-enable "poi" for this ome if any POI exist anywhere in the registry
+        reg <- poi_registry()
+        has_any_poi <- any(vapply(reg, function(v) length(v) > 0, logical(1)))
+        if (has_any_poi && !"poi" %in% isolate(input$label_mode)) {
+          updateCheckboxGroupInput(session, "label_mode",
+            selected = unique(c(isolate(input$label_mode), "poi")))
+        }
       } else {
         shinyjs::enable("label_union_ome")
         updateCheckboxInput(session, "label_union_global", value = FALSE)
@@ -734,7 +803,9 @@ statPlot_Ome_Server <- function(id,
         },
         "global" = {
           # Aggregate all contrast slots per ome across the entire registry.
-          reg <- isolate(poi_registry())
+          # Use per-ome label_mode from label_mode_registry (not calling ome's only).
+          reg    <- isolate(poi_registry())
+          lm_reg <- isolate(label_mode_registry())
           all_omes_names <- names(stat_results())
           Reduce(union, lapply(all_omes_names, function(o) {
             sp <- stat_params()[[o]]
@@ -744,7 +815,8 @@ statPlot_Ome_Server <- function(id,
             keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
             poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
                                init = character(0))
-            volcano_label_union_for_ome(sr, sp, label_mode_export, poi_o)
+            lm_o     <- lm_reg[[o]] %||% character(0)
+            volcano_label_union_for_ome(sr, sp, lm_o, poi_o)
           }), init = character(0))
         },
         {
@@ -855,7 +927,9 @@ statPlot_Ome_Server <- function(id,
           },
           "global" = {
             # Aggregate all contrast slots per ome across the entire registry.
-            reg <- isolate(poi_registry())
+            # Use per-ome label_mode from label_mode_registry (not calling ome's only).
+            reg    <- isolate(poi_registry())
+            lm_reg <- isolate(label_mode_registry())
             all_omes_names <- names(stat_results())
             Reduce(union, lapply(all_omes_names, function(o) {
               sp_o <- stat_params()[[o]]
@@ -865,7 +939,8 @@ statPlot_Ome_Server <- function(id,
               keys_o   <- names(reg)[startsWith(names(reg), prefix_o)]
               poi_o    <- Reduce(union, lapply(keys_o, function(k) reg[[k]] %||% character(0)),
                                  init = character(0))
-              volcano_label_union_for_ome(sr_o, sp_o, label_mode_export, poi_o)
+              lm_o     <- lm_reg[[o]] %||% character(0)
+              volcano_label_union_for_ome(sr_o, sp_o, lm_o, poi_o)
             }), init = character(0))
           },
           poi  # "none" — current contrast's POI only
