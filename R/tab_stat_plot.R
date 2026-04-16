@@ -669,13 +669,19 @@ statPlot_Ome_Server <- function(id,
         effective_poi <- switch(
           union_mode(),
           "ome" = {
-            lm_reg <- label_mode_registry()
-            tn_reg <- top_n_registry()
+            lm_reg  <- label_mode_registry()
+            tn_reg  <- top_n_registry()
             poi_reg <- poi_registry()
-            prefix <- paste0(ome, "::")
-            keys <- names(poi_reg)[startsWith(names(poi_reg), prefix)]
             sp <- stat_params()[[ome]]
             sr <- stat_results()[[ome]]
+            # Use all known contrasts from stat_params as the source of truth —
+            # not poi_reg keys — so contrasts with only label_mode set (no manual
+            # POI) are still included in the union.
+            all_contrasts <- if (sp$test == "One-sample Moderated T-test")
+              sp$groups
+            else
+              sp$contrasts
+            keys <- paste0(ome, "::", all_contrasts)
             Reduce(union, lapply(keys, function(k) {
               c_poi   <- poi_reg[[k]]   %||% character(0)
               c_lm    <- lm_reg[[k]]    %||% character(0)
@@ -794,10 +800,11 @@ statPlot_Ome_Server <- function(id,
           lm_reg_exp  <- isolate(label_mode_registry())
           tn_reg_exp  <- isolate(top_n_registry())
           poi_reg_exp <- isolate(poi_registry())
-          prefix_exp  <- paste0(ome, "::")
-          keys_exp    <- names(poi_reg_exp)[startsWith(names(poi_reg_exp), prefix_exp)]
           sp_exp <- stat_params()[[ome]]
           sr_exp <- stat_results()[[ome]]
+          all_contrasts_exp <- if (sp_exp$test == "One-sample Moderated T-test")
+            sp_exp$groups else sp_exp$contrasts
+          keys_exp <- paste0(ome, "::", all_contrasts_exp)
           Reduce(union, lapply(keys_exp, function(k) {
             c_poi    <- poi_reg_exp[[k]] %||% character(0)
             c_lm     <- lm_reg_exp[[k]] %||% character(0)
@@ -924,8 +931,9 @@ statPlot_Ome_Server <- function(id,
             lm_reg_csv  <- isolate(label_mode_registry())
             tn_reg_csv  <- isolate(top_n_registry())
             poi_reg_csv <- isolate(poi_registry())
-            prefix_csv  <- paste0(ome, "::")
-            keys_csv    <- names(poi_reg_csv)[startsWith(names(poi_reg_csv), prefix_csv)]
+            all_contrasts_csv <- if (sp$test == "One-sample Moderated T-test")
+              sp$groups else sp$contrasts
+            keys_csv <- paste0(ome, "::", all_contrasts_csv)
             Reduce(union, lapply(keys_csv, function(k) {
               c_poi    <- poi_reg_csv[[k]] %||% character(0)
               c_lm     <- lm_reg_csv[[k]] %||% character(0)
