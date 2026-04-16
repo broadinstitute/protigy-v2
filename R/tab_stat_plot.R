@@ -126,6 +126,11 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
       }
     }, ignoreNULL = TRUE)
 
+    # top_n_registry: parent-level named list keyed by "<ome>::<contrast_key>",
+    # each slot is a single integer — how many top significant features to label
+    # for that contrast. Independent per contrast; default 20L when not yet set.
+    top_n_registry <- reactiveVal(list())
+
     # call the server function for each individual ome
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
@@ -140,7 +145,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           color_map = reactive(custom_colors()[[ome]]),
           stat_params = stat_params,
           stat_results = stat_results,
-          poi_registry = poi_registry
+          poi_registry = poi_registry,
+          top_n_registry = top_n_registry
         )
       }, simplify = FALSE)
       
@@ -173,7 +179,8 @@ statPlot_Ome_Server <- function(id,
                                    color_map,
                                    stat_params,
                                    stat_results,
-                                   poi_registry = NULL) {
+                                   poi_registry = NULL,
+                                   top_n_registry = NULL) {
 
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -220,6 +227,23 @@ statPlot_Ome_Server <- function(id,
       poi_registry(reg)
     }
 
+    # top_n_sig: reads this contrast's top-N value from the registry (default 20).
+    top_n_sig <- reactive({
+      key <- current_contrast_key()
+      req(key)
+      reg <- top_n_registry()
+      reg[[key]] %||% 20L
+    })
+
+    # Setter — writes this contrast's top-N value into the shared registry.
+    set_top_n <- function(n) {
+      key <- isolate(current_contrast_key())
+      if (is.null(key)) return()
+      reg <- top_n_registry()
+      reg[[key]] <- max(1L, as.integer(n)[1L])
+      top_n_registry(reg)
+    }
+
     hidden_label_count <- reactiveVal(0L)
 
     # union_mode: "none" | "ome"
@@ -239,6 +263,29 @@ statPlot_Ome_Server <- function(id,
       keys   <- names(reg)[startsWith(names(reg), prefix)]
       Reduce(union, lapply(keys, function(k) reg[[k]] %||% character(0)), init = character(0))
     })
+
+    # top_n_ui: shows a numeric input below the "Top significant" checkbox,
+    # only when that checkbox is checked. Value is per-contrast from top_n_registry.
+    output$top_n_ui <- renderUI({
+      req("significant_top20" %in% input$label_mode)
+      numericInput(
+        ns("top_n_sig_input"),
+        label = "Number of top features:",
+        value = top_n_sig(),
+        min = 1, step = 1, width = "120px"
+      )
+    })
+
+    # Persist the user's chosen top-N into the registry when changed.
+    observeEvent(input$top_n_sig_input, {
+      req(is.numeric(input$top_n_sig_input), !is.na(input$top_n_sig_input))
+      set_top_n(input$top_n_sig_input)
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+    # When the active contrast changes, sync the numeric input to that contrast's value.
+    observeEvent(current_contrast_key(), {
+      updateNumericInput(session, "top_n_sig_input", value = isolate(top_n_sig()))
+    }, ignoreNULL = TRUE, ignoreInit = FALSE)
 
     output$ome_plot_contents <- renderUI({
       # fallback if stat_results not defined yet
@@ -320,11 +367,12 @@ statPlot_Ome_Server <- function(id,
           label    = NULL,
           choices  = c(
             "Feature(s) of interest" = "poi",
-            "Top 20 significant"     = "significant_top20",
+            "Top significant"        = "significant_top20",
             "All significant"        = "significant"
           ),
           selected = character(0)
         ),
+        uiOutput(ns("top_n_ui")),
 
         # --- Label across contrasts ---
         # .volcano-union-checks targets the form-group margin so spacing matches
@@ -572,13 +620,17 @@ statPlot_Ome_Server <- function(id,
 
       if (!is.null(df_plot)) {
         # Compute the effective POI and label_mode based on union toggle state.
+        # In "ome" mode, significant_top20 is intentionally excluded from the
+        # cross-contrast union so that only the current contrast's top-20 are
+        # labeled (not every contrast's top-20 unioned together).
         effective_poi <- switch(
           union_mode(),
           "ome" = union(
             ome_union_poi(),
             volcano_label_union_for_ome(
               stat_results()[[ome]], stat_params()[[ome]],
-              input$label_mode, ome_union_poi()
+              setdiff(input$label_mode, "significant_top20"), ome_union_poi(),
+              n_top = top_n_sig()
             )
           ),
           proteins_of_interest()           # "none" — per-contrast baseline
@@ -596,7 +648,8 @@ statPlot_Ome_Server <- function(id,
           poi             = effective_poi,
           label_mode      = effective_label_mode,
           y_cutoff        = attr(df_plot, "y_cutoff"),
-          hidden_count_rv = hidden_label_count
+          hidden_count_rv = hidden_label_count,
+          n_top           = top_n_sig()
         )
       }
 
@@ -666,6 +719,7 @@ statPlot_Ome_Server <- function(id,
       on.exit(dev.off(), add = TRUE)
 
       label_mode_export <- isolate(input$label_mode) %||% character(0)
+      n_top_export      <- isolate(top_n_sig())
 
       # Compute effective POI for export based on union toggle state.
       export_union_mode <- isolate(union_mode())
@@ -673,6 +727,8 @@ statPlot_Ome_Server <- function(id,
         export_union_mode,
         "ome" = {
           # Aggregate all contrast slots for this ome, then union with sig labels.
+          # Exclude significant_top20 from the cross-contrast union so each
+          # exported contrast only shows its own top-N (not every contrast's).
           reg_export <- isolate(poi_registry())
           prefix_export <- paste0(ome, "::")
           keys_export <- names(reg_export)[startsWith(names(reg_export), prefix_export)]
@@ -683,7 +739,8 @@ statPlot_Ome_Server <- function(id,
             ome_poi_export,
             volcano_label_union_for_ome(
               stat_results()[[ome]], stat_params()[[ome]],
-              label_mode_export, ome_poi_export
+              setdiff(label_mode_export, "significant_top20"), ome_poi_export,
+              n_top = n_top_export
             )
           )
         },
@@ -711,7 +768,8 @@ statPlot_Ome_Server <- function(id,
               stat_params       = stat_params,
               stat_results      = stat_results,
               label_proteins    = export_poi,
-              label_mode        = export_label_mode
+              label_mode        = export_label_mode,
+              n_top             = n_top_export
             )
             print(gg)
           }, error = function(e) {
@@ -731,7 +789,8 @@ statPlot_Ome_Server <- function(id,
               stat_params       = stat_params,
               stat_results      = stat_results,
               label_proteins    = export_poi,
-              label_mode        = export_label_mode
+              label_mode        = export_label_mode,
+              n_top             = n_top_export
             )
             print(gg)
           }, error = function(e) {
@@ -780,18 +839,22 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
+        n_top_csv <- isolate(top_n_sig())
+
         # Effective POI: include union IDs from other contrasts/omes when toggled
         effective_poi_csv <- switch(
           csv_union_mode,
           "ome" = {
             # Aggregate all contrast slots for this ome.
+            # Exclude significant_top20 from cross-contrast union: each contrast
+            # contributes its own top-N via the per-contrast loop below.
             reg_csv <- isolate(poi_registry())
             prefix_csv <- paste0(ome, "::")
             keys_csv <- names(reg_csv)[startsWith(names(reg_csv), prefix_csv)]
             ome_poi_csv <- Reduce(union,
               lapply(keys_csv, function(k) reg_csv[[k]] %||% character(0)),
               init = character(0))
-            union(ome_poi_csv, volcano_label_union_for_ome(df_raw, sp, label_mode_export, ome_poi_csv))
+            union(ome_poi_csv, volcano_label_union_for_ome(df_raw, sp, setdiff(label_mode_export, "significant_top20"), ome_poi_csv, n_top = n_top_csv))
           },
           poi  # "none" — current contrast's POI only
         )
@@ -809,14 +872,14 @@ statPlot_Ome_Server <- function(id,
           for (group in groups) {
             cols <- get_volcano_cols(df_raw, test, group, NULL)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv, n_top_csv))
           }
         } else if (test == "Two-sample Moderated T-test") {
           contrasts <- sp$contrasts
           for (contrast in contrasts) {
             cols <- get_volcano_cols(df_raw, test, NULL, contrast)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv, n_top_csv))
           }
         } else {
           message("Volcano labeled export not supported for test type: ", test)

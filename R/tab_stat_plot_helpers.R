@@ -18,7 +18,8 @@
 
 plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params, stat_results,
                         sig.col = 'darkred', bg.col = 'gray', gene_symbol_col = "geneSymbol",
-                        label_proteins = character(0), label_mode = character(0)) {
+                        label_proteins = character(0), label_mode = character(0),
+                        n_top = 20L) {
   
   cat('\n-- plotVolcano --\n')
 
@@ -176,7 +177,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     if ("significant" %in% label_mode) {
       sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, , drop = FALSE]
     } else if ("significant_top20" %in% label_mode) {
-      sig_rows <- volcano_label_top_significant_subset(df, 20L)
+      sig_rows <- volcano_label_top_significant_subset(df, n_top)
     } else {
       sig_rows <- df[FALSE, , drop = FALSE]
     }
@@ -384,9 +385,10 @@ volcano_label_top_significant_subset <- function(df, n = 20L) {
 #' @param df_plot Output of `build_volcano_df()` (columns include `id`, `Significant`, ...).
 #' @param label_mode Character vector; may include `"poi"`, `"significant_top20"`, `"significant"`.
 #' @param poi Character vector of manually selected POI feature IDs.
+#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
 #' @return `character()` of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
-volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
+volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = 20L) {
   if (is.null(label_mode) || length(label_mode) == 0) {
     label_mode <- character(0)
   }
@@ -404,7 +406,7 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
     sig_rows <- df_plot[!is.na(df_plot$Significant) & df_plot$Significant == TRUE, , drop = FALSE]
     sig_ids <- as.character(sig_rows$id)
   } else if (show_sig_top) {
-    sig_rows <- volcano_label_top_significant_subset(df_plot, 20L)
+    sig_rows <- volcano_label_top_significant_subset(df_plot, n_top)
     sig_ids <- as.character(sig_rows$id)
   }
 
@@ -427,9 +429,10 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
 #' @param stat_params_ome  Named list; \code{stat_params()[[ome]]}.
 #' @param label_mode Character vector; active label modes (e.g. \code{"poi"}, \code{"significant_top20"}).
 #' @param poi Character vector of manually selected feature IDs.
+#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
 #' @return \code{character()} of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
-volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi) {
+volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi, n_top = 20L) {
   if (is.null(stat_results_ome) || nrow(stat_results_ome) == 0) return(character(0))
   if (is.null(stat_params_ome)) return(character(0))
 
@@ -454,7 +457,7 @@ volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label
         error = function(e) NULL
       )
       if (is.null(df_plot)) next
-      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi))
+      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi, n_top))
     }
   } else if (test == "Two-sample Moderated T-test") {
     contrasts <- stat_params_ome$contrasts
@@ -469,7 +472,7 @@ volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label
         error = function(e) NULL
       )
       if (is.null(df_plot)) next
-      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi))
+      all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode, poi, n_top))
     }
   }
 
@@ -488,7 +491,7 @@ volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label
 # hidden_count_rv - reactiveVal or mock_rv; updated with count of hidden labels
 # min_dist        - minimum normalized distance between labels (0 to 1 scale)
 add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
-                                hidden_count_rv, min_dist = 0.04) {
+                                hidden_count_rv, min_dist = 0.04, n_top = 20L) {
 
   show_poi <- "poi" %in% label_mode
   show_sig <- "significant" %in% label_mode
@@ -512,7 +515,7 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
   if (show_sig) {
     sig_rows <- df[!is.na(df$Significant) & df$Significant == TRUE, , drop = FALSE]
   } else if (show_sig_top) {
-    sig_rows <- volcano_label_top_significant_subset(df, 20L)
+    sig_rows <- volcano_label_top_significant_subset(df, n_top)
   } else {
     sig_rows <- df[FALSE, , drop = FALSE]
   }
