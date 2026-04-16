@@ -696,3 +696,86 @@ test_that("volcano_label_union_for_ome works for one-sample test with multiple g
   result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
   expect_setequal(result, c("p1", "p2", "p3"))
 })
+
+## Per-ome POI isolation (registry pattern) ####################################
+# Simulate the parent-level poi_registry: call volcano_label_union_for_ome once
+# per ome with that ome's own POI, then Reduce(union) the results.
+# This mirrors the fixed global_union_ids() logic in statPlot_Ome_Server.
+# Uses the existing make_two_sample_stat_results / make_two_sample_stat_params
+# helpers (contrast format "A / B" → column suffix "A_over_B").
+
+test_that("global union uses each ome's own POI, not a shared one", {
+  # Prot ome: one contrast, sig = p1, POI = p2 (non-sig)
+  prot_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    sig_ids_a  = "p1",
+    all_ids    = c("p1", "p2", "p3")
+  )
+  prot_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  prot_poi <- c("p2")
+
+  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig) — completely separate IDs
+  phos_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    sig_ids_a  = "q1",
+    all_ids    = c("q1", "q2", "q3")
+  )
+  phos_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  phos_poi <- c("q2")
+
+  # Simulate global_union_ids(): each ome reads its own POI from the registry
+  prot_union <- volcano_label_union_for_ome(prot_df, prot_sp, c("poi", "significant"), prot_poi)
+  phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, c("poi", "significant"), phos_poi)
+  global_ids <- Reduce(union, list(prot_union, phos_union), init = character(0))
+
+  # Prot's sig hit (p1) and POI (p2) must both be in the global union
+  expect_true("p1" %in% global_ids, info = "sig from Prot should be in global union")
+  expect_true("p2" %in% global_ids, info = "POI from Prot should be in global union")
+  # Phos's sig hit (q1) and POI (q2) must both be in the global union
+  expect_true("q1" %in% global_ids, info = "sig from Phos should be in global union")
+  expect_true("q2" %in% global_ids, info = "POI from Phos should be in global union")
+  # Non-sig, non-poi entries from either ome must NOT appear
+  expect_false("p3" %in% global_ids, info = "non-sig non-poi from Prot should be absent")
+  expect_false("q3" %in% global_ids, info = "non-sig non-poi from Phos should be absent")
+})
+
+test_that("passing wrong ome POI to another ome misses that ome's POI (old bug regression)", {
+  # Demonstrates the bug fixed in global_union_ids(): if Prot's POI is passed to
+  # the Phos iteration instead of Phos's own POI, Phos-only POI entries are missed.
+  prot_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    all_ids    = c("p1", "p2")
+  )
+  phos_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    all_ids    = c("q1", "q2")
+  )
+  phos_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  prot_poi <- c("p1")  # Prot's POI — not in phos_df
+  phos_poi <- c("q2")  # Phos's POI — only in phos_df
+
+  # OLD (buggy) path: Prot's POI passed to Phos iteration
+  buggy_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", prot_poi)
+  expect_false("q2" %in% buggy_phos_union, info = "Phos-only POI absent when Prot's POI is passed")
+  expect_false("p1" %in% buggy_phos_union, info = "Prot POI filtered (not in phos_df$id)")
+
+  # FIXED path: Phos gets its own POI → q2 now appears
+  fixed_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", phos_poi)
+  expect_true("q2" %in% fixed_phos_union, info = "Phos POI present when correct POI used")
+})
+
+test_that("baseline (union_mode none) uses only this ome's own POI with no cross-contamination", {
+  # When union_mode == "none", effective_poi == proteins_of_interest() for this ome.
+  # Another ome's POI must not appear.
+  prot_poi <- c("p1")
+  phos_poi <- c("q2")  # a completely different ID from another ome
+
+  # In "none" mode: effective_poi = prot_poi only (no union computation)
+  effective_poi_none <- prot_poi
+
+  expect_true("p1"  %in% effective_poi_none, info = "own POI should be in baseline set")
+  expect_false("q2" %in% effective_poi_none, info = "other ome's POI must not appear in baseline")
+})

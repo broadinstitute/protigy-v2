@@ -110,9 +110,25 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
       updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
     
-    # Shared reactiveVal: TRUE when any ome has "Across all omes" union toggled on.
-    # Written by individual ome modules; read by all ome modules to compute global union.
-    global_union_rv <- reactiveVal(FALSE)
+    # poi_registry: parent-level named list keyed by ome, each slot is character()
+    # of feature IDs chosen by the user. Passed by reference into every ome module
+    # so "Across all omes" can federate POI across ome boundaries without each
+    # module poking at another's input$ state.
+    poi_registry <- reactiveVal(list())
+
+    # Initialize / extend registry when the ome set changes.
+    observeEvent(all_omes(), {
+      reg <- poi_registry()
+      missing_omes <- setdiff(all_omes(), names(reg))
+      if (length(missing_omes) > 0) {
+        reg[missing_omes] <- list(character(0))
+        poi_registry(reg)
+      }
+    }, ignoreNULL = TRUE)
+
+    # global_union_active: single shared flag. Any ome may flip it; every ome's
+    # union_mode() reads from it so cross-ome propagation is automatic.
+    global_union_active <- reactiveVal(FALSE)
 
     # call the server function for each individual ome
     all_plots <- reactiveVal() # initialize
@@ -128,7 +144,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           color_map = reactive(custom_colors()[[ome]]),
           stat_params = stat_params,
           stat_results = stat_results,
-          global_union_rv = global_union_rv
+          poi_registry = poi_registry,
+          global_union_active = global_union_active
         )
       }, simplify = FALSE)
       
@@ -161,38 +178,56 @@ statPlot_Ome_Server <- function(id,
                                    color_map,
                                    stat_params,
                                    stat_results,
-                                   global_union_rv = NULL) {
-  
+                                   poi_registry = NULL,
+                                   global_union_active = NULL) {
+
   ## module function
   moduleServer(id, function (input, output, session) {
-    
+
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
     ## PROTEIN SEARCH & LABELING ################################################
-    # proteins_of_interest: per-ome reactiveVal storing feature IDs the user has
-    # selected via search or by clicking on the plot.
+    # proteins_of_interest: registry-backed accessor for this ome's POI slot.
+    # Reads/writes go through the parent-level poi_registry reactiveVal so that
+    # "Across all omes" mode can federate POI across every ome's module.
     # hidden_label_count: count of labels suppressed by the overlap-avoidance algo.
-    proteins_of_interest <- reactiveVal(character(0))
-    hidden_label_count   <- reactiveVal(0L)
+    proteins_of_interest <- reactive({
+      reg <- poi_registry()
+      reg[[ome]] %||% character(0)
+    })
+
+    # Setter helper — writes this ome's slot in the shared registry.
+    set_poi <- function(new_ids) {
+      reg <- poi_registry()
+      reg[[ome]] <- unique(as.character(new_ids))
+      poi_registry(reg)
+    }
+
+    hidden_label_count <- reactiveVal(0L)
 
     # union_mode: "none" | "ome" | "global"
-    # Driven by the two mutually-exclusive checkboxes in the sidebar.
+    # "global" is driven by the shared global_union_active flag (any ome may flip it).
+    # "ome" is driven by this ome's local label_union_ome checkbox.
     union_mode <- reactive({
-      if (isTRUE(input$label_union_global)) return("global")
-      if (isTRUE(input$label_union_ome))    return("ome")
+      if (isTRUE(global_union_active())) return("global")
+      if (isTRUE(input$label_union_ome)) return("ome")
       "none"
     })
 
     # global_union_ids: union of labeled IDs from every ome when "Across all omes" is on.
+    # Reads each ome's OWN POI slot from the registry (bugfix vs. the previous
+    # version which passed the triggering ome's POI into every iterated ome).
     global_union_ids <- reactive({
       req(union_mode() == "global", stat_results(), stat_params())
-      all_omes <- names(stat_results())
-      Reduce(union, lapply(all_omes, function(o) {
+      reg <- poi_registry()
+      all_omes_names <- names(stat_results())
+      Reduce(union, lapply(all_omes_names, function(o) {
         sp <- stat_params()[[o]]
         sr <- stat_results()[[o]]
         if (is.null(sp) || is.null(sr)) return(character(0))
-        volcano_label_union_for_ome(sr, sp, input$label_mode, proteins_of_interest())
+        poi_o <- reg[[o]] %||% character(0)
+        volcano_label_union_for_ome(sr, sp, input$label_mode, poi_o)
       }), init = character(0))
     })
 
@@ -370,7 +405,7 @@ statPlot_Ome_Server <- function(id,
           pid_local <- pid
           btn_id_local <- btn_id
           observeEvent(input[[btn_id_local]], {
-            proteins_of_interest(setdiff(proteins_of_interest(), pid_local))
+            set_poi(setdiff(proteins_of_interest(), pid_local))
             poi_observer_registry(setdiff(poi_observer_registry(), btn_id_local))
           }, ignoreNULL = TRUE, ignoreInit = TRUE, once = TRUE)
         })
@@ -382,7 +417,7 @@ statPlot_Ome_Server <- function(id,
 
     # Clear all POIs
     observeEvent(input$clear_all_poi, {
-      proteins_of_interest(character(0))
+      set_poi(character(0))
       hidden_label_count(0L)
     })
 
@@ -394,8 +429,6 @@ statPlot_Ome_Server <- function(id,
         shinyjs::disable("label_union_global")
       } else {
         shinyjs::enable("label_union_global")
-        # Both unchecked — revert to per-contrast behavior
-        if (!is.null(global_union_rv)) global_union_rv(FALSE)
       }
     }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
@@ -403,13 +436,26 @@ statPlot_Ome_Server <- function(id,
       if (isTRUE(input$label_union_global)) {
         updateCheckboxInput(session, "label_union_ome", value = FALSE)
         shinyjs::disable("label_union_ome")
-        # signal other omes that global union mode is now active
-        if (!is.null(global_union_rv)) global_union_rv(TRUE)
+        # flip the shared flag — every ome's union_mode() reacts immediately
+        global_union_active(TRUE)
       } else {
         shinyjs::enable("label_union_ome")
-        if (!is.null(global_union_rv)) global_union_rv(FALSE)
+        global_union_active(FALSE)
       }
     }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+    # When global_union_active is set by ANY ome, keep this ome's UI in sync:
+    # disable label_union_ome (can't enable local union while global is on) and
+    # reflect the global state in this ome's label_union_global checkbox.
+    observe({
+      if (isTRUE(global_union_active())) {
+        shinyjs::disable("label_union_ome")
+        updateCheckboxInput(session, "label_union_global", value = TRUE)
+      } else {
+        shinyjs::enable("label_union_ome")
+        updateCheckboxInput(session, "label_union_global", value = FALSE)
+      }
+    })
 
     # Auto-enable POI checkbox when proteins are added to the list
     observeEvent(proteins_of_interest(), {
@@ -477,8 +523,7 @@ statPlot_Ome_Server <- function(id,
       }
 
       if (length(matched_ids) > 0) {
-        current <- proteins_of_interest()
-        proteins_of_interest(unique(c(current, matched_ids)))
+        set_poi(unique(c(proteins_of_interest(), matched_ids)))
       }
     })
 
@@ -539,11 +584,11 @@ statPlot_Ome_Server <- function(id,
               input$label_mode, proteins_of_interest()
             )
           ),
-          "global" = union(proteins_of_interest(), global_union_ids()),
-          proteins_of_interest()  # "none"
+          "global" = global_union_ids(),  # already folds every ome's own POI
+          proteins_of_interest()           # "none" — per-contrast baseline
         )
-        # When union POI is non-empty, force "poi" into label_mode so labels render.
-        effective_label_mode <- if (length(effective_poi) > 0) {
+        # Force "poi" into label_mode when union is active and produced IDs.
+        effective_label_mode <- if (union_mode() != "none" && length(effective_poi) > 0) {
           unique(c(input$label_mode, "poi"))
         } else {
           input$label_mode
@@ -597,9 +642,9 @@ statPlot_Ome_Server <- function(id,
 
       current <- proteins_of_interest()
       if (clicked_id %in% current) {
-        proteins_of_interest(setdiff(current, clicked_id))
+        set_poi(setdiff(current, clicked_id))
       } else {
-        proteins_of_interest(c(current, clicked_id))
+        set_poi(c(current, clicked_id))
       }
     })
     
@@ -638,18 +683,21 @@ statPlot_Ome_Server <- function(id,
           )
         ),
         "global" = {
+          # Read each ome's OWN POI from the registry (not just the triggering ome's).
+          reg <- isolate(poi_registry())
           all_omes_names <- names(stat_results())
           Reduce(union, lapply(all_omes_names, function(o) {
             sp <- stat_params()[[o]]
             sr <- stat_results()[[o]]
             if (is.null(sp) || is.null(sr)) return(character(0))
-            volcano_label_union_for_ome(sr, sp, label_mode_export, isolate(proteins_of_interest()))
+            poi_o <- reg[[o]] %||% character(0)
+            volcano_label_union_for_ome(sr, sp, label_mode_export, poi_o)
           }), init = character(0))
         },
         isolate(proteins_of_interest())  # "none"
       )
-      # Force "poi" into label_mode when union POI is non-empty
-      export_label_mode <- if (length(export_poi) > 0) {
+      # Force "poi" into label_mode when union is active and produced IDs.
+      export_label_mode <- if (export_union_mode != "none" && length(export_poi) > 0) {
         unique(c(label_mode_export, "poi"))
       } else {
         label_mode_export
@@ -736,28 +784,30 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
-        # Effective label mode: force "poi" when union POI will be non-empty
-        effective_label_mode_csv <- if (csv_union_mode != "none") {
-          unique(c(label_mode_export, "poi"))
-        } else {
-          label_mode_export
-        }
-
         # Effective POI: include union IDs from other contrasts/omes when toggled
         effective_poi_csv <- switch(
           csv_union_mode,
           "ome" = union(poi, volcano_label_union_for_ome(df_raw, sp, label_mode_export, poi)),
           "global" = {
+            # Read each ome's OWN POI from the registry (not just the triggering ome's).
+            reg <- isolate(poi_registry())
             all_omes_names <- names(stat_results())
             Reduce(union, lapply(all_omes_names, function(o) {
               sp_o <- stat_params()[[o]]
               sr_o <- stat_results()[[o]]
               if (is.null(sp_o) || is.null(sr_o)) return(character(0))
-              volcano_label_union_for_ome(sr_o, sp_o, label_mode_export, poi)
-            }), init = poi)
+              poi_o <- reg[[o]] %||% character(0)
+              volcano_label_union_for_ome(sr_o, sp_o, label_mode_export, poi_o)
+            }), init = character(0))
           },
           poi  # "none"
         )
+        # Force "poi" into label_mode when union is active and produced IDs.
+        effective_label_mode_csv <- if (csv_union_mode != "none" && length(effective_poi_csv) > 0) {
+          unique(c(label_mode_export, "poi"))
+        } else {
+          label_mode_export
+        }
 
         all_ids <- character(0)
 
