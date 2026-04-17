@@ -9,7 +9,6 @@ plotLmVolcano(
   coefficient,
   df,
   lm_params,
-  lm_results,
   sig.col = "darkred",
   bg.col = "gray",
   gene_symbol_col = "geneSymbol"
@@ -23,8 +22,6 @@ plotLmVolcano(
 \item{df}{Data.frame of LM results for this ome}
 
 \item{lm_params}{List of LM parameters (from reactiveVal)}
-
-\item{lm_results}{List of LM results (from reactiveVal)}
 
 \item{sig.col}{Color for significant points (default "darkred")}
 

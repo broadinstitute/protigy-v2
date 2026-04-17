@@ -137,7 +137,9 @@ lmResults_Ome_Server <- function(id,
 
     ns <- session$ns
 
-    # Get available coefficients from results
+    # Get available coefficients from results, filtered by the user's
+    # display-selection saved at run-time (contrast columns remain visible
+    # because they are not in all_design_coefs).
     lm_coefficients <- reactive({
       req(lm_results())
       df <- lm_results()[[ome]]
@@ -146,6 +148,15 @@ lmResults_Ome_Server <- function(id,
       # Extract coefficient names from column patterns like logFC.<coef>
       logfc_cols <- grep("^logFC\\.", colnames(df), value = TRUE)
       coefs <- sub("^logFC\\.", "", logfc_cols)
+
+      params <- lm_params()[[ome]]
+      if (!is.null(params) && !is.null(params$all_design_coefs)) {
+        # safe-coef form to match result column names
+        all_design_safe <- make.names(params$all_design_coefs)
+        display_safe <- make.names(params$display_coefficients %||% character(0))
+        hide <- setdiff(all_design_safe, display_safe)
+        coefs <- setdiff(coefs, hide)
+      }
       coefs
     })
 
@@ -343,8 +354,13 @@ lmResults_Ome_Server <- function(id,
       }
 
       if (!is.null(params$contrasts) && length(params$contrasts) > 0) {
+        # Render each contrast as "<label>: <expr>" so the user sees both the
+        # readable name and the limma expression that defines it. Colon has
+        # no space around it to keep rows compact, and entries are separated
+        # by " | " (pipe with spaces) — safer in table cells than ";".
+        contrast_lines <- paste0(names(params$contrasts), ": ", params$contrasts)
         descriptions <- c(descriptions, "Contrasts")
-        values <- c(values, paste(params$contrasts, collapse = "; "))
+        values <- c(values, paste(contrast_lines, collapse = " | "))
       }
 
       data.frame(Description = descriptions, Value = values)
@@ -440,8 +456,8 @@ lmResults_Ome_Server <- function(id,
     output$alpha_analysis <- renderUI({
       req(lm_params(), lm_results(), input$pval_coefficient)
       coef <- input$pval_coefficient
-      adj_pvals <- get_lm_pvals(ome, lm_results(), coef, "adj.P.Val")
-      suggestion <- suggest_alpha_level(adj_pvals)
+      nom_pvals <- get_lm_pvals(ome, lm_results(), coef, "P.Value")
+      suggestion <- suggest_alpha_level(nom_pvals)
 
       color <- if (!is.na(suggestion$alpha)) "#28a745" else "#856404"
       bg    <- if (!is.na(suggestion$alpha)) "#d4edda"  else "#fff3cd"
@@ -471,8 +487,8 @@ lmResults_Ome_Server <- function(id,
     observeEvent(input$apply_alpha_suggestion, {
       req(lm_results(), input$pval_coefficient)
       coef <- input$pval_coefficient
-      adj_pvals <- get_lm_pvals(ome, lm_results(), coef, "adj.P.Val")
-      suggestion <- suggest_alpha_level(adj_pvals)
+      nom_pvals <- get_lm_pvals(ome, lm_results(), coef, "P.Value")
+      suggestion <- suggest_alpha_level(nom_pvals)
       if (!is.na(suggestion$alpha)) {
         updateNumericInput(session, "select_cutoff_text", value = suggestion$alpha)
       }
@@ -625,7 +641,11 @@ lmResults_Ome_Server <- function(id,
         df <- rbind(df, data.frame(Parameter = "Interactions", Value = interaction_str))
       }
       if (!is.null(params$contrasts) && length(params$contrasts) > 0) {
-        df <- rbind(df, data.frame(Parameter = "Contrasts", Value = paste(params$contrasts, collapse = "; ")))
+        contrast_lines <- paste0(names(params$contrasts), ":", params$contrasts)
+        df <- rbind(df, data.frame(
+          Parameter = "Contrasts",
+          Value = paste(contrast_lines, collapse = " | ")
+        ))
       }
 
       write.table(
@@ -637,11 +657,65 @@ lmResults_Ome_Server <- function(id,
       )
     }
 
+    lm_model_summary_export <- function(dir_name) {
+      params <- lm_params()[[ome]]
+      if (is.null(params)) return()
+
+      df <- lm_results()[[ome]]
+      n_features <- if (!is.null(df)) nrow(df) else NA_integer_
+
+      # Build contrast metadata block. Prefer the structured `contrast_meta`
+      # (list of {id, label, expr, type}); fall back to deriving it from the
+      # named `contrasts` list for backwards compatibility.
+      contrasts_block <- if (!is.null(params$contrast_meta) &&
+                              length(params$contrast_meta) > 0) {
+        params$contrast_meta
+      } else if (!is.null(params$contrasts) && length(params$contrasts) > 0) {
+        lapply(seq_along(params$contrasts), function(i) {
+          list(
+            id = paste0("C", i),
+            label = names(params$contrasts)[i] %||% paste0("C", i),
+            expr = unname(params$contrasts[[i]]),
+            type = "unknown"
+          )
+        })
+      } else {
+        list()
+      }
+
+      summary_list <- list(
+        ome = ome,
+        timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+        formula_string = params$formula_string %||% "",
+        variables = params$variables %||% character(0),
+        variable_types = params$variable_types %||% list(),
+        include_intercept = isTRUE(params$include_intercept),
+        interactions = params$interactions %||% list(),
+        blocking_variable = params$blocking_variable %||% NULL,
+        contrasts = contrasts_block,
+        stat_threshold = list(
+          stat = params$stat %||% "adj.p.val",
+          cutoff = params$cutoff %||% 0.05
+        ),
+        design_coefficients = params$all_design_coefs %||% character(0),
+        display_coefficients = params$display_coefficients %||% character(0),
+        n_features = n_features
+      )
+
+      jsonlite::write_json(
+        summary_list,
+        path = file.path(dir_name, paste0("lm_model_summary_", ome, ".json")),
+        pretty = TRUE,
+        auto_unbox = TRUE
+      )
+    }
+
     return(list(
       lm_adj_pval_hist = adj_pval_hist_export,
       lm_nom_pval_hist = nom_pval_hist_export,
       lm_results = lm_results_export,
-      lm_workflow_parameters = workflow_params_export
+      lm_workflow_parameters = workflow_params_export,
+      lm_model_summary = lm_model_summary_export
     ))
   })
 }

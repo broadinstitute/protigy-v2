@@ -89,6 +89,17 @@ lm.regression <- function(gct,
   )
   model_vars <- all.vars(formula_obj)
 
+  # Validate: blocking variable cannot also be a fixed effect.
+  # duplicateCorrelation treats the block as a random effect; a variable should
+  # be either a fixed-effect predictor OR a blocking random effect, not both.
+  if (!is.null(blocking_var) && blocking_var %in% model_vars) {
+    stop(
+      "Blocking variable '", blocking_var, "' cannot also appear in the model formula. ",
+      "Blocking variables model within-subject correlation as a random effect; ",
+      "they should not be included as fixed effects."
+    )
+  }
+
   # Coerce cdesc columns per variable_types
   cdesc_work <- cdesc
   for (var_name in names(variable_types)) {
@@ -127,6 +138,21 @@ lm.regression <- function(gct,
   cdesc_clean <- cdesc_work[complete_mask, , drop = FALSE]
   mat_clean <- mat[, rownames(cdesc_clean), drop = FALSE]
 
+  # Drop unused factor levels that may remain after complete-case filtering,
+  # and validate that each factor still has at least two levels.
+  for (var_name in names(variable_types)) {
+    if (variable_types[[var_name]] == "factor" &&
+        var_name %in% colnames(cdesc_clean)) {
+      cdesc_clean[[var_name]] <- droplevels(cdesc_clean[[var_name]])
+      if (nlevels(cdesc_clean[[var_name]]) < 2) {
+        stop(
+          "Variable '", var_name, "' has only one level after filtering NAs. ",
+          "Remove it from the model or choose a different dataset."
+        )
+      }
+    }
+  }
+
   # Detect repeated-measures-without-groups mode:
   # blocking var is set but no predictors in formula
   repeated_measures_only <- length(model_vars) == 0 &&
@@ -140,7 +166,11 @@ lm.regression <- function(gct,
     # Repeated-measures without groups: blocking var is the subject ID.
     # Use intercept-only design; duplicateCorrelation estimates within-subject
     # correlation; lmFit accounts for it via block + correlation.
-    sampleRepeats <- factor(cdesc_clean[[blocking_var]])
+    sampleRepeats <- droplevels(factor(cdesc_clean[[blocking_var]]))
+    if (nlevels(sampleRepeats) < 2) {
+      stop("Blocking variable '", blocking_var, "' has fewer than 2 levels after filtering; ",
+           "cannot estimate within-subject correlation.")
+    }
     design <- model.matrix(~ 1, data = cdesc_clean)
     dupcor <- limma::duplicateCorrelation(mat_clean, design, block = sampleRepeats)
     correlation <- dupcor$consensus.correlation
@@ -149,21 +179,84 @@ lm.regression <- function(gct,
   } else {
     # Normal path: use formula_string design matrix
     design <- model.matrix(formula_obj, data = cdesc_clean)
+
+    # Rank-deficiency preflight: warn before limma produces silent NA coefficients.
+    design_rank <- qr(design)$rank
+    if (design_rank < ncol(design)) {
+      warning(
+        "Design matrix is rank-deficient (rank ", design_rank, " < ", ncol(design),
+        " columns). Some coefficients will be NA. Consider removing redundant ",
+        "variables or interactions."
+      )
+    }
+
     if (!is.null(blocking_var) && blocking_var %in% colnames(cdesc_clean)) {
-      block <- cdesc_clean[[blocking_var]]
-      dupcor <- limma::duplicateCorrelation(mat_clean, design, block = block)
-      correlation <- dupcor$consensus.correlation
+      block <- droplevels(factor(cdesc_clean[[blocking_var]]))
+      n_block_levels <- nlevels(block)
+      if (n_block_levels < 2) {
+        warning("Blocking variable '", blocking_var, "' has <2 levels after filtering; ",
+                "ignoring blocking.")
+        block <- NULL
+      } else if (n_block_levels == length(block)) {
+        warning("Blocking variable '", blocking_var, "' has all-unique values; ",
+                "duplicateCorrelation will estimate ~0 and blocking will be a no-op.")
+        dupcor <- limma::duplicateCorrelation(mat_clean, design, block = block)
+        correlation <- dupcor$consensus.correlation
+      } else {
+        dupcor <- limma::duplicateCorrelation(mat_clean, design, block = block)
+        correlation <- dupcor$consensus.correlation
+      }
     }
     fit <- limma::lmFit(mat_clean, design, block = block, correlation = correlation)
   }
 
-  # Apply contrasts if provided
+  # Apply contrasts if provided.
+  # makeContrasts() rejects any levels that aren't syntactically valid R names
+  # (interaction terms contain ":", which is illegal). Work around this by:
+  #   1. renaming both the design columns AND the fit's coefficient columns to
+  #      make.names()-safe versions,
+  #   2. applying make.names() to each whitespace-delimited token in the
+  #      user-supplied contrast strings so they reference the renamed columns.
+  # Then call makeContrasts on the safe-named design and contrasts.fit on the
+  # renamed fit. The coefficient output downstream is keyed on contrast NAMES
+  # (e.g., "C1"), not on the original level names, so nothing else breaks.
   if (!is.null(contrasts_list) && length(contrasts_list) > 0) {
+    safe_levels <- make.names(colnames(fit$coefficients))
+    fit_safe <- fit
+    colnames(fit_safe$coefficients) <- safe_levels
+    if (!is.null(fit_safe$stdev.unscaled)) {
+      colnames(fit_safe$stdev.unscaled) <- safe_levels
+    }
+    design_safe <- design
+    colnames(design_safe) <- safe_levels
+
+    # Rename tokens inside contrast strings so they match the safe level names.
+    rename_contrast_string <- function(s) {
+      # Split on spaces or arithmetic operators, keeping delimiters so we can
+      # reassemble identically (except renamed tokens).
+      parts <- strsplit(s, "(?=[-+*/() ])|(?<=[-+*/() ])", perl = TRUE)[[1]]
+      renamed <- vapply(parts, function(tok) {
+        if (nzchar(tok) && !grepl("^[-+*/() ]+$", tok) &&
+            suppressWarnings(is.na(as.numeric(tok)))) {
+          make.names(tok)
+        } else {
+          tok
+        }
+      }, character(1))
+      paste(renamed, collapse = "")
+    }
+    contrasts_safe <- vapply(contrasts_list, rename_contrast_string, character(1),
+                              USE.NAMES = FALSE)
+
     contrast_matrix <- limma::makeContrasts(
-      contrasts = contrasts_list,
-      levels = design
+      contrasts = contrasts_safe,
+      levels = design_safe
     )
-    fit <- limma::contrasts.fit(fit, contrast_matrix)
+    # Preserve the contrast names (C1, C2, ...) from the user-supplied list.
+    if (!is.null(names(contrasts_list))) {
+      colnames(contrast_matrix) <- names(contrasts_list)
+    }
+    fit <- limma::contrasts.fit(fit_safe, contrast_matrix)
   }
 
   # eBayes with trend fallback

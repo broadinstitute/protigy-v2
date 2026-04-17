@@ -39,5 +39,6 @@
 #' @importFrom DT datatable renderDataTable dataTableOutput
 #' @importFrom Matrix Matrix
 #' @importFrom matrixStats rowSds rowMeans2 rowMedians colMedians colMads
+#' @importFrom jsonlite write_json
 ## usethis namespace: end
 NULL

@@ -22,9 +22,9 @@ plot_lm_pval_histogram(
 
 \item{xlabel}{Character, x-axis label}
 
-\item{lm_results}{List of LM results}
+\item{lm_results}{Named list of LM result data frames, one entry per ome}
 
-\item{lm_params}{List of LM parameters}
+\item{lm_params}{Named list of LM parameters, one entry per ome}
 
 \item{ome}{Character, the ome name}
 

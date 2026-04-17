@@ -39,35 +39,37 @@ get_lm_pvals <- function(ome, lm_results, coefficient, pval_type = c("adj.P.Val"
 #' @param ome Character, the ome name
 #' @param coefficient Character, the coefficient name
 #' @param pval_type Character, either "adj.P.Val" or "P.Value"
-#' Suggest optimal alpha level via KS test on adjusted p-value tail
+#' Suggest an advisory alpha level via KS test on nominal p-value tail
 #'
-#' Replicates the alpha-level analysis from LinearModelApp_v2.
-#' For each candidate alpha in seq(0.01, 0.10, by=0.01), tests whether
-#' the tail of adj p-values (p > alpha) is uniform using a KS test against
-#' Uniform(alpha, 1) — the correct reference for the conditional tail.
-#' Returns the lowest alpha where ks.test p-value > 2e-16.
+#' Advisory heuristic: nominal p-values are uniformly distributed under the null,
+#' so for each candidate alpha in seq(0.01, 0.10, by=0.01), we test whether the
+#' tail (p > alpha) is uniform on (alpha, 1) via a KS test. The lowest alpha
+#' whose tail is not rejected is returned. Note: the returned value is advisory
+#' only — it is NOT a principled FDR estimator. For a statistically rigorous
+#' null-proportion estimate, see `qvalue::pi0est`.
 #'
-#' @param adj_pvals Numeric vector of adjusted p-values (NAs already removed)
+#' @param pvals Numeric vector of NOMINAL p-values (NAs already removed)
 #' @return A named list: $alpha (numeric or NA), $message (character)
-suggest_alpha_level <- function(adj_pvals) {
-  if (length(adj_pvals) == 0) {
-    return(list(alpha = NA, message = "No adjusted p-values available."))
+suggest_alpha_level <- function(pvals) {
+  if (length(pvals) == 0) {
+    return(list(alpha = NA, message = "No p-values available."))
   }
   levels <- seq(0.01, 0.10, by = 0.01)
   for (a in levels) {
-    tail <- adj_pvals[adj_pvals > a]
+    tail <- pvals[pvals > a]
     if (length(tail) < 2) next
     result <- suppressWarnings(ks.test(tail, "punif", min = a, max = 1))
     if (result$p.value > 2e-16) {
       return(list(
         alpha = a,
-        message = paste0("Recommended alpha: ", a,
-                         " (KS test p = ", signif(result$p.value, 3), ")")
+        message = paste0("Suggested \u03b1 (advisory): ", a,
+                         " (KS test p = ", signif(result$p.value, 3),
+                         " on nominal p-value tail)")
       ))
     }
   }
   list(alpha = NA,
-       message = "Alpha-level analysis inconclusive. Check p-value distribution manually.")
+       message = "Alpha-level analysis inconclusive. Inspect the p-value histogram manually.")
 }
 
 

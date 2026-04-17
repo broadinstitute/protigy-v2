@@ -14,11 +14,11 @@ get_lm_pvals(
 \arguments{
 \item{ome}{Character, the ome name}
 
-\item{lm_results}{List of LM results (from reactiveVal)}
+\item{lm_results}{Named list of LM result data frames, one entry per ome}
 
 \item{coefficient}{Character, the coefficient name to extract}
 
-\item{pval_type}{Character, either "adj.P.Val" or "P.Value"}
+\item{pval_type}{Character, either "adj.P.Val" (default) or "P.Value"}
 }
 \value{
 Numeric vector of p-values (NA removed)

@@ -10,8 +10,6 @@ lm.regression(
   variable_types = list(),
   blocking_var = NULL,
   contrasts_list = NULL,
-  p.value.alpha = 0.05,
-  use.adj.pvalue = TRUE,
   intensity = FALSE
 )
 }
@@ -25,10 +23,6 @@ lm.regression(
 \item{blocking_var}{Optional blocking variable name (column in cdesc)}
 
 \item{contrasts_list}{Optional list of contrast strings for makeContrasts}
-
-\item{p.value.alpha}{Significance threshold (default 0.05)}
-
-\item{use.adj.pvalue}{Logical, use adjusted p-values for significance (default TRUE)}
 
 \item{intensity}{Logical, whether data is intensity-based (enables eBayes trend)}
 }
