@@ -2,7 +2,7 @@
 % Please edit documentation in R/tab_lm_plot_helpers.R
 \name{plotLmVolcano}
 \alias{plotLmVolcano}
-\title{Create a volcano plot for a specific coefficient from LM results}
+\title{Create a volcano plot for a specific coefficient from LM results.}
 \usage{
 plotLmVolcano(
   ome,
@@ -11,7 +11,9 @@ plotLmVolcano(
   lm_params,
   sig.col = "darkred",
   bg.col = "gray",
-  gene_symbol_col = "geneSymbol"
+  gene_symbol_col = "geneSymbol",
+  label_proteins = character(0),
+  label_mode = character(0)
 )
 }
 \arguments{
@@ -28,10 +30,15 @@ plotLmVolcano(
 \item{bg.col}{Color for non-significant points (default "gray")}
 
 \item{gene_symbol_col}{Column name for gene symbols (default "geneSymbol")}
+
+\item{label_proteins}{Character vector of feature IDs to label (for PDF exports)}
+
+\item{label_mode}{Character vector; "poi", "significant_top20", and/or "significant"}
 }
 \value{
 A ggplot object
 }
 \description{
-Create a volcano plot for a specific coefficient from LM results
+Returns a ggplot object. For interactive plotly labeling, call
+build_lm_volcano_df() + add_volcano_labels() in the server.
 }

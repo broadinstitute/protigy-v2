@@ -2,38 +2,21 @@
 % Please edit documentation in R/tab_lm_results_helpers.R
 \name{suggest_alpha_level}
 \alias{suggest_alpha_level}
-\title{Plot p-value histogram for a specific coefficient}
+\title{Suggest an advisory alpha level via KS test on nominal p-value tail}
 \usage{
 suggest_alpha_level(pvals)
 }
 \arguments{
 \item{pvals}{Numeric vector of NOMINAL p-values (NAs already removed)}
-
-\item{title}{Character, plot title}
-
-\item{xlabel}{Character, x-axis label}
-
-\item{lm_results}{List of LM results}
-
-\item{lm_params}{List of LM parameters}
-
-\item{ome}{Character, the ome name}
-
-\item{coefficient}{Character, the coefficient name}
-
-\item{pval_type}{Character, either "adj.P.Val" or "P.Value"
-Suggest an advisory alpha level via KS test on nominal p-value tail
-
-Advisory heuristic: nominal p-values are uniformly distributed under the null,
-so for each candidate alpha in seq(0.01, 0.10, by=0.01), we test whether the
-tail (p > alpha) is uniform on (alpha, 1) via a KS test. The lowest alpha
-whose tail is not rejected is returned. Note: the returned value is advisory
-only — it is NOT a principled FDR estimator. For a statistically rigorous
-null-proportion estimate, see \code{qvalue::pi0est}.}
 }
 \value{
 A named list: $alpha (numeric or NA), $message (character)
 }
 \description{
-Plot p-value histogram for a specific coefficient
+Advisory heuristic: nominal p-values are uniformly distributed under the null,
+so for each candidate alpha in seq(0.01, 0.10, by=0.01), we test whether the
+tail (p > alpha) is uniform on (alpha, 1) via a KS test. The lowest alpha
+whose tail is not rejected is returned. Note: the returned value is advisory
+only — it is NOT a principled FDR estimator. For a statistically rigorous
+null-proportion estimate, see \code{qvalue::pi0est}.
 }

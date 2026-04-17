@@ -29,16 +29,6 @@ get_lm_pvals <- function(ome, lm_results, coefficient, pval_type = c("adj.P.Val"
 }
 
 
-#' Plot p-value histogram for a specific coefficient
-#'
-#' @param pvals Numeric vector of p-values
-#' @param title Character, plot title
-#' @param xlabel Character, x-axis label
-#' @param lm_results List of LM results
-#' @param lm_params List of LM parameters
-#' @param ome Character, the ome name
-#' @param coefficient Character, the coefficient name
-#' @param pval_type Character, either "adj.P.Val" or "P.Value"
 #' Suggest an advisory alpha level via KS test on nominal p-value tail
 #'
 #' Advisory heuristic: nominal p-values are uniformly distributed under the null,
@@ -59,7 +49,7 @@ suggest_alpha_level <- function(pvals) {
     tail <- pvals[pvals > a]
     if (length(tail) < 2) next
     result <- suppressWarnings(ks.test(tail, "punif", min = a, max = 1))
-    if (result$p.value > 2e-16) {
+    if (result$p.value > 0.05) {
       return(list(
         alpha = a,
         message = paste0("Suggested \u03b1 (advisory): ", a,

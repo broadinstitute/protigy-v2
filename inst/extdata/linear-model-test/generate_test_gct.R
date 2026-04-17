@@ -23,11 +23,28 @@ n_obs    <- 4   # each subject observed 4 times (2 treatments × 2 timepoints)
 n_samp   <- n_subj * n_obs  # 40 total samples
 
 # ── Sample metadata ──────────────────────────────────────────────────────────
-# Fully balanced: subject 1-10 each appears in all 4 treatment×timepoint combos
-treatment  <- rep(c("Vehicle", "Drug"),    times = n_samp / 2)
-timepoint  <- rep(c("T1", "T2", "T1", "T2"), times = n_subj)
-subject_id <- rep(paste0("S", sprintf("%02d", seq_len(n_subj))), each = n_obs)
-batch      <- rep(c("Batch1", "Batch2"), times = n_samp / 2)
+# Fully balanced 2x2x10 factorial: every subject appears in every
+# (treatment, timepoint) cell. Using expand.grid guarantees full balance —
+# independent rep() calls can produce a confounded design where
+# treatment and timepoint are aliased within each subject.
+design_grid <- expand.grid(
+  timepoint  = c("T1", "T2"),
+  treatment  = c("Vehicle", "Drug"),
+  subject_id = paste0("S", sprintf("%02d", seq_len(n_subj))),
+  stringsAsFactors = FALSE
+)
+# Batch is assigned by subject so each subject stays in a single batch
+# (mimics realistic processing where repeats-on-a-subject go together).
+subj_batch <- setNames(
+  rep(c("Batch1", "Batch2"), length.out = n_subj),
+  paste0("S", sprintf("%02d", seq_len(n_subj)))
+)
+design_grid$batch <- subj_batch[design_grid$subject_id]
+
+treatment  <- design_grid$treatment
+timepoint  <- design_grid$timepoint
+subject_id <- design_grid$subject_id
+batch      <- design_grid$batch
 
 sample_ids <- paste0("samp_", sprintf("%02d", seq_len(n_samp)))
 

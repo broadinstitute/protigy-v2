@@ -1031,7 +1031,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       if (!is.null(input$blocking_variable) && nchar(input$blocking_variable) > 0) {
         blocking_var <- input$blocking_variable
       }
-      if (is.null(f) && is.null(blocking_var)) {
+      if ((is.null(f) || !nzchar(f)) && is.null(blocking_var)) {
         showNotification("Please select at least one variable or a blocking variable.", type = "error", duration = 5)
         return()
       }
