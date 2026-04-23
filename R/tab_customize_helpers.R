@@ -36,7 +36,8 @@ sync_colors_across_omes <- function(custom_colors, annot_column, annot_value, ne
 #' Export colors to YAML format
 #' @param custom_colors The custom colors list
 #' @param file_path Path to save the YAML file
-#' @return TRUE if successful
+#' @return TRUE on success. Errors propagate (no silent failure) so that
+#'   `downloadHandler` surfaces them to the user.
 #' @importFrom yaml write_yaml
 export_colors_to_yaml <- function(custom_colors, file_path) {
   # Create a simplified structure for YAML export
@@ -50,28 +51,44 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
 
   # Convert custom_colors to simple key-value pairs
   for (ome in names(custom_colors)) {
-    yaml_structure$colors[[ome]] <- list()
+    ome_entry <- list()
 
     for (annot_col in names(custom_colors[[ome]])) {
       # Only export discrete colors (skip continuous for now)
-      if (custom_colors[[ome]][[annot_col]]$is_discrete) {
-        vals <- custom_colors[[ome]][[annot_col]]$vals
-        colors <- custom_colors[[ome]][[annot_col]]$colors
+      if (isTRUE(custom_colors[[ome]][[annot_col]]$is_discrete)) {
+        vals <- as.character(custom_colors[[ome]][[annot_col]]$vals)
+        colors <- as.character(custom_colors[[ome]][[annot_col]]$colors)
 
-        # Create named list for each annotation column (preserves names in YAML)
-        yaml_structure$colors[[ome]][[annot_col]] <- as.list(stats::setNames(colors, vals))
+        # Skip annotation columns with no values (defensive)
+        if (length(vals) == 0) next
+
+        # Create named list for each annotation column (preserves names in YAML).
+        # Keys are forced to character to prevent YAML coercing condition names
+        # like "yes"/"no"/"1" to logicals/numerics on round-trip.
+        ome_entry[[annot_col]] <- as.list(stats::setNames(colors, vals))
       }
+    }
+
+    # Only include ome if it has at least one discrete annotation column —
+    # avoids writing an empty mapping that round-trips as NULL and trips
+    # the importer's names() iteration.
+    if (length(ome_entry) > 0) {
+      yaml_structure$colors[[ome]] <- ome_entry
     }
   }
 
-  # Write to YAML file
-  tryCatch({
-    yaml::write_yaml(yaml_structure, file_path)
-    return(TRUE)
-  }, error = function(e) {
-    warning("Failed to export colors to YAML: ", e$message)
-    return(FALSE)
-  })
+  # Write to YAML file — let errors propagate so downloadHandler can surface them.
+  yaml::write_yaml(yaml_structure, file_path)
+  invisible(TRUE)
+}
+
+
+#' Validate a hex color code
+#' @param x Character scalar to test
+#' @return TRUE if x is a valid 6-digit hex color (e.g. "#A1B2C3"), FALSE otherwise
+is_valid_hex_color <- function(x) {
+  is.character(x) && length(x) == 1 && !is.na(x) &&
+    grepl("^#[0-9A-Fa-f]{6}$", x)
 }
 
 
@@ -83,132 +100,169 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
 #'    sequentially (alphabetically) to unmatched conditions
 #' 3. No conditions match: Apply colors by order sequentially to conditions
 #'
+#' Accepts two YAML shapes:
+#'   - ProTIGY: `colors: { ome: { annot_col: { val: "#hex" } } }`
+#'   - PANOPLY: `groups.colors: { annot_col: { val: "#hex" } }` (nested — most
+#'     common) or `groups.colors: { val: "#hex" }` (flat). Both are applied to
+#'     every ome in the current session.
+#'
+#' Errors (file not readable, malformed YAML, no recognized section) are
+#' raised via `stop()` so the caller can surface them to the user.
+#'
 #' @param file_path Path to the YAML file
 #' @param custom_colors Current custom colors structure (to preserve structure)
 #' @return Updated custom_colors list
 #' @importFrom yaml read_yaml
 import_colors_from_yaml <- function(file_path, custom_colors) {
-  tryCatch({
-    yaml_data <- yaml::read_yaml(file_path)
+  yaml_data <- yaml::read_yaml(file_path)
 
-    # Check for both ProTIGY format (colors) and PANOPLY format (groups.colors)
-    colors_data <- NULL
-    if (!is.null(yaml_data$colors)) {
-      colors_data <- yaml_data$colors
-    } else if (!is.null(yaml_data$`groups.colors`)) {
-      # PANOPLY format: groups.colors with flat structure (applies to all omes)
-      colors_data <- list()
-      # Apply to multi_ome and all individual omes
-      for (ome in names(custom_colors)) {
-        colors_data[[ome]] <- yaml_data$`groups.colors`
-      }
-    } else {
-      warning("No 'colors' section found in YAML file")
-      return(custom_colors)
-    }
+  # Check for both ProTIGY format (colors) and PANOPLY format (groups.colors)
+  colors_data <- NULL
+  if (!is.null(yaml_data$colors)) {
+    colors_data <- yaml_data$colors
+  } else if (!is.null(yaml_data$`groups.colors`)) {
+    gc <- yaml_data$`groups.colors`
 
-    if (is.null(colors_data)) {
-      warning("No color data found in YAML file")
-      return(custom_colors)
-    }
+    # Detect nested vs. flat shape. Nested:  {annot_col: {val: "#hex"}}
+    # Flat: {val: "#hex"}. In nested shape every top-level value is a list;
+    # in flat shape every top-level value is a scalar string.
+    is_nested <- length(gc) > 0 && all(vapply(gc, is.list, logical(1)))
 
-    # Process each ome in current session
+    colors_data <- list()
     for (ome in names(custom_colors)) {
-      # Skip if ome not in YAML
-      if (!(ome %in% names(colors_data))) {
+      if (is_nested) {
+        colors_data[[ome]] <- gc
+      } else {
+        # Flat: wrap under a synthetic annot column so the loop below finds
+        # named entries; global cross-column matching will still pick them up.
+        colors_data[[ome]] <- list(`__flat__` = gc)
+      }
+    }
+  } else {
+    warning("No 'colors' section found in YAML file")
+    return(custom_colors)
+  }
+
+  if (is.null(colors_data)) {
+    warning("No color data found in YAML file")
+    return(custom_colors)
+  }
+
+  invalid_entries <- character(0)
+
+  # Process each ome in current session
+  for (ome in names(custom_colors)) {
+    # Skip if ome not in YAML
+    if (!(ome %in% names(colors_data))) {
+      next
+    }
+
+    # Collect ALL colors globally across all columns in YAML for this ome
+    # Build mapping: condition_name -> color
+    yaml_color_map <- list()
+    for (annot_col in names(colors_data[[ome]])) {
+      # Force keys to character — YAML may have parsed "yes"/"1"/"null" as
+      # logical/numeric/NULL, which would fail equality checks against
+      # current_vals (always strings after processGCTs conversion).
+      yaml_vals <- as.character(names(colors_data[[ome]][[annot_col]]))
+
+      # Validate that the YAML structure has names (not an unnamed array)
+      if (length(yaml_vals) == 0 || all(yaml_vals == "")) {
+        warning("YAML file has invalid structure for ", ome, "$", annot_col,
+                ": expected named color mapping (e.g., condition: color) but found unnamed array. ",
+                "This may be from an older export version. Please re-export the color palette.")
         next
       }
 
-      # Collect ALL colors globally across all columns in YAML for this ome
-      # Build mapping: condition_name -> color
-      yaml_color_map <- list()
-      for (annot_col in names(colors_data[[ome]])) {
-        yaml_vals <- names(colors_data[[ome]][[annot_col]])
+      yaml_colors <- as.character(unname(unlist(colors_data[[ome]][[annot_col]])))
+      for (i in seq_along(yaml_vals)) {
+        key_i <- yaml_vals[i]
+        color_i <- yaml_colors[i]
 
-        # Validate that the YAML structure has names (not an unnamed array)
-        if (is.null(yaml_vals) || length(yaml_vals) == 0) {
-          warning("YAML file has invalid structure for ", ome, "$", annot_col,
-                  ": expected named color mapping (e.g., condition: color) but found unnamed array. ",
-                  "This may be from an older export version. Please re-export the color palette.")
+        # Validate hex. Invalid colors are recorded and skipped so a single
+        # typo doesn't abort the whole import.
+        if (!is_valid_hex_color(color_i)) {
+          invalid_entries <- c(invalid_entries,
+                               paste0(ome, "$", annot_col, "$", key_i, " = ", color_i))
           next
         }
 
-        yaml_colors <- unname(unlist(colors_data[[ome]][[annot_col]]))
-        for (i in seq_along(yaml_vals)) {
-          # Store first occurrence (don't override if duplicate names across columns)
-          if (!(yaml_vals[i] %in% names(yaml_color_map))) {
-            yaml_color_map[[yaml_vals[i]]] <- yaml_colors[i]
-          }
+        # Store first occurrence (don't override if duplicate names across columns)
+        if (!(key_i %in% names(yaml_color_map))) {
+          yaml_color_map[[key_i]] <- color_i
         }
-      }
-
-      # Process each annotation column in current session
-      for (annot_col in names(custom_colors[[ome]])) {
-        # Only process discrete colors
-        if (!custom_colors[[ome]][[annot_col]]$is_discrete) {
-          next
-        }
-
-        current_vals <- custom_colors[[ome]][[annot_col]]$vals
-        current_colors <- custom_colors[[ome]][[annot_col]]$colors
-        new_colors <- current_colors  # Start with original colors
-
-        # Check if this annotation column exists in YAML
-        annot_col_in_yaml <- annot_col %in% names(colors_data[[ome]])
-
-        # Track used colors and matched conditions
-        used_colors <- character(0)
-        matched_condition_indices <- integer(0)
-
-        # Step 1: Match by condition name (globally across YAML columns)
-        for (i in seq_along(current_vals)) {
-          if (current_vals[i] %in% names(yaml_color_map)) {
-            new_colors[i] <- yaml_color_map[[current_vals[i]]]
-            used_colors <- c(used_colors, yaml_color_map[[current_vals[i]]])
-            matched_condition_indices <- c(matched_condition_indices, i)
-          }
-        }
-
-        # Step 2: Get unused colors from YAML
-        # Only apply unused colors if:
-        # 1. The column exists in YAML, OR
-        # 2. The column doesn't exist in YAML but has at least one matched condition (global matching)
-        all_yaml_colors <- unname(unlist(yaml_color_map))
-        unused_colors <- setdiff(all_yaml_colors, used_colors)
-
-        # Step 3: Get unmatched conditions (sorted alphabetically)
-        unmatched_indices <- setdiff(seq_along(current_vals), matched_condition_indices)
-        
-        # Only apply unused colors if column exists in YAML OR if there are matched conditions
-        should_apply_unused <- annot_col_in_yaml || length(matched_condition_indices) > 0
-        
-        if (length(unmatched_indices) > 0 && length(unused_colors) > 0 && should_apply_unused) {
-          # Sort unmatched conditions alphabetically
-          unmatched_vals <- current_vals[unmatched_indices]
-          sorted_order <- order(unmatched_vals)
-          sorted_unmatched_indices <- unmatched_indices[sorted_order]
-
-          # Step 4: Apply unused colors sequentially
-          num_to_assign <- min(length(sorted_unmatched_indices), length(unused_colors))
-          for (i in 1:num_to_assign) {
-            new_colors[sorted_unmatched_indices[i]] <- unused_colors[i]
-          }
-          # Remaining unmatched conditions keep their original colors
-        }
-        # If column doesn't exist in YAML and has no matches, unmatched conditions keep their original colors
-
-        # Update colors
-        custom_colors[[ome]][[annot_col]]$colors <- new_colors
       }
     }
 
-    message("Colors imported successfully from YAML")
-    return(custom_colors)
+    # Process each annotation column in current session
+    for (annot_col in names(custom_colors[[ome]])) {
+      # Only process discrete colors
+      if (!isTRUE(custom_colors[[ome]][[annot_col]]$is_discrete)) {
+        next
+      }
 
-  }, error = function(e) {
-    warning("Failed to import colors from YAML: ", e$message)
-    return(custom_colors)
-  })
+      current_vals <- as.character(custom_colors[[ome]][[annot_col]]$vals)
+      current_colors <- custom_colors[[ome]][[annot_col]]$colors
+      new_colors <- current_colors  # Start with original colors
+
+      # Check if this annotation column exists in YAML
+      annot_col_in_yaml <- annot_col %in% names(colors_data[[ome]])
+
+      # Track used colors and matched conditions
+      used_colors <- character(0)
+      matched_condition_indices <- integer(0)
+
+      # Step 1: Match by condition name (globally across YAML columns)
+      for (i in seq_along(current_vals)) {
+        if (current_vals[i] %in% names(yaml_color_map)) {
+          new_colors[i] <- yaml_color_map[[current_vals[i]]]
+          used_colors <- c(used_colors, yaml_color_map[[current_vals[i]]])
+          matched_condition_indices <- c(matched_condition_indices, i)
+        }
+      }
+
+      # Step 2: Get unused colors from YAML
+      # Only apply unused colors if:
+      # 1. The column exists in YAML, OR
+      # 2. The column doesn't exist in YAML but has at least one matched condition (global matching)
+      all_yaml_colors <- unname(unlist(yaml_color_map))
+      unused_colors <- setdiff(all_yaml_colors, used_colors)
+
+      # Step 3: Get unmatched conditions (sorted alphabetically)
+      unmatched_indices <- setdiff(seq_along(current_vals), matched_condition_indices)
+
+      # Only apply unused colors if column exists in YAML OR if there are matched conditions
+      should_apply_unused <- annot_col_in_yaml || length(matched_condition_indices) > 0
+
+      if (length(unmatched_indices) > 0 && length(unused_colors) > 0 && should_apply_unused) {
+        # Sort unmatched conditions alphabetically
+        unmatched_vals <- current_vals[unmatched_indices]
+        sorted_order <- order(unmatched_vals)
+        sorted_unmatched_indices <- unmatched_indices[sorted_order]
+
+        # Step 4: Apply unused colors sequentially
+        num_to_assign <- min(length(sorted_unmatched_indices), length(unused_colors))
+        for (i in 1:num_to_assign) {
+          new_colors[sorted_unmatched_indices[i]] <- unused_colors[i]
+        }
+        # Remaining unmatched conditions keep their original colors
+      }
+      # If column doesn't exist in YAML and has no matches, unmatched conditions keep their original colors
+
+      # Update colors
+      custom_colors[[ome]][[annot_col]]$colors <- new_colors
+    }
+  }
+
+  if (length(invalid_entries) > 0) {
+    warning("Skipped ", length(invalid_entries), " invalid hex color entr",
+            if (length(invalid_entries) == 1) "y" else "ies", " in YAML: ",
+            paste(utils::head(invalid_entries, 5), collapse = "; "),
+            if (length(invalid_entries) > 5) ", ..." else "")
+  }
+
+  message("Colors imported successfully from YAML")
+  return(custom_colors)
 }
 
 
@@ -260,8 +314,11 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
       annot_columns_only_in_ome,
       simplify = FALSE,
       FUN = function(col) {
-        # try to pull from merged
-        merged_col_name_regexp <- paste0("^", gsub("\\.", "\\\\.", col), '\\.', ome, ".*")
+        # try to pull from merged — escape all regex metachars in the column
+        # name (not just `.`) so names like `group+plus` or `treatment(type)`
+        # don't produce invalid or over-broad patterns.
+        col_escaped <- gsub("([][{}()+*?.^$|\\\\])", "\\\\\\1", col, perl = TRUE)
+        merged_col_name_regexp <- paste0("^", col_escaped, '\\.', ome, ".*")
         merged_col_matches <- grep(merged_col_name_regexp, names(GCTs_merged@cdesc), value = TRUE)
         for (merged_col_name in merged_col_matches) {
           col_values_in_ome <- GCTs[[ome]]@cdesc[[col]]

@@ -752,3 +752,229 @@ groups.colors:
 
   unlink(temp_file)
 })
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 bug-fix regression tests
+# ---------------------------------------------------------------------------
+
+test_that("import_colors_from_yaml - malformed YAML raises an error (bug #1)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines("colors: [this is: not valid: yaml", temp_file)
+
+  # Prior to fix, malformed YAML silently returned original custom_colors and
+  # the UI showed "Import Successful". Now errors must propagate.
+  expect_error(import_colors_from_yaml(temp_file, custom_colors))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - flat groups.colors is applied (bug #2)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    ),
+    proteome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # Truly flat PANOPLY-style file: condition -> color, no column nesting.
+  yaml_content <- "
+groups.colors:
+  control: '#4477AA'
+  drug_A: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")
+  expect_equal(result$proteome$treatment$colors[1], "#4477AA")
+  expect_equal(result$proteome$treatment$colors[2], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - invalid hex codes are skipped with warning (bug #7)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A", "drug_B"),
+        colors = c("#000000", "#111111", "#222222")
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: 'not-a-hex'
+      drug_B: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  expect_warning(
+    result <- import_colors_from_yaml(temp_file, custom_colors),
+    "invalid hex color"
+  )
+
+  # Valid entries applied, invalid entry keeps original
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#111111")  # original kept
+  expect_equal(result$multi_ome$treatment$colors[3], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - skips omes with no discrete columns (bug #15)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a", "b"),
+        colors = c("#AAAAAA", "#BBBBBB")
+      )
+    ),
+    proteome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = NULL,
+        colors = c("#111111", "#222222", "#333333")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  yaml_back <- yaml::read_yaml(temp_file)
+  expect_true("multi_ome" %in% names(yaml_back$colors))
+  # proteome had only continuous entries, so it should be omitted entirely.
+  expect_false("proteome" %in% names(yaml_back$colors))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - round-trip preserves YAML-special keys (bug #12)", {
+  # Keys like "yes", "no", "1" would otherwise parse as logical/numeric and
+  # fail equality match against current_vals on re-import.
+  custom_colors <- list(
+    multi_ome = list(
+      flag = list(
+        is_discrete = TRUE,
+        vals = c("yes", "no", "1"),
+        colors = c("#AAAAAA", "#BBBBBB", "#CCCCCC")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  # Reset to placeholder colors so the importer has something to change.
+  custom_colors$multi_ome$flag$colors <- c("#000000", "#000000", "#000000")
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+  expect_equal(result$multi_ome$flag$colors,
+               c("#AAAAAA", "#BBBBBB", "#CCCCCC"))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - propagates write errors (bug #10)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a"),
+        colors = c("#AAAAAA")
+      )
+    )
+  )
+
+  # Writing into a non-existent directory should now error out rather than
+  # silently returning FALSE. Suppress the upstream `file()` warning so the
+  # test log stays clean; the error itself is what we're asserting on.
+  bad_path <- file.path(tempfile(), "does", "not", "exist", "out.yaml")
+  expect_error(suppressWarnings(export_colors_to_yaml(custom_colors, bad_path)))
+})
+
+
+test_that("is_valid_hex_color - validates 6-digit hex (bug #7)", {
+  expect_true(is_valid_hex_color("#AABBCC"))
+  expect_true(is_valid_hex_color("#000000"))
+  expect_true(is_valid_hex_color("#abcdef"))
+  expect_false(is_valid_hex_color("AABBCC"))        # missing #
+  expect_false(is_valid_hex_color("#ABC"))          # 3-digit
+  expect_false(is_valid_hex_color("#AABBCCDD"))     # 8-digit
+  expect_false(is_valid_hex_color("#GGGGGG"))       # non-hex chars
+  expect_false(is_valid_hex_color(NA_character_))
+  expect_false(is_valid_hex_color(NULL))
+  expect_false(is_valid_hex_color(c("#AABBCC", "#112233")))  # vector
+})
+
+
+test_that("make_custom_colors - handles regex-metachar column names (bug #11)", {
+  mock_gct <- new("GCT",
+    mat = matrix(1:9, nrow = 3, ncol = 3),
+    rdesc = data.frame(id = paste0("gene_", 1:3)),
+    cdesc = data.frame(
+      `group+plus` = c("A", "B", "C"),
+      `treatment(type)` = c("X", "Y", "Z"),
+      row.names = paste0("sample_", 1:3),
+      check.names = FALSE
+    ),
+    rid = paste0("gene_", 1:3),
+    cid = paste0("sample_", 1:3)
+  )
+
+  # Merged GCT has the same columns with ome-suffixed variants (simulating the
+  # code path that exercises the regex).
+  mock_merged <- new("GCT",
+    mat = matrix(1:9, nrow = 3, ncol = 3),
+    rdesc = data.frame(id = paste0("gene_", 1:3)),
+    cdesc = data.frame(
+      `group+plus` = c("A", "B", "C"),
+      `treatment(type)` = c("X", "Y", "Z"),
+      row.names = paste0("sample_", 1:3),
+      check.names = FALSE
+    ),
+    rid = paste0("gene_", 1:3),
+    cid = paste0("sample_", 1:3)
+  )
+
+  # Must not error on regex construction.
+  expect_no_error(result <- make_custom_colors(list(ome1 = mock_gct), mock_merged))
+  expect_true("group+plus" %in% names(result$ome1))
+  expect_true("treatment(type)" %in% names(result$ome1))
+})
