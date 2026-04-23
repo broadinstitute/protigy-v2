@@ -944,6 +944,61 @@ test_that("is_valid_hex_color - validates 6-digit hex (bug #7)", {
 })
 
 
+test_that("colors_structure_signature - stable under color-only edits (bug #4)", {
+  before <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  after_edit <- before
+  after_edit$multi_ome$treatment$colors <- c("#AAAAAA", "#BBBBBB")
+
+  # Color edits must NOT change the signature — otherwise the Customize
+  # observer would clobber user edits back to globals$colors every time.
+  expect_identical(
+    colors_structure_signature(before),
+    colors_structure_signature(after_edit)
+  )
+})
+
+
+test_that("colors_structure_signature - changes when omes/columns change (bug #4)", {
+  small <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("#111", "#222"))
+    )
+  )
+  new_ome <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("#111", "#222"))
+    ),
+    ome2 = list(
+      batch = list(is_discrete = TRUE, vals = c("X", "Y"), colors = c("#333", "#444"))
+    )
+  )
+  new_vals <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B", "C"), colors = c("#1", "#2", "#3"))
+    )
+  )
+
+  # Adding an ome changes the signature → refresh fires.
+  expect_false(identical(colors_structure_signature(small),
+                         colors_structure_signature(new_ome)))
+  # Adding a condition value changes the signature → refresh fires.
+  expect_false(identical(colors_structure_signature(small),
+                         colors_structure_signature(new_vals)))
+
+  # Empty / NULL inputs return empty string consistently.
+  expect_identical(colors_structure_signature(NULL), "")
+  expect_identical(colors_structure_signature(list()), "")
+})
+
+
 test_that("make_custom_colors - handles regex-metachar column names (bug #11)", {
   mock_gct <- new("GCT",
     mat = matrix(1:9, nrow = 3, ncol = 3),

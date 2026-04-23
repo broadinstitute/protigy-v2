@@ -92,6 +92,31 @@ is_valid_hex_color <- function(x) {
 }
 
 
+#' Compute a structural signature of a custom_colors list
+#'
+#' Returns a string that changes only when the set of omes, annotation
+#' columns, or condition values changes — but not when only color hex
+#' values change. Used by the Customize module to detect new datasets
+#' (which must refresh stale color state) while leaving user color edits
+#' alone.
+#'
+#' @param colors A custom_colors list (as produced by make_custom_colors)
+#' @return A character scalar signature; empty string for NULL/empty input.
+colors_structure_signature <- function(colors) {
+  if (is.null(colors) || length(colors) == 0) return("")
+  sig <- lapply(colors, function(ome_cols) {
+    if (!is.list(ome_cols)) return(character(0))
+    vapply(names(ome_cols), function(col) {
+      vals <- ome_cols[[col]]$vals
+      paste(col, paste(as.character(vals), collapse = "|"), sep = ":")
+    }, character(1))
+  })
+  paste(names(sig),
+        vapply(sig, paste, character(1), collapse = ";"),
+        sep = "=", collapse = "||")
+}
+
+
 #' Import colors from YAML format with smart matching
 #'
 #' Implements a three-scenario matching algorithm:

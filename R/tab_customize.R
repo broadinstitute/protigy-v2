@@ -177,16 +177,25 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     # Flag to prevent observe block from interfering during import
     importing <- reactiveVal(FALSE)
 
-    # Use existing colors from globals (initialized in sidebar_setup)
-    # This ensures consistency and uses the colorblind-safe palette
-    # Note: Removed 'once = TRUE' to allow updates if globals$colors changes
-    # but protect against overwriting user customizations during manual edits
+    # Use existing colors from globals (initialized in sidebar_setup).
+    # Refresh custom_colors when:
+    #   - it's uninitialized (first load), OR
+    #   - we're in the middle of an import (import handler sets this), OR
+    #   - the structural signature of globals$colors no longer matches
+    #     custom_colors — this detects new data uploads with different
+    #     omes/columns that would otherwise leave stale state downstream.
     observeEvent(globals$colors, {
       req(globals$colors)
 
-      # Only update if custom_colors is not yet initialized or during import
-      # This prevents overwriting user's manual color changes
-      if (is.null(custom_colors()) || length(custom_colors()) == 0 || importing()) {
+      incoming_sig <- colors_structure_signature(globals$colors)
+      current_sig <- colors_structure_signature(isolate(custom_colors()))
+
+      needs_refresh <-
+        is.null(custom_colors()) || length(custom_colors()) == 0 ||
+        importing() ||
+        !identical(incoming_sig, current_sig)
+
+      if (needs_refresh) {
         custom_colors(globals$colors)
         # Store as default if not already set (first time initialization)
         if (is.null(default_colors_stored())) {
@@ -441,10 +450,24 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
       file_path <- input$import_yaml$datapath
 
-      tryCatch({
-        # Set importing flag to prevent observe block interference
-        importing(TRUE)
+      # Set importing flag to prevent observe block interference.
+      # The picker observer reads input[[picker_id]] which may still hold
+      # pre-import values while custom_colors has already been updated —
+      # without this flag the observer would race and revert the import.
+      importing(TRUE)
 
+      # Guarantee the flag gets cleared even on error paths further down
+      # (previously the 200 ms delay could be skipped, leaving the flag
+      # stuck TRUE and freezing all subsequent picker edits).
+      clear_importing_flag <- function() {
+        # Fire after Shiny has flushed the UI update caused by setting
+        # custom_colors(). At that point all picker inputs reflect the
+        # new colors and it's safe to let the picker observer run again.
+        # No arbitrary timer needed.
+        session$onFlushed(function() importing(FALSE), once = TRUE)
+      }
+
+      tryCatch({
         updated_colors <- import_colors_from_yaml(file_path, custom_colors())
 
         # Store imported colors as the new defaults
@@ -455,12 +478,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         # We don't need to manually update color pickers, which prevents triggering the observe block
         custom_colors(updated_colors)
 
-        # Reset importing flag AFTER updating custom_colors
-        # Use a delay to ensure UI updates complete before allowing observer to run
-        # This prevents the observe block from immediately reacting to the color change
-        shinyjs::delay(200, {
-          importing(FALSE)
-        })
+        clear_importing_flag()
 
         shinyalert::shinyalert(
           title = "Import Successful",
@@ -468,7 +486,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
           type = "success"
         )
       }, error = function(e) {
-        importing(FALSE)  # Reset flag on error
+        importing(FALSE)  # Reset flag immediately on error
 
         # Log error for debugging
         message("Color import error: ", e$message)
