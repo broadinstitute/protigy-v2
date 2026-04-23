@@ -397,15 +397,17 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
       vals <- color_info$vals
 
-      # Check each value in the selected annotation column
+      # Accumulate changes then fire a single notification at the end —
+      # avoids the N-notifications-per-bulk-change spam the old per-value
+      # showNotification() call produced (bug #13).
+      updated_colors <- colors
+      changed_vals <- character(0)
+
       for (i in seq_along(vals)) {
         picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
         new_color <- input[[picker_id]]
 
         if (!is.null(new_color) && new_color != color_info$colors[i]) {
-          # Update colors
-          updated_colors <- colors
-
           if (input$color_mode == "multi_ome") {
             # Sync across all omes
             updated_colors <- sync_colors_across_omes(
@@ -418,16 +420,19 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
             # Update only this ome
             updated_colors[[display_ome]][[annot_col]]$colors[i] <- new_color
           }
-
-          custom_colors(updated_colors)
-          
-          # Show notification that color was updated
-          showNotification(
-            paste("Color updated for", vals[i], "in", annot_col),
-            type = "message",
-            duration = 2
-          )
+          changed_vals <- c(changed_vals, as.character(vals[i]))
         }
+      }
+
+      if (length(changed_vals) > 0) {
+        custom_colors(updated_colors)
+
+        msg <- if (length(changed_vals) == 1) {
+          paste("Color updated for", changed_vals, "in", annot_col)
+        } else {
+          paste0("Updated ", length(changed_vals), " colors in ", annot_col)
+        }
+        showNotification(msg, type = "message", duration = 2)
       }
     })
 
@@ -534,42 +539,11 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         default_colors <- make_custom_colors(GCTs(), GCTs_merged())
       }
       
-      # Update custom_colors
+      # Update custom_colors — renderUI() at output$color_pickers_ui rebuilds
+      # every picker from the new value, so no explicit updateColourInput
+      # calls are needed here (bug #14: those calls were dead code).
       custom_colors(default_colors)
-      
-      # Update color picker inputs for the currently selected annotation column
-      req(input$color_mode)
-      display_ome <- if (input$color_mode == "multi_ome") {
-        "multi_ome"
-      } else {
-        req(input$selected_ome)
-        input$selected_ome
-      }
-      
-      if (display_ome %in% names(default_colors)) {
-        if (!is.null(input$selected_annotation_column)) {
-          annot_col <- input$selected_annotation_column
-          
-          if (annot_col %in% names(default_colors[[display_ome]])) {
-            color_info <- default_colors[[display_ome]][[annot_col]]
-            
-            if (color_info$is_discrete) {
-              vals <- color_info$vals
-              col_colors <- color_info$colors
-              
-              for (i in seq_along(vals)) {
-                picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
-                colourpicker::updateColourInput(
-                  session,
-                  picker_id,
-                  value = col_colors[i]
-                )
-              }
-            }
-          }
-        }
-      }
-      
+
       # Show notification
       showNotification(
         "Default colors restored successfully!",
@@ -581,55 +555,22 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     # Reset to original app-generated defaults (clears imported YAML defaults)
     observeEvent(input$reset_to_app_defaults, {
       req(GCTs(), GCTs_merged())
-      
+
       # Clear stored defaults (from imported YAML)
       default_colors_stored(NULL)
-      
+
       # Clear the file input
       shinyjs::reset("import_yaml")
-      
+
       # Regenerate original app defaults
       app_default_colors <- make_custom_colors(GCTs(), GCTs_merged())
-      
+
       # Update original app defaults storage
       original_app_defaults(app_default_colors)
-      
-      # Update custom_colors
+
+      # Update custom_colors — pickers rebuild via renderUI (bug #14).
       custom_colors(app_default_colors)
-      
-      # Update color picker inputs for the currently selected annotation column
-      req(input$color_mode)
-      display_ome <- if (input$color_mode == "multi_ome") {
-        "multi_ome"
-      } else {
-        req(input$selected_ome)
-        input$selected_ome
-      }
-      
-      if (display_ome %in% names(app_default_colors)) {
-        if (!is.null(input$selected_annotation_column)) {
-          annot_col <- input$selected_annotation_column
-          
-          if (annot_col %in% names(app_default_colors[[display_ome]])) {
-            color_info <- app_default_colors[[display_ome]][[annot_col]]
-            
-            if (color_info$is_discrete) {
-              vals <- color_info$vals
-              col_colors <- color_info$colors
-              
-              for (i in seq_along(vals)) {
-                picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
-                colourpicker::updateColourInput(
-                  session,
-                  picker_id,
-                  value = col_colors[i]
-                )
-              }
-            }
-          }
-        }
-      }
-      
+
       # Show notification
       showNotification(
         "Reset to original app-generated default colors. Imported YAML defaults have been cleared.",

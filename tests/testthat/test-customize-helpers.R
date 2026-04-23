@@ -464,12 +464,14 @@ colors:
 
   result <- import_colors_from_yaml(temp_file, custom_colors)
 
-  # 'control' should match globally from tissue column
+  # 'control' still matches globally from tissue column (cross-column name
+  # match is preserved to be helpful when users rename columns).
   expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control (matched from tissue)
 
-  # 'drug_X' is unmatched (alphabetically first among unmatched)
-  # Unused colors: #EE6677, #228833
-  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_X (sequential from unused)
+  # Bug #5: because `treatment` is NOT in the YAML, unmatched conditions
+  # keep their original defaults instead of being clobbered by unrelated
+  # leftover colors from other columns. drug_X keeps its original color.
+  expect_equal(result$multi_ome$treatment$colors[2], "#111111")  # drug_X (original)
 
   unlink(temp_file)
 })
@@ -941,6 +943,154 @@ test_that("is_valid_hex_color - validates 6-digit hex (bug #7)", {
   expect_false(is_valid_hex_color(NA_character_))
   expect_false(is_valid_hex_color(NULL))
   expect_false(is_valid_hex_color(c("#AABBCC", "#112233")))  # vector
+})
+
+
+test_that("export/import - continuous palettes round-trip (bug #8)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("ctrl", "drug"),
+        colors = c("#000000", "#111111")
+      ),
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high", "na_color"),
+        colors = c("#FF0000", "#00FF00", "#0000FF", "#BBBBBB")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  # Wipe colors so the importer has something to change.
+  custom_colors$multi_ome$treatment$colors <- c("#777777", "#888888")
+  custom_colors$multi_ome$age$colors <- c("#777777", "#777777", "#777777", "#777777")
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$treatment$colors, c("#000000", "#111111"))
+  expect_equal(result$multi_ome$age$colors,
+               c("#FF0000", "#00FF00", "#0000FF", "#BBBBBB"))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - skips continuous function-form palettes (bug #8)", {
+  # When continuous.return_function=TRUE, $colors is a circlize colorRamp2
+  # closure — not YAML-serializable. Must be silently skipped, not crash.
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = NULL,
+        colors = function(x) "#AAAAAA"  # stand-in for a colorRamp2 closure
+      ),
+      group = list(
+        is_discrete = TRUE,
+        vals = c("A", "B"),
+        colors = c("#111111", "#222222")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  expect_no_error(export_colors_to_yaml(custom_colors, temp_file))
+
+  yaml_back <- yaml::read_yaml(temp_file)
+  # Discrete entry exported normally
+  expect_equal(as.character(yaml_back$colors$multi_ome$group$A), "#111111")
+  # Function-form continuous entry not emitted
+  expect_null(yaml_back$continuous_colors$multi_ome$age)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - unused colors stay within their column (bug #5)", {
+  # `treatment` is in the YAML, `batch` is not. Previously, leftover YAML
+  # colors from `treatment` would bleed into `batch`'s unmatched conditions.
+  # Now `batch` must keep its defaults.
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("ctrl", "drug"),
+        colors = c("#000000", "#111111")
+      ),
+      batch = list(
+        is_discrete = TRUE,
+        vals = c("batch1", "batch2"),
+        colors = c("#AAAAAA", "#BBBBBB")  # colorblind-safe defaults
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      ctrl: '#4477AA'
+      drug: '#EE6677'
+      extra: '#228833'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # treatment gets its YAML colors
+  expect_equal(result$multi_ome$treatment$colors, c("#4477AA", "#EE6677"))
+
+  # batch is absent from YAML → defaults preserved; #228833 must NOT leak in.
+  expect_equal(result$multi_ome$batch$colors, c("#AAAAAA", "#BBBBBB"))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - duplicate condition names keep per-column color (bug #6)", {
+  # `Control` appears in both `Treatment` and `QC.status` with DIFFERENT
+  # colors in the YAML. Previously only the first occurrence survived
+  # globally, losing per-column distinctness on round-trip. Now each
+  # column gets its own color.
+  custom_colors <- list(
+    multi_ome = list(
+      Treatment = list(
+        is_discrete = TRUE,
+        vals = c("Control", "DrugA"),
+        colors = c("#000000", "#111111")
+      ),
+      QC.status = list(
+        is_discrete = TRUE,
+        vals = c("Control", "Fail"),
+        colors = c("#222222", "#333333")
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    Treatment:
+      Control: '#4477AA'
+      DrugA: '#EE6677'
+    QC.status:
+      Control: '#228833'
+      Fail: '#CCBB44'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$Treatment$colors[1], "#4477AA")   # Treatment's Control
+  expect_equal(result$multi_ome$QC.status$colors[1], "#228833")   # QC.status's Control — must differ
+
+  unlink(temp_file)
 })
 
 
