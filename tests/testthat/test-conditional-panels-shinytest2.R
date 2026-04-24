@@ -12,6 +12,7 @@
 #   - row_filter_enabled → column selector visible
 #   - row_filter_enabled && column != '' → values selector visible
 #   - 2-component normalization absent for >20 samples
+#   - intensity_data toggle updates normalization choices and max_missing bounds
 #
 # Tier 2 — sidebar_setup_helpers_csv-excel-processing.R
 #   - delimit_id_<file_id> toggle (CSV step 2)
@@ -249,6 +250,74 @@ test_that("2-component normalization absent for GCT with >20 samples", {
     )
     expect_true("None" %in% options_js)
     expect_true("Median" %in% options_js)
+  }
+})
+
+test_that("intensity data toggle updates normalization choices and max missing bounds", {
+  skip_if_no_shinytest2()
+  app <- reach_gct_setup_step()
+  on.exit(app$stop(), add = TRUE)
+
+  get_norm_choices <- function() {
+    tryCatch(
+      as.character(unlist(app$run_js(paste0(
+        "Array.from(document.querySelectorAll(",
+        "  '#setupSidebar-Proteome_data_normalization option'",
+        ")).map(o => o.value)"
+      )))),
+      error = function(e) character(0)
+    )
+  }
+
+  get_max_missing_max <- function() {
+    tryCatch(
+      suppressWarnings(as.numeric(app$run_js(
+        "document.getElementById('setupSidebar-Proteome_max_missing').max"
+      ))),
+      error = function(e) NA_real_
+    )
+  }
+
+  # Intensity OFF -> "No" branch: should include plain "Median", max missing up to 100.
+  app$set_inputs(`setupSidebar-Proteome_intensity_data` = FALSE, wait_ = FALSE)
+  app$wait_for_idle(duration = 800, timeout = 20000)
+  choices_no <- get_norm_choices()
+  max_no <- get_max_missing_max()
+
+  if (length(choices_no) > 0) {
+    expect_true(
+      "Median" %in% choices_no,
+      info = "When intensity_data is FALSE, normalization should include plain 'Median'"
+    )
+  }
+  if (!is.na(max_no)) {
+    expect_equal(
+      max_no, 100,
+      info = "When intensity_data is FALSE, max_missing max should be 100"
+    )
+  }
+
+  # Intensity ON -> "Yes" branch: plain "Median" should disappear, max missing max = 99.
+  app$set_inputs(`setupSidebar-Proteome_intensity_data` = TRUE, wait_ = FALSE)
+  app$wait_for_idle(duration = 800, timeout = 20000)
+  choices_yes <- get_norm_choices()
+  max_yes <- get_max_missing_max()
+
+  if (length(choices_yes) > 0) {
+    expect_false(
+      "Median" %in% choices_yes,
+      info = "When intensity_data is TRUE, normalization should not include plain 'Median'"
+    )
+    expect_true(
+      "Median (non-zero)" %in% choices_yes,
+      info = "When intensity_data is TRUE, normalization should include 'Median (non-zero)'"
+    )
+  }
+  if (!is.na(max_yes)) {
+    expect_equal(
+      max_yes, 99,
+      info = "When intensity_data is TRUE, max_missing max should be 99"
+    )
   }
 })
 
