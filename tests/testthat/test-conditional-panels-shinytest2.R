@@ -60,14 +60,14 @@ test_that("data_normalization != None reveals group normalization checkbox", {
   # Default: data_normalization is "Median" (non-None), so group normalization
   # checkbox should already be visible. First set to None, verify hidden.
   # wait_for_panel_hidden/visible throw on timeout — that IS the assertion.
-  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None")
+  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization"),
     message = "Group normalization checkbox should be hidden when data_normalization = None"
   )
 
   # Now set to a non-None value, verify visible
-  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median")
+  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization"),
     message = "Group normalization checkbox should be visible when data_normalization != None"
@@ -80,18 +80,18 @@ test_that("group normalization checkbox reveals column selector", {
   on.exit(app$stop(), add = TRUE)
 
   # Ensure normalization is non-None so the group normalization checkbox is visible
-  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median")
+  app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median", wait_ = FALSE)
   wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization")
 
   # Disable group normalization — column selector should be hidden
-  app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE)
+  app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization_column"),
     message = "Group normalization column selector should be hidden when group_normalization = FALSE"
   )
 
   # Enable group normalization — column selector should appear
-  app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE)
+  app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization_column"),
     message = "Group normalization column selector should be visible when group_normalization = TRUE"
@@ -104,14 +104,14 @@ test_that("data_filter StdDev reveals percentile input", {
   on.exit(app$stop(), add = TRUE)
 
   # None selected — percentile input should be hidden
-  app$set_inputs(`setupSidebar-Proteome_data_filter` = "None")
+  app$set_inputs(`setupSidebar-Proteome_data_filter` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_data_filter_sd_pct"),
     message = "Percentile input should be hidden when data_filter = None"
   )
 
   # StdDev selected — percentile input should appear
-  app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev")
+  app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
     message = "Percentile input should be visible when data_filter = StdDev"
@@ -124,14 +124,14 @@ test_that("sample_filter_enabled checkbox reveals column selector", {
   on.exit(app$stop(), add = TRUE)
 
   # Disable sample filter
-  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = FALSE)
+  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = FALSE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_sample_filter_column"),
     message = "Sample filter column selector should be hidden when filter disabled"
   )
 
   # Enable sample filter
-  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE)
+  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_sample_filter_column"),
     message = "Sample filter column selector should be visible when filter enabled"
@@ -144,7 +144,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
   on.exit(app$stop(), add = TRUE)
 
   # Enable filter and select a column
-  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE)
+  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE, wait_ = FALSE)
   app$wait_for_idle(duration = 600)
   # The dataset has a "Type" column — use first available column
   # The values selector should appear once a non-empty column is selected
@@ -152,7 +152,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
   if (is.null(current_col) || identical(current_col, "")) {
     # Set to first available column (Type is present in the mb-proteome GCT cdesc)
     tryCatch(
-      app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "Type"),
+      app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "Type", wait_ = FALSE),
       error = function(e) NULL
     )
     app$wait_for_idle(duration = 600)
@@ -167,7 +167,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
   }
 
   # Clear the column — values selector should hide
-  app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "")
+  app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "", wait_ = FALSE)
   app$wait_for_idle(duration = 600)
   expect_false(
     is_visible(app, "setupSidebar-Proteome_sample_filter_values"),
@@ -180,13 +180,13 @@ test_that("row_filter_enabled checkbox reveals column selector", {
   app <- reach_gct_setup_step()
   on.exit(app$stop(), add = TRUE)
 
-  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = FALSE)
+  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = FALSE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_row_filter_column"),
     message = "Row filter column selector should be hidden when filter disabled"
   )
 
-  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE)
+  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_row_filter_column"),
     message = "Row filter column selector should be visible when filter enabled"
@@ -198,12 +198,12 @@ test_that("selecting a row_filter_column reveals values selector", {
   app <- reach_gct_setup_step()
   on.exit(app$stop(), add = TRUE)
 
-  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE)
+  app$set_inputs(`setupSidebar-Proteome_row_filter_enabled` = TRUE, wait_ = FALSE)
   app$wait_for_idle(duration = 600)
 
   # Try to select a row metadata column (e.g., "GeneSymbol" or similar)
   tryCatch(
-    app$set_inputs(`setupSidebar-Proteome_row_filter_column` = "Species"),
+    app$set_inputs(`setupSidebar-Proteome_row_filter_column` = "Species", wait_ = FALSE),
     error = function(e) NULL
   )
   app$wait_for_idle(duration = 600)
@@ -216,7 +216,7 @@ test_that("selecting a row_filter_column reveals values selector", {
     )
   }
 
-  app$set_inputs(`setupSidebar-Proteome_row_filter_column` = "")
+  app$set_inputs(`setupSidebar-Proteome_row_filter_column` = "", wait_ = FALSE)
   app$wait_for_idle(duration = 600)
   expect_false(
     is_visible(app, "setupSidebar-Proteome_row_filter_values"),
