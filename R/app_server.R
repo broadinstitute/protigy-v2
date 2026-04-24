@@ -20,6 +20,12 @@ app_server <- function(input, output, session) {
   globals <- sidebar_output$globals
   GCTs_original <- sidebar_output$GCTs_original
 
+  # Export reactive state for shinytest2 integration tests.
+  # These are no-ops in production (shiny.testmode is FALSE by default).
+  shiny::exportTestValues(
+    GCTs_and_params = { GCTs_and_params() },
+    globals_colors  = { globals$colors }
+  )
 
   ## Clear all notifications functionality
   observeEvent(input$clear_all_notifications_header, {
