@@ -34,7 +34,7 @@ Protigy::launchApp()
 ## Key Features
 
 ### 📊 **Data Analysis & Visualization**
-- **Quality Control (QC)**: Boxplots, profile plots, correlation analysis, and PCA plots
+- **Quality Control (QC)**: Boxplots, profile plots, CV plots, correlation analysis, and PCA plots
 - **Statistical Analysis**: Moderated t-tests, F-tests, and volcano plots
 - **Interactive Plots**: Zoom, pan, and explore your data
 - **Summary Statistics**: Data overview and sample information
@@ -50,15 +50,6 @@ Protigy::launchApp()
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
 - **Supported Formats**: GCT v1.3, CSV, TSV, SSV (semicolon-separated), and Excel files
 - **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
-
-## Volcano plots (Statistics tab)
-
-After you run statistics, open **Statistics → Volcano Plot** for **one-sample** and **two-sample** moderated *t*-tests (not for the moderated F-test).
-
-- **Cutoff** (nominal or adjusted *p*-value and numeric threshold) is the same as in **Statistics → Summary** and controls the horizontal significance line on the volcano plot.
-- **Label proteins** (optional): turn on any combination of **Proteins of interest** (paste or search feature IDs, or click points on the plot to add/remove), **Top 20 significant** (among features above the line, ranked by significance with ties broken by absolute log2 fold change), and **All significant** (every feature above the line; can be crowded).
-- Labels and point highlights use **magenta** so they stand out from significant points (dark red) and non-significant points (gray).
-- You can **export** volcano PDFs and a proteins-of-interest list from the app export options when available.
 
 ## UI Navigation
 
@@ -146,6 +137,7 @@ After upload (and CSV/TSV/SSV/Excel design, if applicable), work through **Setup
   - **Profile Plots**: Visualize individual feature profiles
   - **Correlation**: Assess sample relationships
   - **PCA**: Identify patterns and outliers
+  - **CV**: Examine group-wise coefficient of variation distributions and optional CV filtering exports (valid for non-log-transformed intensity data only)
 
 ### 6. **Run Statistical Analysis** (Optional)
 - Statistical analysis is optional - you can use ProTIGY just for QC and data export
@@ -161,6 +153,8 @@ After upload (and CSV/TSV/SSV/Excel design, if applicable), work through **Setup
 
 - **R Version**: 4.0.0 or higher
 - **Memory**: Minimum 8GB RAM recommended; 16GB+ for large datasets (>10,000 features and >50 samples)
+- **Windows build tools**: [Rtools](https://cran.r-project.org/bin/windows/Rtools/) for package installation from source
+- **macOS build tools**: [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) for package installation from source
 
 ## Recommended Software
 
