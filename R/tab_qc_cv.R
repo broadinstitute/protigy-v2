@@ -117,19 +117,7 @@ QCCV_Ome_UI <- function(id, ome) {
   ns <- NS(id)
 
   tagList(
-    fluidRow(
-      shinydashboardPlus::box(
-        # Controls — always visible
-        uiOutput(ns("qc_cv_controls")),
-        uiOutput(ns("cv_plot_section")),
-
-        status      = "primary",
-        width       = 12,
-        title       = "Coefficient of Variation (CV)",
-        headerBorder = TRUE,
-        solidHeader  = TRUE
-      )
-    )
+    uiOutput(ns("cv_contents"))
   )
 }
 
@@ -145,8 +133,44 @@ QCCV_Ome_Server <- function(id,
 
     ns <- session$ns
 
-    ## Controls UI (always visible) -------------------------------------------
+    # CV plots are only meaningful for intensity data.
+    show_cv_plots <- reactive({
+      req(parameters())
+      intensity_data_param_is_yes(parameters()$intensity_data)
+    })
+
+    output$cv_contents <- renderUI({
+      if (!isTRUE(show_cv_plots())) {
+        return(
+          fluidRow(
+            shinydashboardPlus::box(
+              h4("CV plots are unavailable for ratio data. Enable intensity data to view CV plots."),
+              status       = "primary",
+              width        = 12,
+              title        = "Coefficient of Variation (CV)",
+              headerBorder = TRUE,
+              solidHeader  = TRUE
+            )
+          )
+        )
+      }
+
+      fluidRow(
+        shinydashboardPlus::box(
+          uiOutput(ns("qc_cv_controls")),
+          uiOutput(ns("cv_plot_section")),
+          status       = "primary",
+          width        = 12,
+          title        = "Coefficient of Variation (CV)",
+          headerBorder = TRUE,
+          solidHeader  = TRUE
+        )
+      )
+    })
+
+    ## Controls UI -------------------------------------------------------------
     output$qc_cv_controls <- renderUI({
+      req(show_cv_plots())
       req(GCT_processed())
 
       cdesc_cols <- names(GCT_processed()@cdesc)
@@ -240,12 +264,6 @@ QCCV_Ome_Server <- function(id,
       combine_cdesc_cols(GCT_processed()@cdesc, selected_cols())
     })
 
-    # CV plots are only meaningful for intensity data.
-    show_cv_plots <- reactive({
-      req(parameters())
-      intensity_data_param_is_yes(parameters()$intensity_data)
-    })
-
     # Unfiltered CV table
     cv_table <- reactive({
       req(GCT_processed(), grouping_vector())
@@ -282,25 +300,15 @@ QCCV_Ome_Server <- function(id,
       req(show_cv_plots())
       tagList(
         hr(),
-        # Unfiltered violin (brush y-axis to zoom, double-click to reset)
+        # Unfiltered violin (interactive Plotly view from ggplot)
         h4("CV distributions (unfiltered)"),
-        plotOutput(
-          ns("cv_violin_plot"),
-          brush  = brushOpts(id = ns("cv_violin_brush"), direction = "y",
-                             resetOnNew = TRUE),
-          dblclick = ns("cv_violin_dblclick")
-        ),
-        # Filtered violin (brush y-axis to zoom, double-click to reset)
+        plotlyOutput(ns("cv_violin_plot")),
+        # Filtered violin (interactive Plotly view from ggplot)
         conditionalPanel(
           condition = "input.qc_cv_filter_enabled == true",
           hr(),
           h4("CV distributions (filtered)"),
-          plotOutput(
-            ns("cv_violin_filtered_plot"),
-            brush  = brushOpts(id = ns("cv_violin_filtered_brush"),
-                               direction = "y", resetOnNew = TRUE),
-            dblclick = ns("cv_violin_filtered_dblclick")
-          ),
+          plotlyOutput(ns("cv_violin_filtered_plot")),
           ns = ns
         )
       )
@@ -308,26 +316,6 @@ QCCV_Ome_Server <- function(id,
 
     ## Y-axis helpers ----------------------------------------------------------
     log_scale <- reactive(identical(input$qc_cv_y_scale, "log"))
-
-    # Zoom state for unfiltered violin (NULL = full range)
-    violin_zoom <- reactiveVal(NULL)
-    observeEvent(input$cv_violin_brush, {
-      brush <- input$cv_violin_brush
-      violin_zoom(c(brush$ymin, brush$ymax))
-    })
-    observeEvent(input$cv_violin_dblclick, {
-      violin_zoom(NULL)
-    })
-
-    # Zoom state for filtered violin
-    violin_filtered_zoom <- reactiveVal(NULL)
-    observeEvent(input$cv_violin_filtered_brush, {
-      brush <- input$cv_violin_filtered_brush
-      violin_filtered_zoom(c(brush$ymin, brush$ymax))
-    })
-    observeEvent(input$cv_violin_filtered_dblclick, {
-      violin_filtered_zoom(NULL)
-    })
 
     ## Color palette reactive --------------------------------------------------
     # When a single grouping column is selected, reuse the customization color
@@ -353,10 +341,21 @@ QCCV_Ome_Server <- function(id,
     cv_violin_reactive <- reactive({
       req(show_cv_plots(), cv_table())
       create_cv_violin_plot(cv_table(), palette = cv_palette(),
-                            log_scale = log_scale(), y_range = violin_zoom())
+                            log_scale = log_scale())
     })
 
-    output$cv_violin_plot <- renderPlot(cv_violin_reactive())
+    cv_plotly_from_gg <- function(gg) {
+      p <- ggplotly(gg)
+      p$x$data <- lapply(p$x$data, function(trace) {
+        if (!identical(trace$type, "box")) {
+          trace$hoverinfo <- "skip"
+        }
+        trace
+      })
+      p
+    }
+
+    output$cv_violin_plot <- renderPlotly(cv_plotly_from_gg(cv_violin_reactive()))
 
     ## Filtered plots ---------------------------------------------------------
     cv_violin_filtered_reactive <- reactive({
@@ -365,10 +364,10 @@ QCCV_Ome_Server <- function(id,
                         input$qc_cv_cutoff %||% 0.2,
                         "-", input$qc_cv_min_groups %||% "one", "group)")
       create_cv_violin_plot(filtered_cv(), title_suffix = label, palette = cv_palette(),
-                            log_scale = log_scale(), y_range = violin_filtered_zoom())
+                            log_scale = log_scale())
     })
 
-    output$cv_violin_filtered_plot <- renderPlot(cv_violin_filtered_reactive())
+    output$cv_violin_filtered_plot <- renderPlotly(cv_plotly_from_gg(cv_violin_filtered_reactive()))
 
     ## Export functions -------------------------------------------------------
 
@@ -381,6 +380,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_export <- function(dir_name) {
+      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
       ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("cv_violin_", ome, ".pdf"),
@@ -406,6 +406,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_filtered_export <- function(dir_name) {
+      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"

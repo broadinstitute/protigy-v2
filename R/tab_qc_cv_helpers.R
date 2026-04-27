@@ -133,11 +133,18 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
-  y_axis_label <- if (log_scale) "log10(CV)" else "CV"
+  y_axis_label <- if (log_scale) "log10(% CV)" else "% CV"
 
   p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data$Group, y = .data$CV, fill = .data$Group)) +
-    ggplot2::geom_violin(show.legend = FALSE) +
-    ggplot2::geom_boxplot(width = 0.1, outliers = FALSE, show.legend = FALSE) +
+    # Keep violin semi-transparent so Plotly box traces remain visible/hoverable.
+    ggplot2::geom_violin(alpha = 0.45, show.legend = FALSE) +
+    ggplot2::geom_boxplot(
+      width = 0.14,
+      outlier.shape = NA,
+      fill = "white",
+      color = "black",
+      show.legend = FALSE
+    ) +
     ggplot2::theme_bw() +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
     ggplot2::ggtitle(title) +
@@ -146,9 +153,9 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
     ggplot2::scale_fill_manual(values = palette)
 
   if (log_scale) {
-    p <- p + ggplot2::scale_y_log10(labels = scales::label_scientific())
+    p <- p + ggplot2::scale_y_log10(labels = scales::label_percent(accuracy = 0.1))
   } else {
-    p <- p + ggplot2::scale_y_continuous(labels = scales::label_scientific())
+    p <- p + ggplot2::scale_y_continuous(labels = scales::label_percent(accuracy = 0.1))
   }
 
   if (!is.null(y_range)) {
