@@ -30,6 +30,8 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
+      # Keep default PR checks fast; run shinytest2 only in opt-in workflow.
+      PROTIGY_SKIP_SHINYTEST2: "true"
 
     steps:
       - uses: actions/checkout@v3

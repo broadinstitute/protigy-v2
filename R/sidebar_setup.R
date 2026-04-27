@@ -193,7 +193,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     GCTs_and_params <- reactiveVal() # GCT object and corresponding parameters
     globals <- reactiveValues() # global values for plots, displays, etc.
     GCTs_original <- reactiveVal() # the original GCTS (not processed)
-    
+
+    # Export internal reactive state for shinytest2 integration tests.
+    # These are no-ops in production (shiny.testmode is FALSE by default).
+    shiny::exportTestValues(
+      sidebar_setup_complete   = { !is.null(GCTs_and_params()) },
+      sidebar_labels_validated = { labelsGO() > 0 }
+    )
+
     # initialize INTERNAL reactive values....only used in this module
     parameters_internal_reactive <- reactiveVal()
     GCTs_unprocessed_internal_reactive <- reactiveVal()
@@ -756,7 +763,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
-    }, ignoreInit = TRUE)
+    })
 
     # update sample filter values choices when sample filter column changes
     observe({
