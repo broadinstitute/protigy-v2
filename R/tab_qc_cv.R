@@ -121,30 +121,7 @@ QCCV_Ome_UI <- function(id, ome) {
       shinydashboardPlus::box(
         # Controls — always visible
         uiOutput(ns("qc_cv_controls")),
-        hr(),
-
-        # Unfiltered violin (brush y-axis to zoom, double-click to reset)
-        h4("CV distributions (unfiltered)"),
-        plotOutput(
-          ns("cv_violin_plot"),
-          brush  = brushOpts(id = ns("cv_violin_brush"), direction = "y",
-                             resetOnNew = TRUE),
-          dblclick = ns("cv_violin_dblclick")
-        ),
-
-        # Filtered violin (brush y-axis to zoom, double-click to reset)
-        conditionalPanel(
-          condition = "input.qc_cv_filter_enabled == true",
-          hr(),
-          h4("CV distributions (filtered)"),
-          plotOutput(
-            ns("cv_violin_filtered_plot"),
-            brush  = brushOpts(id = ns("cv_violin_filtered_brush"),
-                               direction = "y", resetOnNew = TRUE),
-            dblclick = ns("cv_violin_filtered_dblclick")
-          ),
-          ns = ns
-        ),
+        uiOutput(ns("cv_plot_section")),
 
         status      = "primary",
         width       = 12,
@@ -263,6 +240,12 @@ QCCV_Ome_Server <- function(id,
       combine_cdesc_cols(GCT_processed()@cdesc, selected_cols())
     })
 
+    # CV plots are only meaningful for intensity data.
+    show_cv_plots <- reactive({
+      req(parameters())
+      intensity_data_param_is_yes(parameters()$intensity_data)
+    })
+
     # Unfiltered CV table
     cv_table <- reactive({
       req(GCT_processed(), grouping_vector())
@@ -292,6 +275,34 @@ QCCV_Ome_Server <- function(id,
         Group       = names(tab),
         `N samples` = as.integer(tab),
         check.names = FALSE
+      )
+    })
+
+    output$cv_plot_section <- renderUI({
+      req(show_cv_plots())
+      tagList(
+        hr(),
+        # Unfiltered violin (brush y-axis to zoom, double-click to reset)
+        h4("CV distributions (unfiltered)"),
+        plotOutput(
+          ns("cv_violin_plot"),
+          brush  = brushOpts(id = ns("cv_violin_brush"), direction = "y",
+                             resetOnNew = TRUE),
+          dblclick = ns("cv_violin_dblclick")
+        ),
+        # Filtered violin (brush y-axis to zoom, double-click to reset)
+        conditionalPanel(
+          condition = "input.qc_cv_filter_enabled == true",
+          hr(),
+          h4("CV distributions (filtered)"),
+          plotOutput(
+            ns("cv_violin_filtered_plot"),
+            brush  = brushOpts(id = ns("cv_violin_filtered_brush"),
+                               direction = "y", resetOnNew = TRUE),
+            dblclick = ns("cv_violin_filtered_dblclick")
+          ),
+          ns = ns
+        )
       )
     })
 
@@ -340,7 +351,7 @@ QCCV_Ome_Server <- function(id,
 
     ## Unfiltered plots -------------------------------------------------------
     cv_violin_reactive <- reactive({
-      req(cv_table())
+      req(show_cv_plots(), cv_table())
       create_cv_violin_plot(cv_table(), palette = cv_palette(),
                             log_scale = log_scale(), y_range = violin_zoom())
     })
@@ -349,7 +360,7 @@ QCCV_Ome_Server <- function(id,
 
     ## Filtered plots ---------------------------------------------------------
     cv_violin_filtered_reactive <- reactive({
-      req(filtered_cv())
+      req(show_cv_plots(), filtered_cv())
       label    <- paste("after filtering (cutoff",
                         input$qc_cv_cutoff %||% 0.2,
                         "-", input$qc_cv_min_groups %||% "one", "group)")
