@@ -99,25 +99,6 @@ filter_cv_table <- function(cv_df, cutoff, min_groups = c("one", "all")) {
   cv_df[keep, , drop = FALSE]
 }
 
-# Create a faceted histogram of CV distributions.
-# Mirrors calculate_cvs.R:50-58.
-#
-# @param cv_df        data.frame from compute_cv_table()
-# @param title_suffix string appended to the plot title (e.g. "after filtering")
-# @param palette      character vector of colors (named or positional)
-# @return ggplot object
-create_cv_hist_plot <- function(cv_df, title_suffix = "", palette) {
-  title <- trimws(paste("CV distributions", title_suffix))
-  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
-  ggplot2::ggplot(long_df, ggplot2::aes(x = .data$CV, fill = .data$Group)) +
-    ggplot2::geom_histogram(color = "black", bins = 20, show.legend = FALSE) +
-    ggplot2::facet_wrap(~ .data$Group, scales = "fixed") +
-    ggplot2::theme_bw() +
-    ggplot2::ggtitle(title) +
-    ggplot2::scale_x_continuous(labels = scales::label_percent()) +
-    ggplot2::scale_fill_manual(values = palette)
-}
-
 # Create a violin + boxplot of CV distributions.
 # Mirrors calculate_cvs.R:63-72.
 #
