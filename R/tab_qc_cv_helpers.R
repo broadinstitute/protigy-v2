@@ -133,29 +133,33 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
-  y_axis_label <- if (log_scale) "log10(% CV)" else "% CV"
+  y_axis_label <- if (log_scale) "log10(CV)" else "CV"
+  font.size <- scale_font_size(dimension = length(unique(long_df$Group)))
 
   p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data$Group, y = .data$CV, fill = .data$Group)) +
-    # Keep violin semi-transparent so Plotly box traces remain visible/hoverable.
-    ggplot2::geom_violin(alpha = 0.45, show.legend = FALSE) +
+    # Keep full-opacity user-selected colors for the violin fills.
+    ggplot2::geom_violin(alpha = 1, show.legend = FALSE, width = 0.9) +
     ggplot2::geom_boxplot(
-      width = 0.14,
+      width = 0.08,
       outlier.shape = NA,
-      fill = "white",
+      fill = NA,
       color = "black",
       show.legend = FALSE
     ) +
     ggplot2::theme_bw() +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    ggplot2::theme(
+      text = ggplot2::element_text(size = 14),
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1, size = font.size)
+    ) +
     ggplot2::ggtitle(title) +
     ggplot2::xlab("Group") +
     ggplot2::ylab(y_axis_label) +
     ggplot2::scale_fill_manual(values = palette)
 
   if (log_scale) {
-    p <- p + ggplot2::scale_y_log10(labels = scales::label_percent(accuracy = 0.1))
+    p <- p + ggplot2::scale_y_log10(labels = scales::label_number(accuracy = 0.01))
   } else {
-    p <- p + ggplot2::scale_y_continuous(labels = scales::label_percent(accuracy = 0.1))
+    p <- p + ggplot2::scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
   }
 
   if (!is.null(y_range)) {

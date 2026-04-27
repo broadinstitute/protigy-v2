@@ -157,6 +157,11 @@ QCCV_Ome_Server <- function(id,
 
       fluidRow(
         shinydashboardPlus::box(
+          div(
+            style = "margin-bottom: 10px; padding: 8px; background: #fff3cd; border: 1px solid #ffe69c; border-radius: 4px;",
+            strong("Note: "),
+            "CV calculations in this tab are only valid for raw (non-log-transformed) intensity values."
+          ),
           uiOutput(ns("qc_cv_controls")),
           uiOutput(ns("cv_plot_section")),
           status       = "primary",
@@ -300,15 +305,15 @@ QCCV_Ome_Server <- function(id,
       req(show_cv_plots())
       tagList(
         hr(),
-        # Unfiltered violin (interactive Plotly view from ggplot)
+        # Unfiltered violin
         h4("CV distributions (unfiltered)"),
-        plotlyOutput(ns("cv_violin_plot")),
-        # Filtered violin (interactive Plotly view from ggplot)
+        plotOutput(ns("cv_violin_plot")),
+        # Filtered violin
         conditionalPanel(
           condition = "input.qc_cv_filter_enabled == true",
           hr(),
           h4("CV distributions (filtered)"),
-          plotlyOutput(ns("cv_violin_filtered_plot")),
+          plotOutput(ns("cv_violin_filtered_plot")),
           ns = ns
         )
       )
@@ -344,18 +349,7 @@ QCCV_Ome_Server <- function(id,
                             log_scale = log_scale())
     })
 
-    cv_plotly_from_gg <- function(gg) {
-      p <- ggplotly(gg)
-      p$x$data <- lapply(p$x$data, function(trace) {
-        if (!identical(trace$type, "box")) {
-          trace$hoverinfo <- "skip"
-        }
-        trace
-      })
-      p
-    }
-
-    output$cv_violin_plot <- renderPlotly(cv_plotly_from_gg(cv_violin_reactive()))
+    output$cv_violin_plot <- renderPlot(cv_violin_reactive())
 
     ## Filtered plots ---------------------------------------------------------
     cv_violin_filtered_reactive <- reactive({
@@ -367,7 +361,7 @@ QCCV_Ome_Server <- function(id,
                             log_scale = log_scale())
     })
 
-    output$cv_violin_filtered_plot <- renderPlotly(cv_plotly_from_gg(cv_violin_filtered_reactive()))
+    output$cv_violin_filtered_plot <- renderPlot(cv_violin_filtered_reactive())
 
     ## Export functions -------------------------------------------------------
 
