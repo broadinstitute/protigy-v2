@@ -146,3 +146,58 @@ test_that("filter_cv_table invalid min_groups value errors via match.arg", {
   cv_df <- data.frame(id = "f1", CV_A = 0.1, stringsAsFactors = FALSE)
   expect_error(filter_cv_table(cv_df, cutoff = 0.2, min_groups = "both"))
 })
+
+# --------------------------------------------------------------------------- #
+# create_cv_violin_plot                                                       #
+# --------------------------------------------------------------------------- #
+
+test_that("create_cv_violin_plot returns ggplot with linear CV y-axis label", {
+  cv_df <- data.frame(
+    id = c("f1", "f2", "f3"),
+    CV_A = c(0.10, 0.20, 0.30),
+    CV_B = c(0.15, 0.25, 0.35),
+    stringsAsFactors = FALSE
+  )
+  palette <- c(A = "#1b9e77", B = "#d95f02")
+
+  p <- create_cv_violin_plot(cv_df, palette = palette, log_scale = FALSE)
+
+  expect_s3_class(p, "ggplot")
+  expect_identical(p$labels$y, "CV")
+  y_scale <- p$scales$get_scales("y")
+  expect_true(grepl("identity", y_scale$trans$name, fixed = TRUE))
+})
+
+test_that("create_cv_violin_plot uses log10 y-axis label and transform in log mode", {
+  cv_df <- data.frame(
+    id = c("f1", "f2", "f3"),
+    CV_A = c(0.10, 0.20, 0.30),
+    CV_B = c(0.15, 0.25, 0.35),
+    stringsAsFactors = FALSE
+  )
+  palette <- c(A = "#1b9e77", B = "#d95f02")
+
+  p <- create_cv_violin_plot(cv_df, palette = palette, log_scale = TRUE)
+
+  expect_identical(p$labels$y, "log10(CV)")
+  y_scale <- p$scales$get_scales("y")
+  expect_true(grepl("log-10", y_scale$trans$name, fixed = TRUE))
+})
+
+test_that("create_cv_violin_plot keeps box fill transparent and supports y_range zoom", {
+  cv_df <- data.frame(
+    id = c("f1", "f2", "f3"),
+    CV_A = c(0.10, 0.20, 0.30),
+    CV_B = c(0.15, 0.25, 0.35),
+    stringsAsFactors = FALSE
+  )
+  palette <- c(A = "#1b9e77", B = "#d95f02")
+
+  p <- create_cv_violin_plot(cv_df, palette = palette, y_range = c(0.05, 0.40))
+
+  # Layer order in helper: violin first, boxplot second
+  expect_true(length(p$layers) >= 2L)
+  expect_identical(p$layers[[2]]$aes_params$fill, NA)
+  expect_s3_class(p$coordinates, "CoordCartesian")
+  expect_equal(p$coordinates$limits$y, c(0.05, 0.40))
+})
