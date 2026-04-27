@@ -4,9 +4,26 @@
 # Allow users to see the Volcano plot of their results
 ################################################################################
 
-# Magenta for all volcano protein labels (POI, top-20, and all-significant);
+# Magenta for all volcano feature labels (POI, top-20, and all-significant);
 # contrasts with darkred significant scatter points (plotVolcano sig.col).
 .volcano_label_hex <- "#FF00FF"
+
+# Build plotly hover `text` for volcano points: always `ID: …`; optional second line
+# from the real gene-symbol metadata column when `gs_vals` is provided (same length as ids).
+# @noRd
+volcano_build_hover_text <- function(ids, gs_vals = NULL, gs_col_name = NULL) {
+  ids <- as.character(ids)
+  ht  <- paste0("ID: ", ids)
+  if (is.null(gs_vals)) return(ht)
+  gs_vals <- as.character(gs_vals)
+  if (length(gs_vals) != length(ids)) return(ht)
+  nm <- if (!is.null(gs_col_name) && nzchar(as.character(gs_col_name)[1L])) {
+    as.character(gs_col_name)[1L]
+  } else {
+    "geneSymbol"
+  }
+  paste0(ht, "<br>", nm, ": ", gs_vals)
+}
 
 # #Input parameters- 
 # ome- ome that plot is run on
@@ -20,7 +37,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
                         sig.col = 'darkred', bg.col = 'gray', gene_symbol_col = "geneSymbol",
                         label_proteins = character(0), label_mode = character(0),
                         label_column = "id", label_split_enabled = FALSE,
-                        label_split_sep = ";") {
+                        label_split_sep = ";", label_display_trim_enabled = FALSE) {
   
   cat('\n-- plotVolcano --\n')
 
@@ -111,6 +128,12 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
   # values from any rdesc column (not necessarily a literal gene symbol).
   lbl_col <- if (!is.null(label_column) && nzchar(label_column) &&
                    label_column %in% colnames(df)) label_column else "id"
+  # Real gene symbol column for hover only (before df$geneSymbol is repurposed for labels)
+  gs_for_hover <- if (!is.na(geneSymbol_col) && geneSymbol_col %in% colnames(df)) {
+    as.character(df[[geneSymbol_col]])
+  } else {
+    NULL
+  }
   df$geneSymbol <- resolve_volcano_label_text(
     df[[lbl_col]],
     split_enabled = isTRUE(label_split_enabled),
@@ -150,13 +173,13 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     group_contrast<- volcano_groups
   }
   ## Plot
-  # Hover shows the row id always; adds the selected label column on a second
-  # line only when it differs from id.
-  df$.hover_text <- if (lbl_col == "id") {
-    paste0("ID: ", df$id)
-  } else {
-    paste0("ID: ", df$id, "<br>", lbl_col, ": ", df$geneSymbol)
-  }
+  # Hover: always ID + actual gene symbol column when present, regardless of
+  # label-column choice (trim toggle does not affect hover).
+  df$.hover_text <- volcano_build_hover_text(
+    df$id,
+    gs_vals      = gs_for_hover,
+    gs_col_name  = geneSymbol_col
+  )
   volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP,
                        text = .data$.hover_text)) +
     geom_point(aes(color = .data$point_color), size = 1) +
@@ -216,10 +239,19 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     }
 
     if (nrow(label_df_gg) > 0) {
+      label_df_gg$label_txt <- volcano_maybe_display_trim(
+        label_df_gg$label_txt, label_display_trim_enabled
+      )
+      label_df_gg$.hover_text <- df$.hover_text[match(as.character(label_df_gg$id), as.character(df$id))]
       volcano <- volcano +
         geom_point(
           data        = label_df_gg,
-          aes(x = .data$logFC, y = .data$logP, color = .data$label_col),
+          aes(
+            x     = .data$logFC,
+            y     = .data$logP,
+            color = .data$label_col,
+            text  = .data$.hover_text
+          ),
           inherit.aes = FALSE,
           size        = 2,
           show.legend = FALSE
@@ -247,7 +279,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
 
 
 ################################################################################
-# Protein Search & Labeling Helpers
+# Feature search and volcano labeling helpers
 ################################################################################
 
 # Escape all PCRE metacharacters so the string can be used as a literal
@@ -366,7 +398,42 @@ resolve_volcano_label_text <- function(values, split_enabled = FALSE, separator 
   }, character(1L), USE.NAMES = FALSE)
 }
 
-# Tokenize a raw search string into a character vector of protein IDs.
+# Shorten volcano plot / hover / sidebar display strings: `ProteinID_siteID_*`
+# -> `ProteinID_siteID` using `protigy_legacy_protein_site_display_id()` (same
+# ID detection as gene-symbol conversion), then cap length with an ellipsis.
+# @noRd
+volcano_display_trim <- function(x, max_chars = 56L) {
+  x <- as.character(x)
+  if (length(x) == 0L) return(x)
+  mc <- as.integer(max_chars)[1L]
+  if (is.na(mc) || mc < 12L) mc <- 56L
+
+  s2 <- protigy_legacy_protein_site_display_id(x)
+  for (i in seq_along(x)) {
+    if (is.na(s2[i])) {
+      x[i] <- NA_character_
+      next
+    }
+    s <- s2[i]
+    if (!nzchar(s)) {
+      x[i] <- s
+      next
+    }
+    if (nchar(s) > mc) {
+      s <- paste0(substr(s, 1L, mc - 1L), "\u2026")
+    }
+    x[i] <- s
+  }
+  x
+}
+
+# Apply `volcano_display_trim()` when `trim_enabled` is TRUE; otherwise pass-through.
+# @noRd
+volcano_maybe_display_trim <- function(x, trim_enabled) {
+  if (isTRUE(trim_enabled)) volcano_display_trim(x) else as.character(x)
+}
+
+# Tokenize a raw search string into a character vector of feature IDs.
 # Accepts space (including newlines/tabs), comma, and semicolon as delimiters.
 # Drops empty tokens.
 parse_protein_search_input <- function(raw) {
@@ -452,7 +519,7 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
 }
 
 
-# Add color-coded protein labels as Plotly annotations.
+# Add color-coded feature labels as Plotly annotations.
 #
 # p               - plotly object (output of ggplotly)
 # df              - data frame with columns: id, logFC, logP, Significant, geneSymbol
@@ -463,7 +530,8 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi) {
 # hidden_count_rv - reactiveVal or mock_rv; updated with count of hidden labels
 # min_dist        - minimum normalized distance between labels (0 to 1 scale)
 add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
-                                hidden_count_rv, min_dist = 0.04) {
+                                hidden_count_rv, min_dist = 0.04,
+                                label_display_trim_enabled = FALSE) {
 
   show_poi <- "poi" %in% label_mode
   show_sig <- "significant" %in% label_mode
@@ -523,8 +591,17 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
     return(p)
   }
 
-  # Sort by logP descending (most significant first = highest priority to keep)
-  label_df <- label_df[order(-label_df$logP), ]
+  label_df$label_txt <- volcano_maybe_display_trim(
+    label_df$label_txt, label_display_trim_enabled
+  )
+
+  # Placement order: features of interest first (user explicitly chose them), then
+  # by significance. Tie-breaker keeps rows stable. Delimiter-splitting only affects
+  # label text, not (logFC, logP) positions — it does not change overlap among points.
+  poi <- unique(as.character(poi))
+  is_poi_row <- label_df$id %in% poi
+  ord <- order(!is_poi_row, -label_df$logP, label_df$id)
+  label_df <- label_df[ord, , drop = FALSE]
 
   # Normalize coordinates for overlap detection
   x_range <- range(df$logFC, na.rm = TRUE)

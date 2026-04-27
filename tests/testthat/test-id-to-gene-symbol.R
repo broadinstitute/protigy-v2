@@ -21,6 +21,26 @@ test_that("protigy_legacy_id_query strips like Protigy mapIDs", {
   expect_identical(Protigy:::protigy_legacy_id_query("ENSG00000141510.17", "ENSEMBL"), "ENSG00000141510")
 })
 
+test_that("protigy_legacy_protein_site_display_id_one keeps ProteinID_siteID (legacy keytype rules)", {
+  expect_identical(
+    Protigy:::protigy_legacy_protein_site_display_id_one("NP_000468.1_K28k_1_1_28_28"),
+    "NP_000468.1_K28k"
+  )
+  expect_identical(
+    Protigy:::protigy_legacy_protein_site_display_id_one("P04637_K28k_garbage"),
+    "P04637_K28k"
+  )
+  expect_identical(
+    Protigy:::protigy_legacy_protein_site_display_id_one("ENSP00000269305_K28k_1_2"),
+    "ENSP00000269305_K28k"
+  )
+  expect_identical(
+    Protigy:::protigy_legacy_protein_site_display_id_one("ENSG00000141510.17_site1_rest"),
+    "ENSG00000141510.17_site1"
+  )
+  expect_identical(Protigy:::protigy_legacy_protein_site_display_id_one("plain_row_id"), "plain_row_id")
+})
+
 test_that("preserve_gene_symbol_for_id_mapping uses collision-safe column name", {
   rdesc <- data.frame(
     geneSymbol = c("TP53", "EGFR"),

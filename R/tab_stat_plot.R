@@ -166,7 +166,8 @@ statPlot_Ome_Server <- function(id,
     ## PROTEIN SEARCH & LABELING ################################################
     # proteins_of_interest: per-ome reactiveVal storing feature IDs the user has
     # selected via search or by clicking on the plot.
-    # hidden_label_count: count of labels suppressed by the overlap-avoidance algo.
+    # hidden_label_count: labels not drawn because another label was already placed
+    # too close in normalized (logFC, logP) space — not text/CSS overflow.
     proteins_of_interest <- reactiveVal(character(0))
     hidden_label_count   <- reactiveVal(0L)
 
@@ -188,13 +189,16 @@ statPlot_Ome_Server <- function(id,
         # Volcano plot + controls side by side
         fluidRow(
           column(8,
-            shinydashboardPlus::box(
-              plotlyOutput(ns("volcano_plot")),
-              status = "primary",
-              width = NULL,
-              title = "Volcano Plot",
-              headerBorder = TRUE,
-              solidHeader = TRUE
+            tagList(
+              shinydashboardPlus::box(
+                plotlyOutput(ns("volcano_plot")),
+                status = "primary",
+                width = NULL,
+                title = "Volcano Plot",
+                headerBorder = TRUE,
+                solidHeader = TRUE
+              ),
+              uiOutput(ns("hidden_labels_warning"))
             )
           ),
           column(4,
@@ -259,39 +263,51 @@ statPlot_Ome_Server <- function(id,
         ),
         checkboxInput(
           ns("label_split_enabled"),
-          label = "Split label values by delimiter and extract first non-empty value",
+          label = "Delimited values",
           value = FALSE
         ),
         conditionalPanel(
           condition = "input.label_split_enabled == true",
           textInput(
             ns("label_split_sep"),
-            label       = NULL,
+            label       = "Delimiter",
             value       = ";",
-            placeholder = "Separator (e.g. ;)"
+            placeholder = ";"
+          ),
+          helpText(
+            "If a label has several parts separated by this character (for example A;B;C), only the first part is shown."
           ),
           ns = ns
+        ),
+        checkboxInput(
+          ns("label_display_trim_enabled"),
+          label   = "Shorten long labels on plot",
+          value   = FALSE
         ),
 
         hr(),
 
         # --- Labeling mode ---
-        strong("Label Proteins:"),
+        strong("Label features:"),
         checkboxGroupInput(
           ns("label_mode"),
           label    = NULL,
           choices  = c(
-            "Proteins of interest" = "poi",
+            "Features of interest" = "poi",
             "Top 20 significant"   = "significant_top20",
             "All significant"      = "significant"
           ),
           selected = character(0)
         ),
+        helpText(
+          "Top 20 significant and All significant pick plot labels from your results. ",
+          "They do not add anything to the manual list below."
+        ),
 
         hr(),
 
         # --- Search section ---
-        strong("Search Proteins:"),
+        strong("Search features:"),
         selectInput(
           ns("search_metadata_col"),
           label    = "Search column:",
@@ -301,19 +317,19 @@ statPlot_Ome_Server <- function(id,
         textAreaInput(
           ns("protein_search"),
           label       = NULL,
-          placeholder = "Paste IDs separated by space, comma, or semicolon",
+          placeholder = "Paste feature IDs separated by space, comma, or semicolon",
           rows        = 3
         ),
         actionButton(ns("search_btn"), "Search", class = "btn-sm btn-primary"),
 
         hr(),
 
-        # --- POI list ---
-        strong("Proteins of Interest:"),
-        uiOutput(ns("poi_list_ui")),
-
-        # --- Hidden label warning ---
-        uiOutput(ns("hidden_labels_warning"))
+        # --- POI list (manual only; independent of Top 20 / All significant) ---
+        strong("Features of interest:"),
+        helpText(
+          "Only feature IDs you add with Search or by clicking the volcano appear here."
+        ),
+        uiOutput(ns("poi_list_ui"))
       )
     })
     
@@ -322,12 +338,22 @@ statPlot_Ome_Server <- function(id,
       pois <- proteins_of_interest()
 
       if (length(pois) == 0) {
-        return(p("No proteins selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
       }
 
-      poi_rows <- lapply(pois, function(pid) {
+      trim_on <- isTRUE(input$label_display_trim_enabled)
+      disp    <- if (trim_on) volcano_display_trim(pois) else pois
+      sty <- "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+      poi_rows <- lapply(seq_along(pois), function(i) {
+        pid   <- pois[[i]]
+        shown <- disp[[i]]
+        label_cell <- if (isTRUE(trim_on) && !identical(as.character(shown), as.character(pid))) {
+          shiny::tags$p(shown, title = pid, style = sty)
+        } else {
+          shiny::tags$p(shown, style = sty)
+        }
         fluidRow(
-          column(9, p(pid, style = "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;")),
+          column(9, label_cell),
           column(3, actionButton(
             inputId = ns(paste0("remove_poi_", make.names(pid))),
             label   = "\u00d7",
@@ -338,13 +364,18 @@ statPlot_Ome_Server <- function(id,
       })
 
       tagList(
-        do.call(tagList, poi_rows),
-        br(),
+        shiny::tags$div(
+          style = paste0(
+            "max-height: 220px; overflow-y: auto; overflow-x: hidden; ",
+            "padding-right: 6px; margin-bottom: 4px;"
+          ),
+          do.call(tagList, poi_rows)
+        ),
         actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
       )
     })
 
-    # Register per-protein remove button observers whenever POI list changes.
+    # Register per-feature remove button observers whenever POI list changes.
     # Track which buttons already have observers to avoid accumulating duplicates.
     poi_observer_registry <- reactiveVal(character(0))
 
@@ -378,7 +409,7 @@ statPlot_Ome_Server <- function(id,
       hidden_label_count(0L)
     })
 
-    # Auto-enable POI checkbox when proteins are added to the list
+    # Auto-enable POI checkbox when features are added to the list
     observeEvent(proteins_of_interest(), {
       pois <- proteins_of_interest()
       if (length(pois) > 0 && !"poi" %in% isolate(input$label_mode)) {
@@ -387,14 +418,16 @@ statPlot_Ome_Server <- function(id,
       }
     }, ignoreNULL = FALSE)
 
-    # Hidden label overflow warning
+    # Brief note under plot when overlap logic skips some text labels
     output$hidden_labels_warning <- renderUI({
       n <- hidden_label_count()
       if (is.null(n) || n == 0L) return(NULL)
       div(
-        style = "margin-top: 8px; padding: 6px 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404;",
-        icon("triangle-exclamation"),
-        paste0(" Labels of ", n, " feature(s) were hidden due to overflow.")
+        style = paste0(
+          "margin-top: 6px; padding: 4px 0; font-size: 12px; color: #5c5c5c; ",
+          "border-top: 1px solid #e0e0e0;"
+        ),
+        sprintf("%d label(s) skipped (overlapping points on the plot).", as.integer(n))
       )
     })
 
@@ -465,15 +498,16 @@ statPlot_Ome_Server <- function(id,
       # Build base ggplot (no labels) — wrapped in tryCatch to show friendly error
       gg <- tryCatch(
         plotVolcano(
-          ome                 = ome,
-          volcano_groups      = input$volcano_groups,
-          volcano_contrasts   = as.character(input$volcano_contrasts),
-          df                  = stat_results()[[ome]],
-          stat_params         = stat_params,
-          stat_results        = stat_results,
-          label_column        = input$label_column        %||% "id",
-          label_split_enabled = isTRUE(input$label_split_enabled),
-          label_split_sep     = input$label_split_sep     %||% ";"
+          ome                         = ome,
+          volcano_groups              = input$volcano_groups,
+          volcano_contrasts           = as.character(input$volcano_contrasts),
+          df                          = stat_results()[[ome]],
+          stat_params                 = stat_params,
+          stat_results                = stat_results,
+          label_column                = input$label_column        %||% "id",
+          label_split_enabled         = isTRUE(input$label_split_enabled),
+          label_split_sep             = input$label_split_sep     %||% ";",
+          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled)
         ),
         error = function(e) {
           showNotification(
@@ -516,11 +550,12 @@ statPlot_Ome_Server <- function(id,
         }
         p <- add_volcano_labels(
           p,
-          df              = df_plot,
-          poi             = proteins_of_interest(),
-          label_mode      = input$label_mode,
-          y_cutoff        = attr(df_plot, "y_cutoff"),
-          hidden_count_rv = hidden_label_count
+          df                             = df_plot,
+          poi                            = proteins_of_interest(),
+          label_mode                     = input$label_mode,
+          y_cutoff                       = attr(df_plot, "y_cutoff"),
+          hidden_count_rv                = hidden_label_count,
+          label_display_trim_enabled     = isTRUE(input$label_display_trim_enabled)
         )
       }
 
@@ -605,23 +640,25 @@ statPlot_Ome_Server <- function(id,
       label_column_export <- isolate(input$label_column)        %||% "id"
       label_split_export  <- isTRUE(isolate(input$label_split_enabled))
       label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
+      label_trim_export   <- isTRUE(isolate(input$label_display_trim_enabled))
 
       if (test == "One-sample Moderated T-test") {
         groups <- stat_params()[[ome]]$groups
         for (group in groups) {
           tryCatch({
             gg <- plotVolcano(
-              ome                 = ome,
-              volcano_groups      = group,
-              volcano_contrasts   = NULL,
-              df                  = df,
-              stat_params         = stat_params,
-              stat_results        = stat_results,
-              label_proteins      = proteins_of_interest(),
-              label_mode          = label_mode_export,
-              label_column        = label_column_export,
-              label_split_enabled = label_split_export,
-              label_split_sep     = label_sep_export
+              ome                         = ome,
+              volcano_groups              = group,
+              volcano_contrasts           = NULL,
+              df                          = df,
+              stat_params                 = stat_params,
+              stat_results                = stat_results,
+              label_proteins              = proteins_of_interest(),
+              label_mode                  = label_mode_export,
+              label_column                = label_column_export,
+              label_split_enabled         = label_split_export,
+              label_split_sep             = label_sep_export,
+              label_display_trim_enabled  = label_trim_export
             )
             print(gg)
           }, error = function(e) {
@@ -634,17 +671,18 @@ statPlot_Ome_Server <- function(id,
         for (contrast in contrasts) {
           tryCatch({
             gg <- plotVolcano(
-              ome                 = ome,
-              volcano_groups      = NULL,
-              volcano_contrasts   = contrast,
-              df                  = df,
-              stat_params         = stat_params,
-              stat_results        = stat_results,
-              label_proteins      = proteins_of_interest(),
-              label_mode          = label_mode_export,
-              label_column        = label_column_export,
-              label_split_enabled = label_split_export,
-              label_split_sep     = label_sep_export
+              ome                         = ome,
+              volcano_groups              = NULL,
+              volcano_contrasts           = contrast,
+              df                          = df,
+              stat_params                 = stat_params,
+              stat_results                = stat_results,
+              label_proteins              = proteins_of_interest(),
+              label_mode                  = label_mode_export,
+              label_column                = label_column_export,
+              label_split_enabled         = label_split_export,
+              label_split_sep             = label_sep_export,
+              label_display_trim_enabled  = label_trim_export
             )
             print(gg)
           }, error = function(e) {
@@ -659,7 +697,7 @@ statPlot_Ome_Server <- function(id,
       cat("Saved volcano plots for", ome, "to:", pdf_path, "\n")
     }
 
-    ## Volcano labeled proteins CSV (POI + any significant / top-20 labels matching the plot)
+    ## Volcano labeled features CSV (POI + any significant / top-20 labels matching the plot)
     labeled_volcano_csv_export_function <- function(dir_name) {
       tryCatch({
         test <- stat_params()[[ome]]$test
@@ -716,7 +754,7 @@ statPlot_Ome_Server <- function(id,
         }
 
         if (length(all_ids) == 0) {
-          message("Volcano labeled export: no proteins matched label criteria for ", ome)
+          message("Volcano labeled export: no features matched label criteria for ", ome)
           return()
         }
 
@@ -740,10 +778,10 @@ statPlot_Ome_Server <- function(id,
         resolved_labels[na_lbl] <- as.character(df_raw[[id_col]])[row_mask][na_lbl]
         out_rows <- cbind(plot_label = resolved_labels, out_rows)
 
-        out_path <- file.path(dir_name, paste0("volcano_labeled_proteins_", ome, ".csv"))
+        out_path <- file.path(dir_name, paste0("volcano_labeled_features_", ome, ".csv"))
         write.csv(out_rows, file = out_path, row.names = FALSE)
         cat(
-          "Saved", nrow(out_rows), "volcano-labeled protein row(s) for", ome, "to:", out_path, "\n"
+          "Saved", nrow(out_rows), "volcano-labeled feature row(s) for", ome, "to:", out_path, "\n"
         )
       }, error = function(e) {
         message("Volcano labeled export failed for ome ", ome, ": ", conditionMessage(e))
@@ -751,8 +789,8 @@ statPlot_Ome_Server <- function(id,
     }
 
     return(list(
-      volcano_plot         = volcano_plot_export_function,
-      proteins_of_interest = labeled_volcano_csv_export_function
+      volcano_plot              = volcano_plot_export_function,
+      volcano_labeled_features  = labeled_volcano_csv_export_function
     ))
   })
 }
