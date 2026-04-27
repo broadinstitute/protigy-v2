@@ -133,6 +133,7 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
   long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
+  y_axis_label <- if (log_scale) "log10(CV)" else "CV"
 
   p <- ggplot2::ggplot(long_df, ggplot2::aes(x = .data$Group, y = .data$CV, fill = .data$Group)) +
     ggplot2::geom_violin(show.legend = FALSE) +
@@ -141,7 +142,7 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)) +
     ggplot2::ggtitle(title) +
     ggplot2::xlab("Group") +
-    ggplot2::ylab("CV") +
+    ggplot2::ylab(y_axis_label) +
     ggplot2::scale_fill_manual(values = palette)
 
   if (log_scale) {
