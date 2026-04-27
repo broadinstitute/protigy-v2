@@ -158,9 +158,11 @@ QCCV_Ome_Server <- function(id,
       fluidRow(
         shinydashboardPlus::box(
           div(
-            style = "margin-bottom: 10px; padding: 8px; background: #fff3cd; border: 1px solid #ffe69c; border-radius: 4px;",
-            strong("Note: "),
-            "CV calculations in this tab are only valid for raw (non-log-transformed) intensity values."
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
+            icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+            strong("Note: ", style = "color: #495057;"),
+            "CV calculations in this tab are only valid for raw (non-log-transformed) intensity values.",
+            style = "color: #495057;"
           ),
           uiOutput(ns("qc_cv_controls")),
           uiOutput(ns("cv_plot_section")),
@@ -217,6 +219,18 @@ QCCV_Ome_Server <- function(id,
                 value = FALSE
               ),
               classes = "small-input"
+            ),
+            conditionalPanel(
+              condition = "input.qc_cv_filter_enabled == true",
+              div(
+                style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
+                icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+                strong("Note: ", style = "color: #495057;"),
+                "This CV filter is local to this tab and only affects CV plots/exports and the CV-tab filtered GCT export. It does not change the main processed GCT used by other tabs."
+                ,
+                style = "color: #495057;"
+              ),
+              ns = ns
             ),
             # Filter options — only visible when filter is enabled
             # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg

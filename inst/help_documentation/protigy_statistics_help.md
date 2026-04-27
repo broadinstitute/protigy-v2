@@ -96,6 +96,7 @@ You can filter results based on p-values (both raw and adjusted) and adjust the 
 - **Cutoff controls**: The same **stat** (nominal vs adjusted *p*-value) and **cutoff** value as **Statistics → Summary** apply to the volcano plot and to the horizontal line
 - **Label proteins** (optional checkboxes): **Proteins of interest** (search by ID/metadata column or click a point to toggle it in the list), **Top 20 significant** (among points above the line: ranked by *y*-axis significance, then by absolute log2 fold change; if many features tie at the cutoff band, more than 20 may be labeled), or **All significant** (can be crowded)
 - **Label color**: Magenta highlights for labeled points and text (distinct from dark red significant scatter points)
+- **Export options**: Volcano PDFs and proteins-of-interest CSV exports are available from the Export tab when statistics outputs are selected
 
 ### Summary Statistics
 - **Differential expression summary**: Table columns depend on the test (**Group** for one-sample, **Numerator** / **Denominator** for two-sample contrasts, or feature/DE counts only for the moderated F-test). The significance **cutoff** is set in **Cutoff Selection** on the same tab (it is not duplicated as a table column).
