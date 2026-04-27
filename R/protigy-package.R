@@ -26,6 +26,7 @@
 #' @importFrom colourpicker colourInput updateColourInput
 #' @importFrom shinyBS tipify
 #' @importFrom WriteXLS WriteXLS
+#' @importFrom scales label_percent
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom yaml read_yaml write_yaml
 #' @importFrom shinyjqui orderInput updateOrderInput

@@ -529,8 +529,20 @@ statPlot_Ome_Server <- function(id,
     })
 
     ## CLICK-TO-ADD/REMOVE OBSERVER ##
-    observeEvent(event_data("plotly_click", source = ns("volcano_click")), {
-      click <- event_data("plotly_click", source = ns("volcano_click"))
+    # Read click events defensively: when no volcano widget is active for this
+    # ome, querying event_data() can emit an "unregistered source" warning.
+    volcano_click_event <- reactive({
+      req(stat_params(), ome)
+      test <- stat_params()[[ome]]$test
+      if (is.null(test) || length(test) != 1L ||
+          !(test %in% c("One-sample Moderated T-test", "Two-sample Moderated T-test"))) {
+        return(NULL)
+      }
+      suppressWarnings(event_data("plotly_click", source = ns("volcano_click")))
+    })
+
+    observeEvent(volcano_click_event(), {
+      click <- volcano_click_event()
       req(click, stat_results(), stat_params())
 
       test <- stat_params()[[ome]]$test
