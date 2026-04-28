@@ -1,5 +1,6 @@
-# Tests for volcano plot protein search & labeling helpers
+# Tests for volcano plot feature search and labeling helpers
 # Covers: get_clicked_feature_id, parse_protein_search_input,
+#         volcano_build_hover_text, volcano_display_trim, volcano_maybe_display_trim,
 #         volcano_label_top_significant_subset, add_volcano_labels
 
 ## get_clicked_feature_id ####################################################
@@ -91,6 +92,68 @@ test_that("parse_protein_search_input returns empty vector for blank input", {
 test_that("parse_protein_search_input handles newlines as delimiters", {
   result <- parse_protein_search_input("ProtA\nProtB\nProtC")
   expect_equal(result, c("ProtA", "ProtB", "ProtC"))
+})
+
+## volcano_display_trim ########################################################
+
+test_that("volcano_display_trim keeps accession-style prefix, drops trailing _digits", {
+  expect_equal(
+    volcano_display_trim("NP_000468.1_K28k_1_1_28_28"),
+    "NP_000468.1_K28k"
+  )
+  expect_equal(
+    volcano_display_trim("NP_000468.1_K28k _1_1_28_28"),
+    "NP_000468.1_K28k"
+  )
+  expect_equal(
+    volcano_display_trim(c("NP_000468.1_K28k", "NM_999.2_X_y_0_0")),
+    c("NP_000468.1_K28k", "NM_999.2_X")
+  )
+})
+
+test_that("volcano_display_trim leaves short or NA values alone", {
+  expect_equal(volcano_display_trim("BRCA1"), "BRCA1")
+  expect_equal(volcano_display_trim(NA_character_), NA_character_)
+  expect_equal(volcano_display_trim(character(0)), character(0))
+})
+
+test_that("volcano_maybe_display_trim passes through when disabled", {
+  x <- c("NP_000468.1_K28k_1_1_28_28", "A")
+  expect_equal(volcano_maybe_display_trim(x, FALSE), as.character(x))
+  expect_equal(volcano_maybe_display_trim(x, TRUE), volcano_display_trim(x))
+})
+
+## volcano_build_hover_text #####################################################
+
+test_that("volcano_build_hover_text is ID-only without gene symbol values", {
+  expect_equal(volcano_build_hover_text(c("a", "b")), c("ID: a", "ID: b"))
+  expect_equal(volcano_build_hover_text("x", NULL, "geneSymbol"), "ID: x")
+})
+
+test_that("volcano_build_hover_text appends gene symbol line when lengths match", {
+  out <- volcano_build_hover_text(
+    c("id1", "id2"),
+    c("G1", "G2"),
+    "geneSymbol"
+  )
+  expect_equal(out, c("ID: id1<br>geneSymbol: G1", "ID: id2<br>geneSymbol: G2"))
+})
+
+test_that("volcano_build_hover_text uses custom column name for second line", {
+  out <- volcano_build_hover_text("id1", "G1", "myGeneSym")
+  expect_equal(out, "ID: id1<br>myGeneSym: G1")
+})
+
+test_that("volcano_build_hover_text ignores gs_vals when length mismatches ids", {
+  expect_equal(
+    volcano_build_hover_text(c("a", "b"), "only_one", "geneSymbol"),
+    c("ID: a", "ID: b")
+  )
+})
+
+test_that("volcano_build_hover_text preserves NA in gene symbol display", {
+  out <- volcano_build_hover_text(c("i1", "i2"), c("G1", NA), "geneSymbol")
+  expect_equal(out[2], "ID: i2<br>geneSymbol: NA")
 })
 
 ## volcano_label_top_significant_subset ########################################
@@ -274,6 +337,30 @@ test_that("add_volcano_labels hidden_count_rv reflects dropped overlapping label
                                 y_cutoff = 2, hidden_count_rv = rv)
   # 9 of 10 labels should be hidden (all at same position)
   expect_equal(rv(), 9L)
+})
+
+test_that("add_volcano_labels places POI before significant when coordinates overlap", {
+  skip_if_not_installed("plotly")
+  # Same (logFC, logP): if significance-only rows were placed first, the POI would lose.
+  df <- data.frame(
+    id          = c("sig_only", "poi_only"),
+    logFC       = c(1, 1),
+    logP        = c(5, 5),
+    Significant = c(TRUE, FALSE),
+    geneSymbol  = c("SIG", "POI"),
+    stringsAsFactors = FALSE
+  )
+  p <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(
+    p, df, poi = "poi_only", label_mode = c("significant", "poi"),
+    y_cutoff = 2, hidden_count_rv = rv
+  )
+  built <- plotly::plotly_build(result)
+  ann <- built$x$layout$annotations %||% list()
+  expect_length(ann, 1L)
+  expect_equal(ann[[1]]$text, "POI")
+  expect_equal(rv(), 1L)
 })
 
 test_that("add_volcano_labels handles NA in Significant column gracefully", {
