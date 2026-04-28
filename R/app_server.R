@@ -20,6 +20,12 @@ app_server <- function(input, output, session) {
   globals <- sidebar_output$globals
   GCTs_original <- sidebar_output$GCTs_original
 
+  # Export reactive state for shinytest2 integration tests.
+  # These are no-ops in production (shiny.testmode is FALSE by default).
+  shiny::exportTestValues(
+    GCTs_and_params = { GCTs_and_params() },
+    globals_colors  = { globals$colors }
+  )
 
   ## Clear all notifications functionality
   observeEvent(input$clear_all_notifications_header, {
@@ -54,6 +60,12 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original
   )
   
+  ## QC CV module
+  all_QCCV_exports <- QCCV_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals
+  )
+
   ## QC correlation module
   all_QCCorrelation_exports <- QCCorrelation_Tab_Server(
     GCTs_and_params = GCTs_and_params,
@@ -119,6 +131,7 @@ app_server <- function(input, output, session) {
         #template_exports = all_template_exports,
         QCBoxplot_exports = all_QCBoxplots_exports,
         QCProfilePlots_exports = all_QCProfilePlots_exports,
+        QCCV_exports = all_QCCV_exports,
         QCCorrelation_exports = all_QCCorrelation_exports,
         QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports,

@@ -103,7 +103,13 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     manual_control_groups <- reactiveVal(character(0))
     use_manual_controls <- reactiveVal(FALSE)
     group_view_mode <- reactiveVal("list")  # For one-sample t-test group selection
-    
+
+    # Export reactive state for shinytest2 integration tests.
+    # No-op in production (shiny.testmode is FALSE by default).
+    shiny::exportTestValues(
+      stat_results_available = { length(stat_results()) > 0 }
+    )
+
     # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
 
