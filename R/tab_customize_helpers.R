@@ -11,7 +11,8 @@
 sync_colors_across_omes <- function(custom_colors, annot_column, annot_value, new_color) {
   # Update multi_ome first
   if (annot_column %in% names(custom_colors$multi_ome)) {
-    val_idx <- which(custom_colors$multi_ome[[annot_column]]$vals == annot_value)
+    val_idx <- which(as.character(custom_colors$multi_ome[[annot_column]]$vals) ==
+                       as.character(annot_value))
     if (length(val_idx) > 0) {
       custom_colors$multi_ome[[annot_column]]$colors[val_idx] <- new_color
     }
@@ -22,7 +23,8 @@ sync_colors_across_omes <- function(custom_colors, annot_column, annot_value, ne
     if (ome == "multi_ome") next
 
     if (annot_column %in% names(custom_colors[[ome]])) {
-      val_idx <- which(custom_colors[[ome]][[annot_column]]$vals == annot_value)
+      val_idx <- which(as.character(custom_colors[[ome]][[annot_column]]$vals) ==
+                         as.character(annot_value))
       if (length(val_idx) > 0) {
         custom_colors[[ome]][[annot_column]]$colors[val_idx] <- new_color
       }
@@ -30,6 +32,46 @@ sync_colors_across_omes <- function(custom_colors, annot_column, annot_value, ne
   }
 
   return(custom_colors)
+}
+
+
+#' Validate a hex color code
+#'
+#' Accepts 3-, 6-, and 8-digit (with alpha) hex forms. The 8-digit form is
+#' considered valid here so importers can normalize it; storage canonical form
+#' remains 6-digit (alpha stripped via `normalize_hex_color`).
+#'
+#' @param x Character scalar to test
+#' @return TRUE if x is a valid hex color, FALSE otherwise
+is_valid_hex_color <- function(x) {
+  is.character(x) && length(x) == 1 && !is.na(x) &&
+    grepl("^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$", x)
+}
+
+
+#' Normalize a hex color string to canonical 6-digit upper-case form
+#'
+#' Expands 3-digit forms (e.g. `#abc` -> `#AABBCC`) and strips alpha from
+#' 8-digit forms (e.g. `#AABBCCDD` -> `#AABBCC`). Returns `NA_character_`
+#' for invalid input. When alpha was stripped, the returned value carries
+#' an `attr(., "had_alpha") <- TRUE` so callers can surface a warning once.
+#'
+#' @param x A character scalar.
+#' @return Canonical 6-digit upper-case hex, or NA_character_ if invalid.
+normalize_hex_color <- function(x) {
+  if (!is_valid_hex_color(x)) return(NA_character_)
+  body <- substring(x, 2)
+  had_alpha <- FALSE
+  if (nchar(body) == 3) {
+    chars <- strsplit(body, "")[[1]]
+    body <- paste0(chars[1], chars[1], chars[2], chars[2], chars[3], chars[3])
+  } else if (nchar(body) == 8) {
+    body <- substring(body, 1, 6)
+    had_alpha <- TRUE
+  }
+  out <- toupper(paste0("#", body))
+  if (had_alpha) attr(out, "had_alpha") <- TRUE
+  out
 }
 
 
@@ -106,15 +148,6 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
 }
 
 
-#' Validate a hex color code
-#' @param x Character scalar to test
-#' @return TRUE if x is a valid 6-digit hex color (e.g. "#A1B2C3"), FALSE otherwise
-is_valid_hex_color <- function(x) {
-  is.character(x) && length(x) == 1 && !is.na(x) &&
-    grepl("^#[0-9A-Fa-f]{6}$", x)
-}
-
-
 #' Compute a structural signature of a custom_colors list
 #'
 #' Returns a string that changes only when the set of omes, annotation
@@ -123,24 +156,36 @@ is_valid_hex_color <- function(x) {
 #' (which must refresh stale color state) while leaving user color edits
 #' alone.
 #'
+#' Uses an ASCII unit-separator (\\u001f) and record-separator (\\u001e) as
+#' delimiters to avoid accidental collisions with values containing `|`,
+#' `;`, or `=` characters.
+#'
 #' @param colors A custom_colors list (as produced by make_custom_colors)
 #' @return A character scalar signature; empty string for NULL/empty input.
 colors_structure_signature <- function(colors) {
   if (is.null(colors) || length(colors) == 0) return("")
+  US <- ""  # unit separator (within an entry)
+  RS <- ""  # record separator (between entries)
   sig <- lapply(colors, function(ome_cols) {
     if (!is.list(ome_cols)) return(character(0))
     vapply(names(ome_cols), function(col) {
       vals <- ome_cols[[col]]$vals
-      paste(col, paste(as.character(vals), collapse = "|"), sep = ":")
+      paste(col, paste(as.character(vals), collapse = US), sep = ":")
     }, character(1))
   })
   paste(names(sig),
-        vapply(sig, paste, character(1), collapse = ";"),
-        sep = "=", collapse = "||")
+        vapply(sig, paste, character(1), collapse = RS),
+        sep = "=", collapse = paste0(RS, RS))
 }
 
 
-#' Import colors from YAML format with smart matching
+#' Import colors from YAML — full structured result
+#'
+#' Internal workhorse. Returns a structured list describing the import so the
+#' Shiny module can surface counts, missing omes, format detected, and
+#' normalization warnings to the user. The thin back-compat wrapper
+#' `import_colors_from_yaml()` calls `warning()` for each entry in `$warnings`
+#' and returns just the colors list.
 #'
 #' Implements a three-scenario matching algorithm:
 #' 1. All conditions match: Apply colors based on condition-color name matching
@@ -150,103 +195,127 @@ colors_structure_signature <- function(colors) {
 #'
 #' Accepts two YAML shapes:
 #'   - ProTIGY: `colors: { ome: { annot_col: { val: "#hex" } } }`
-#'   - PANOPLY: `groups.colors: { annot_col: { val: "#hex" } }` (nested — most
-#'     common) or `groups.colors: { val: "#hex" }` (flat). Both are applied to
-#'     every ome in the current session.
+#'   - PANOPLY: `groups.colors: { annot_col: { val: "#hex" } }` (nested) or
+#'     `groups.colors: { val: "#hex" }` (flat). Both are applied to every ome
+#'     in the current session.
 #'
-#' Errors (file not readable, malformed YAML, no recognized section) are
-#' raised via `stop()` so the caller can surface them to the user.
+#' Errors (file not readable, malformed YAML) are raised via `stop()`.
 #'
 #' @param file_path Path to the YAML file
 #' @param custom_colors Current custom colors structure (to preserve structure)
-#' @return Updated custom_colors list
+#' @return A list with:
+#'   * `colors`               – updated custom_colors
+#'   * `n_columns_updated`    – integer count of column entries actually changed
+#'   * `n_omes_in_yaml`       – integer count of omes that matched session
+#'   * `invalid_entries`      – character vector of "ome$col$val=#bad"
+#'   * `missing_omes`         – omes present in YAML but not in session
+#'   * `format`               – "ProTIGY" | "PANOPLY-nested" | "PANOPLY-flat" | "none"
+#'   * `warnings`             – character vector of all warning messages
+#'   * `skipped_continuous_function_palettes` – ome$col entries that couldn't be restored
+#'   * `alpha_stripped_count` – integer; how many hex inputs had alpha stripped
 #' @importFrom yaml read_yaml
-import_colors_from_yaml <- function(file_path, custom_colors) {
+import_colors_from_yaml_full <- function(file_path, custom_colors) {
   yaml_data <- yaml::read_yaml(file_path)
 
-  # Check for both ProTIGY format (colors) and PANOPLY format (groups.colors)
+  warnings <- character(0)
+  invalid_entries <- character(0)
+  missing_omes <- character(0)
+  skipped_continuous_function_palettes <- character(0)
+  alpha_stripped_count <- 0L
+  n_columns_updated <- 0L
+  detected_format <- "none"
+
+  # Detect format and normalize colors_data to ome-keyed shape.
   colors_data <- NULL
   if (!is.null(yaml_data$colors)) {
     colors_data <- yaml_data$colors
+    detected_format <- "ProTIGY"
   } else if (!is.null(yaml_data$`groups.colors`)) {
     gc <- yaml_data$`groups.colors`
 
-    # Detect nested vs. flat shape. Nested:  {annot_col: {val: "#hex"}}
-    # Flat: {val: "#hex"}. In nested shape every top-level value is a list;
-    # in flat shape every top-level value is a scalar string.
+    # Detect nested vs flat shape. Nested:  {annot_col: {val: "#hex"}}
+    # Flat: {val: "#hex"}.
     is_nested <- length(gc) > 0 && all(vapply(gc, is.list, logical(1)))
+    detected_format <- if (is_nested) "PANOPLY-nested" else "PANOPLY-flat"
 
     colors_data <- list()
     for (ome in names(custom_colors)) {
-      if (is_nested) {
-        colors_data[[ome]] <- gc
-      } else {
-        # Flat: wrap under a synthetic annot column so the loop below finds
-        # named entries; global cross-column matching will still pick them up.
-        colors_data[[ome]] <- list(`__flat__` = gc)
-      }
+      colors_data[[ome]] <- if (is_nested) gc else list(`__flat__` = gc)
     }
   } else {
-    warning("No 'colors' section found in YAML file")
-    return(custom_colors)
+    msg <- "No 'colors' section found in YAML file"
+    warnings <- c(warnings, msg)
+    return(list(
+      colors = custom_colors,
+      n_columns_updated = 0L,
+      n_omes_in_yaml = 0L,
+      invalid_entries = character(0),
+      missing_omes = character(0),
+      format = "none",
+      warnings = warnings,
+      skipped_continuous_function_palettes = character(0),
+      alpha_stripped_count = 0L
+    ))
   }
 
   if (is.null(colors_data)) {
-    warning("No color data found in YAML file")
-    return(custom_colors)
+    msg <- "No color data found in YAML file"
+    warnings <- c(warnings, msg)
+    return(list(
+      colors = custom_colors,
+      n_columns_updated = 0L,
+      n_omes_in_yaml = 0L,
+      invalid_entries = character(0),
+      missing_omes = character(0),
+      format = detected_format,
+      warnings = warnings,
+      skipped_continuous_function_palettes = character(0),
+      alpha_stripped_count = 0L
+    ))
   }
 
-  invalid_entries <- character(0)
+  # Track which omes in the YAML didn't match the session (informational).
+  missing_omes <- setdiff(names(colors_data), names(custom_colors))
 
   # Process each ome in current session
   for (ome in names(custom_colors)) {
-    # Skip if ome not in YAML
-    if (!(ome %in% names(colors_data))) {
-      next
-    }
+    if (!(ome %in% names(colors_data))) next
 
-    # Build two lookup structures from the YAML for this ome:
-    #   yaml_col_map[[col]][[val]] -> color   (column-scoped, authoritative)
-    #   yaml_flat_map[[val]]       -> color   (first-occurrence fallback)
-    #
-    # Column-scoped lookup preserves per-column distinctness on round-trip:
-    # a condition named "Control" in both `Treatment` and `QC.status` keeps
-    # its column-specific color instead of collapsing to whichever was seen
-    # first (old behavior — bug #6).
+    # Build column-scoped + global lookups for this ome.
     yaml_col_map <- list()
     yaml_flat_map <- list()
     for (annot_col in names(colors_data[[ome]])) {
-      # Force keys to character — YAML may have parsed "yes"/"1"/"null" as
-      # logical/numeric/NULL, which would fail equality checks against
-      # current_vals (always strings after processGCTs conversion).
       yaml_vals <- as.character(names(colors_data[[ome]][[annot_col]]))
 
-      # Validate that the YAML structure has names (not an unnamed array)
       if (length(yaml_vals) == 0 || all(yaml_vals == "")) {
-        warning("YAML file has invalid structure for ", ome, "$", annot_col,
-                ": expected named color mapping (e.g., condition: color) but found unnamed array. ",
-                "This may be from an older export version. Please re-export the color palette.")
+        msg <- sprintf(
+          "YAML file has invalid structure for %s$%s: expected named color mapping (e.g., condition: color) but found unnamed array. This may be from an older export version. Please re-export the color palette.",
+          ome, annot_col
+        )
+        warnings <- c(warnings, msg)
         next
       }
 
-      yaml_colors <- as.character(unname(unlist(colors_data[[ome]][[annot_col]])))
+      yaml_colors_raw <- as.character(unname(unlist(colors_data[[ome]][[annot_col]])))
       col_entry <- list()
       for (i in seq_along(yaml_vals)) {
         key_i <- yaml_vals[i]
-        color_i <- yaml_colors[i]
+        raw <- yaml_colors_raw[i]
+        norm <- normalize_hex_color(raw)
 
-        # Validate hex. Invalid colors are recorded and skipped so a single
-        # typo doesn't abort the whole import.
-        if (!is_valid_hex_color(color_i)) {
+        if (is.na(norm)) {
           invalid_entries <- c(invalid_entries,
-                               paste0(ome, "$", annot_col, "$", key_i, " = ", color_i))
+                               paste0(ome, "$", annot_col, "$", key_i, " = ", raw))
           next
         }
+        if (isTRUE(attr(norm, "had_alpha"))) {
+          alpha_stripped_count <- alpha_stripped_count + 1L
+          attr(norm, "had_alpha") <- NULL
+        }
 
-        col_entry[[key_i]] <- color_i
-        # First occurrence wins for the global fallback map.
+        col_entry[[key_i]] <- norm
         if (!(key_i %in% names(yaml_flat_map))) {
-          yaml_flat_map[[key_i]] <- color_i
+          yaml_flat_map[[key_i]] <- norm
         }
       }
       yaml_col_map[[annot_col]] <- col_entry
@@ -254,27 +323,19 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
 
     # Process each annotation column in current session
     for (annot_col in names(custom_colors[[ome]])) {
-      # Only process discrete colors
-      if (!isTRUE(custom_colors[[ome]][[annot_col]]$is_discrete)) {
-        next
-      }
+      if (!isTRUE(custom_colors[[ome]][[annot_col]]$is_discrete)) next
 
       current_vals <- as.character(custom_colors[[ome]][[annot_col]]$vals)
       current_colors <- custom_colors[[ome]][[annot_col]]$colors
-      new_colors <- current_colors  # Start with original colors
+      new_colors <- current_colors
 
-      # Check if this annotation column exists in YAML
       annot_col_in_yaml <- annot_col %in% names(yaml_col_map)
       col_map <- if (annot_col_in_yaml) yaml_col_map[[annot_col]] else list()
 
-      # Track used colors and matched conditions
       used_colors <- character(0)
       matched_condition_indices <- integer(0)
 
-      # Step 1: Match by condition name. Prefer the column-scoped color when
-      # the annotation column is present in the YAML (bug #6: protects
-      # duplicate condition names from collapsing across columns); fall back
-      # to the global first-occurrence map only when the column is absent.
+      # Step 1: Match by condition name (column-scoped first, then global).
       for (i in seq_along(current_vals)) {
         v <- current_vals[i]
         chosen <- NULL
@@ -291,10 +352,6 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
       }
 
       # Step 2: Pull unused colors ONLY from this column's YAML entries.
-      # Bug #5: previously leftover colors from unrelated YAML columns could
-      # leak into columns absent from the YAML, silently clobbering
-      # colorblind-safe defaults. The new rule: a column only receives
-      # unused colors if it's explicitly in the YAML.
       unused_colors <- if (annot_col_in_yaml) {
         setdiff(unname(unlist(col_map)), used_colors)
       } else {
@@ -305,29 +362,26 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
       unmatched_indices <- setdiff(seq_along(current_vals), matched_condition_indices)
 
       if (length(unmatched_indices) > 0 && length(unused_colors) > 0) {
-        # Sort unmatched conditions alphabetically
         unmatched_vals <- current_vals[unmatched_indices]
         sorted_order <- order(unmatched_vals)
         sorted_unmatched_indices <- unmatched_indices[sorted_order]
 
-        # Step 4: Apply unused colors sequentially
         num_to_assign <- min(length(sorted_unmatched_indices), length(unused_colors))
-        for (i in 1:num_to_assign) {
+        for (i in seq_len(num_to_assign)) {
           new_colors[sorted_unmatched_indices[i]] <- unused_colors[i]
         }
-        # Remaining unmatched conditions keep their original colors
       }
-      # If column doesn't exist in YAML and has no matches, unmatched conditions keep their original colors
 
-      # Update colors
+      # Count how many columns *actually* changed
+      if (!identical(as.character(new_colors), as.character(current_colors))) {
+        n_columns_updated <- n_columns_updated + 1L
+      }
+
       custom_colors[[ome]][[annot_col]]$colors <- new_colors
     }
   }
 
-  # Restore continuous palettes if the YAML contains a continuous_colors
-  # section (introduced so discrete-form continuous palettes round-trip).
-  # Only applied when the current column is still continuous and its vals
-  # match what's in the YAML — otherwise skipped silently.
+  # Restore continuous palettes if a continuous_colors section is present.
   cont_yaml <- yaml_data$continuous_colors
   if (!is.null(cont_yaml) && is.list(cont_yaml)) {
     for (ome in names(custom_colors)) {
@@ -335,49 +389,99 @@ import_colors_from_yaml <- function(file_path, custom_colors) {
       for (annot_col in names(custom_colors[[ome]])) {
         col_info <- custom_colors[[ome]][[annot_col]]
         if (isTRUE(col_info$is_discrete)) next
-        if (is.function(col_info$colors)) next  # function form can't be restored
+        if (is.function(col_info$colors)) {
+          skipped_continuous_function_palettes <- c(
+            skipped_continuous_function_palettes,
+            paste0(ome, "$", annot_col)
+          )
+          next
+        }
         if (!(annot_col %in% names(cont_yaml[[ome]]))) next
 
         yaml_entry <- cont_yaml[[ome]][[annot_col]]
         yaml_names <- as.character(names(yaml_entry))
-        yaml_vals <- as.character(unname(unlist(yaml_entry)))
-
+        yaml_vals_raw <- as.character(unname(unlist(yaml_entry)))
         if (length(yaml_names) == 0) next
 
-        # Honor validation — same gating as discrete.
-        keep <- vapply(yaml_vals, is_valid_hex_color, logical(1))
+        normed <- vapply(yaml_vals_raw, normalize_hex_color, character(1))
+        keep <- !is.na(normed)
         if (!all(keep)) {
-          bad <- yaml_vals[!keep]
+          bad <- yaml_vals_raw[!keep]
           for (b in bad) {
             invalid_entries <- c(invalid_entries,
                                  paste0(ome, "$", annot_col, " (continuous) = ", b))
           }
           yaml_names <- yaml_names[keep]
-          yaml_vals <- yaml_vals[keep]
+          normed <- normed[keep]
           if (length(yaml_names) == 0) next
         }
-
-        # Match by name (low/mid/high/na_color) against current col_info$vals.
+        # Strip had_alpha attr if any (per element vapply already coerces).
         cur_names <- as.character(col_info$vals)
         new_colors <- as.character(col_info$colors)
+        changed <- FALSE
         for (j in seq_along(cur_names)) {
           hit <- which(yaml_names == cur_names[j])
-          if (length(hit) == 1) new_colors[j] <- yaml_vals[hit]
+          if (length(hit) == 1) {
+            if (!identical(new_colors[j], unname(normed[hit]))) changed <- TRUE
+            new_colors[j] <- unname(normed[hit])
+          }
         }
+        if (changed) n_columns_updated <- n_columns_updated + 1L
         custom_colors[[ome]][[annot_col]]$colors <- new_colors
       }
     }
   }
 
   if (length(invalid_entries) > 0) {
-    warning("Skipped ", length(invalid_entries), " invalid hex color entr",
-            if (length(invalid_entries) == 1) "y" else "ies", " in YAML: ",
-            paste(utils::head(invalid_entries, 5), collapse = "; "),
-            if (length(invalid_entries) > 5) ", ..." else "")
+    msg <- paste0(
+      "Skipped ", length(invalid_entries), " invalid hex color entr",
+      if (length(invalid_entries) == 1) "y" else "ies", " in YAML: ",
+      paste(utils::head(invalid_entries, 5), collapse = "; "),
+      if (length(invalid_entries) > 5) ", ..." else ""
+    )
+    warnings <- c(warnings, msg)
+  }
+  if (alpha_stripped_count > 0L) {
+    warnings <- c(warnings, sprintf(
+      "%d hex entr%s carried an alpha channel and were normalized to 6-digit form.",
+      alpha_stripped_count,
+      if (alpha_stripped_count == 1) "y" else "ies"
+    ))
   }
 
-  message("Colors imported successfully from YAML")
-  return(custom_colors)
+  list(
+    colors = custom_colors,
+    n_columns_updated = n_columns_updated,
+    n_omes_in_yaml = length(intersect(names(colors_data), names(custom_colors))),
+    invalid_entries = invalid_entries,
+    missing_omes = missing_omes,
+    format = detected_format,
+    warnings = warnings,
+    skipped_continuous_function_palettes = skipped_continuous_function_palettes,
+    alpha_stripped_count = alpha_stripped_count
+  )
+}
+
+
+#' Import colors from YAML format with smart matching (back-compat wrapper)
+#'
+#' Thin wrapper over `import_colors_from_yaml_full()`. Emits each warning via
+#' `warning()` and returns just the updated colors list. Existing call sites
+#' and tests that expect this signature continue to work unchanged. New code
+#' (the Shiny module) should use `import_colors_from_yaml_full()` to surface
+#' structured counts to the user.
+#'
+#' @param file_path Path to the YAML file
+#' @param custom_colors Current custom colors structure
+#' @return Updated custom_colors list
+#' @importFrom yaml read_yaml
+import_colors_from_yaml <- function(file_path, custom_colors) {
+  res <- import_colors_from_yaml_full(file_path, custom_colors)
+  for (w in res$warnings) warning(w, call. = FALSE)
+  if (res$n_columns_updated > 0 || length(res$warnings) == 0) {
+    message("Colors imported successfully from YAML")
+  }
+  res$colors
 }
 
 
@@ -405,58 +509,133 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
   for (ome in names(GCTs)) {
     GCTs[[ome]]@cdesc <- convert_discrete_numeric_to_string(GCTs[[ome]]@cdesc)
   }
-  
+
   # initialize list
   custom_colors <- list()
-  
+
   # start by making custom colors for the merged GCT
   # Use cutoff 20 to match processGCTs logic
   custom_colors$multi_ome <- set_annot_colors(GCTs_merged@cdesc, autodetect_continuous_nfactor_cutoff = 20)
-  
+
   # then, loop through each ome
   # pull colors from merged first, then make unique colors if you can't find them
   for (ome in names(GCTs)) {
     annot_columns_in_ome <- names(GCTs[[ome]]@cdesc)
     annot_columns_in_merged <- names(custom_colors$multi_ome)
-    
-    # get the colors for the columns that are in both 
+
+    # get the colors for the columns that are in both
     annot_columns_in_both <- intersect(annot_columns_in_ome, annot_columns_in_merged)
     common_colors <- custom_colors$multi_ome[annot_columns_in_both]
-    
+
     # extract from merged the colors that are unique to the ome
     annot_columns_only_in_ome <- setdiff(annot_columns_in_ome, annot_columns_in_merged)
-    unique_colors <- sapply(
-      annot_columns_only_in_ome,
-      simplify = FALSE,
-      FUN = function(col) {
-        # try to pull from merged — escape all regex metachars in the column
-        # name (not just `.`) so names like `group+plus` or `treatment(type)`
-        # don't produce invalid or over-broad patterns.
-        col_escaped <- gsub("([][{}()+*?.^$|\\\\])", "\\\\\\1", col, perl = TRUE)
-        merged_col_name_regexp <- paste0("^", col_escaped, '\\.', ome, ".*")
-        merged_col_matches <- grep(merged_col_name_regexp, names(GCTs_merged@cdesc), value = TRUE)
-        for (merged_col_name in merged_col_matches) {
-          col_values_in_ome <- GCTs[[ome]]@cdesc[[col]]
-          col_values_in_merged <- GCTs_merged@cdesc[[merged_col_name]]
-          
-          # check if the values in both match, return if they do
-          is_match <- length(setdiff(col_values_in_ome, col_values_in_merged)) == 0
-          if (is_match) return(custom_colors$multi_ome[[merged_col_name]])
-        }
-        
-        # if no match was found, make new colors
-        # theoretically this shouldn't happen, but just in case
-        warning(ome, ": column '", col, "' could not be found in the merged GCT. ",
-                "Generating new colors.")
-        return(set_annot_colors(GCTs[[ome]]@cdesc[, col, drop = FALSE], autodetect_continuous_nfactor_cutoff = 20)[[1]])
+    unique_colors <- lapply(annot_columns_only_in_ome, function(col) {
+      # try to pull from merged — escape all regex metachars in the column name
+      # (not just `.`) so names like `group+plus` or `treatment(type)` don't
+      # produce invalid or over-broad patterns.
+      col_escaped <- gsub("([][{}()+*?.^$|\\\\])", "\\\\\\1", col, perl = TRUE)
+      merged_col_name_regexp <- paste0("^", col_escaped, '\\.', ome, ".*")
+      merged_col_matches <- grep(merged_col_name_regexp, names(GCTs_merged@cdesc), value = TRUE)
+      for (merged_col_name in merged_col_matches) {
+        col_values_in_ome <- GCTs[[ome]]@cdesc[[col]]
+        col_values_in_merged <- GCTs_merged@cdesc[[merged_col_name]]
+
+        # check if the values in both match, return if they do
+        is_match <- length(setdiff(col_values_in_ome, col_values_in_merged)) == 0
+        if (is_match) return(custom_colors$multi_ome[[merged_col_name]])
       }
-    )
-    
+
+      # if no match was found, make new colors
+      # theoretically this shouldn't happen, but just in case
+      warning(ome, ": column '", col, "' could not be found in the merged GCT. ",
+              "Generating new colors.")
+      return(set_annot_colors(GCTs[[ome]]@cdesc[, col, drop = FALSE], autodetect_continuous_nfactor_cutoff = 20)[[1]])
+    })
+    names(unique_colors) <- annot_columns_only_in_ome
+
     custom_colors[[ome]] <- c(common_colors, unique_colors)
   }
-  
+
   message("\nCustom colors generated!")
-  
+
   return(custom_colors)
 }
 
+
+#' Get a preset color palette by name
+#'
+#' Returns N colors from a named preset. Supported names:
+#'   * "Paul Tol Bright"
+#'   * "Paul Tol Vibrant"
+#'   * "Paul Tol Muted"
+#'   * "ColorBrewer Set2"
+#'   * "ColorBrewer Paired"
+#'   * "Viridis"
+#'
+#' Palettes are interpolated when N exceeds the palette's native size.
+#'
+#' @param name Palette name (one of the above)
+#' @param n Number of colors needed
+#' @param reverse If TRUE, return colors in reverse order
+#' @return Character vector of N hex colors (canonical 6-digit form)
+get_preset_palette <- function(name, n, reverse = FALSE) {
+  if (!is.numeric(n) || length(n) != 1 || n < 1) {
+    stop("`n` must be a positive integer.", call. = FALSE)
+  }
+  n <- as.integer(n)
+
+  pal <- switch(name,
+    "Paul Tol Bright"   = .preset_tol_palette("bright", n),
+    "Paul Tol Vibrant"  = .preset_tol_palette("vibrant", n),
+    "Paul Tol Muted"    = .preset_tol_palette("muted", n),
+    "ColorBrewer Set2"  = .preset_brewer_palette("Set2", n),
+    "ColorBrewer Paired" = .preset_brewer_palette("Paired", n),
+    "Viridis"           = .preset_viridis_palette(n),
+    stop(sprintf("Unknown preset palette: '%s'", name), call. = FALSE)
+  )
+
+  pal <- vapply(pal, normalize_hex_color, character(1))
+  if (isTRUE(reverse)) pal <- rev(pal)
+  unname(pal)
+}
+
+
+# Internal: Tol qualitative palette via khroma, falling back to a hardcoded
+# 7-color version if khroma errors. Palettes interpolate when n > max.
+.preset_tol_palette <- function(which, n) {
+  fallback <- list(
+    bright  = c('#4477AA', '#EE6677', '#228833', '#CCBB44',
+                '#66CCEE', '#AA3377', '#BBBBBB'),
+    vibrant = c('#0077BB', '#33BBEE', '#009988', '#EE7733',
+                '#CC3311', '#EE3377', '#BBBBBB'),
+    muted   = c('#332288', '#88CCEE', '#44AA99', '#117733', '#999933',
+                '#DDCC77', '#CC6677', '#882255', '#AA4499')
+  )
+  base <- tryCatch(
+    as.vector(khroma::color(which)(min(n, 7L))),
+    error = function(e) fallback[[which]]
+  )
+  if (length(base) == 0) base <- fallback[[which]]
+  if (n <= length(base)) return(base[seq_len(n)])
+  grDevices::colorRampPalette(base)(n)
+}
+
+# Internal: ColorBrewer palette via RColorBrewer (already in Imports).
+.preset_brewer_palette <- function(name, n) {
+  max_n <- RColorBrewer::brewer.pal.info[name, "maxcolors"]
+  if (is.na(max_n)) max_n <- 8L
+  base <- RColorBrewer::brewer.pal(min(max(n, 3L), max_n), name)
+  if (n <= length(base)) return(base[seq_len(n)])
+  grDevices::colorRampPalette(base)(n)
+}
+
+# Internal: Viridis palette. viridisLite is a transitive dependency of
+# many imports; if unavailable, fall back to a colorRampPalette with the
+# canonical viridis endpoints.
+.preset_viridis_palette <- function(n) {
+  if (requireNamespace("viridisLite", quietly = TRUE)) {
+    return(substring(viridisLite::viridis(n), 1, 7))
+  }
+  grDevices::colorRampPalette(c("#440154", "#3B528B", "#21908C",
+                                "#5DC863", "#FDE725"))(n)
+}

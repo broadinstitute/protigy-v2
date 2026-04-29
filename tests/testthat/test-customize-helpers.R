@@ -932,17 +932,48 @@ test_that("export_colors_to_yaml - propagates write errors (bug #10)", {
 })
 
 
-test_that("is_valid_hex_color - validates 6-digit hex (bug #7)", {
+test_that("is_valid_hex_color - accepts 3/6/8-digit hex (H6)", {
   expect_true(is_valid_hex_color("#AABBCC"))
   expect_true(is_valid_hex_color("#000000"))
   expect_true(is_valid_hex_color("#abcdef"))
+  expect_true(is_valid_hex_color("#FFF"))           # 3-digit now valid
+  expect_true(is_valid_hex_color("#abc"))           # 3-digit lowercase
+  expect_true(is_valid_hex_color("#AABBCCDD"))      # 8-digit (with alpha) now valid
   expect_false(is_valid_hex_color("AABBCC"))        # missing #
-  expect_false(is_valid_hex_color("#ABC"))          # 3-digit
-  expect_false(is_valid_hex_color("#AABBCCDD"))     # 8-digit
+  expect_false(is_valid_hex_color("#ABCD"))         # 4-digit not allowed
   expect_false(is_valid_hex_color("#GGGGGG"))       # non-hex chars
   expect_false(is_valid_hex_color(NA_character_))
   expect_false(is_valid_hex_color(NULL))
   expect_false(is_valid_hex_color(c("#AABBCC", "#112233")))  # vector
+})
+
+
+test_that("normalize_hex_color - expands 3-digit and uppercases", {
+  expect_equal(as.character(normalize_hex_color("#fff")), "#FFFFFF")
+  expect_equal(as.character(normalize_hex_color("#ABC")), "#AABBCC")
+  expect_equal(as.character(normalize_hex_color("#a1b")), "#AA11BB")
+})
+
+
+test_that("normalize_hex_color - 6-digit pass through (uppercased)", {
+  expect_equal(as.character(normalize_hex_color("#aabbcc")), "#AABBCC")
+  expect_equal(as.character(normalize_hex_color("#AABBCC")), "#AABBCC")
+})
+
+
+test_that("normalize_hex_color - strips alpha and flags it", {
+  out <- normalize_hex_color("#AABBCCDD")
+  expect_equal(as.character(out), "#AABBCC")
+  expect_true(isTRUE(attr(out, "had_alpha")))
+})
+
+
+test_that("normalize_hex_color - rejects invalid input", {
+  expect_true(is.na(normalize_hex_color("red")))
+  expect_true(is.na(normalize_hex_color("#GG0000")))
+  expect_true(is.na(normalize_hex_color("AABBCC")))
+  expect_true(is.na(normalize_hex_color(NA_character_)))
+  expect_true(is.na(normalize_hex_color(NULL)))
 })
 
 
@@ -1182,4 +1213,377 @@ test_that("make_custom_colors - handles regex-metachar column names (bug #11)", 
   expect_no_error(result <- make_custom_colors(list(ome1 = mock_gct), mock_merged))
   expect_true("group+plus" %in% names(result$ome1))
   expect_true("treatment(type)" %in% names(result$ome1))
+})
+
+
+# ---------------------------------------------------------------------------
+# H3: import_colors_from_yaml_full structured-result tests
+# ---------------------------------------------------------------------------
+
+test_that("import_colors_from_yaml_full - returns structured result with all fields", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+
+  expect_named(res, c("colors", "n_columns_updated", "n_omes_in_yaml",
+                      "invalid_entries", "missing_omes", "format",
+                      "warnings", "skipped_continuous_function_palettes",
+                      "alpha_stripped_count"))
+  expect_equal(res$format, "ProTIGY")
+  expect_equal(res$n_columns_updated, 1L)
+  expect_equal(res$n_omes_in_yaml, 1L)
+  expect_length(res$invalid_entries, 0)
+  expect_length(res$missing_omes, 0)
+  expect_length(res$warnings, 0)
+  expect_equal(res$alpha_stripped_count, 0L)
+  expect_equal(res$colors$multi_ome$treatment$colors, c("#4477AA", "#EE6677"))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports missing_omes", {
+  custom_colors <- list(
+    proteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  yaml_content <- "
+colors:
+  proteome:
+    treatment:
+      a: '#4477AA'
+  phosphoproteome:
+    treatment:
+      a: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$missing_omes, "phosphoproteome")
+  expect_equal(res$n_omes_in_yaml, 1L)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports format for PANOPLY shapes", {
+  custom_colors <- list(
+    multi_ome = list(treatment = list(is_discrete = TRUE,
+                                       vals = c("a", "b"),
+                                       colors = c("#000", "#000")))
+  )
+
+  # Nested PANOPLY
+  nested_file <- tempfile(fileext = ".yaml")
+  writeLines("groups.colors:\n  treatment:\n    a: '#4477AA'\n    b: '#EE6677'\n", nested_file)
+  expect_equal(import_colors_from_yaml_full(nested_file, custom_colors)$format, "PANOPLY-nested")
+  unlink(nested_file)
+
+  # Flat PANOPLY
+  flat_file <- tempfile(fileext = ".yaml")
+  writeLines("groups.colors:\n  a: '#4477AA'\n  b: '#EE6677'\n", flat_file)
+  expect_equal(import_colors_from_yaml_full(flat_file, custom_colors)$format, "PANOPLY-flat")
+  unlink(flat_file)
+})
+
+
+test_that("import_colors_from_yaml_full - normalizes 3-digit hex on import", {
+  custom_colors <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    g:
+      a: '#FFF'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$colors$multi_ome$g$colors, "#FFFFFF")
+  expect_length(res$invalid_entries, 0)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - strips alpha and counts it", {
+  custom_colors <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a", "b"), colors = c("#000000", "#111111"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    g:
+      a: '#AABBCCDD'
+      b: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$colors$multi_ome$g$colors, c("#AABBCC", "#EE6677"))
+  expect_equal(res$alpha_stripped_count, 1L)
+  expect_true(any(grepl("alpha channel", res$warnings)))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports skipped continuous function palettes", {
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high"),
+        colors = function(x) "#AAAAAA"   # function-form palette
+      )
+    )
+  )
+  yaml_content <- "
+continuous_colors:
+  multi_ome:
+    age:
+      low: '#FF0000'
+      mid: '#00FF00'
+      high: '#0000FF'
+colors:
+  multi_ome: {}
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$skipped_continuous_function_palettes, "multi_ome$age")
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml back-compat wrapper still emits warning() for invalid hex", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a", "b"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      a: 'not-a-hex'
+      b: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  expect_warning(
+    out <- import_colors_from_yaml(temp_file, custom_colors),
+    "invalid hex color"
+  )
+  expect_type(out, "list")  # back-compat: just the colors list
+  expect_equal(out$multi_ome$treatment$colors[1], "#000000")  # original preserved
+  expect_equal(out$multi_ome$treatment$colors[2], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+# ---------------------------------------------------------------------------
+# get_preset_palette tests
+# ---------------------------------------------------------------------------
+
+test_that("get_preset_palette - returns N colors for known names", {
+  for (name in c("Paul Tol Bright", "Paul Tol Vibrant", "Paul Tol Muted",
+                 "ColorBrewer Set2", "ColorBrewer Paired", "Viridis")) {
+    pal <- get_preset_palette(name, n = 5)
+    expect_length(pal, 5)
+    expect_true(all(grepl("^#[0-9A-F]{6}$", pal)),
+                info = paste("Palette:", name))
+  }
+})
+
+
+test_that("get_preset_palette - reverse=TRUE flips order", {
+  forward <- get_preset_palette("Paul Tol Bright", 5)
+  reverse <- get_preset_palette("Paul Tol Bright", 5, reverse = TRUE)
+  expect_equal(reverse, rev(forward))
+})
+
+
+test_that("get_preset_palette - interpolates beyond palette max", {
+  pal <- get_preset_palette("Paul Tol Bright", n = 20)
+  expect_length(pal, 20)
+  expect_true(all(grepl("^#[0-9A-F]{6}$", pal)))
+})
+
+
+test_that("get_preset_palette - errors on unknown name", {
+  expect_error(get_preset_palette("Banana", n = 3), "Unknown preset palette")
+})
+
+
+# ---------------------------------------------------------------------------
+# colors_structure_signature collision tests (M6)
+# ---------------------------------------------------------------------------
+
+test_that("colors_structure_signature - distinguishes values containing | and ;", {
+  s_pipe <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a|b", "c"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  s_no_pipe <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a", "b|c"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  expect_false(identical(s_pipe, s_no_pipe))
+
+  s_semi <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a;b"),
+                              is_discrete = TRUE,
+                              colors = c("#000")))
+  ))
+  s_split <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a", "b"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  expect_false(identical(s_semi, s_split))
+})
+
+
+# ---------------------------------------------------------------------------
+# sync_colors_across_omes — direct multi-condition multi-ome test
+# ---------------------------------------------------------------------------
+
+test_that("sync_colors_across_omes - updates only the matching condition across omes", {
+  cc <- list(
+    multi_ome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    ),
+    proteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    ),
+    phosphoproteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    )
+  )
+  out <- sync_colors_across_omes(cc, "treatment", "ctrl", "#FF0000")
+  expect_equal(out$multi_ome$treatment$colors, c("#FF0000", "#BBBBBB"))
+  expect_equal(out$proteome$treatment$colors, c("#FF0000", "#BBBBBB"))
+  expect_equal(out$phosphoproteome$treatment$colors, c("#FF0000", "#BBBBBB"))
+})
+
+
+test_that("sync_colors_across_omes - handles factor vals via as.character coercion", {
+  cc <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE,
+               vals = factor(c("a", "b")),
+               colors = c("#000", "#111"))
+    ),
+    ome1 = list(
+      g = list(is_discrete = TRUE,
+               vals = factor(c("a", "b")),
+               colors = c("#000", "#111"))
+    )
+  )
+  out <- sync_colors_across_omes(cc, "g", "a", "#FF0000")
+  expect_equal(out$multi_ome$g$colors[1], "#FF0000")
+  expect_equal(out$ome1$g$colors[1], "#FF0000")
+})
+
+
+# ---------------------------------------------------------------------------
+# Round-trip preservation for tricky inputs
+# ---------------------------------------------------------------------------
+
+test_that("export+import - factor vals round-trip preserves colors", {
+  cc <- list(
+    multi_ome = list(
+      group = list(is_discrete = TRUE,
+                   vals = factor(c("alpha", "beta", "gamma")),
+                   colors = c("#AABBCC", "#112233", "#445566"))
+    )
+  )
+  tf <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(cc, tf)
+
+  cc$multi_ome$group$colors <- c("#000000", "#000000", "#000000")
+  out <- import_colors_from_yaml(tf, cc)
+  expect_equal(out$multi_ome$group$colors, c("#AABBCC", "#112233", "#445566"))
+  unlink(tf)
+})
+
+
+test_that("export+import - empty omes do not crash importer", {
+  yaml_content <- "
+colors:
+  multi_ome: {}
+"
+  tf <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, tf)
+  cc <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  expect_no_error(out <- import_colors_from_yaml_full(tf, cc))
+  expect_equal(out$colors$multi_ome$g$colors, "#000000")  # unchanged
+  unlink(tf)
+})
+
+
+test_that("import - YAML keys with embedded special chars (+, parens) match", {
+  cc <- list(
+    multi_ome = list(
+      `group+plus` = list(is_discrete = TRUE,
+                          vals = c("a+b", "c(d)"),
+                          colors = c("#000000", "#111111"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    group+plus:
+      'a+b': '#4477AA'
+      'c(d)': '#EE6677'
+"
+  tf <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, tf)
+  out <- import_colors_from_yaml(tf, cc)
+  expect_equal(out$multi_ome$`group+plus`$colors, c("#4477AA", "#EE6677"))
+  unlink(tf)
 })

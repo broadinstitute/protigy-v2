@@ -1,7 +1,23 @@
 ################################################################################
 # Module: CUSTOMIZE
 #
-# Shiny funcions (UI and server)
+# Shiny functions (UI and server) for the color customization tab.
+#
+# State model
+# -----------
+# Two reactiveVals are owned by this module:
+#   * current_colors  – the live edits.  Returned to the parent so other tabs
+#                       can read it via globals$colors (see app_server.R).
+#   * restore_target  – the snapshot the "Restore last saved" button reverts to.
+#                       Set when the module first sees globals$colors and again
+#                       on successful import / explicit reset.
+#
+# Picker observers are registered ONE PER PICKER inside the renderUI for
+# `output$color_pickers_ui`.  Old observers are destroyed before each render.
+# `ignoreInit = TRUE` ensures programmatic writes to current_colors (which
+# rebuild the picker UI with the new value) do not re-fire the observer with
+# the value the parent just wrote — that was the feedback loop the previous
+# implementation papered over with an `importing` flag.
 ################################################################################
 
 #' @importFrom colourpicker colourInput updateColourInput
@@ -9,7 +25,12 @@
 customizeTabUI <- function(id = "customizeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
 
+  preset_choices <- c("(custom)", "Paul Tol Bright", "Paul Tol Vibrant",
+                      "Paul Tol Muted", "ColorBrewer Set2",
+                      "ColorBrewer Paired", "Viridis")
+
   tagList(
+    shinyjs::useShinyjs(),
     fluidRow(
       box(
         title = "Color Palette Customization",
@@ -17,199 +38,269 @@ customizeTabUI <- function(id = "customizeTab") {
         solidHeader = TRUE,
         width = 12,
 
-        # Conditionally render content based on whether data is processed
-        uiOutput(ns("customize_content_ui"))
+        # Empty / preflight state — gated by the server-set output flag.
+        conditionalPanel(
+          condition = sprintf("output['%s'] == false", ns("data_ready")),
+          div(
+            class = "text-center text-muted",
+            style = "padding: 40px;",
+            icon("info-circle", class = "text-info",
+                 style = "font-size: 48px; margin-bottom: 20px;"),
+            h4("Upload and process data to customize colors"),
+            p("Please upload and process your GCT files in the Setup sidebar before customizing color schemes.",
+              style = "font-size: 14px; margin-top: 15px;")
+          )
+        ),
+
+        # Active state.
+        conditionalPanel(
+          condition = sprintf("output['%s'] == true", ns("data_ready")),
+
+          # Mode + ome selector
+          fluidRow(
+            column(
+              width = 6,
+              selectInput(
+                ns("color_mode"),
+                label = "Apply colors to:",
+                choices = c("All omes (synced)" = "multi_ome",
+                            "One ome at a time" = "per_ome"),
+                selected = "multi_ome"
+              )
+            ),
+            column(
+              width = 6,
+              conditionalPanel(
+                condition = "input.color_mode == 'per_ome'",
+                ns = ns,
+                uiOutput(ns("ome_selector_ui"))
+              )
+            )
+          ),
+
+          hr(),
+
+          # Annotation column selector
+          fluidRow(column(width = 12,
+                          uiOutput(ns("annotation_column_selector_ui")))),
+
+          hr(),
+
+          # Preset palette controls (H4)
+          fluidRow(
+            column(
+              width = 5,
+              selectInput(
+                ns("preset_palette"),
+                label = "Apply preset palette:",
+                choices = preset_choices,
+                selected = "(custom)"
+              )
+            ),
+            column(width = 3, br(),
+                   checkboxInput(ns("reverse_palette"),
+                                 label = "Reverse", value = FALSE)),
+            column(width = 4, br(),
+                   actionButton(ns("apply_preset"),
+                                label = "Apply preset",
+                                icon = icon("paint-brush"),
+                                class = "btn btn-info"))
+          ),
+
+          # Swatch preview strip (H4 second part)
+          uiOutput(ns("swatch_preview_ui")),
+
+          hr(),
+
+          # Import / Export
+          fluidRow(
+            column(
+              width = 6,
+              fileInput(
+                ns("import_yaml"),
+                label = "Import Color Scheme (YAML):",
+                accept = c(".yaml", ".yml"),
+                buttonLabel = "Browse...",
+                placeholder = "No file selected"
+              ),
+              helpText(
+                "Expected: YAML with a top-level ", tags$code("colors:"),
+                " section keyed by ome → column → value: hex."
+              ),
+              downloadLink(ns("download_example_yaml"),
+                           label = "Download example YAML")
+            ),
+            column(
+              width = 6,
+              br(),
+              downloadButton(
+                ns("export_yaml"),
+                label = "Export Current Scheme",
+                class = "btn btn-primary"
+              ),
+              br(), br(),
+              actionButton(
+                ns("restore_defaults"),
+                label = "Restore last saved",
+                icon = icon("rotate-left"),
+                class = "btn btn-default"
+              ),
+              br(), br(),
+              actionButton(
+                ns("reset_to_app_defaults"),
+                label = "Reset to factory defaults",
+                icon = icon("eraser"),
+                class = "btn btn-default"
+              )
+            )
+          ),
+
+          hr(),
+
+          # Inline last-change status + Undo (H5)
+          fluidRow(column(
+            width = 12,
+            div(
+              style = "display:flex; align-items:center; gap:12px;",
+              tags$strong("Status:"),
+              textOutput(ns("last_change_text"), inline = TRUE),
+              actionButton(ns("undo_last_change"),
+                           label = "Undo",
+                           icon = icon("arrow-rotate-left"),
+                           class = "btn btn-sm btn-default")
+            )
+          )),
+
+          hr(),
+
+          # Color pickers grid
+          uiOutput(ns("color_pickers_ui"))
+        )
       )
     )
-  ) # end tagList
+  )
 }
+
 
 # server for the customize tab
 customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
-  ## module function
-  moduleServer(id, function (input, output, session) {
+  moduleServer(id, function(input, output, session) {
 
-    ## GATHERING INPUTS ##
-
-    # get namespace in case you need to use it in renderUI-like functions
     ns <- session$ns
 
-    # GCTs of individual omes to use for analysis/visualization
+    ## ============================================================ INPUTS ==
+
     GCTs <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$GCTs
     })
 
-    # Large merged GCT with all omes containing `protigy.ome` column in `rdesc`
     GCTs_merged <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$GCTs_merged
     })
 
-    # parameters used to process GCTs
     parameters <- reactive({
       validate(need(GCTs_and_params(), "GCTs not yet processed"))
       GCTs_and_params()$parameters
     })
 
-    # all omes present
     all_omes <- reactive(names(GCTs()))
 
-    # selected annotation columns per ome
     default_annotations <- reactive({
       req(globals$default_annotations)
       globals$default_annotations
     })
 
-
-    ## CONDITIONAL UI RENDERING ##
-
-    # Render the main content conditionally based on whether data is processed
-    output$customize_content_ui <- renderUI({
-      # Check if GCTs are processed
-      if (is.null(GCTs_and_params())) {
-        return(
-          tagList(
-            div(
-              style = "text-align: center; padding: 40px;",
-              icon("info-circle", style = "font-size: 48px; color: #3498db; margin-bottom: 20px;"),
-              h4("Data Not Yet Processed"),
-              p("Please upload and process your GCT files in the Setup sidebar before customizing color schemes.",
-                style = "color: #7f8c8d; font-size: 14px; margin-top: 15px;")
-            )
-          )
-        )
-      }
-
-      # Data is processed, show the color customization UI
-      tagList(
-        # Top control panel
-        fluidRow(
-          column(
-            width = 6,
-            selectInput(
-              ns("color_mode"),
-              label = "Color Definition Mode:",
-              choices = c("Multi-ome (Unified)" = "multi_ome",
-                          "Per-ome (Individual)" = "per_ome"),
-              selected = "multi_ome"
-            )
-          ),
-          column(
-            width = 6,
-            conditionalPanel(
-              condition = "input.color_mode == 'per_ome'",
-              ns = ns,
-              uiOutput(ns("ome_selector_ui"))
-            )
-          )
-        ),
-
-        hr(),
-
-        # Annotation column selector
-        fluidRow(
-          column(
-            width = 12,
-            uiOutput(ns("annotation_column_selector_ui"))
-          )
-        ),
-
-        hr(),
-
-        # Import/Export section
-        fluidRow(
-          column(
-            width = 6,
-            fileInput(
-              ns("import_yaml"),
-              label = "Import Color Scheme (YAML):",
-              accept = c(".yaml", ".yml"),
-              buttonLabel = "Browse...",
-              placeholder = "No file selected"
-            )
-          ),
-          column(
-            width = 6,
-            br(),
-            downloadButton(
-              ns("export_yaml"),
-              label = "Export Current Scheme",
-              class = "btn btn-primary"
-            ),
-            br(), br(),
-            actionButton(
-              ns("restore_defaults"),
-              label = "Restore Default Colors",
-              icon = icon("undo"),
-              class = "btn btn-default"
-            ),
-            br(), br(),
-            actionButton(
-              ns("reset_to_app_defaults"),
-              label = "Reset to App Defaults",
-              icon = icon("refresh"),
-              class = "btn btn-default"
-            )
-          )
-        ),
-
-        hr(),
-
-        # Dynamic color picker UI
-        uiOutput(ns("color_pickers_ui"))
-      )
-    })
+    # Server-driven flag for the conditionalPanel gating. outputOptions with
+    # suspendWhenHidden=FALSE ensures the value is delivered to JS even before
+    # the panel body is shown for the first time.
+    output$data_ready <- reactive(!is.null(GCTs_and_params()))
+    outputOptions(output, "data_ready", suspendWhenHidden = FALSE)
 
 
-    ## INITIALIZE COLORS ##
+    ## ====================================================== STATE (2 vals) ==
 
-    # Initialize custom_colors as reactiveVal
-    custom_colors <- reactiveVal()
+    # Live, current colors (returned to parent — see app_server.R:39).
+    current_colors  <- reactiveVal(NULL)
+    # Snapshot the "Restore last saved" button reverts to. Set on first init
+    # and on successful import / explicit reset.
+    restore_target  <- reactiveVal(NULL)
+    # Last change record — list(prev_colors=..., desc=character(1)) — drives
+    # both the inline status text and the Undo button.
+    last_change     <- reactiveVal(NULL)
+    # Last import structured result (informational).
+    import_meta     <- reactiveVal(NULL)
 
-    # Store default colors (either from app generation or from imported YAML)
-    default_colors_stored <- reactiveVal(NULL)
-    
-    # Store original app-generated defaults (never overwritten by imports)
-    original_app_defaults <- reactiveVal(NULL)
+    # Registry of active per-picker observeEvents. We use an environment
+    # (rather than a list with `<<-`) so that the registry's identity is
+    # stable across reactive contexts and tests can introspect it.
+    # Old observers are destroyed before each context-render so they don't
+    # fire on stale picker IDs.
+    picker_observers <- new.env(parent = emptyenv())
 
-    # Flag to prevent observe block from interfering during import
-    importing <- reactiveVal(FALSE)
 
-    # Use existing colors from globals (initialized in sidebar_setup).
-    # Refresh custom_colors when:
-    #   - it's uninitialized (first load), OR
-    #   - we're in the middle of an import (import handler sets this), OR
+    ## ============================================ INITIALIZE FROM globals ==
+
+    # Refresh current_colors only when:
+    #   - it's never been set, OR
     #   - the structural signature of globals$colors no longer matches
-    #     custom_colors — this detects new data uploads with different
-    #     omes/columns that would otherwise leave stale state downstream.
+    #     current_colors (new dataset uploaded, omes/columns changed).
+    # Pure color-value differences in globals$colors are ignored — that prevents
+    # a feedback loop with app_server.R:39 which writes our own output back to
+    # globals$colors.
     observeEvent(globals$colors, {
       req(globals$colors)
 
       incoming_sig <- colors_structure_signature(globals$colors)
-      current_sig <- colors_structure_signature(isolate(custom_colors()))
+      current_sig  <- colors_structure_signature(isolate(current_colors()))
 
       needs_refresh <-
-        is.null(custom_colors()) || length(custom_colors()) == 0 ||
-        importing() ||
+        is.null(isolate(current_colors())) ||
+        length(isolate(current_colors())) == 0 ||
         !identical(incoming_sig, current_sig)
 
       if (needs_refresh) {
-        custom_colors(globals$colors)
-        # Store as default if not already set (first time initialization)
-        if (is.null(default_colors_stored())) {
-          default_colors_stored(globals$colors)
-        }
-        # Always store original app defaults (never overwrite)
-        if (is.null(original_app_defaults())) {
-          original_app_defaults(globals$colors)
-        }
+        current_colors(globals$colors)
+        restore_target(globals$colors)
       }
     }, ignoreNULL = TRUE)
 
 
-    ## DYNAMIC UI FOR OME SELECTOR ##
+    ## ====================================================== display_context ==
+
+    # Single reactive consumed by the annotation-column UI, the picker UI, and
+    # the per-picker observers — eliminates triple duplication of "what's the
+    # current ome / column / color_info?".
+    display_context <- reactive({
+      req(current_colors(), input$color_mode)
+      colors <- current_colors()
+
+      display_ome <- if (input$color_mode == "multi_ome") {
+        "multi_ome"
+      } else {
+        req(input$selected_ome)
+        input$selected_ome
+      }
+      req(display_ome %in% names(colors))
+
+      req(input$selected_annotation_column)
+      annot_col <- input$selected_annotation_column
+      req(annot_col %in% names(colors[[display_ome]]))
+
+      color_info <- colors[[display_ome]][[annot_col]]
+      req(isTRUE(color_info$is_discrete))
+
+      list(
+        display_ome = display_ome,
+        annot_col   = annot_col,
+        color_info  = color_info
+      )
+    })
+
+
+    ## ================================================ ome selector UI ==
 
     output$ome_selector_ui <- renderUI({
       req(all_omes())
@@ -222,14 +313,13 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     })
 
 
-    ## DYNAMIC UI FOR ANNOTATION COLUMN SELECTOR ##
+    ## ============================== annotation column selector UI ==
 
     output$annotation_column_selector_ui <- renderUI({
-      req(custom_colors())
-      colors <- custom_colors()
-
-      # Determine which ome to display
+      req(current_colors())
+      colors <- current_colors()
       req(input$color_mode)
+
       display_ome <- if (input$color_mode == "multi_ome") {
         "multi_ome"
       } else {
@@ -237,50 +327,45 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         input$selected_ome
       }
 
-      if (!(display_ome %in% names(colors))) {
-        return(NULL)
-      }
+      if (!(display_ome %in% names(colors))) return(NULL)
 
-      # Get all available annotation columns for this ome (only discrete ones)
       all_annot_columns <- names(colors[[display_ome]])
-      discrete_annot_columns <- character(0)
-      
-      for (annot_col in all_annot_columns) {
-        if (colors[[display_ome]][[annot_col]]$is_discrete) {
-          discrete_annot_columns <- c(discrete_annot_columns, annot_col)
-        }
-      }
+      discrete_annot_columns <- all_annot_columns[
+        vapply(all_annot_columns,
+               function(col) isTRUE(colors[[display_ome]][[col]]$is_discrete),
+               logical(1))
+      ]
 
       if (length(discrete_annot_columns) == 0) {
-        return(p("No discrete annotation columns available for color customization."))
+        return(div(class = "alert alert-info",
+                   "No discrete annotation columns available for color customization."))
       }
 
-      # Determine default annotation column (analysis annotation column)
-      default_annot <- NULL
+      # Determine default annotation column.
       req(default_annotations())
-      if (display_ome == "multi_ome") {
-        # For multi-ome, use the first available default annotation
+      default_annot <- if (display_ome == "multi_ome") {
         default_annots <- unique(unlist(default_annotations()))
-        default_annot <- intersect(default_annots, discrete_annot_columns)[1]
+        intersect(default_annots, discrete_annot_columns)[1]
       } else {
-        # For individual ome, use its selected annotation column
-        default_annot <- default_annotations()[[display_ome]]
-        if (!default_annot %in% discrete_annot_columns) {
-          default_annot <- discrete_annot_columns[1]
+        candidate <- default_annotations()[[display_ome]]
+        if (is.null(candidate) || !candidate %in% discrete_annot_columns) {
+          discrete_annot_columns[1]
+        } else {
+          candidate
         }
       }
-
-      # If default not found, use first available
-      if (is.null(default_annot) || length(default_annot) == 0 || is.na(default_annot)) {
+      if (is.null(default_annot) || length(default_annot) == 0 ||
+          is.na(default_annot)) {
         default_annot <- discrete_annot_columns[1]
       }
 
-      # Preserve current selection if it's still valid, otherwise use default
+      # Preserve current selection if still valid.
       current_selection <- isolate(input$selected_annotation_column)
-      if (!is.null(current_selection) && current_selection %in% discrete_annot_columns) {
-        selected_annot <- current_selection
+      selected_annot <- if (!is.null(current_selection) &&
+                              current_selection %in% discrete_annot_columns) {
+        current_selection
       } else {
-        selected_annot <- default_annot
+        default_annot
       }
 
       selectInput(
@@ -292,52 +377,115 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     })
 
 
-    ## DYNAMIC UI FOR COLOR PICKERS ##
+    ## =================================================== swatch preview ==
+
+    output$swatch_preview_ui <- renderUI({
+      ctx <- tryCatch(display_context(), error = function(e) NULL)
+      if (is.null(ctx)) return(NULL)
+
+      div(
+        style = "display:flex; gap:10px; flex-wrap:wrap; padding:10px 0;",
+        lapply(seq_along(ctx$color_info$vals), function(i) {
+          val <- as.character(ctx$color_info$vals[i])
+          col <- ctx$color_info$colors[i]
+          div(
+            style = "display:flex; flex-direction:column; align-items:center; min-width:60px;",
+            div(
+              style = sprintf(
+                "background:%s; width:40px; height:24px; border:1px solid #ccc; border-radius:3px;",
+                col
+              ),
+              title = sprintf("%s: %s", val, col)
+            ),
+            tags$span(
+              style = "font-size:11px; margin-top:3px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;",
+              val
+            )
+          )
+        })
+      )
+    })
+
+
+    ## =================================================== color pickers ==
+
+    # Picker observer registration is decoupled from the renderUI so that
+    # tests using shiny::testServer (which runs no DOM) can exercise picker
+    # change logic without rendering the UI. Both this observe() and the
+    # renderUI below depend on display_context(), so they re-fire together.
+    observe({
+      ctx <- display_context()
+      # (debug instrumentation removed)
+
+      # Destroy stale observers from the previous context.
+      for (nm in ls(picker_observers, all.names = TRUE)) {
+        try(picker_observers[[nm]]$destroy(), silent = TRUE)
+        rm(list = nm, envir = picker_observers)
+      }
+
+      # Capture the context fields by value so each registered observer sees
+      # its own (i, picker_id, display_ome, annot_col) — without `force()` /
+      # `local()` the lapply closures all reference the final iteration value.
+      display_ome <- ctx$display_ome
+      annot_col   <- ctx$annot_col
+      vals        <- ctx$color_info$vals
+
+      lapply(seq_along(vals), function(i) {
+        local({
+          local_i        <- i
+          local_picker   <- paste0("color_", display_ome, "_", annot_col, "_", local_i)
+          local_ome      <- display_ome
+          local_col      <- annot_col
+
+          obs <- observeEvent(input[[local_picker]], {
+            new_color <- input[[local_picker]]
+            if (is.null(new_color)) return()
+
+            colors <- isolate(current_colors())
+            if (is.null(colors)) return()
+            if (!(local_ome %in% names(colors))) return()
+            if (!(local_col %in% names(colors[[local_ome]]))) return()
+
+            info <- colors[[local_ome]][[local_col]]
+            if (local_i > length(info$colors)) return()
+            cur <- info$colors[local_i]
+
+            norm <- normalize_hex_color(new_color)
+            if (is.na(norm)) return()
+            # short-circuit on no-op (case-insensitive comparison)
+            if (toupper(norm) == toupper(cur)) return()
+
+            val_i <- as.character(info$vals[local_i])
+            prev_colors <- colors  # snapshot for undo
+
+            updated <- if (isolate(input$color_mode) == "multi_ome") {
+              sync_colors_across_omes(colors, local_col, val_i, norm)
+            } else {
+              colors[[local_ome]][[local_col]]$colors[local_i] <- norm
+              colors
+            }
+            current_colors(updated)
+            last_change(list(
+              prev_colors = prev_colors,
+              desc = sprintf("%s (%s) → %s", val_i, local_col, norm)
+            ))
+          }, ignoreInit = TRUE, ignoreNULL = TRUE)
+          assign(local_picker, obs, envir = picker_observers)
+        })
+      })
+    })
 
     output$color_pickers_ui <- renderUI({
-      req(custom_colors())
-      req(input$selected_annotation_column)
-      colors <- custom_colors()
+      ctx <- display_context()
 
-      # Determine which ome to display
-      req(input$color_mode)
-      display_ome <- if (input$color_mode == "multi_ome") {
-        "multi_ome"
-      } else {
-        req(input$selected_ome)
-        input$selected_ome
-      }
-
-      if (!(display_ome %in% names(colors))) {
-        return(p("No color data available for selected ome."))
-      }
-
-      # Get the selected annotation column
-      annot_col <- input$selected_annotation_column
-
-      if (!(annot_col %in% names(colors[[display_ome]]))) {
-        return(p("Selected annotation column not available."))
-      }
-
-      color_info <- colors[[display_ome]][[annot_col]]
-
-      # Only show discrete colors
-      if (!color_info$is_discrete) {
-        return(p("Selected annotation column does not have discrete values for color customization."))
-      }
-
-      vals <- color_info$vals
-      col_colors <- color_info$colors
-
-      # Create color pickers for each value
-      color_pickers <- lapply(seq_along(vals), function(i) {
-        picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
+      pickers <- lapply(seq_along(ctx$color_info$vals), function(i) {
+        picker_id <- paste0("color_", ctx$display_ome, "_", ctx$annot_col, "_", i)
         column(
           width = 3,
           colourpicker::colourInput(
             ns(picker_id),
-            label = as.character(vals[i]),
-            value = col_colors[i],
+            label = as.character(ctx$color_info$vals[i]),
+            value = ctx$color_info$colors[i],
             showColour = "both",
             palette = "square",
             allowedCols = NULL
@@ -345,243 +493,285 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         )
       })
 
-      # Return box with color pickers
       box(
-        title = paste("Colors for:", annot_col),
+        title = paste("Colors for:", ctx$annot_col),
         status = "info",
         width = 12,
         collapsible = FALSE,
-        fluidRow(color_pickers)
+        fluidRow(pickers)
       )
     })
 
 
-    ## HANDLE COLOR CHANGES ##
+    ## ============================================ inline status + Undo ==
 
-    # Observe all color picker changes
-    # NOTE: Skip observation during import to prevent interference
-    # We depend on custom_colors() to trigger when UI renders, then check inputs
+    output$last_change_text <- renderText({
+      lc <- last_change()
+      if (is.null(lc)) "No recent changes." else paste("Last change:", lc$desc)
+    })
+
+    # Disable Undo when there's nothing to undo.
     observe({
-      # Depend on custom_colors() so this runs when UI is rendered/updated
-      colors_ui <- custom_colors()
-      
-      # Skip if currently importing - check this FIRST before any other operations
-      if (importing()) {
-        return()
-      }
+      shinyjs::toggleState("undo_last_change", condition = !is.null(last_change()))
+    })
 
-      # Get current colors without creating additional reactive dependency
-      colors <- isolate(custom_colors())
-      req(colors)
-
-      # Determine which ome we're displaying
-      req(input$color_mode)
-      display_ome <- if (input$color_mode == "multi_ome") {
-        "multi_ome"
-      } else {
-        req(input$selected_ome)
-        input$selected_ome
-      }
-
-      if (!(display_ome %in% names(colors))) return()
-
-      # Get the selected annotation column
-      req(input$selected_annotation_column)
-      annot_col <- input$selected_annotation_column
-
-      if (!(annot_col %in% names(colors[[display_ome]]))) return()
-
-      color_info <- colors[[display_ome]][[annot_col]]
-
-      if (!color_info$is_discrete) return()
-
-      vals <- color_info$vals
-
-      # Accumulate changes then fire a single notification at the end —
-      # avoids the N-notifications-per-bulk-change spam the old per-value
-      # showNotification() call produced (bug #13).
-      updated_colors <- colors
-      changed_vals <- character(0)
-
-      for (i in seq_along(vals)) {
-        picker_id <- paste0("color_", display_ome, "_", annot_col, "_", i)
-        new_color <- input[[picker_id]]
-
-        if (!is.null(new_color) && new_color != color_info$colors[i]) {
-          if (input$color_mode == "multi_ome") {
-            # Sync across all omes
-            updated_colors <- sync_colors_across_omes(
-              updated_colors,
-              annot_col,
-              vals[i],
-              new_color
-            )
-          } else {
-            # Update only this ome
-            updated_colors[[display_ome]][[annot_col]]$colors[i] <- new_color
-          }
-          changed_vals <- c(changed_vals, as.character(vals[i]))
-        }
-      }
-
-      if (length(changed_vals) > 0) {
-        custom_colors(updated_colors)
-
-        msg <- if (length(changed_vals) == 1) {
-          paste("Color updated for", changed_vals, "in", annot_col)
-        } else {
-          paste0("Updated ", length(changed_vals), " colors in ", annot_col)
-        }
-        showNotification(msg, type = "message", duration = 2)
-      }
+    observeEvent(input$undo_last_change, {
+      lc <- last_change()
+      req(lc)
+      current_colors(lc$prev_colors)
+      undone_marker <- list(prev_colors = lc$prev_colors,
+                            desc = paste("Undone:", lc$desc))
+      last_change(undone_marker)
+      # Clear after one cycle so Undo doesn't loop on itself. Identity-check
+      # at flush time so we don't stomp a NEW change the user made between
+      # the Undo click and the deferred callback firing.
+      session$onFlushed(function() {
+        if (identical(isolate(last_change()), undone_marker)) last_change(NULL)
+      }, once = TRUE)
     })
 
 
-    ## HANDLE IMPORT/EXPORT ##
+    ## ===================================================== Apply preset ==
 
-    # Import colors from YAML
-    observeEvent(input$import_yaml, {
-      req(input$import_yaml)
-
-      # Validate that data has been loaded and colors initialized
-      if (is.null(custom_colors()) || length(custom_colors()) == 0) {
-        shinyalert::shinyalert(
-          title = "Data Not Ready",
-          text = "Please upload and process your data files first before importing a color scheme.",
-          type = "warning"
-        )
+    observeEvent(input$apply_preset, {
+      req(input$preset_palette)
+      if (input$preset_palette == "(custom)") {
+        showNotification("Select a preset palette before clicking Apply.",
+                         type = "warning", duration = 3)
         return()
       }
 
-      file_path <- input$import_yaml$datapath
+      ctx <- tryCatch(display_context(), error = function(e) NULL)
+      req(ctx)
 
-      # Set importing flag to prevent observe block interference.
-      # The picker observer reads input[[picker_id]] which may still hold
-      # pre-import values while custom_colors has already been updated —
-      # without this flag the observer would race and revert the import.
-      importing(TRUE)
+      n <- length(ctx$color_info$vals)
+      pal <- tryCatch(
+        get_preset_palette(input$preset_palette, n,
+                           reverse = isTRUE(input$reverse_palette)),
+        error = function(e) {
+          showNotification(paste("Failed to apply preset:", e$message),
+                           type = "error", duration = 5)
+          NULL
+        }
+      )
+      req(pal)
 
-      # Guarantee the flag gets cleared even on error paths further down
-      # (previously the 200 ms delay could be skipped, leaving the flag
-      # stuck TRUE and freezing all subsequent picker edits).
-      clear_importing_flag <- function() {
-        # Fire after Shiny has flushed the UI update caused by setting
-        # custom_colors(). At that point all picker inputs reflect the
-        # new colors and it's safe to let the picker observer run again.
-        # No arbitrary timer needed.
-        session$onFlushed(function() importing(FALSE), once = TRUE)
+      colors <- isolate(current_colors())
+      prev_colors <- colors
+
+      if (isolate(input$color_mode) == "multi_ome") {
+        for (i in seq_along(ctx$color_info$vals)) {
+          colors <- sync_colors_across_omes(
+            colors, ctx$annot_col, as.character(ctx$color_info$vals[i]), pal[i]
+          )
+        }
+      } else {
+        colors[[ctx$display_ome]][[ctx$annot_col]]$colors <- pal
       }
 
-      tryCatch({
-        updated_colors <- import_colors_from_yaml(file_path, custom_colors())
+      current_colors(colors)
+      last_change(list(
+        prev_colors = prev_colors,
+        desc = sprintf("Preset “%s” applied to %s (%d colors)",
+                       input$preset_palette, ctx$annot_col, n)
+      ))
+    })
 
-        # Store imported colors as the new defaults
-        default_colors_stored(updated_colors)
 
-        # Update the reactive value
-        # The color picker UI will automatically update via renderUI when custom_colors() changes
-        # We don't need to manually update color pickers, which prevents triggering the observe block
-        custom_colors(updated_colors)
+    ## ======================================================= Import ==
 
-        clear_importing_flag()
-
+    observeEvent(input$import_yaml, {
+      req(input$import_yaml)
+      if (is.null(current_colors()) || length(current_colors()) == 0) {
         shinyalert::shinyalert(
-          title = "Import Successful",
-          text = "Color scheme imported successfully! Colors have been updated. These colors are now set as defaults for restore.",
-          type = "success"
+          title = "Data Not Ready",
+          text  = "Please upload and process your data files first before importing a color scheme.",
+          type  = "warning"
         )
-      }, error = function(e) {
-        importing(FALSE)  # Reset flag immediately on error
+        return()
+      }
+      file_path <- input$import_yaml$datapath
 
-        # Log error for debugging
-        message("Color import error: ", e$message)
+      tryCatch({
+        res <- import_colors_from_yaml_full(file_path, isolate(current_colors()))
+        import_meta(res)
 
-        # Provide helpful error message to user
-        error_msg <- if (grepl("colors.*not found", e$message, ignore.case = TRUE)) {
-          paste("Invalid color scheme file. Please ensure the YAML file contains a 'colors' section.",
-                "\nError:", e$message)
-        } else if (grepl("yaml|parse", e$message, ignore.case = TRUE)) {
-          paste("Failed to parse YAML file. Please check that the file is valid YAML format.",
-                "\nError:", e$message)
-        } else {
-          paste("Failed to import color scheme:", e$message,
-                "\nPlease check that the file is a valid Protigy color scheme.")
+        if (res$n_columns_updated == 0) {
+          msg <- sprintf(
+            "File parsed (%s format) but no columns matched current data. Check ome / column / value names.",
+            res$format
+          )
+          if (length(res$missing_omes) > 0) {
+            msg <- paste0(msg, "\nOmes in file not in session: ",
+                          paste(res$missing_omes, collapse = ", "))
+          }
+          shinyalert::shinyalert(
+            title = "Nothing changed",
+            text  = msg,
+            type  = "warning"
+          )
+          return()
+        }
+
+        prev_colors <- isolate(current_colors())
+        current_colors(res$colors)
+        restore_target(res$colors)
+        last_change(list(
+          prev_colors = prev_colors,
+          desc = sprintf("Import (%s, %d columns updated)",
+                         res$format, res$n_columns_updated)
+        ))
+
+        # Build success message
+        msg <- sprintf("Imported (%s). %d column%s updated across %d ome%s.",
+                       res$format,
+                       res$n_columns_updated,
+                       if (res$n_columns_updated == 1) "" else "s",
+                       res$n_omes_in_yaml,
+                       if (res$n_omes_in_yaml == 1) "" else "s")
+        if (length(res$invalid_entries) > 0) {
+          msg <- paste0(msg, sprintf(
+            "\n%d invalid hex entr%s skipped: %s%s",
+            length(res$invalid_entries),
+            if (length(res$invalid_entries) == 1) "y" else "ies",
+            paste(utils::head(res$invalid_entries, 5), collapse = "; "),
+            if (length(res$invalid_entries) > 5) ", ..." else ""
+          ))
+        }
+        if (length(res$missing_omes) > 0) {
+          msg <- paste0(msg, "\nOmes in file not in session: ",
+                        paste(res$missing_omes, collapse = ", "))
+        }
+        if (length(res$skipped_continuous_function_palettes) > 0) {
+          msg <- paste0(msg,
+            "\nSkipped continuous (function-form) palettes: ",
+            paste(res$skipped_continuous_function_palettes, collapse = ", "))
+        }
+        if (isTRUE(res$alpha_stripped_count > 0)) {
+          msg <- paste0(msg, sprintf(
+            "\n%d hex entr%s carried alpha; normalized to 6-digit form.",
+            res$alpha_stripped_count,
+            if (res$alpha_stripped_count == 1) "y" else "ies"
+          ))
         }
 
         shinyalert::shinyalert(
-          title = "Import Failed",
-          text = error_msg,
-          type = "error"
+          title = "Import successful",
+          text  = msg,
+          type  = "success"
+        )
+      }, error = function(e) {
+        shinyalert::shinyalert(
+          title = "Import failed",
+          text  = e$message,
+          type  = "error"
         )
       })
     })
 
-    # Export colors to YAML
+
+    ## ======================================================= Export ==
+
     output$export_yaml <- downloadHandler(
       filename = function() {
         paste0("color_palette_", Sys.Date(), ".yaml")
       },
       content = function(file) {
-        req(custom_colors())
-        export_colors_to_yaml(custom_colors(), file)
+        req(current_colors())
+        export_colors_to_yaml(current_colors(), file)
       }
     )
 
-    # Restore default colors
-    observeEvent(input$restore_defaults, {
-      # Check if we have stored defaults (from import) or need to regenerate
-      if (!is.null(default_colors_stored())) {
-        # Use stored defaults (from imported YAML)
-        default_colors <- default_colors_stored()
-      } else {
-        # No stored defaults, regenerate from app's color generation
-        req(GCTs(), GCTs_merged())
-        default_colors <- make_custom_colors(GCTs(), GCTs_merged())
+    output$download_example_yaml <- downloadHandler(
+      filename = function() "protigy_color_scheme_example.yaml",
+      content = function(file) {
+        yaml::write_yaml(list(
+          metadata = list(
+            created_date = as.character(Sys.Date()),
+            note = "Example Protigy color scheme. Edit and re-import."
+          ),
+          colors = list(
+            multi_ome = list(
+              Treatment = list(
+                Control = "#4477AA",
+                Treated = "#EE6677"
+              )
+            )
+          )
+        ), file)
       }
-      
-      # Update custom_colors — renderUI() at output$color_pickers_ui rebuilds
-      # every picker from the new value, so no explicit updateColourInput
-      # calls are needed here (bug #14: those calls were dead code).
-      custom_colors(default_colors)
+    )
 
-      # Show notification
-      showNotification(
-        "Default colors restored successfully!",
-        type = "message",
-        duration = 3
+
+    ## ======================================================= Restore ==
+
+    observeEvent(input$restore_defaults, {
+      tgt <- isolate(restore_target())
+      if (is.null(tgt)) {
+        showNotification("No saved restore target available.",
+                         type = "warning", duration = 3)
+        return()
+      }
+      if (identical(isolate(current_colors()), tgt)) {
+        showNotification("Already at the saved restore point.",
+                         type = "message", duration = 3)
+        return()
+      }
+
+      shinyalert::shinyalert(
+        title = "Restore last saved colors?",
+        text  = "All edits since the last save/import will be replaced with the saved scheme.",
+        type  = "warning",
+        showCancelButton = TRUE,
+        confirmButtonText = "Restore",
+        cancelButtonText  = "Cancel",
+        callbackR = function(ok) {
+          if (isTRUE(ok)) {
+            prev <- isolate(current_colors())
+            current_colors(tgt)
+            last_change(list(prev_colors = prev,
+                             desc = "Restored last saved colors"))
+          }
+        }
       )
     })
 
-    # Reset to original app-generated defaults (clears imported YAML defaults)
     observeEvent(input$reset_to_app_defaults, {
-      req(GCTs(), GCTs_merged())
+      shinyalert::shinyalert(
+        title = "Reset to factory defaults?",
+        text  = "All customizations and any imported scheme will be discarded.",
+        type  = "warning",
+        showCancelButton = TRUE,
+        confirmButtonText = "Reset",
+        cancelButtonText  = "Cancel",
+        callbackR = function(ok) {
+          if (!isTRUE(ok)) return()
+          req(GCTs(), GCTs_merged())
 
-      # Clear stored defaults (from imported YAML)
-      default_colors_stored(NULL)
+          # shinyjs auto-namespaces via the current (module) session, so pass
+          # the bare id — passing ns(...) here would namespace twice.
+          shinyjs::reset("import_yaml")
+          app_defaults <- make_custom_colors(GCTs(), GCTs_merged())
 
-      # Clear the file input
-      shinyjs::reset("import_yaml")
-
-      # Regenerate original app defaults
-      app_default_colors <- make_custom_colors(GCTs(), GCTs_merged())
-
-      # Update original app defaults storage
-      original_app_defaults(app_default_colors)
-
-      # Update custom_colors — pickers rebuild via renderUI (bug #14).
-      custom_colors(app_default_colors)
-
-      # Show notification
-      showNotification(
-        "Reset to original app-generated default colors. Imported YAML defaults have been cleared.",
-        type = "message",
-        duration = 4
+          prev <- isolate(current_colors())
+          current_colors(app_defaults)
+          restore_target(app_defaults)
+          last_change(list(prev_colors = prev,
+                           desc = "Reset to factory defaults"))
+        }
       )
     })
 
+    # Disable Restore button when current == target (nothing to restore).
+    observe({
+      ready <- !is.null(current_colors()) && !is.null(restore_target()) &&
+        !identical(current_colors(), restore_target())
+      shinyjs::toggleState("restore_defaults", condition = ready)
+    })
 
-    ## RETURN ##
-    return(custom_colors)
+
+    ## ============================================================ RETURN ==
+    return(current_colors)
 
   })
 }
