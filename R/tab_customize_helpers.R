@@ -117,7 +117,7 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
         # Continuous entries: only the discrete-palette form (vals=low/mid/high
         # plus optional na_color) is YAML-serializable. The function-form
         # (circlize::colorRamp2) used when continuous.return_function=TRUE is
-        # an R closure and cannot round-trip — skip it.
+        # an R closure and cannot round-trip -- skip it.
         vals <- col_info$vals
         colors <- col_info$colors
         if (is.null(vals) || is.function(colors) || length(vals) == 0) next
@@ -126,7 +126,7 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
       }
     }
 
-    # Only include ome if it has at least one discrete annotation column —
+    # Only include ome if it has at least one discrete annotation column --
     # avoids writing an empty mapping that round-trips as NULL and trips
     # the importer's names() iteration.
     if (length(ome_entry) > 0) {
@@ -142,7 +142,7 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
     yaml_structure$continuous_colors <- NULL
   }
 
-  # Write to YAML file — let errors propagate so downloadHandler can surface them.
+  # Write to YAML file -- let errors propagate so downloadHandler can surface them.
   yaml::write_yaml(yaml_structure, file_path)
   invisible(TRUE)
 }
@@ -151,7 +151,7 @@ export_colors_to_yaml <- function(custom_colors, file_path) {
 #' Compute a structural signature of a custom_colors list
 #'
 #' Returns a string that changes only when the set of omes, annotation
-#' columns, or condition values changes — but not when only color hex
+#' columns, or condition values changes -- but not when only color hex
 #' values change. Used by the Customize module to detect new datasets
 #' (which must refresh stale color state) while leaving user color edits
 #' alone.
@@ -179,7 +179,7 @@ colors_structure_signature <- function(colors) {
 }
 
 
-#' Import colors from YAML — full structured result
+#' Import colors from YAML -- full structured result
 #'
 #' Internal workhorse. Returns a structured list describing the import so the
 #' Shiny module can surface counts, missing omes, format detected, and
@@ -204,15 +204,15 @@ colors_structure_signature <- function(colors) {
 #' @param file_path Path to the YAML file
 #' @param custom_colors Current custom colors structure (to preserve structure)
 #' @return A list with:
-#'   * `colors`               – updated custom_colors
-#'   * `n_columns_updated`    – integer count of column entries actually changed
-#'   * `n_omes_in_yaml`       – integer count of omes that matched session
-#'   * `invalid_entries`      – character vector of "ome$col$val=#bad"
-#'   * `missing_omes`         – omes present in YAML but not in session
-#'   * `format`               – "ProTIGY" | "PANOPLY-nested" | "PANOPLY-flat" | "none"
-#'   * `warnings`             – character vector of all warning messages
-#'   * `skipped_continuous_function_palettes` – ome$col entries that couldn't be restored
-#'   * `alpha_stripped_count` – integer; how many hex inputs had alpha stripped
+#'   * `colors`               - updated custom_colors
+#'   * `n_columns_updated`    - integer count of column entries actually changed
+#'   * `n_omes_in_yaml`       - integer count of omes that matched session
+#'   * `invalid_entries`      - character vector of "ome$col$val=#bad"
+#'   * `missing_omes`         - omes present in YAML but not in session
+#'   * `format`               - "ProTIGY" | "PANOPLY-nested" | "PANOPLY-flat" | "none"
+#'   * `warnings`             - character vector of all warning messages
+#'   * `skipped_continuous_function_palettes` - ome$col entries that couldn't be restored
+#'   * `alpha_stripped_count` - integer; how many hex inputs had alpha stripped
 #' @importFrom yaml read_yaml
 import_colors_from_yaml_full <- function(file_path, custom_colors) {
   yaml_data <- yaml::read_yaml(file_path)
@@ -406,10 +406,10 @@ import_colors_from_yaml_full <- function(file_path, custom_colors) {
         normed <- vapply(yaml_vals_raw, normalize_hex_color, character(1))
         keep <- !is.na(normed)
         if (!all(keep)) {
-          bad <- yaml_vals_raw[!keep]
-          for (b in bad) {
+          for (k in which(!keep)) {
             invalid_entries <- c(invalid_entries,
-                                 paste0(ome, "$", annot_col, " (continuous) = ", b))
+                                 paste0(ome, "$", annot_col, "$", yaml_names[k],
+                                        " (continuous) = ", yaml_vals_raw[k]))
           }
           yaml_names <- yaml_names[keep]
           normed <- normed[keep]
@@ -530,7 +530,7 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
     # extract from merged the colors that are unique to the ome
     annot_columns_only_in_ome <- setdiff(annot_columns_in_ome, annot_columns_in_merged)
     unique_colors <- lapply(annot_columns_only_in_ome, function(col) {
-      # try to pull from merged — escape all regex metachars in the column name
+      # try to pull from merged -- escape all regex metachars in the column name
       # (not just `.`) so names like `group+plus` or `treatment(type)` don't
       # produce invalid or over-broad patterns.
       col_escaped <- gsub("([][{}()+*?.^$|\\\\])", "\\\\\\1", col, perl = TRUE)

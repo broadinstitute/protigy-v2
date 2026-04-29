@@ -24,3 +24,4 @@ pkg.lock
 firebase-debug.log
 
 docs/
+.positai

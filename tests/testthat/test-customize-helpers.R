@@ -1012,7 +1012,7 @@ test_that("export/import - continuous palettes round-trip (bug #8)", {
 
 test_that("export_colors_to_yaml - skips continuous function-form palettes (bug #8)", {
   # When continuous.return_function=TRUE, $colors is a circlize colorRamp2
-  # closure — not YAML-serializable. Must be silently skipped, not crash.
+  # closure -- not YAML-serializable. Must be silently skipped, not crash.
   custom_colors <- list(
     multi_ome = list(
       age = list(
@@ -1076,7 +1076,7 @@ colors:
   # treatment gets its YAML colors
   expect_equal(result$multi_ome$treatment$colors, c("#4477AA", "#EE6677"))
 
-  # batch is absent from YAML → defaults preserved; #228833 must NOT leak in.
+  # batch is absent from YAML -> defaults preserved; #228833 must NOT leak in.
   expect_equal(result$multi_ome$batch$colors, c("#AAAAAA", "#BBBBBB"))
 
   unlink(temp_file)
@@ -1119,7 +1119,7 @@ colors:
   result <- import_colors_from_yaml(temp_file, custom_colors)
 
   expect_equal(result$multi_ome$Treatment$colors[1], "#4477AA")   # Treatment's Control
-  expect_equal(result$multi_ome$QC.status$colors[1], "#228833")   # QC.status's Control — must differ
+  expect_equal(result$multi_ome$QC.status$colors[1], "#228833")   # QC.status's Control -- must differ
 
   unlink(temp_file)
 })
@@ -1138,7 +1138,7 @@ test_that("colors_structure_signature - stable under color-only edits (bug #4)",
   after_edit <- before
   after_edit$multi_ome$treatment$colors <- c("#AAAAAA", "#BBBBBB")
 
-  # Color edits must NOT change the signature — otherwise the Customize
+  # Color edits must NOT change the signature -- otherwise the Customize
   # observer would clobber user edits back to globals$colors every time.
   expect_identical(
     colors_structure_signature(before),
@@ -1167,10 +1167,10 @@ test_that("colors_structure_signature - changes when omes/columns change (bug #4
     )
   )
 
-  # Adding an ome changes the signature → refresh fires.
+  # Adding an ome changes the signature -> refresh fires.
   expect_false(identical(colors_structure_signature(small),
                          colors_structure_signature(new_ome)))
-  # Adding a condition value changes the signature → refresh fires.
+  # Adding a condition value changes the signature -> refresh fires.
   expect_false(identical(colors_structure_signature(small),
                          colors_structure_signature(new_vals)))
 
@@ -1384,6 +1384,45 @@ colors:
 })
 
 
+test_that("import_colors_from_yaml_full - continuous invalid hex includes the key (low/mid/high)", {
+  # Regression for C8: invalid_entries previously reported only the bad value
+  # for continuous palettes, dropping the low/mid/high key. The fix iterates
+  # by index and includes yaml_names[k] in the message.
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high"),
+        colors = c("#FF0000", "#00FF00", "#0000FF")
+      )
+    )
+  )
+  yaml_content <- "
+continuous_colors:
+  multi_ome:
+    age:
+      low: '#FF0000'
+      mid: '#zzz'
+      high: '#0000FF'
+colors:
+  multi_ome: {}
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+
+  expect_length(res$invalid_entries, 1)
+  expect_match(res$invalid_entries[[1]],
+               "multi_ome\\$age\\$mid \\(continuous\\) = #zzz",
+               fixed = FALSE)
+  # Valid entries still applied; bad mid leaves original at index 2.
+  expect_equal(res$colors$multi_ome$age$colors,
+               c("#FF0000", "#00FF00", "#0000FF"))
+
+  unlink(temp_file)
+})
+
 test_that("import_colors_from_yaml back-compat wrapper still emits warning() for invalid hex", {
   custom_colors <- list(
     multi_ome = list(
@@ -1482,7 +1521,7 @@ test_that("colors_structure_signature - distinguishes values containing | and ;"
 
 
 # ---------------------------------------------------------------------------
-# sync_colors_across_omes — direct multi-condition multi-ome test
+# sync_colors_across_omes -- direct multi-condition multi-ome test
 # ---------------------------------------------------------------------------
 
 test_that("sync_colors_across_omes - updates only the matching condition across omes", {

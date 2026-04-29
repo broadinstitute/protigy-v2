@@ -165,7 +165,7 @@ test_that("Reset to factory defaults regenerates the scheme", {
   before <- app$get_value(export = "globals_colors")
 
   # Click Reset; shinyalert confirmation will block. Stub it via JS by
-  # invoking the callback directly is brittle — instead, drive via the
+  # invoking the callback directly is brittle -- instead, drive via the
   # actionButton input counter without showing the modal: send the
   # `shinyalert::shinyalert` callback by directly clicking the visible
   # confirm button after a short wait.
@@ -256,8 +256,8 @@ test_that("Import round-trip: export then re-import shows success modal text", {
   app$wait_for_idle(duration = 1500, timeout = 15000)
 
   # Import success modal text should mention "Imported" or columns updated,
-  # OR — if the round-trip is a no-op (every color matches what the importer
-  # found) — the "Nothing changed" warning should appear.
+  # OR -- if the round-trip is a no-op (every color matches what the importer
+  # found) -- the "Nothing changed" warning should appear.
   body_text <- as.character(app$get_js("document.body.innerText"))
   expect_true(
     grepl("Import|Imported|Nothing changed|columns? updated", body_text,

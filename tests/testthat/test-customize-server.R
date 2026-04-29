@@ -109,7 +109,7 @@ test_that("structural refresh: adding an ome refreshes current_colors", {
       expect_true("proteome" %in% names(original))
       expect_false("phosphoproteome" %in% names(original))
 
-      # Add a new ome to globals$colors — structural change.
+      # Add a new ome to globals$colors -- structural change.
       new_colors <- args$globals$colors
       new_colors$phosphoproteome <- new_colors$proteome
       args$globals$colors <- new_colors
@@ -121,9 +121,97 @@ test_that("structural refresh: adding an ome refreshes current_colors", {
 })
 
 
+test_that("structural refresh clears last_change and import_meta and disables Undo", {
+  # B2 scenario: user has unsaved edits + last_change set, then a dataset
+  # reload changes the signature. Edit history must be discarded so an Undo
+  # can't write structurally-stale colors back through app_server.R:39.
+  args <- make_test_args()
+  shiny::testServer(
+    customizeTabServer,
+    args = list(GCTs_and_params = args$GCTs_and_params, globals = args$globals),
+    {
+      session$flushReact()
+
+      # Simulate a prior edit + a prior import.
+      prev <- current_colors()
+      last_change(list(prev_colors = prev, desc = "test edit"))
+      import_meta(list(format = "ProTIGY"))
+      session$flushReact()
+      expect_false(is.null(last_change()))
+      expect_false(is.null(import_meta()))
+
+      # Now simulate a dataset reload: structurally-different colors.
+      new_colors <- list(
+        phosphoproteome = list(
+          batch = list(is_discrete = TRUE,
+                       vals = c("b1", "b2"),
+                       colors = c("#111111", "#222222"))
+        ),
+        multi_ome = list(
+          batch = list(is_discrete = TRUE,
+                       vals = c("b1", "b2"),
+                       colors = c("#111111", "#222222"))
+        )
+      )
+      args$globals$colors <- new_colors
+      session$flushReact()
+
+      # Edit history wiped.
+      expect_null(last_change())
+      expect_null(import_meta())
+
+      # current_colors / restore_target / factory_defaults all re-pinned to
+      # the new dataset's colors.
+      expect_equal(current_colors(), new_colors)
+      expect_equal(restore_target(), new_colors)
+      expect_equal(factory_defaults(), new_colors)
+    }
+  )
+})
+
+test_that("same-signature writeback to globals$colors preserves restore_target and last_change", {
+  # The parent app_server.R:39 writes our own current_colors() back to
+  # globals$colors on every change. That same-signature write must NOT
+  # clobber restore_target (the LAST imported/saved scheme) or last_change
+  # (the Undo target).
+  args <- make_test_args()
+  shiny::testServer(
+    customizeTabServer,
+    args = list(GCTs_and_params = args$GCTs_and_params, globals = args$globals),
+    {
+      session$flushReact()
+
+      # Simulate an in-progress edit.
+      cc <- current_colors()
+      cc$multi_ome$treatment$colors[1] <- "#FF0000"
+      current_colors(cc)
+      last_change(list(prev_colors = make_fixture_colors(),
+                       desc = "edit treatment[1]"))
+      session$flushReact()
+
+      rt_before <- restore_target()
+      lc_before <- last_change()
+      expect_false(is.null(rt_before))
+      expect_false(is.null(lc_before))
+
+      # Simulate parent's writeback with a structurally-identical, value-
+      # different list. restore_target must NOT be refreshed.
+      writeback <- cc
+      writeback$multi_ome$treatment$colors[1] <- "#00FF00"
+      args$globals$colors <- writeback
+      session$flushReact()
+
+      expect_equal(restore_target(), rt_before)
+      expect_false(identical(restore_target()$multi_ome$treatment$colors[1],
+                             "#00FF00"))
+      expect_identical(last_change(), lc_before)
+    }
+  )
+})
+
 test_that("color-only edit on globals$colors does NOT clobber pending edits", {
   # Simulates app_server.R:39 writing back our own current_colors. Should be
-  # a no-op (same structure → no refresh).
+  # a no-op (same structure -> no refresh).
   args <- make_test_args()
   shiny::testServer(
     customizeTabServer,
@@ -139,7 +227,7 @@ test_that("color-only edit on globals$colors does NOT clobber pending edits", {
       expect_equal(current_colors()$multi_ome$treatment$colors[1], "#FF0000")
 
       # Now simulate the parent writing globals$colors back from
-      # current_colors() — same structure, different value at [1].
+      # current_colors() -- same structure, different value at [1].
       args$globals$colors <- cc
       session$flushReact()
 
@@ -297,7 +385,7 @@ colors:
 
 
 # ---------------------------------------------------------------------------
-# Per-picker observers — multi-ome sync vs per-ome scope
+# Per-picker observers -- multi-ome sync vs per-ome scope
 # ---------------------------------------------------------------------------
 
 test_that("per-picker observe in multi_ome mode syncs across all omes", {
@@ -418,7 +506,7 @@ test_that("undo + immediate edit: deferred clear does not stomp the new change",
       invisible(output$color_pickers_ui)
       session$flushReact()
 
-      # Edit, undo, edit again — all in quick succession.
+      # Edit, undo, edit again -- all in quick succession.
       session$setInputs(color_multi_ome_treatment_1 = "#AAAAAA")
       session$flushReact()
       session$setInputs(undo_last_change = 1)

@@ -6,9 +6,9 @@
 # State model
 # -----------
 # Two reactiveVals are owned by this module:
-#   * current_colors  – the live edits.  Returned to the parent so other tabs
+#   * current_colors  - the live edits.  Returned to the parent so other tabs
 #                       can read it via globals$colors (see app_server.R).
-#   * restore_target  – the snapshot the "Restore last saved" button reverts to.
+#   * restore_target  - the snapshot the "Restore last saved" button reverts to.
 #                       Set when the module first sees globals$colors and again
 #                       on successful import / explicit reset.
 #
@@ -16,7 +16,7 @@
 # `output$color_pickers_ui`.  Old observers are destroyed before each render.
 # `ignoreInit = TRUE` ensures programmatic writes to current_colors (which
 # rebuild the picker UI with the new value) do not re-fire the observer with
-# the value the parent just wrote — that was the feedback loop the previous
+# the value the parent just wrote -- that was the feedback loop the previous
 # implementation papered over with an `importing` flag.
 ################################################################################
 
@@ -38,7 +38,7 @@ customizeTabUI <- function(id = "customizeTab") {
         solidHeader = TRUE,
         width = 12,
 
-        # Empty / preflight state — gated by the server-set output flag.
+        # Empty / preflight state -- gated by the server-set output flag.
         conditionalPanel(
           condition = sprintf("output['%s'] == false", ns("data_ready")),
           div(
@@ -125,7 +125,7 @@ customizeTabUI <- function(id = "customizeTab") {
               ),
               helpText(
                 "Expected: YAML with a top-level ", tags$code("colors:"),
-                " section keyed by ome → column → value: hex."
+                " section keyed by ome -> column -> value: hex."
               ),
               downloadLink(ns("download_example_yaml"),
                            label = "Download example YAML")
@@ -222,16 +222,22 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
     ## ====================================================== STATE (2 vals) ==
 
-    # Live, current colors (returned to parent — see app_server.R:39).
+    # Live, current colors (returned to parent -- see app_server.R:39).
     current_colors  <- reactiveVal(NULL)
     # Snapshot the "Restore last saved" button reverts to. Set on first init
     # and on successful import / explicit reset.
     restore_target  <- reactiveVal(NULL)
-    # Last change record — list(prev_colors=..., desc=character(1)) — drives
+    # Last change record -- list(prev_colors=..., desc=character(1)) -- drives
     # both the inline status text and the Undo button.
     last_change     <- reactiveVal(NULL)
     # Last import structured result (informational).
     import_meta     <- reactiveVal(NULL)
+    # Snapshot of the FIRST colors the app showed for the current dataset.
+    # Captured (and re-captured) by the structural-refresh observer below.
+    # Reset uses this directly so we never re-derive via make_custom_colors()
+    # at click-time -- avoids surfacing S4/requireNamespace errors and
+    # decouples Reset from any post-init mutations of globals$colors.
+    factory_defaults <- reactiveVal(NULL)
 
     # Registry of active per-picker observeEvents. We use an environment
     # (rather than a list with `<<-`) so that the registry's identity is
@@ -247,7 +253,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     #   - it's never been set, OR
     #   - the structural signature of globals$colors no longer matches
     #     current_colors (new dataset uploaded, omes/columns changed).
-    # Pure color-value differences in globals$colors are ignored — that prevents
+    # Pure color-value differences in globals$colors are ignored -- that prevents
     # a feedback loop with app_server.R:39 which writes our own output back to
     # globals$colors.
     observeEvent(globals$colors, {
@@ -264,18 +270,31 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       if (needs_refresh) {
         current_colors(globals$colors)
         restore_target(globals$colors)
+        # Drop history that referenced the previous dataset's structure.
+        # Without this, Undo would write a structurally-stale color list
+        # back through app_server.R:39, corrupting downstream tabs.
+        last_change(NULL)
+        import_meta(NULL)
+        # Pin "factory" to what the app first showed for THIS dataset.
+        # Re-pinned on every structural change (new dataset upload).
+        factory_defaults(globals$colors)
       }
     }, ignoreNULL = TRUE)
 
 
-    ## ====================================================== display_context ==
+    ## ============================================ display_context (struct) ==
 
-    # Single reactive consumed by the annotation-column UI, the picker UI, and
-    # the per-picker observers — eliminates triple duplication of "what's the
-    # current ome / column / color_info?".
-    display_context <- reactive({
+    # Depends only on the STRUCTURAL signature of current_colors plus the
+    # user's mode/ome/annotation selections. Color value edits do NOT
+    # invalidate this reactive -- this is what keeps the picker grid from
+    # being destroyed and rebuilt on every color tweak (issue C1).
+    display_context_struct <- reactive({
       req(current_colors(), input$color_mode)
-      colors <- current_colors()
+      # Take a structural dependency only -- not on values.
+      sig <- colors_structure_signature(current_colors())
+      if (!nzchar(sig)) return(NULL)
+
+      colors <- isolate(current_colors())
 
       display_ome <- if (input$color_mode == "multi_ome") {
         "multi_ome"
@@ -295,6 +314,24 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       list(
         display_ome = display_ome,
         annot_col   = annot_col,
+        vals        = color_info$vals
+      )
+    })
+
+    ## ====================================================== display_context ==
+
+    # Live view -- structure + current color values. Use this where the
+    # caller actually needs color hex values (swatch preview, preset apply).
+    display_context <- reactive({
+      s <- display_context_struct()
+      req(s)
+      colors <- current_colors()
+      req(colors, s$display_ome %in% names(colors))
+      req(s$annot_col %in% names(colors[[s$display_ome]]))
+      color_info <- colors[[s$display_ome]][[s$annot_col]]
+      list(
+        display_ome = s$display_ome,
+        annot_col   = s$annot_col,
         color_info  = color_info
       )
     })
@@ -414,7 +451,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     # change logic without rendering the UI. Both this observe() and the
     # renderUI below depend on display_context(), so they re-fire together.
     observe({
-      ctx <- display_context()
+      ctx <- display_context_struct()
       # (debug instrumentation removed)
 
       # Destroy stale observers from the previous context.
@@ -424,11 +461,11 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       }
 
       # Capture the context fields by value so each registered observer sees
-      # its own (i, picker_id, display_ome, annot_col) — without `force()` /
+      # its own (i, picker_id, display_ome, annot_col) -- without `force()` /
       # `local()` the lapply closures all reference the final iteration value.
       display_ome <- ctx$display_ome
       annot_col   <- ctx$annot_col
-      vals        <- ctx$color_info$vals
+      vals        <- ctx$vals
 
       lapply(seq_along(vals), function(i) {
         local({
@@ -467,7 +504,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
             current_colors(updated)
             last_change(list(
               prev_colors = prev_colors,
-              desc = sprintf("%s (%s) → %s", val_i, local_col, norm)
+              desc = sprintf("%s (%s) -> %s", val_i, local_col, norm)
             ))
           }, ignoreInit = TRUE, ignoreNULL = TRUE)
           assign(local_picker, obs, envir = picker_observers)
@@ -476,16 +513,21 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     })
 
     output$color_pickers_ui <- renderUI({
-      ctx <- display_context()
+      ctx <- display_context_struct()
+      colors <- isolate(current_colors())
+      req(colors)
+      req(ctx$display_ome %in% names(colors))
+      req(ctx$annot_col %in% names(colors[[ctx$display_ome]]))
+      initial_hex <- colors[[ctx$display_ome]][[ctx$annot_col]]$colors
 
-      pickers <- lapply(seq_along(ctx$color_info$vals), function(i) {
+      pickers <- lapply(seq_along(ctx$vals), function(i) {
         picker_id <- paste0("color_", ctx$display_ome, "_", ctx$annot_col, "_", i)
         column(
           width = 3,
           colourpicker::colourInput(
             ns(picker_id),
-            label = as.character(ctx$color_info$vals[i]),
-            value = ctx$color_info$colors[i],
+            label = as.character(ctx$vals[i]),
+            value = initial_hex[i],
             showColour = "both",
             palette = "square",
             allowedCols = NULL
@@ -500,6 +542,27 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         collapsible = FALSE,
         fluidRow(pickers)
       )
+    })
+
+    ## ============================== push value updates into existing pickers ==
+
+    # Whenever current_colors() changes VALUES (without changing structure),
+    # push the new hex into the already-rendered pickers via
+    # updateColourInput. This keeps the popup open and the grid stable; the
+    # renderUI above only re-fires when the structural context changes.
+    observe({
+      colors <- current_colors()
+      req(colors)
+      s <- isolate(display_context_struct())
+      if (is.null(s)) return()
+      if (!(s$display_ome %in% names(colors))) return()
+      if (!(s$annot_col %in% names(colors[[s$display_ome]]))) return()
+      hex <- colors[[s$display_ome]][[s$annot_col]]$colors
+      for (i in seq_along(s$vals)) {
+        if (i > length(hex)) next
+        picker_id <- paste0("color_", s$display_ome, "_", s$annot_col, "_", i)
+        colourpicker::updateColourInput(session, picker_id, value = hex[i])
+      }
     })
 
 
@@ -572,7 +635,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
       current_colors(colors)
       last_change(list(
         prev_colors = prev_colors,
-        desc = sprintf("Preset “%s” applied to %s (%d colors)",
+        desc = sprintf("Preset \"%s\" applied to %s (%d colors)",
                        input$preset_palette, ctx$annot_col, n)
       ))
     })
@@ -746,18 +809,29 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         cancelButtonText  = "Cancel",
         callbackR = function(ok) {
           if (!isTRUE(ok)) return()
-          req(GCTs(), GCTs_merged())
+          # Explicit guard: req() inside callbackR silent-fails (silent.shiny.error),
+          # leaving the user with no feedback. Use showNotification instead.
+          app_defaults <- isolate(factory_defaults())
+          if (is.null(app_defaults)) {
+            showNotification(
+              "No factory defaults available -- upload data first.",
+              type = "error", duration = 4
+            )
+            return()
+          }
 
           # shinyjs auto-namespaces via the current (module) session, so pass
-          # the bare id — passing ns(...) here would namespace twice.
+          # the bare id -- passing ns(...) here would namespace twice.
           shinyjs::reset("import_yaml")
-          app_defaults <- make_custom_colors(GCTs(), GCTs_merged())
 
           prev <- isolate(current_colors())
           current_colors(app_defaults)
           restore_target(app_defaults)
           last_change(list(prev_colors = prev,
                            desc = "Reset to factory defaults"))
+          # Reset wipes the import provenance so any "imported X.yaml"
+          # indicator vanishes after a factory reset.
+          import_meta(NULL)
         }
       )
     })
