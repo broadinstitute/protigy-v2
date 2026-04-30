@@ -68,6 +68,7 @@ Depends:
 Suggests:
     testthat (>= 3.2.0),
     shinytest2,
-    chromote
+    chromote,
+    viridisLite
 Config/testthat/edition: 3
 LazyData: false
