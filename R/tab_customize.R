@@ -142,8 +142,10 @@ customizeTabUI <- function(id = "customizeTab") {
 
           # Import / Export -- left column shrunk so the Export / Restore /
           # Reset buttons (which start immediately after the left column in
-          # Bootstrap's grid) sit close to the YAML uploader rather than
-          # being pushed all the way to the 50% mark.
+          # Bootstrap's grid) sit close to the YAML uploader. The right
+          # column is offset by ~29px (fileInput's label height + bottom
+          # margin) so the Export button's top aligns with the fileInput's
+          # input box top, not its label.
           fluidRow(
             column(
               width = 4,
@@ -163,25 +165,30 @@ customizeTabUI <- function(id = "customizeTab") {
             ),
             column(
               width = 4,
-              br(),
-              downloadButton(
-                ns("export_yaml"),
-                label = "Export Current Scheme",
-                class = "btn btn-primary"
-              ),
-              br(), br(),
-              actionButton(
-                ns("restore_defaults"),
-                label = "Restore last saved",
-                icon = icon("rotate-left"),
-                class = "btn btn-default"
-              ),
-              br(), br(),
-              actionButton(
-                ns("reset_to_app_defaults"),
-                label = "Reset to factory defaults",
-                icon = icon("eraser"),
-                class = "btn btn-default"
+              # Offset matches the fileInput's label-row height so the
+              # button stack aligns with the fileInput's input box, not
+              # its label.
+              tags$div(
+                style = "padding-top:29px;",
+                downloadButton(
+                  ns("export_yaml"),
+                  label = "Export Current Scheme",
+                  class = "btn btn-primary"
+                ),
+                br(), br(),
+                actionButton(
+                  ns("restore_defaults"),
+                  label = "Restore last saved",
+                  icon = icon("rotate-left"),
+                  class = "btn btn-default"
+                ),
+                br(), br(),
+                actionButton(
+                  ns("reset_to_app_defaults"),
+                  label = "Reset to factory defaults",
+                  icon = icon("eraser"),
+                  class = "btn btn-default"
+                )
               )
             )
           ),
