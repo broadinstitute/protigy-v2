@@ -59,7 +59,7 @@ customizeTabUI <- function(id = "customizeTab") {
           # Mode + ome selector
           fluidRow(
             column(
-              width = 6,
+              width = 3,
               selectInput(
                 ns("color_mode"),
                 label = "Apply colors to:",
@@ -69,7 +69,7 @@ customizeTabUI <- function(id = "customizeTab") {
               )
             ),
             column(
-              width = 6,
+              width = 9,
               conditionalPanel(
                 condition = "input.color_mode == 'per_ome'",
                 ns = ns,
@@ -89,7 +89,7 @@ customizeTabUI <- function(id = "customizeTab") {
           # Preset palette controls (H4)
           fluidRow(
             column(
-              width = 5,
+              width = 4,
               selectInput(
                 ns("preset_palette"),
                 label = "Apply preset palette:",
@@ -97,10 +97,10 @@ customizeTabUI <- function(id = "customizeTab") {
                 selected = "(custom)"
               )
             ),
-            column(width = 3, br(),
+            column(width = 2, br(),
                    checkboxInput(ns("reverse_palette"),
                                  label = "Reverse", value = FALSE)),
-            column(width = 4, br(),
+            column(width = 3, br(),
                    actionButton(ns("apply_preset"),
                                 label = "Apply preset",
                                 icon = icon("paint-brush"),
@@ -116,12 +116,17 @@ customizeTabUI <- function(id = "customizeTab") {
           fluidRow(
             column(
               width = 6,
-              fileInput(
-                ns("import_yaml"),
-                label = "Import Color Scheme (YAML):",
-                accept = c(".yaml", ".yml"),
-                buttonLabel = "Browse...",
-                placeholder = "No file selected"
+              fluidRow(
+                column(
+                  width = 6,
+                  fileInput(
+                    ns("import_yaml"),
+                    label = "Import Color Scheme (YAML):",
+                    accept = c(".yaml", ".yml"),
+                    buttonLabel = "Browse...",
+                    placeholder = "No file selected"
+                  )
+                )
               ),
               helpText(
                 "Expected: YAML with a top-level ", tags$code("colors:"),
@@ -284,17 +289,32 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
     ## ============================================ display_context (struct) ==
 
+    # Cache the structural signature in a reactiveVal so downstream
+    # consumers only invalidate when the SHAPE of current_colors() changes
+    # (ome names, column names, condition values) -- not when hex values
+    # change. We use a reactiveVal + observe pair instead of reactive()
+    # because reactive() always invalidates downstream on every re-run,
+    # even if its return value is identical to the previous run.
+    # reactiveVal only invalidates downstream when set to a different value.
+    struct_sig <- reactiveVal("")
+    observe({
+      cc <- current_colors()
+      new_sig <- if (is.null(cc)) "" else colors_structure_signature(cc)
+      if (!identical(new_sig, isolate(struct_sig()))) {
+        struct_sig(new_sig)
+      }
+    })
+
     # Depends only on the STRUCTURAL signature of current_colors plus the
     # user's mode/ome/annotation selections. Color value edits do NOT
     # invalidate this reactive -- this is what keeps the picker grid from
     # being destroyed and rebuilt on every color tweak (issue C1).
     display_context_struct <- reactive({
-      req(current_colors(), input$color_mode)
-      # Take a structural dependency only -- not on values.
-      sig <- colors_structure_signature(current_colors())
-      if (!nzchar(sig)) return(NULL)
+      sig <- struct_sig()
+      req(nzchar(sig), input$color_mode)
 
       colors <- isolate(current_colors())
+      req(colors)
 
       display_ome <- if (input$color_mode == "multi_ome") {
         "multi_ome"
@@ -530,7 +550,8 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
             value = initial_hex[i],
             showColour = "both",
             palette = "square",
-            allowedCols = NULL
+            allowedCols = NULL,
+            closeOnClick = FALSE
           )
         )
       })
