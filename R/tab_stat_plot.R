@@ -403,13 +403,16 @@ statPlot_Ome_Server <- function(id,
         # Volcano plot + controls side by side
         fluidRow(
           column(8,
-            shinydashboardPlus::box(
-              plotlyOutput(ns("volcano_plot")),
-              status = "primary",
-              width = NULL,
-              title = "Volcano Plot",
-              headerBorder = TRUE,
-              solidHeader = TRUE
+            tagList(
+              shinydashboardPlus::box(
+                plotlyOutput(ns("volcano_plot")),
+                status = "primary",
+                width = NULL,
+                title = "Volcano Plot",
+                headerBorder = TRUE,
+                solidHeader = TRUE
+              ),
+              uiOutput(ns("hidden_labels_warning"))
             )
           ),
           column(4,
@@ -522,9 +525,19 @@ statPlot_Ome_Server <- function(id,
           ".volcano-union-checks .form-group { margin-bottom: 3px !important; }"
         )),
         tags$div(
-          class = "volcano-union-checks",
-          style = "margin-top: 5px;",
-          checkboxInput(ns("label_union_ome"), label = "Label features for all contrasts", value = FALSE)
+          style = paste(
+            "margin-top: 6px; margin-bottom: 4px; padding: 8px 10px;",
+            "border: 1px solid #cfe2ff; border-radius: 6px;",
+            "background-color: #f5f9ff;"
+          ),
+          tags$div(
+            style = "font-size: 12px; font-weight: 600; color: #2c5282; margin-bottom: 4px;",
+            "Across contrasts"
+          ),
+          tags$div(
+            class = "volcano-union-checks",
+            checkboxInput(ns("label_union_ome"), label = "Label features for all contrasts", value = FALSE)
+          )
         ),
 
         hr(),
@@ -552,10 +565,7 @@ statPlot_Ome_Server <- function(id,
         helpText(
           "Only feature IDs you add with Search or by clicking the volcano appear here."
         ),
-        uiOutput(ns("poi_list_ui")),
-
-        # --- Hidden label warning ---
-        uiOutput(ns("hidden_labels_warning"))
+        uiOutput(ns("poi_list_ui"))
       )
     })
     
@@ -655,14 +665,13 @@ statPlot_Ome_Server <- function(id,
       }
     }, ignoreNULL = FALSE)
 
-    # Hidden label overflow warning
+    # Hidden label overlap note
     output$hidden_labels_warning <- renderUI({
       n <- hidden_label_count()
       if (is.null(n) || n == 0L) return(NULL)
-      div(
-        style = "margin-top: 8px; padding: 6px 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404;",
-        icon("triangle-exclamation"),
-        paste0(" Labels of ", n, " feature(s) were hidden due to overflow.")
+      helpText(
+        style = "margin-top: 6px; margin-bottom: 0; font-size: 12px;",
+        paste0("Note: Labels for ", n, " feature(s) are hidden to reduce overlap.")
       )
     })
 

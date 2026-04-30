@@ -573,10 +573,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
     # update GCT parameters with gct file paths and labels once labels are submitted
     observeEvent(labelsGO(), {
-      # Check if parameters are already set up (CSV/Excel case) or need label assignment (GCT case)
+      # Rebuild parameters for GCT uploads (supports adding files mid-session).
+      # Keep existing parameters only for CSV/Excel workflow, where converted
+      # parameters are already populated before labelsGO() increments.
       existing_params <- parameters_internal_reactive()
+      file_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+      is_gct_workflow <- all(file_extensions == "gct")
 
-      if (!is.null(existing_params) && length(existing_params) > 0) {
+      if (!is_gct_workflow && !is.null(existing_params) && length(existing_params) > 0) {
         # CSV/Excel case: parameters already have labels and structure, no need to rebuild
         message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
         gene_symbol_defaults_pending_labels(character(0))
@@ -616,9 +620,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     observeEvent(labelsGO(), {
       parameters <- parameters_internal_reactive()
       existing_gcts <- GCTs_unprocessed_internal_reactive()
+      file_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+      is_gct_workflow <- all(file_extensions == "gct")
       
       # Check if GCTs are already parsed/converted (CSV/Excel case) or need parsing (GCT case)
-      if (!is.null(existing_gcts) && length(existing_gcts) > 0) {
+      if (!is_gct_workflow && !is.null(existing_gcts) && length(existing_gcts) > 0) {
         # CSV/Excel case: GCTs already converted and stored, just trigger UI update
         message("Using existing CSV/Excel converted GCTs: ", paste(names(existing_gcts), collapse = ", "))
         backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
@@ -678,7 +684,41 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ignoreInit = TRUE,
       handlerExpr = {
         # get the correct label for this file
-        label = names(parameters_internal_reactive())[backNextLogic$place]
+        label <- names(parameters_internal_reactive())[backNextLogic$place]
+        params_now <- parameters_internal_reactive()
+        gcts_now <- GCTs_unprocessed_internal_reactive()
+        if (is.null(gcts_now)) {
+          gcts_now <- list()
+        }
+
+        # Defensive alignment: if a GCT is missing for the current label, attempt
+        # to parse it from the stored file path so setup navigation cannot skip/crash.
+        if (!is.null(label) && !(label %in% names(gcts_now)) && !is.null(params_now[[label]]$gct_file_path)) {
+          reparsed <- my_shinyalert_tryCatch(
+            text.error = "<b>Dataset Setup Error:</b>",
+            append.error = TRUE,
+            show.error = TRUE,
+            return.error = NULL,
+            expr = {
+              parse_gctx(params_now[[label]]$gct_file_path)
+            }
+          )
+
+          if (!is.null(reparsed)) {
+            gcts_now[[label]] <- reparsed
+            GCTs_unprocessed_internal_reactive(gcts_now)
+          }
+        }
+
+        # If still missing, notify and stop rendering this step to avoid NULL-slot errors.
+        if (is.null(label) || is.null(GCTs_unprocessed_internal_reactive()[[label]])) {
+          showNotification(
+            "A dataset could not be loaded for setup. Please re-upload files and try again.",
+            type = "error",
+            duration = 8
+          )
+          return(NULL)
+        }
         
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns,
