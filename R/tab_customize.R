@@ -86,14 +86,14 @@ customizeTabUI <- function(id = "customizeTab") {
 
           hr(),
 
-          # Preset palette controls (H4) -- flex row so Reverse and the
-          # Apply-preset button sit shoulder-to-shoulder against the
-          # selectInput rather than each occupying its own oversized
-          # Bootstrap column.
+          # Preset palette controls (H4) -- selectInput + Reverse stack
+          # vertically as one unit, with the Apply-preset button to the
+          # right. align-items:flex-end + a small bottom padding on the
+          # button div keeps the button aligned to the bottom of the stack.
           fluidRow(column(
             width = 12,
             div(
-              style = "display:flex; align-items:flex-end; gap:12px;",
+              style = "display:flex; align-items:flex-end; gap:48px;",
               div(
                 style = "flex: 0 0 280px;",
                 selectInput(
@@ -102,15 +102,12 @@ customizeTabUI <- function(id = "customizeTab") {
                   choices = preset_choices,
                   selected = "(custom)",
                   width = "100%"
-                )
-              ),
-              div(
-                style = "padding-bottom:8px;",
+                ),
                 checkboxInput(ns("reverse_palette"),
                               label = "Reverse", value = FALSE)
               ),
               div(
-                style = "padding-bottom:15px;",
+                style = "padding-bottom:30px;",
                 actionButton(ns("apply_preset"),
                              label = "Apply preset",
                              icon = icon("paint-brush"),
@@ -819,6 +816,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         showCancelButton = TRUE,
         confirmButtonText = "Restore",
         cancelButtonText  = "Cancel",
+        confirmButtonCol  = "#3c8dbc",
         callbackR = function(ok) {
           if (isTRUE(ok)) {
             prev <- isolate(current_colors())
@@ -838,6 +836,10 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         showCancelButton = TRUE,
         confirmButtonText = "Reset",
         cancelButtonText  = "Cancel",
+        # Destructive action -- use Bootstrap/AdminLTE danger red so the
+        # button reads as "this will discard work", not "this is the
+        # primary action". White text on red gives WCAG AA contrast.
+        confirmButtonCol  = "#dd4b39",
         callbackR = function(ok) {
           if (!isTRUE(ok)) return()
           # Explicit guard: req() inside callbackR silent-fails (silent.shiny.error),
