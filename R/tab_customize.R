@@ -86,47 +86,57 @@ customizeTabUI <- function(id = "customizeTab") {
 
           hr(),
 
-          # Preset palette controls (H4)
-          fluidRow(
-            column(
-              width = 4,
-              selectInput(
-                ns("preset_palette"),
-                label = "Apply preset palette:",
-                choices = preset_choices,
-                selected = "(custom)"
+          # Preset palette controls (H4) -- flex row so Reverse and the
+          # Apply-preset button sit shoulder-to-shoulder against the
+          # selectInput rather than each occupying its own oversized
+          # Bootstrap column.
+          fluidRow(column(
+            width = 12,
+            div(
+              style = "display:flex; align-items:flex-end; gap:12px;",
+              div(
+                style = "flex: 0 0 280px;",
+                selectInput(
+                  ns("preset_palette"),
+                  label = "Apply preset palette:",
+                  choices = preset_choices,
+                  selected = "(custom)",
+                  width = "100%"
+                )
+              ),
+              div(
+                style = "padding-bottom:8px;",
+                checkboxInput(ns("reverse_palette"),
+                              label = "Reverse", value = FALSE)
+              ),
+              div(
+                style = "padding-bottom:15px;",
+                actionButton(ns("apply_preset"),
+                             label = "Apply preset",
+                             icon = icon("paint-brush"),
+                             class = "btn btn-info")
               )
-            ),
-            column(width = 2, br(),
-                   checkboxInput(ns("reverse_palette"),
-                                 label = "Reverse", value = FALSE)),
-            column(width = 3, br(),
-                   actionButton(ns("apply_preset"),
-                                label = "Apply preset",
-                                icon = icon("paint-brush"),
-                                class = "btn btn-info"))
-          ),
+            )
+          )),
 
           # Swatch preview strip (H4 second part)
           uiOutput(ns("swatch_preview_ui")),
 
           hr(),
 
-          # Import / Export
+          # Import / Export -- left column shrunk so the Export / Restore /
+          # Reset buttons (which start immediately after the left column in
+          # Bootstrap's grid) sit close to the YAML uploader rather than
+          # being pushed all the way to the 50% mark.
           fluidRow(
             column(
-              width = 6,
-              fluidRow(
-                column(
-                  width = 6,
-                  fileInput(
-                    ns("import_yaml"),
-                    label = "Import Color Scheme (YAML):",
-                    accept = c(".yaml", ".yml"),
-                    buttonLabel = "Browse...",
-                    placeholder = "No file selected"
-                  )
-                )
+              width = 4,
+              fileInput(
+                ns("import_yaml"),
+                label = "Import Color Scheme (YAML):",
+                accept = c(".yaml", ".yml"),
+                buttonLabel = "Browse...",
+                placeholder = "No file selected"
               ),
               helpText(
                 "Expected: YAML with a top-level ", tags$code("colors:"),
@@ -136,7 +146,7 @@ customizeTabUI <- function(id = "customizeTab") {
                            label = "Download example YAML")
             ),
             column(
-              width = 6,
+              width = 4,
               br(),
               downloadButton(
                 ns("export_yaml"),
