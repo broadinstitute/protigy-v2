@@ -87,38 +87,50 @@ customizeTabUI <- function(id = "customizeTab") {
           hr(),
 
           # Preset palette controls (H4) -- three flex children on one
-          # line: selectInput, Reverse checkbox, Apply preset button.
-          # Reverse sits immediately to the right of the selector with a
-          # small 16px gap; a larger 48px margin separates Reverse from
-          # the Apply preset button so the action button reads as
-          # visually distinct from the toggle. align-items:flex-end +
-          # bottom padding on each child aligns them with the selectInput
-          # baseline (which has a label above it).
+          # line, all vertically centered on the selectInput's INPUT BOX
+          # (not its label-plus-input column). The trick: render only
+          # the selectInput's input box inside the flex row, with its
+          # label as a sibling div absolutely positioned above. Then
+          # plain align-items:center works correctly on the three real
+          # controls (input, checkbox, button).
           fluidRow(column(
             width = 12,
-            div(
-              style = "display:flex; align-items:flex-end; gap:16px;",
+            tags$div(
+              style = "padding-top:6px;",
+              # Static label above the row (mimics shiny's
+              # selectInput label styling).
+              tags$label(
+                "Apply preset palette:",
+                `for` = ns("preset_palette"),
+                class = "control-label",
+                style = "display:block; font-weight:700; margin-bottom:5px;"
+              ),
               div(
-                style = "flex: 0 0 280px;",
-                selectInput(
-                  ns("preset_palette"),
-                  label = "Apply preset palette:",
-                  choices = preset_choices,
-                  selected = "(custom)",
-                  width = "100%"
+                style = "display:flex; align-items:center; gap:16px;",
+                div(
+                  style = "flex: 0 0 280px;",
+                  selectInput(
+                    ns("preset_palette"),
+                    label = NULL,
+                    choices = preset_choices,
+                    selected = "(custom)",
+                    width = "100%"
+                  )
+                ),
+                # Negate the checkbox's natural top margin so it
+                # centers on the input's vertical midline.
+                div(
+                  style = "margin-top:-10px;",
+                  checkboxInput(ns("reverse_palette"),
+                                label = "Reverse", value = FALSE)
+                ),
+                div(
+                  style = "margin-left:48px;",
+                  actionButton(ns("apply_preset"),
+                               label = "Apply preset",
+                               icon = icon("paint-brush"),
+                               class = "btn btn-info")
                 )
-              ),
-              div(
-                style = "padding-bottom:22px; margin-right:48px;",
-                checkboxInput(ns("reverse_palette"),
-                              label = "Reverse", value = FALSE)
-              ),
-              div(
-                style = "padding-bottom:30px;",
-                actionButton(ns("apply_preset"),
-                             label = "Apply preset",
-                             icon = icon("paint-brush"),
-                             class = "btn btn-info")
               )
             )
           )),
