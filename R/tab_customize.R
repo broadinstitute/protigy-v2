@@ -86,14 +86,18 @@ customizeTabUI <- function(id = "customizeTab") {
 
           hr(),
 
-          # Preset palette controls (H4) -- selectInput + Reverse stack
-          # vertically as one unit, with the Apply-preset button to the
-          # right. align-items:flex-end + a small bottom padding on the
-          # button div keeps the button aligned to the bottom of the stack.
+          # Preset palette controls (H4) -- three flex children on one
+          # line: selectInput, Reverse checkbox, Apply preset button.
+          # Reverse sits immediately to the right of the selector with a
+          # small 16px gap; a larger 48px margin separates Reverse from
+          # the Apply preset button so the action button reads as
+          # visually distinct from the toggle. align-items:flex-end +
+          # bottom padding on each child aligns them with the selectInput
+          # baseline (which has a label above it).
           fluidRow(column(
             width = 12,
             div(
-              style = "display:flex; align-items:flex-end; gap:48px;",
+              style = "display:flex; align-items:flex-end; gap:16px;",
               div(
                 style = "flex: 0 0 280px;",
                 selectInput(
@@ -102,7 +106,10 @@ customizeTabUI <- function(id = "customizeTab") {
                   choices = preset_choices,
                   selected = "(custom)",
                   width = "100%"
-                ),
+                )
+              ),
+              div(
+                style = "padding-bottom:22px; margin-right:48px;",
                 checkboxInput(ns("reverse_palette"),
                               label = "Reverse", value = FALSE)
               ),
