@@ -125,7 +125,7 @@ customizeTabUI <- function(id = "customizeTab") {
                                 label = "Reverse", value = FALSE)
                 ),
                 div(
-                  style = "margin-left:48px;",
+                  style = "margin-left:48px; margin-top:-10px;",
                   actionButton(ns("apply_preset"),
                                label = "Apply preset",
                                icon = icon("paint-brush"),
@@ -169,7 +169,7 @@ customizeTabUI <- function(id = "customizeTab") {
               # button stack aligns with the fileInput's input box, not
               # its label.
               tags$div(
-                style = "padding-top:29px;",
+                style = "padding-top:22px;",
                 downloadButton(
                   ns("export_yaml"),
                   label = "Export Current Scheme",
