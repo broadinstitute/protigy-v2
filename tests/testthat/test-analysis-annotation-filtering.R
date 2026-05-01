@@ -9,6 +9,11 @@
 library(testthat)
 library(Protigy)
 
+# Access non-exported helpers explicitly to keep this file
+# runnable in both package-check and direct test_dir contexts.
+getUniqueColumns <- Protigy:::getUniqueColumns
+is.discrete <- Protigy:::is.discrete
+
 # Load test data
 data("brca_retrospective_v5.0_proteome_gct")
 data("brca_retrospective_v5.0_phosphoproteome_gct")
