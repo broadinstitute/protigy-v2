@@ -610,7 +610,14 @@ statPlot_Ome_Server <- function(id,
           )
         })
         tagList(
-          do.call(tagList, poi_rows),
+          # Scroll container keeps the sidebar height stable when many POIs
+          # accumulate. Clear-all sits OUTSIDE so it stays visible without
+          # scrolling. Matches the read-only "ome" branch above (which uses
+          # 120px since it shows a comma-joined string instead of rows).
+          div(
+            style = "max-height: 220px; overflow-y: auto; overflow-x: hidden;",
+            do.call(tagList, poi_rows)
+          ),
           br(),
           actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
         )

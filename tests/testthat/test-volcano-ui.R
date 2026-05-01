@@ -58,6 +58,12 @@ make_mock_gct <- function() {
 }
 
 # Shared testServer args used by both tests.
+# poi_registry / top_n_registry / label_mode_registry are normally created by
+# the parent module (statPlot_Server) as reactiveVal(list()) and passed down so
+# state is shared across omes. statPlot_Ome_Server defaults them to NULL, but
+# proteins_of_interest() and friends invoke them as reactives, which crashes
+# when NULL. Provide empty reactiveVal()s here so the per-contrast state path
+# resolves cleanly.
 make_server_args <- function() {
   list(
     ome                       = "Proteome",
@@ -66,7 +72,10 @@ make_server_args <- function() {
     default_annotation_column = shiny::reactive("group"),
     color_map                 = shiny::reactive(NULL),
     stat_params               = shiny::reactive(make_mock_stat_params()),
-    stat_results              = shiny::reactive(make_mock_stat_results())
+    stat_results              = shiny::reactive(make_mock_stat_results()),
+    poi_registry              = shiny::reactiveVal(list()),
+    top_n_registry            = shiny::reactiveVal(list()),
+    label_mode_registry       = shiny::reactiveVal(list())
   )
 }
 
@@ -84,8 +93,8 @@ test_that("volcano sidebar HTML contains new controls (testServer)", {
       paste(as.character(output$volcano_sidebar_contents), collapse = "\n")
     )
     expect_match(html, "Shorten long labels on plot", fixed = TRUE)
-    expect_match(html, "Search features:",            fixed = TRUE)
-    expect_match(html, "Features of interest:",       fixed = TRUE)
+    expect_match(html, "Search Features:",            fixed = TRUE)
+    expect_match(html, "Feature(s) of Interest:",     fixed = TRUE)
     expect_match(html, 'value="poi"',                 fixed = TRUE)
   })
 })
@@ -98,9 +107,14 @@ test_that("volcano POI list has scrollable container with Clear all outside it (
   shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
     # Trigger the feature search.  The observer requires stat_results()
     # (injected above), protein_search, search_metadata_col, and search_btn.
-    # Setting all three together means req() passes on the first flush.
+    # Setting all four together means req() passes on the first flush.
+    # volcano_contrasts is needed because output$poi_list_ui resolves
+    # proteins_of_interest() -> current_contrast_key() -> req(input$volcano_contrasts);
+    # in a real session the sidebar's selectInput populates it, but testServer
+    # only renders outputs we touch, so we must set it explicitly here.
     # suppressWarnings: same benign plotly event-registration warning as Test 1.
     suppressWarnings(session$setInputs(
+      volcano_contrasts   = "A / B",
       protein_search      = "p1 p2",
       search_metadata_col = "id",
       search_btn          = 1
