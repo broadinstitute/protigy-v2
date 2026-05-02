@@ -30,17 +30,24 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
-      # Keep default PR checks fast; run shinytest2 only in opt-in workflow.
-      PROTIGY_SKIP_SHINYTEST2: "true"
-      # Skip pak's automatic system-requirement installation. The only sysreq
-      # pak adds beyond the GitHub-hosted runner baseline is Chromium via the
-      # xtradeb/apps PPA (for chromote/shinytest2), which has been timing out
-      # on Launchpad. Skipping is safe because shinytest2 tests are gated off
-      # via PROTIGY_SKIP_SHINYTEST2 and run only via the on-demand workflow.
+      # Skip pak's automatic system-requirement installation. Chrome is
+      # provided by the dedicated setup-chrome step below, so we don't need
+      # pak to fetch Chromium via the xtradeb/apps PPA (which has been
+      # timing out on Launchpad). All other sysreqs are present on the
+      # GitHub-hosted runner image baseline.
       PKG_SYSREQS: "false"
 
     steps:
       - uses: actions/checkout@v3
+
+      # Pre-install Chrome so chromote/shinytest2 can find a browser. We
+      # pre-install rather than relying on pak's default sysreq install
+      # path, which uses the xtradeb/apps PPA (Launchpad) and has been
+      # timing out. Cross-platform via browser-actions/setup-chrome (puts
+      # a real Chrome binary on PATH; avoids snap/apt transitional-package
+      # flakiness on Ubuntu 24.04).
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
 
       - uses: r-lib/actions/setup-pandoc@v2
 
