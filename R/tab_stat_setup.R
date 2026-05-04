@@ -33,8 +33,10 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
       # This will trigger the validate() statements and show "GCTs not yet processed"
       req(GCTs(), parameters())
       
-      # Get the ome names directly here
-      ome_names <- names(GCTs())
+      # Get dataset names from both reactive sources to avoid transient missing names
+      # during re-renders (which can hide multi-dataset controls).
+      ome_names <- unique(c(names(GCTs()), names(parameters())))
+      ome_names <- ome_names[!is.na(ome_names) & nzchar(ome_names)]
       
         tagList(
         # Show warning prominently in main panel if annotation is not suitable
@@ -46,7 +48,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
                      selectInput(ns("selected_omes"), "Select datasets to test:", choices = ome_names, selected = default_ome()),
                      textOutput(ns("annotation_col")),
                      if (length(ome_names) > 1) {
-                       checkboxInput(ns("apply_all"),"Apply to all datasets" , value=FALSE)
+                       checkboxInput(ns("apply_all"), "Apply to all", value = FALSE)
                      },
                      uiOutput(ns("run_test_button_ui"))
                  )

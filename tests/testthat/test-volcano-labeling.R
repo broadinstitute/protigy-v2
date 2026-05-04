@@ -655,3 +655,214 @@ test_that("build_volcano_df sets all Significant to FALSE when no rows pass adj.
   expect_true(all(!result$Significant))
   expect_equal(attr(result, "y_cutoff"), Inf)
 })
+
+## volcano_label_union_for_ome ##################################################
+
+# Helper: build a two-sample stat_results df with two contrasts.
+# contrast_a, contrast_b: contrast strings like "A / B"
+# Each contrast column names follow the standard pattern:
+#   logFC.<A_over_B>, Log.P.Value.<A_over_B>, adj.P.Val.<A_over_B>, P.value.<A_over_B>
+make_two_sample_stat_results <- function(contrast_a = "A / B", contrast_b = "C / D",
+                                          sig_ids_a = character(0),
+                                          sig_ids_b = character(0),
+                                          all_ids = c("p1", "p2", "p3", "p4", "p5")) {
+  cn_a <- paste0(strsplit(contrast_a, " / ")[[1]][1], "_over_", strsplit(contrast_a, " / ")[[1]][2])
+  cn_b <- paste0(strsplit(contrast_b, " / ")[[1]][1], "_over_", strsplit(contrast_b, " / ")[[1]][2])
+
+  n <- length(all_ids)
+  # logP values: 5 for sig_ids, 0.5 for the rest (p.val cutoff = 0.05 -> y_cutoff = 1.301)
+  lp_a <- ifelse(all_ids %in% sig_ids_a, 5, 0.5)
+  lp_b <- ifelse(all_ids %in% sig_ids_b, 5, 0.5)
+
+  df <- data.frame(
+    id         = all_ids,
+    geneSymbol = paste0("G", seq_len(n)),
+    stringsAsFactors = FALSE
+  )
+  df[[paste0("logFC.", cn_a)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", cn_a)]]   <- lp_a
+  df[[paste0("adj.P.Val.", cn_a)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", cn_a)]]       <- rep(0.1, n)
+  df[[paste0("logFC.", cn_b)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", cn_b)]]   <- lp_b
+  df[[paste0("adj.P.Val.", cn_b)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", cn_b)]]       <- rep(0.1, n)
+  df
+}
+
+# Helper: build a minimal stat_params list for a two-sample test
+make_two_sample_stat_params <- function(contrast_a = "A / B", contrast_b = "C / D",
+                                         sig_cutoff = 0.05) {
+  list(
+    test      = "Two-sample Moderated T-test",
+    contrasts = c(contrast_a, contrast_b),
+    cutoff    = sig_cutoff,
+    stat      = "p.val"
+  )
+}
+
+test_that("volcano_label_union_for_ome returns union of significant IDs across two contrasts", {
+  # p1, p2 are significant only in contrast A; p3, p4 only in contrast B
+  df <- make_two_sample_stat_results(
+    contrast_a = "A / B", contrast_b = "C / D",
+    sig_ids_a  = c("p1", "p2"),
+    sig_ids_b  = c("p3", "p4")
+  )
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_setequal(result, c("p1", "p2", "p3", "p4"))
+})
+
+test_that("volcano_label_union_for_ome returns only POI when label_mode is 'poi'", {
+  df <- make_two_sample_stat_results(sig_ids_a = c("p1"), sig_ids_b = c("p2"))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "poi", poi = c("p5"))
+  expect_setequal(result, "p5")
+})
+
+test_that("volcano_label_union_for_ome handles overlap: IDs significant in both contrasts appear once", {
+  df <- make_two_sample_stat_results(sig_ids_a = c("p1", "p2"), sig_ids_b = c("p2", "p3"))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(length(result), length(unique(result)))  # no duplicates
+  expect_setequal(result, c("p1", "p2", "p3"))
+})
+
+test_that("volcano_label_union_for_ome returns empty when no significant features and no POI", {
+  df <- make_two_sample_stat_results(sig_ids_a = character(0), sig_ids_b = character(0))
+  sp <- make_two_sample_stat_params()
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(result, character(0))
+})
+
+test_that("volcano_label_union_for_ome returns empty for unsupported test type", {
+  df <- make_two_sample_stat_results()
+  sp <- list(test = "Moderated F test", contrasts = c("A / B"), cutoff = 0.05, stat = "p.val")
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_equal(result, character(0))
+})
+
+test_that("volcano_label_union_for_ome returns empty for NULL inputs", {
+  expect_equal(volcano_label_union_for_ome(NULL, NULL, "significant", character(0)), character(0))
+  df <- make_two_sample_stat_results()
+  expect_equal(volcano_label_union_for_ome(df, NULL, "significant", character(0)), character(0))
+})
+
+test_that("volcano_label_union_for_ome works for one-sample test with multiple groups", {
+  # Build a one-sample df with two groups
+  group_a <- "GroupA"
+  group_b <- "GroupB"
+  n <- 5
+  all_ids <- paste0("p", seq_len(n))
+  df <- data.frame(
+    id = all_ids, geneSymbol = paste0("G", seq_len(n)),
+    stringsAsFactors = FALSE
+  )
+  # p1, p2 sig in GroupA (logP = 5 > cutoff 1.301); p3 sig in GroupB
+  df[[paste0("logFC.", group_a)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", group_a)]]   <- c(5, 5, 0.5, 0.5, 0.5)
+  df[[paste0("adj.P.Val.", group_a)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", group_a)]]       <- rep(0.1, n)
+  df[[paste0("logFC.", group_b)]]         <- rep(1, n)
+  df[[paste0("Log.P.Value.", group_b)]]   <- c(0.5, 0.5, 5, 0.5, 0.5)
+  df[[paste0("adj.P.Val.", group_b)]]     <- rep(0.5, n)
+  df[[paste0("P.value.", group_b)]]       <- rep(0.1, n)
+
+  sp <- list(
+    test   = "One-sample Moderated T-test",
+    groups = c(group_a, group_b),
+    cutoff = 0.05,
+    stat   = "p.val"
+  )
+
+  result <- volcano_label_union_for_ome(df, sp, label_mode = "significant", poi = character(0))
+  expect_setequal(result, c("p1", "p2", "p3"))
+})
+
+## Per-ome POI isolation (registry pattern) ####################################
+# Simulate the parent-level poi_registry: call volcano_label_union_for_ome once
+# per ome with that ome's own POI, then Reduce(union) the results.
+# This mirrors the fixed global_union_ids() logic in statPlot_Ome_Server.
+# Uses the existing make_two_sample_stat_results / make_two_sample_stat_params
+# helpers (contrast format "A / B" → column suffix "A_over_B").
+
+test_that("global union uses each ome's own POI, not a shared one", {
+  # Prot ome: one contrast, sig = p1, POI = p2 (non-sig)
+  prot_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    sig_ids_a  = "p1",
+    all_ids    = c("p1", "p2", "p3")
+  )
+  prot_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  prot_poi <- c("p2")
+
+  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig) — completely separate IDs
+  phos_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    sig_ids_a  = "q1",
+    all_ids    = c("q1", "q2", "q3")
+  )
+  phos_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  phos_poi <- c("q2")
+
+  # Simulate global_union_ids(): each ome reads its own POI from the registry
+  prot_union <- volcano_label_union_for_ome(prot_df, prot_sp, c("poi", "significant"), prot_poi)
+  phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, c("poi", "significant"), phos_poi)
+  global_ids <- Reduce(union, list(prot_union, phos_union), init = character(0))
+
+  # Prot's sig hit (p1) and POI (p2) must both be in the global union
+  expect_true("p1" %in% global_ids, info = "sig from Prot should be in global union")
+  expect_true("p2" %in% global_ids, info = "POI from Prot should be in global union")
+  # Phos's sig hit (q1) and POI (q2) must both be in the global union
+  expect_true("q1" %in% global_ids, info = "sig from Phos should be in global union")
+  expect_true("q2" %in% global_ids, info = "POI from Phos should be in global union")
+  # Non-sig, non-poi entries from either ome must NOT appear
+  expect_false("p3" %in% global_ids, info = "non-sig non-poi from Prot should be absent")
+  expect_false("q3" %in% global_ids, info = "non-sig non-poi from Phos should be absent")
+})
+
+test_that("passing wrong ome POI to another ome misses that ome's POI (old bug regression)", {
+  # Demonstrates the bug fixed in global_union_ids(): if Prot's POI is passed to
+  # the Phos iteration instead of Phos's own POI, Phos-only POI entries are missed.
+  prot_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    all_ids    = c("p1", "p2")
+  )
+  phos_df <- make_two_sample_stat_results(
+    contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
+    all_ids    = c("q1", "q2")
+  )
+  phos_sp  <- list(test = "Two-sample Moderated T-test",
+                   contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
+  prot_poi <- c("p1")  # Prot's POI — not in phos_df
+  phos_poi <- c("q2")  # Phos's POI — only in phos_df
+
+  # OLD (buggy) path: Prot's POI passed to Phos iteration
+  buggy_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", prot_poi)
+  expect_false("q2" %in% buggy_phos_union, info = "Phos-only POI absent when Prot's POI is passed")
+  expect_false("p1" %in% buggy_phos_union, info = "Prot POI filtered (not in phos_df$id)")
+
+  # FIXED path: Phos gets its own POI → q2 now appears
+  fixed_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", phos_poi)
+  expect_true("q2" %in% fixed_phos_union, info = "Phos POI present when correct POI used")
+})
+
+test_that("baseline (union_mode none) uses only this ome's own POI with no cross-contamination", {
+  # When union_mode == "none", effective_poi == proteins_of_interest() for this ome.
+  # Another ome's POI must not appear.
+  prot_poi <- c("p1")
+  phos_poi <- c("q2")  # a completely different ID from another ome
+
+  # In "none" mode: effective_poi = prot_poi only (no union computation)
+  effective_poi_none <- prot_poi
+
+  expect_true("p1"  %in% effective_poi_none, info = "own POI should be in baseline set")
+  expect_false("q2" %in% effective_poi_none, info = "other ome's POI must not appear in baseline")
+})

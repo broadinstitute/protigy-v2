@@ -91,7 +91,8 @@ You can filter results based on p-values (both raw and adjusted) and adjust the 
 - **When**: One- and two-sample *t*-tests only (not moderated F).
 - **Plot**: log2 fold change vs −log10(nominal *p*); points above the line pass the same **stat** and **cutoff** as **Statistics → Summary**.
 - **Labels**: Optional **label column**, **Delimited values**, and **Shorten long labels** (off by default) for text on the plot and related exports.
-- **Checkboxes**: **Features of interest** (manual list via search or plot click), **Top 20 significant**, **All significant** — Top 20 / All do **not** fill that list. Magenta = labels; dark red = significant points.
+- **Checkboxes**: **Features of interest** (manual list via search or plot click), **Top significant** (set the number shown), **All significant** — Top/All do **not** fill the Features of interest list. Magenta = labels; dark red = significant points.
+- **Across contrasts**: Turn on **Label features for all contrasts** to reuse one shared feature list across every contrast in the same ome. Turn it off to keep feature labels separate for each contrast.
 - **Crowded points**: Only one text label per tight *x*/*y* cluster; a one-line note under the plot counts skipped labels. POI labels get priority over auto labels when they clash.
 - **Export**: Volcano PDFs and labeled-feature CSV from **Export** when stats outputs are selected.
 
