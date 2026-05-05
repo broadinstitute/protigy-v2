@@ -96,8 +96,9 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     annot <- data.frame('sample'=colnames(mat),"annot"=group, stringsAsFactors = FALSE)
     #replace NA with characters so that colors map appropriately
     annot$annot[is.na(annot$annot)]="NA"
-    # Convert to factor only after ensuring values are preserved
-    annot$annot <- factor(annot$annot, levels = unique(annot$annot))
+    # Force alphabetical legend ordering for discrete annotations.
+    annot_levels <- sort(unique(annot$annot), na.last = TRUE)
+    annot$annot <- factor(annot$annot, levels = annot_levels)
   }
   
   # add second annotation if provided
@@ -106,8 +107,9 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     annot$second_annot <- second_group
     #replace NA with characters so that colors map appropriately
     annot$second_annot[is.na(annot$second_annot)] <- "NA"
-    # Convert to factor preserving original values
-    annot$second_annot <- factor(annot$second_annot, levels = unique(annot$second_annot))
+    # Force alphabetical legend ordering for second annotation as well.
+    second_levels <- sort(unique(annot$second_annot), na.last = TRUE)
+    annot$second_annot <- factor(annot$second_annot, levels = second_levels)
     colnames(annot)[3] <- second_col_of_interest
   }
   

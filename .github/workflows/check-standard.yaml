@@ -33,8 +33,12 @@ jobs:
       # Skip pak's automatic system-requirement installation. Chrome is
       # provided by the dedicated setup-chrome step below, so we don't need
       # pak to fetch Chromium via the xtradeb/apps PPA (which has been
-      # timing out on Launchpad). All other sysreqs are present on the
-      # GitHub-hosted runner image baseline.
+      # timing out on Launchpad). The remaining headers needed for source
+      # builds on Linux (libcurl, libssl) are installed explicitly in the
+      # "Install system libraries (Linux)" step below — they are not on the
+      # ubuntu-latest runner baseline and are required when pak falls back
+      # to source builds (e.g. R-devel or Bioconductor packages like
+      # Rhdf5lib that have no Linux binary on RSPM).
       PKG_SYSREQS: "false"
 
     steps:
@@ -48,6 +52,25 @@ jobs:
       # flakiness on Ubuntu 24.04).
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
+
+      # Install the deb headers pak would otherwise fetch via PKG_SYSREQS.
+      # The list mirrors pak's resolver output for this dependency set —
+      # required when pak falls back to source builds (R-devel and certain
+      # Bioconductor packages with no Linux binary on RSPM, e.g. Rhdf5lib).
+      # Headers used by: curl/openssl/websocket (libcurl, libssl), fs (libuv),
+      # stringi (libicu), png (libpng), clipr (libx11), httpuv (zlib).
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libuv1-dev \
+            libicu-dev \
+            libpng-dev \
+            libx11-dev \
+            zlib1g-dev
 
       - uses: r-lib/actions/setup-pandoc@v2
 
