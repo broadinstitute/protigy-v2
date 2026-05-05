@@ -54,13 +54,23 @@ jobs:
         uses: browser-actions/setup-chrome@v1
 
       # Install the deb headers pak would otherwise fetch via PKG_SYSREQS.
-      # Required for source builds of curl (R package) and Rhdf5lib on
-      # ubuntu-latest, which lack libcurl-dev / libssl-dev by default.
+      # The list mirrors pak's resolver output for this dependency set —
+      # required when pak falls back to source builds (R-devel and certain
+      # Bioconductor packages with no Linux binary on RSPM, e.g. Rhdf5lib).
+      # Headers used by: curl/openssl/websocket (libcurl, libssl), fs (libuv),
+      # stringi (libicu), png (libpng), clipr (libx11), httpuv (zlib).
       - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libssl-dev
+          sudo apt-get install -y \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libuv1-dev \
+            libicu-dev \
+            libpng-dev \
+            libx11-dev \
+            zlib1g-dev
 
       - uses: r-lib/actions/setup-pandoc@v2
 
