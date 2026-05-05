@@ -511,6 +511,54 @@ test_that("validateGCT does not create Sample.ID when cdesc has id and other col
   expect_false("Sample.ID" %in% names(result@cdesc))
 })
 
+test_that("read_gct_cdesc_as_character preserves leading zeros and text", {
+  tf <- tempfile(fileext = ".gct")
+  writeLines(
+    c(
+      "#1.3",
+      "2\t2\t0\t2",
+      "id\tS1\tS2",
+      "barcode\t001\t010",
+      "condition\tA\tB",
+      "r1\t5\t6",
+      "r2\t7\t8"
+    ),
+    tf
+  )
+
+  cdesc <- read_gct_cdesc_as_character(tf)
+
+  expect_identical(rownames(cdesc), c("S1", "S2"))
+  expect_identical(cdesc$barcode, c("001", "010"))
+  expect_identical(cdesc$condition, c("A", "B"))
+  expect_identical(cdesc$id, c("S1", "S2"))
+})
+
+test_that("parse_gctx_preserve_cdesc restores raw cdesc values for .gct", {
+  tf <- tempfile(fileext = ".gct")
+  writeLines(
+    c(
+      "#1.3",
+      "2\t2\t0\t1",
+      "id\tS1\tS2",
+      "barcode\t001\t010",
+      "r1\t5\t6",
+      "r2\t7\t8"
+    ),
+    tf
+  )
+
+  parsed_default <- cmapR::parse_gctx(tf)
+  parsed_preserved <- parse_gctx_preserve_cdesc(tf)
+
+  # Default cmapR parser coerces numeric-looking values and drops leading zeros.
+  expect_identical(as.character(parsed_default@cdesc$barcode), c("1", "10"))
+
+  # Our wrapper restores raw annotation strings exactly as in file.
+  expect_identical(parsed_preserved@cdesc$barcode, c("001", "010"))
+  expect_identical(rownames(parsed_preserved@cdesc), parsed_preserved@cid)
+})
+
 test_that("geneSymbol column selection preserves original column when geneSymbol doesn't exist", {
   # Test the geneSymbol column selection logic directly
   # Create test rdesc without geneSymbol
