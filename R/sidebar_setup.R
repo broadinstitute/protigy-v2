@@ -647,7 +647,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                   
                   # otherwise, parse the GCT
                 } else {
-                  gct <- parse_gctx(p$gct_file_path)
+                  gct <- parse_gctx_preserve_cdesc(p$gct_file_path)
                   incProgress(amount = 1)
                   return(gct)
                 }
@@ -700,7 +700,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             show.error = TRUE,
             return.error = NULL,
             expr = {
-              parse_gctx(params_now[[label]]$gct_file_path)
+              parse_gctx_preserve_cdesc(params_now[[label]]$gct_file_path)
             }
           )
 
