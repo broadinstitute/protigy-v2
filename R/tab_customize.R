@@ -190,7 +190,7 @@ customizeTabUI <- function(id = "customizeTab") {
                 br(), br(),
                 actionButton(
                   ns("reset_to_app_defaults"),
-                  label = "Reset to factory defaults",
+                  label = "Reset to app defaults",
                   icon = icon("eraser"),
                   class = "btn btn-default"
                 )
@@ -880,7 +880,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
 
     observeEvent(input$reset_to_app_defaults, {
       shinyalert::shinyalert(
-        title = "Reset to factory defaults?",
+        title = "Reset to app defaults?",
         text  = "All customizations and any imported scheme will be discarded.",
         type  = "warning",
         showCancelButton = TRUE,
@@ -897,7 +897,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
           app_defaults <- isolate(factory_defaults())
           if (is.null(app_defaults)) {
             showNotification(
-              "No factory defaults available -- upload data first.",
+              "No app defaults available -- upload data first.",
               type = "error", duration = 4
             )
             return()
@@ -911,7 +911,7 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
           current_colors(app_defaults)
           restore_target(app_defaults)
           last_change(list(prev_colors = prev,
-                           desc = "Reset to factory defaults"))
+                           desc = "Reset to app defaults"))
           # Reset wipes the import provenance so any "imported X.yaml"
           # indicator vanishes after a factory reset.
           import_meta(NULL)
