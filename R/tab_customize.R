@@ -86,6 +86,11 @@ customizeTabUI <- function(id = "customizeTab") {
 
           hr(),
 
+          # Color pickers grid
+          uiOutput(ns("color_pickers_ui")),
+
+          hr(),
+
           # Preset palette controls (H4) -- three flex children on one
           # line, all vertically centered on the selectInput's INPUT BOX
           # (not its label-plus-input column). The trick: render only
@@ -127,15 +132,15 @@ customizeTabUI <- function(id = "customizeTab") {
                 div(
                   style = "margin-left:48px; margin-top:-10px;",
                   actionButton(ns("apply_preset"),
-                               label = "Apply preset",
+                               label = "Apply Preset",
                                icon = icon("paint-brush"),
-                               class = "btn btn-info")
+                               class = "btn btn-primary")
                 )
               )
             )
           )),
 
-          # Swatch preview strip (H4 second part)
+          # Preset preview strip (shows palette that will be applied)
           uiOutput(ns("swatch_preview_ui")),
 
           hr(),
@@ -210,9 +215,6 @@ customizeTabUI <- function(id = "customizeTab") {
           )),
 
           hr(),
-
-          # Color pickers grid
-          uiOutput(ns("color_pickers_ui"))
         )
       )
     )
@@ -467,17 +469,40 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
     })
 
 
-    ## =================================================== swatch preview ==
+    ## ========================================== preset swatch preview ==
 
     output$swatch_preview_ui <- renderUI({
+      req(input$preset_palette)
       ctx <- tryCatch(display_context(), error = function(e) NULL)
       if (is.null(ctx)) return(NULL)
 
+      # "(custom)" means there is no pending preset selection to preview.
+      if (identical(input$preset_palette, "(custom)")) {
+        return(
+          div(
+            class = "text-muted",
+            style = "padding:6px 0 2px 0;",
+            "Select a preset to preview colors before applying."
+          )
+        )
+      }
+
+      n <- length(ctx$color_info$vals)
+      pal <- tryCatch(
+        get_preset_palette(
+          input$preset_palette,
+          n,
+          reverse = isTRUE(input$reverse_palette)
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(pal)) return(NULL)
+
       div(
-        style = "display:flex; gap:10px; flex-wrap:wrap; padding:10px 0;",
+        style = "display:flex; gap:10px; flex-wrap:wrap; padding:8px 0 2px 0;",
         lapply(seq_along(ctx$color_info$vals), function(i) {
           val <- as.character(ctx$color_info$vals[i])
-          col <- ctx$color_info$colors[i]
+          col <- pal[i]
           div(
             style = "display:flex; flex-direction:column; align-items:center; min-width:60px;",
             div(
@@ -495,7 +520,6 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         })
       )
     })
-
 
     ## =================================================== color pickers ==
 
@@ -589,11 +613,11 @@ customizeTabServer <- function(id = "customizeTab", GCTs_and_params, globals) {
         )
       })
 
-      box(
-        title = paste("Colors for:", ctx$annot_col),
-        status = "info",
-        width = 12,
-        collapsible = FALSE,
+      tagList(
+        tags$div(
+          style = "font-weight:700; margin-bottom:10px;",
+          paste("Selected Colors for:", ctx$annot_col)
+        ),
         fluidRow(pickers)
       )
     })
