@@ -1,31 +1,35 @@
 # Project-level .Rprofile for ProTIGY
 #
-# Ensures Bioconductor repositories are available in every R session opened
-# under this project, so that:
-#   * RStudio's "Install Required Packages" prompt can resolve Bioc deps
-#     declared in DESCRIPTION (ComplexHeatmap, cmapR, AnnotationDbi,
-#     org.Hs.eg.db, org.Mm.eg.db, limma, vsn, preprocessCore, ...).
-#   * devtools::install('.') and install.packages() see Bioc as a repo.
+# Configures Bioconductor repositories for interactive RStudio sessions so
+# that RStudio's "Install Required Packages" prompt and install.packages()
+# can resolve the Bioc deps declared in DESCRIPTION (ComplexHeatmap, cmapR,
+# AnnotationDbi, org.Hs.eg.db, org.Mm.eg.db, limma, vsn, preprocessCore).
 #
-# Without this, those packages silently fail to install from CRAN-only
-# defaults and the app errors at launch.
+# This file deliberately does NOTHING in non-interactive contexts (CI,
+# R CMD check, install.packages() child processes, devtools::install(),
+# pak, etc.) to avoid:
+#   - Recursive install.packages("BiocManager") storms when this profile
+#     is re-sourced by every child R session spawned during dep install.
+#   - Overriding the repos= setting that CI workflows (RSPM) have already
+#     configured.
+#   - Triggering R CMD check NOTEs about non-standard top-level files.
+#
+# Run setup.R for a one-shot install path that does not rely on this
+# profile being active.
 
 local({
-  cran <- "https://cloud.r-project.org"
-
-  if (!requireNamespace("BiocManager", quietly = TRUE)) {
-    tryCatch(
-      utils::install.packages("BiocManager", repos = cran),
-      error = function(e) {
-        message("Could not install BiocManager automatically: ", conditionMessage(e))
-        message("Run install.packages('BiocManager') manually, then restart R.")
-      }
-    )
-  }
+  if (!interactive()) return(invisible())
+  if (nzchar(Sys.getenv("CI"))) return(invisible())
+  if (nzchar(Sys.getenv("R_PROTIGY_RPROFILE_LOADED"))) return(invisible())
+  Sys.setenv(R_PROTIGY_RPROFILE_LOADED = "1")
 
   if (requireNamespace("BiocManager", quietly = TRUE)) {
     options(repos = BiocManager::repositories())
   } else {
-    options(repos = c(CRAN = cran))
+    message(
+      "[ProTIGY] BiocManager not installed. ",
+      "Run install.packages('BiocManager') (or source('setup.R')) ",
+      "so Bioconductor packages resolve."
+    )
   }
 })
