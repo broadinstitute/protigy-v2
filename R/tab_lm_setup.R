@@ -131,7 +131,14 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                 uiOutput(ns("variable_type_toggles_ui"))
               ),
               tags$div(style = "padding-top: 10px;",
-                tags$span(
+                uiOutput(ns("reference_levels_ui"))
+              ),
+              tags$div(style = "padding-top: 10px;",
+                checkboxInput(ns("include_intercept"),
+                              "Include intercept",
+                              value = TRUE),
+                shinyBS::bsTooltip(
+                  ns("include_intercept"),
                   title = paste(
                     "When checked, the model includes an intercept (reference",
                     "level for factors). Uncheck only if you want the model",
@@ -139,9 +146,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                     "useful for building custom contrasts between all levels",
                     "without a reference. Leave checked in most cases."
                   ),
-                  checkboxInput(ns("include_intercept"),
-                                "Include intercept",
-                                value = TRUE)
+                  placement = "right",
+                  trigger = "hover"
                 )
               ),
               tags$div(style = "padding-top: 10px;",
@@ -162,6 +168,12 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
             style = "padding-top: 2px;",
             div(
               h5(strong("Design Matrix Preview (first 10 rows):")),
+              # Sample-count caption — tells the user when complete.cases() will
+              # drop samples and which column(s) caused the drops.
+              tags$div(
+                style = "font-size: 0.9em; color: #495057; margin-bottom: 6px;",
+                textOutput(ns("sample_drop_summary"), inline = TRUE)
+              ),
               DT::dataTableOutput(ns("design_matrix_preview")),
               br(),
               uiOutput(ns("coefficient_names_display"))
@@ -227,16 +239,29 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       req(cdesc())
       # Offer all cdesc columns as potential model variables
       col_names <- colnames(cdesc())
-      pickerInput(
-        ns("selected_variables"),
-        "Select model variables:",
-        choices = col_names,
-        selected = NULL,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          liveSearch = TRUE,
-          noneSelectedText = "No variables selected"
+      tagList(
+        pickerInput(
+          ns("selected_variables"),
+          "Select model variables:",
+          choices = col_names,
+          selected = NULL,
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            liveSearch = TRUE,
+            noneSelectedText = "No variables selected"
+          )
+        ),
+        shinyBS::bsTooltip(
+          ns("selected_variables"),
+          title = paste(
+            "Pick the sample-metadata columns to include as fixed effects",
+            "in the model. Each selected column becomes a term in the formula.",
+            "Avoid columns that uniquely identify each sample (e.g. sample IDs):",
+            "they make the design rank-deficient."
+          ),
+          placement = "right",
+          trigger = "hover"
         )
       )
     })
@@ -279,15 +304,28 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       pair_labels <- sapply(pairs, function(p) paste(p[1], ":", p[2]))
       names(pairs) <- pair_labels
 
-      pickerInput(
-        ns("interaction_terms"),
-        "Interaction terms (optional):",
-        choices = pair_labels,
-        selected = NULL,
-        multiple = TRUE,
-        options = pickerOptions(
-          actionsBox = TRUE,
-          noneSelectedText = "None"
+      tagList(
+        pickerInput(
+          ns("interaction_terms"),
+          "Interaction terms (optional):",
+          choices = pair_labels,
+          selected = NULL,
+          multiple = TRUE,
+          options = pickerOptions(
+            actionsBox = TRUE,
+            noneSelectedText = "None"
+          )
+        ),
+        shinyBS::bsTooltip(
+          ns("interaction_terms"),
+          title = paste(
+            "Add an interaction when you expect the effect of one variable",
+            "to depend on the level of another (e.g. \"drug response differs",
+            "across genotypes\"). Leave empty if you only need additive",
+            "covariate adjustment."
+          ),
+          placement = "right",
+          trigger = "hover"
         )
       )
     })
@@ -310,6 +348,17 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           "Blocking variable (optional):",
           choices = c("None" = "", available),
           selected = ""
+        ),
+        shinyBS::bsTooltip(
+          ns("blocking_variable"),
+          title = paste(
+            "Use this for repeated measures: pick the subject identifier",
+            "(patient, donor, animal) when the same subject was measured",
+            "more than once. Avoid using a batch/plate variable here —",
+            "those are usually covariates, not blocking factors."
+          ),
+          placement = "right",
+          trigger = "hover"
         ),
         conditionalPanel(
           condition = paste0("input['", ns("blocking_variable"), "'] !== ''"),
@@ -377,6 +426,98 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
     })
 
 
+    ## REFERENCE LEVELS (one selectInput per factor variable) ##
+    # The default (alphabetical first level) is almost never the right answer
+    # for clinical studies. This UI lets the user pick explicitly, which avoids
+    # silent coefficient sign flips. We only render this block for variables
+    # that are flagged as factors in `variable_types()` AND have >=2 observed
+    # levels.
+    output$reference_levels_ui <- renderUI({
+      vars <- input$selected_variables
+      vtypes <- variable_types()
+      cd <- cdesc()
+      if (is.null(vars) || is.null(cd)) return(NULL)
+      factor_vars <- vars[vapply(vars, function(v) {
+        identical(vtypes[[v]], "factor") && v %in% colnames(cd)
+      }, logical(1))]
+      if (length(factor_vars) == 0) return(NULL)
+      controls <- lapply(factor_vars, function(v) {
+        lv <- levels(factor(cd[[v]]))
+        if (length(lv) < 2) return(NULL)
+        # Preserve previous selection if still present; otherwise apply the
+        # smarter heuristic (control-token match -> modal -> alphabetical
+        # fallback) so we don't silently flip coefficient signs.
+        prev <- input[[paste0("reflev_", make.names(v))]]
+        if (!is.null(prev) && prev %in% lv) {
+          sel <- prev
+          ann <- ""
+        } else {
+          pick <- pick_default_reference_level(cd[[v]])
+          sel <- if (!is.null(pick$level) && !is.na(pick$level) && pick$level %in% lv) {
+            pick$level
+          } else {
+            lv[1]  # absolute fallback when the helper can't pick (e.g. all NA)
+          }
+          ann <- format_reference_level_annotation(pick)
+        }
+        label_html <- if (nzchar(ann)) {
+          tagList(
+            paste0("Reference level for '", v, "': "),
+            tags$span(style = "font-weight: normal; color: #6c757d; font-style: italic; font-size: 0.9em;",
+                      ann)
+          )
+        } else {
+          paste0("Reference level for '", v, "':")
+        }
+        reflev_id <- ns(paste0("reflev_", make.names(v)))
+        tagList(
+          selectInput(
+            reflev_id,
+            label = label_html,
+            choices = lv,
+            selected = sel
+          ),
+          shinyBS::bsTooltip(
+            reflev_id,
+            title = paste(
+              "The baseline level for this factor. Other levels are reported",
+              "relative to the reference (e.g. for Treatment with reference",
+              "\"Vehicle\", the coefficient \"TreatmentDrug\" reads as",
+              "Drug − Vehicle). Pick the biologically meaningful baseline."
+            ),
+            placement = "right",
+            trigger = "hover"
+          )
+        )
+      })
+      controls <- controls[!vapply(controls, is.null, logical(1))]
+      if (length(controls) == 0) return(NULL)
+      tagList(
+        h5(strong("Reference levels:")),
+        tags$div(style = "font-size: 0.9em; color: #666; margin-bottom: 6px;",
+                 "Pick which level should be the baseline for each factor. ",
+                 "Other levels are measured relative to this one."),
+        controls
+      )
+    })
+
+
+    reference_levels <- reactive({
+      vars <- input$selected_variables
+      vtypes <- variable_types()
+      if (is.null(vars)) return(list())
+      out <- list()
+      for (v in vars) {
+        if (!identical(vtypes[[v]], "factor")) next
+        val <- input[[paste0("reflev_", make.names(v))]]
+        if (!is.null(val) && nzchar(as.character(val))) {
+          out[[v]] <- as.character(val)
+        }
+      }
+      out
+    })
+
+
     ## SHARED DESIGN MATRIX REACTIVE ##
     # Single source of truth for design matrix used by preview, coefficient list,
     # and contrast dropdowns. Returns NULL on any error.
@@ -387,10 +528,16 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
       cdesc_work <- cdesc()
       vtypes <- variable_types()
+      ref_levels <- reference_levels()
       for (var_name in names(vtypes)) {
         if (var_name %in% colnames(cdesc_work)) {
           if (vtypes[[var_name]] == "factor") {
-            cdesc_work[[var_name]] <- factor(cdesc_work[[var_name]])
+            ff <- factor(cdesc_work[[var_name]])
+            ref <- ref_levels[[var_name]]
+            if (!is.null(ref) && as.character(ref) %in% levels(ff)) {
+              ff <- stats::relevel(ff, ref = as.character(ref))
+            }
+            cdesc_work[[var_name]] <- ff
           } else {
             cdesc_work[[var_name]] <- as.numeric(as.character(cdesc_work[[var_name]]))
           }
@@ -412,6 +559,29 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       dm <- design_matrix()
       if (is.null(dm)) return(character(0))
       sort(colnames(dm))
+    })
+
+
+    ## SAMPLE DROP SUMMARY ##
+    # Renders "Using N of M samples (K dropped: missing 'Age')." above the
+    # design preview so users notice when complete.cases() filtering reduces
+    # the effective sample size.
+    output$sample_drop_summary <- renderText({
+      cd <- cdesc()
+      f <- formula_string()
+      bv <- input$blocking_variable
+      if (is.null(cd)) return("")
+      # Variables that feed the complete.cases filter inside design_matrix() and
+      # lm.regression(): all formula vars plus the blocking variable (if any).
+      vars <- character(0)
+      if (!is.null(f) && nzchar(f)) {
+        vars <- tryCatch(all.vars(as.formula(f)), error = function(e) character(0))
+      }
+      if (!is.null(bv) && nzchar(bv)) vars <- unique(c(vars, bv))
+      if (length(vars) == 0) return("")
+      summary <- summarize_sample_drops(cd, vars)
+      if (is.null(summary)) return("")
+      summary$message
     })
 
 
@@ -589,11 +759,24 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         ),
         uiOutput(ns("contrast_rows_ui")),
         div(
-          style = "display: flex; justify-content: flex-start; margin-top: 10px; gap: 16px;",
+          style = "display: flex; justify-content: flex-start; margin-top: 10px; gap: 16px; flex-wrap: wrap;",
           actionButton(ns("add_contrast"), "+ Add Simple",
                        class = "btn btn-sm btn-default"),
           actionButton(ns("add_contrast_advanced"), "+ Add Advanced",
                        class = "btn btn-sm btn-default"),
+          actionButton(ns("suggest_pairwise_contrasts"),
+                       "+ Suggest all pairwise",
+                       class = "btn btn-sm btn-default"),
+          shinyBS::bsTooltip(
+            ns("suggest_pairwise_contrasts"),
+            title = paste0(
+              "Insert one Simple card for every level-vs-level pair of the ",
+              "selected factor. Works only when exactly one factor variable ",
+              "is in the model."
+            ),
+            placement = "top",
+            trigger = "hover"
+          ),
           actionButton(ns("clear_contrasts"), "Clear all",
                        class = "btn btn-sm btn-danger")
         ),
@@ -854,6 +1037,73 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                                 label_user_edited = FALSE))))
     })
 
+    # Suggest all pairwise contrasts for a single-factor design.
+    # Requirements:
+    #   - Exactly one variable is selected (the factor of interest).
+    #   - That variable is typed as a factor.
+    #   - The variable has >= 2 observed levels in `cdesc`.
+    # If preconditions aren't met, show a notification and do nothing.
+    observeEvent(input$suggest_pairwise_contrasts, {
+      vars <- input$selected_variables
+      vtypes <- variable_types()
+      cd <- cdesc()
+      if (is.null(vars) || length(vars) != 1) {
+        showNotification(
+          "Suggest pairwise contrasts: select exactly one factor variable.",
+          type = "warning", duration = 4
+        )
+        return()
+      }
+      v <- vars[[1]]
+      if (is.null(vtypes[[v]]) || vtypes[[v]] != "factor") {
+        showNotification(
+          "Suggest pairwise contrasts: the selected variable must be a factor.",
+          type = "warning", duration = 4
+        )
+        return()
+      }
+      if (is.null(cd) || !(v %in% colnames(cd))) {
+        showNotification(
+          "Suggest pairwise contrasts: variable not found in sample metadata.",
+          type = "error", duration = 4
+        )
+        return()
+      }
+      lv <- levels(factor(cd[[v]]))
+      if (length(lv) < 2) {
+        showNotification(
+          "Suggest pairwise contrasts: variable has fewer than 2 levels.",
+          type = "warning", duration = 4
+        )
+        return()
+      }
+      new_rows <- enumerate_pairwise_simple_rows(
+        factor_levels = lv,
+        variable_name = v,
+        include_intercept = isTRUE(input$include_intercept)
+      )
+      if (length(new_rows) == 0) {
+        showNotification("No pairwise contrasts to add.", type = "warning",
+                         duration = 3)
+        return()
+      }
+      # If the current list has only one empty seed row, replace it; otherwise
+      # append.
+      cur <- contrast_rows()
+      is_seed <- length(cur) == 1 &&
+        identical(cur[[1]]$type, "simple") &&
+        !nzchar(cur[[1]]$num %||% "") &&
+        !nzchar(cur[[1]]$den %||% "")
+      if (isTRUE(is_seed)) {
+        contrast_rows(new_rows)
+      } else {
+        contrast_rows(c(cur, new_rows))
+      }
+      showNotification(paste0("Added ", length(new_rows), " pairwise contrasts."),
+                       type = "message", duration = 3)
+    })
+
+
     # Add Advanced contrast card
     observeEvent(input$add_contrast_advanced, {
       contrast_rows(c(contrast_rows(),
@@ -1073,13 +1323,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         })
       }
 
-      # Get intensity param
-      intensity_param <- parameters()[[selected_ome()]]$intensity
-      if (is.null(intensity_param)) {
-        intensity_param <- FALSE
-      }
-
-      # Determine omes to run on
+      # Determine omes to run on. The per-ome `intensity` flag is read INSIDE
+      # the fit loop below so apply-to-all uses each ome's own flag.
       if (isTRUE(input$apply_all)) {
         omes_to_run <- all_omes()
       } else {
@@ -1093,12 +1338,15 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       all_design_coefs_snapshot <- design_coefs()
       display_coefficients_snapshot <- intersect(coefficient_selection(), all_design_coefs_snapshot)
 
-      # Save parameters
+      # Save parameters. The actual `intensity` flag is recorded per-ome below
+      # so the workflow params table and downstream JSON reflect what was used.
+      ref_levels <- reference_levels()
       current_params <- lm_param()
       for (ome in omes_to_run) {
         current_params[[ome]] <- list(
           variables = input$selected_variables,
           variable_types = vtypes,
+          reference_levels = ref_levels,
           include_intercept = isTRUE(input$include_intercept),
           interactions = interactions,
           blocking_variable = blocking_var,
@@ -1108,7 +1356,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           stat = "adj.p.val",
           cutoff = 0.05,
           all_design_coefs = all_design_coefs_snapshot,
-          display_coefficients = display_coefficients_snapshot
+          display_coefficients = display_coefficients_snapshot,
+          intensity = pick_intensity_for_ome(parameters(), ome)
         )
       }
       lm_param(current_params)
@@ -1119,6 +1368,10 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       withProgress(message = "Fitting linear model", value = 0, {
         for (ome in omes_to_run) {
           incProgress(1 / length(omes_to_run), detail = paste("Processing", ome))
+
+          # Read the intensity flag for THIS ome (apply-to-all must not leak
+          # the selected ome's flag onto other omes — reviewer §2.4).
+          ome_intensity <- pick_intensity_for_ome(parameters(), ome)
 
           result <- NULL
           my_shinyalert_tryCatch(
@@ -1133,7 +1386,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                 variable_types = vtypes,
                 blocking_var = blocking_var,
                 contrasts_list = contrasts_list,
-                intensity = intensity_param
+                intensity = ome_intensity,
+                reference_levels = ref_levels
               )
             }
           )
@@ -1163,6 +1417,14 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       }
     })
 
+
+    # Expose internals for shinytest2 introspection. `exportTestValues` only
+    # adds an output binding read by `app$get_values()$export`; production code
+    # paths are unaffected. Gated by the existing shinytest2 driver.
+    shiny::exportTestValues(
+      lm_results = lm_results(),
+      lm_params  = lm_param()
+    )
 
     # Return reactive values for other modules
     return(list(

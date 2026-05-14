@@ -63,6 +63,48 @@ suggest_alpha_level <- function(pvals) {
 }
 
 
+#' Build a GCT object from an LM results frame, ready for SSGSEA.
+#'
+#' The `@mat` slot holds the `logSignP.<coef>` columns (one column per
+#' coefficient); `@rdesc` carries everything else (annotations, raw sample
+#' values, and the per-coef logFC / P.Value / adj.P.Val statistics). This
+#' mirrors `R/tab_stat_summary.R:700-707` so downstream SSGSEA tooling can
+#' consume LM outputs the same way it consumes stat-module outputs.
+#'
+#' @param df Data frame with at least an `id` column and one or more
+#'   `logSignP.<coef>` columns.
+#' @return A `cmapR::GCT` object, or `NULL` if no `logSignP` columns exist.
+build_lm_stat_gct <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(NULL)
+  sign_cols <- grep("^logSignP\\.", colnames(df), value = TRUE)
+  if (length(sign_cols) == 0) return(NULL)
+  if (!"id" %in% colnames(df)) {
+    df$id <- as.character(seq_len(nrow(df)))
+  }
+  ids <- as.character(df$id)
+  mat <- as.matrix(df[, sign_cols, drop = FALSE])
+  rownames(mat) <- ids
+  rdesc <- df[, setdiff(colnames(df), sign_cols), drop = FALSE]
+  rownames(rdesc) <- ids
+  methods::new("GCT", mat = mat, rdesc = data.frame(rdesc), rid = ids)
+}
+
+
+#' Write an LM-results GCT for SSGSEA consumption.
+#'
+#' @param df LM results frame.
+#' @param dir_name Output directory.
+#' @param ome Ome name; embedded in the filename.
+#' @return Invisible path on success, NULL on no-op.
+write_lm_stat_gct <- function(df, dir_name, ome) {
+  gct <- build_lm_stat_gct(df)
+  if (is.null(gct)) return(invisible(NULL))
+  out <- file.path(dir_name, paste0("lm_stat_results_for_ssGSEA_", ome, ".gct"))
+  cmapR::write_gct(gct, out, appenddim = FALSE)
+  invisible(out)
+}
+
+
 #' Plot p-value histogram for a specific coefficient
 #'
 #' @param pvals Numeric vector of p-values

@@ -616,6 +616,15 @@ lmResults_Ome_Server <- function(id,
       )
     }
 
+    # SSGSEA-ready GCT export — mirrors tab_stat_summary.R dual-export pattern.
+    # Silent no-op if the results frame has no `logSignP.<coef>` columns
+    # (e.g. an F-only model would skip this).
+    lm_results_gct_export <- function(dir_name) {
+      results <- lm_results()[[ome]]
+      if (is.null(results)) return()
+      write_lm_stat_gct(results, dir_name = dir_name, ome = ome)
+    }
+
     workflow_params_export <- function(dir_name) {
       params <- lm_params()[[ome]]
       if (is.null(params)) return()
@@ -684,11 +693,13 @@ lmResults_Ome_Server <- function(id,
       }
 
       summary_list <- list(
+        schema_version = "1.0",
         ome = ome,
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
         formula_string = params$formula_string %||% "",
         variables = params$variables %||% character(0),
         variable_types = params$variable_types %||% list(),
+        reference_levels = params$reference_levels %||% list(),
         include_intercept = isTRUE(params$include_intercept),
         interactions = params$interactions %||% list(),
         blocking_variable = params$blocking_variable %||% NULL,
@@ -699,6 +710,7 @@ lmResults_Ome_Server <- function(id,
         ),
         design_coefficients = params$all_design_coefs %||% character(0),
         display_coefficients = params$display_coefficients %||% character(0),
+        intensity = isTRUE(params$intensity),
         n_features = n_features
       )
 
@@ -714,6 +726,7 @@ lmResults_Ome_Server <- function(id,
       lm_adj_pval_hist = adj_pval_hist_export,
       lm_nom_pval_hist = nom_pval_hist_export,
       lm_results = lm_results_export,
+      lm_results_gct = lm_results_gct_export,
       lm_workflow_parameters = workflow_params_export,
       lm_model_summary = lm_model_summary_export
     ))

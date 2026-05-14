@@ -6,6 +6,205 @@
 # results via topTable.
 ################################################################################
 
+#' Resolve the per-ome intensity flag.
+#'
+#' Each ome's `intensity` flag controls whether `eBayes(trend=TRUE)` is used
+#' on that ome's fit. The flag is set by the sidebar upload module per-ome and
+#' can arrive as logical, integer (0/1), or string ("yes"/"true"/"1"/"t").
+#' Anything missing/unknown coerces to FALSE.
+#'
+#' @param parameters Named list of per-ome parameter lists (the value of
+#'   `GCTs_and_params()$parameters`).
+#' @param ome Character scalar, the ome key to look up.
+#' @return logical scalar.
+pick_intensity_for_ome <- function(parameters, ome) {
+  if (is.null(parameters) || !is.list(parameters)) return(FALSE)
+  v <- parameters[[ome]]$intensity
+  if (is.null(v)) return(FALSE)
+  if (is.character(v)) {
+    return(tolower(v) %in% c("yes", "true", "1", "t"))
+  }
+  tmp <- suppressWarnings(as.logical(v))
+  if (length(tmp) != 1 || is.na(tmp)) return(FALSE)
+  tmp
+}
+
+
+#' Canonical control-token list for default-reference-level heuristic.
+#'
+#' Order matters: tokens earlier in the list win over later tokens when more
+#' than one match exists. Lowercased so callers can compare against
+#' `tolower(level)`.
+#' @keywords internal
+.lm_control_tokens <- c(
+  "control", "ctrl", "vehicle", "wt", "wildtype",
+  "baseline", "untreated", "placebo", "none", "healthy"
+)
+
+
+#' Choose a defensible default reference level for a factor variable.
+#'
+#' Replaces the alphabetical-first default (R's `factor()` behaviour) with a
+#' rule chain that more often matches the scientist's mental model:
+#'
+#' 1. If any observed level (case-insensitive) matches a control token from
+#'    `.lm_control_tokens`, pick that level. First match wins, by token-list
+#'    order.
+#' 2. Otherwise, pick the most-frequent (modal) level.
+#' 3. If two or more levels tie for modal, pick the alphabetical first.
+#'
+#' Empty / NULL / all-NA input returns `NA_character_`.
+#'
+#' @param values Character vector or factor of observed levels (one entry per
+#'   sample). NA and empty strings are dropped.
+#' @return A list with:
+#'   - `level`: chosen level (character) or `NA_character_` for empty input.
+#'   - `reason`: one of `"control_token"`, `"modal"`, `"tie_alphabetical"`,
+#'     `"single"`, `"empty"`.
+#'   - `matched_token`: present only when `reason == "control_token"`; the
+#'     lowercase token from `.lm_control_tokens` that matched.
+#'   - `n`: present only when `reason == "modal"`; the count for the modal level.
+#' @export
+pick_default_reference_level <- function(values) {
+  if (is.null(values) || length(values) == 0) {
+    return(list(level = NA_character_, reason = "empty"))
+  }
+  vals <- as.character(values)
+  vals <- vals[!is.na(vals) & nzchar(vals)]
+  if (length(vals) == 0) {
+    return(list(level = NA_character_, reason = "empty"))
+  }
+
+  lv <- unique(vals)
+  if (length(lv) == 1) {
+    return(list(level = lv, reason = "single"))
+  }
+
+  # 1. Control-token match (case-insensitive). Iterate tokens in priority order
+  #    so the earliest matching token wins regardless of the input ordering.
+  lv_lower <- tolower(lv)
+  for (tok in .lm_control_tokens) {
+    hit_idx <- which(lv_lower == tok)
+    if (length(hit_idx) > 0) {
+      return(list(
+        level = lv[hit_idx[1]],
+        reason = "control_token",
+        matched_token = tok
+      ))
+    }
+  }
+
+  # 2/3. Modal level, with alphabetical tie-break.
+  counts <- table(vals)
+  max_count <- max(counts)
+  modal_levels <- sort(names(counts)[counts == max_count])
+  if (length(modal_levels) > 1) {
+    return(list(
+      level = modal_levels[1],
+      reason = "tie_alphabetical"
+    ))
+  }
+  list(
+    level = modal_levels[1],
+    reason = "modal",
+    n = as.integer(max_count)
+  )
+}
+
+
+#' Format the default-reference-level result as a short user-facing annotation.
+#'
+#' Used to display *why* the system picked a particular default so the user
+#' can decide whether to override it.
+#'
+#' @param result Output of [pick_default_reference_level()].
+#' @return Character scalar. Empty string for `single` / `empty` (no useful
+#'   annotation in those cases — the picker can stay un-annotated).
+#' @export
+format_reference_level_annotation <- function(result) {
+  if (is.null(result) || is.null(result$reason)) return("")
+  switch(
+    result$reason,
+    control_token = sprintf("(matched \"%s\")", result$matched_token),
+    modal         = sprintf("(modal, n=%d)", result$n),
+    tie_alphabetical = "(modal tie; alphabetical fallback)",
+    single = "",
+    empty  = "",
+    ""
+  )
+}
+
+
+#' Summarize how many samples will be dropped by `complete.cases` filtering.
+#'
+#' Given the working `cdesc` and the variables that participate in the design
+#' (model variables plus the optional blocking variable), report how many
+#' samples will survive the `complete.cases` filter and attribute the drops to
+#' the columns that introduced NAs.
+#'
+#' Returns NULL when there is nothing meaningful to report (empty data, no
+#' inspectable variables).
+#'
+#' @param cdesc Data frame of sample metadata (rows = samples).
+#' @param model_vars Character vector of column names that feed
+#'   `complete.cases()`. Duplicates are deduped; unknown columns are silently
+#'   ignored so callers don't have to pre-filter the formula's `all.vars()`
+#'   output against `colnames(cdesc)`.
+#' @return Either NULL or a list with:
+#'   - `n_total`: integer, `nrow(cdesc)`.
+#'   - `n_used`: integer, surviving rowcount.
+#'   - `n_dropped`: integer, `n_total - n_used`.
+#'   - `dropped_columns`: character vector of column names whose NAs caused
+#'     drops, ordered by descending NA count (alphabetical tie-break). Empty
+#'     when nothing was dropped.
+#'   - `message`: one-line human-readable caption suitable for display above
+#'     the design-matrix preview.
+#' @export
+summarize_sample_drops <- function(cdesc, model_vars) {
+  if (is.null(cdesc) || !is.data.frame(cdesc) || nrow(cdesc) == 0) {
+    return(NULL)
+  }
+  vars <- unique(as.character(model_vars))
+  vars <- vars[vars %in% colnames(cdesc)]
+  if (length(vars) == 0) return(NULL)
+
+  sub <- cdesc[, vars, drop = FALSE]
+  mask <- stats::complete.cases(sub)
+  n_total <- as.integer(nrow(cdesc))
+  n_used <- as.integer(sum(mask))
+  n_dropped <- n_total - n_used
+
+  na_counts <- vapply(vars, function(v) sum(is.na(cdesc[[v]])), integer(1))
+  offenders <- names(na_counts)[na_counts > 0]
+  if (length(offenders) > 0) {
+    # Order: descending NA count, alphabetical tie-break.
+    ord <- order(-na_counts[offenders], offenders)
+    offenders <- offenders[ord]
+  } else {
+    offenders <- character(0)
+  }
+
+  message <- if (n_dropped == 0L) {
+    sprintf("Using all %d samples.", n_total)
+  } else if (length(offenders) == 1L) {
+    sprintf("Using %d of %d samples (%d dropped: missing '%s').",
+            n_used, n_total, n_dropped, offenders)
+  } else {
+    sprintf("Using %d of %d samples (%d dropped: missing '%s').",
+            n_used, n_total, n_dropped,
+            paste(offenders, collapse = "', '"))
+  }
+
+  list(
+    n_total = n_total,
+    n_used = n_used,
+    n_dropped = as.integer(n_dropped),
+    dropped_columns = offenders,
+    message = message
+  )
+}
+
+
 #' Build a formula string from user selections
 #'
 #' @param variables Character vector of selected variable names
@@ -46,13 +245,19 @@ build_formula_string <- function(variables, include_intercept = TRUE, interactio
 #' @param blocking_var Optional blocking variable name (column in cdesc)
 #' @param contrasts_list Optional list of contrast strings for makeContrasts
 #' @param intensity Logical, whether data is intensity-based (enables eBayes trend)
-#' @return A data.frame with rdesc columns, per-coefficient stats, and normalized values
+#' @param reference_levels Named list mapping factor variables to the user's chosen
+#'   reference level (string). Unknown variable names or unknown levels are ignored
+#'   with a warning so the user is not silently surprised.
+#' @return A data.frame with rdesc columns, per-coefficient stats, optional
+#'   per-factor F-test columns (for variables with >1 non-intercept coefficient),
+#'   and the original normalized sample values.
 lm.regression <- function(gct,
                           formula_string,
                           variable_types = list(),
                           blocking_var = NULL,
                           contrasts_list = NULL,
-                          intensity = FALSE) {
+                          intensity = FALSE,
+                          reference_levels = list()) {
 
   # Ensure intensity is logical
   if (is.null(intensity)) {
@@ -100,12 +305,27 @@ lm.regression <- function(gct,
     )
   }
 
-  # Coerce cdesc columns per variable_types
+  # Coerce cdesc columns per variable_types. For factors, optionally relevel to
+  # the user-specified reference (so coefficient signs match the user's mental
+  # model rather than R's default alphabetical ordering).
   cdesc_work <- cdesc
   for (var_name in names(variable_types)) {
     if (var_name %in% colnames(cdesc_work)) {
       if (variable_types[[var_name]] == "factor") {
-        cdesc_work[[var_name]] <- factor(cdesc_work[[var_name]])
+        f <- factor(cdesc_work[[var_name]])
+        ref <- reference_levels[[var_name]]
+        if (!is.null(ref) && nzchar(as.character(ref))) {
+          if (as.character(ref) %in% levels(f)) {
+            f <- stats::relevel(f, ref = as.character(ref))
+          } else {
+            warning(
+              "Ignoring reference level '", ref, "' for variable '", var_name,
+              "': not present among observed levels (",
+              paste(levels(f), collapse = ", "), ")."
+            )
+          }
+        }
+        cdesc_work[[var_name]] <- f
       } else if (variable_types[[var_name]] == "continuous") {
         cdesc_work[[var_name]] <- as.numeric(as.character(cdesc_work[[var_name]]))
       }
@@ -210,6 +430,13 @@ lm.regression <- function(gct,
     fit <- limma::lmFit(mat_clean, design, block = block, correlation = correlation)
   }
 
+  # Snapshot the original design coefficient names BEFORE any contrast
+  # re-parameterisation. We use these to (a) attribute design columns to their
+  # source factor variable, and (b) decide which variables warrant a per-factor
+  # F-test under reviewer option (c): emit an F-test only when the variable
+  # contributes >1 non-intercept coefficient (multi-level factor or interaction).
+  pre_contrast_coefs <- colnames(fit$coefficients)
+
   # Apply contrasts if provided.
   # makeContrasts() rejects any levels that aren't syntactically valid R names
   # (interaction terms contain ":", which is illegal). Work around this by:
@@ -259,23 +486,43 @@ lm.regression <- function(gct,
     fit <- limma::contrasts.fit(fit_safe, contrast_matrix)
   }
 
-  # eBayes with trend fallback
+  # eBayes with trend and robust fallbacks.
+  # `robust = TRUE` (Phipson 2016) Winsorizes outlier variances; it needs enough
+  # residual degrees of freedom. On near-saturated designs (n ~ p) the prior-df
+  # estimation can fail. Fall back to `robust = FALSE` in that case rather than
+  # crashing the whole fit.
+  do_ebayes <- function(fit, trend, robust) {
+    tryCatch(
+      limma::eBayes(fit, trend = trend, robust = robust),
+      error = function(e) {
+        if (isTRUE(robust)) {
+          warning(
+            "eBayes with robust=TRUE failed (", conditionMessage(e),
+            "). Falling back to robust=FALSE. This usually occurs on near-",
+            "saturated designs (few residual degrees of freedom)."
+          )
+          limma::eBayes(fit, trend = trend, robust = FALSE)
+        } else {
+          stop(e)
+        }
+      }
+    )
+  }
+
   if (intensity) {
     fit <- tryCatch(
-      {
-        limma::eBayes(fit, trend = TRUE, robust = TRUE)
-      },
+      do_ebayes(fit, trend = TRUE, robust = TRUE),
       error = function(e) {
         warning(
           "eBayes with trend=TRUE failed. Falling back to trend=FALSE. ",
           "This usually occurs when the distribution of detected features ",
           "is not uniform across samples."
         )
-        limma::eBayes(fit, trend = FALSE, robust = TRUE)
+        do_ebayes(fit, trend = FALSE, robust = TRUE)
       }
     )
   } else {
-    fit <- limma::eBayes(fit, robust = TRUE)
+    fit <- do_ebayes(fit, trend = FALSE, robust = TRUE)
   }
 
   # Determine which coefficients to extract.
@@ -324,6 +571,25 @@ lm.regression <- function(gct,
     lm_model_list
   )
 
+  # Per-factor F-tests (reviewer option (c)):
+  # Only meaningful in the no-contrast path (where design coefficients are the
+  # named columns of `pre_contrast_coefs`). In the contrast path, coefficients
+  # are user-defined linear combinations and per-factor attribution is undefined.
+  #
+  # Trigger rule: emit a per-factor F-test for each variable in
+  # `variable_types` (or for the special "<varA>:<varB>" interaction key) when
+  # the number of associated non-intercept design coefficients is >= 2.
+  if (is.null(contrasts_list) || length(contrasts_list) == 0) {
+    factor_F_blocks <- build_factor_F_blocks(
+      fit = fit,
+      pre_contrast_coefs = pre_contrast_coefs,
+      variable_types = variable_types
+    )
+    for (blk in factor_F_blocks) {
+      combined <- dplyr::full_join(combined, blk, by = "id")
+    }
+  }
+
   # Join rdesc metadata
   rdesc_df <- as.data.frame(rdesc)
   if (!"id" %in% colnames(rdesc_df)) {
@@ -337,4 +603,75 @@ lm.regression <- function(gct,
   combined <- dplyr::left_join(combined, normalized_df, by = "id")
 
   combined
+}
+
+
+# ---- internal helpers --------------------------------------------------------
+
+# Attribute each non-intercept design coefficient to its source variable
+# (or interaction). For a coefficient like `groupMUT:timeT3` we record it under
+# the synthetic key `"group:time"`; for plain `groupMUT` under `"group"`.
+attribute_design_coefs <- function(pre_contrast_coefs, variable_types) {
+  coef_names <- setdiff(pre_contrast_coefs, "(Intercept)")
+  var_names <- names(variable_types)
+  if (length(var_names) == 0 || length(coef_names) == 0) return(list())
+
+  # Longest-prefix match (so `treatmentXxx` matches `treatment`, not partial).
+  match_var <- function(token, vars) {
+    # Find vars that the token starts with; pick the longest.
+    starts <- vars[startsWith(token, vars)]
+    if (length(starts) == 0) return(NA_character_)
+    starts[which.max(nchar(starts))]
+  }
+
+  groups <- list()
+  for (coef in coef_names) {
+    parts <- strsplit(coef, ":", fixed = TRUE)[[1]]
+    matched <- vapply(parts, match_var, character(1), vars = var_names)
+    if (any(is.na(matched))) {
+      # Unrecognised coef (e.g. continuous variable name itself) — skip from
+      # per-factor F-tests; per-coef t-test is already emitted.
+      next
+    }
+    key <- paste(sort(unique(matched)), collapse = ":")
+    groups[[key]] <- c(groups[[key]], coef)
+  }
+  groups
+}
+
+
+# Build one block per "factor" key whose coefficient group has >= 2 elements.
+# Each block is a data frame with columns id, F.<key>, P.Value.<key>, adj.P.Val.<key>.
+# `make.names()` is applied to the key for column suffixes (e.g. "group:time" -> "group.time").
+build_factor_F_blocks <- function(fit, pre_contrast_coefs, variable_types) {
+  groups <- attribute_design_coefs(pre_contrast_coefs, variable_types)
+  blocks <- list()
+  for (key in names(groups)) {
+    coefs <- groups[[key]]
+    if (length(coefs) < 2) next   # option (c): skip 1-coef variables
+    # Confirm all named coefs are present in the fit object.
+    coefs <- intersect(coefs, colnames(fit$coefficients))
+    if (length(coefs) < 2) next
+    tt <- limma::topTable(
+      fit,
+      coef = coefs,
+      number = Inf,
+      sort.by = "none",
+      adjust.method = "BH"
+    )
+    # vector-coef topTable returns per-coef logFC columns we ignore (no single
+    # signed effect for an F-test), plus AveExpr, F, P.Value, adj.P.Val.
+    suffix <- make.names(key)
+    blk <- data.frame(
+      id = rownames(tt),
+      F = tt$F,
+      P.Value = tt$P.Value,
+      adj.P.Val = tt$adj.P.Val,
+      stringsAsFactors = FALSE,
+      row.names = NULL
+    )
+    colnames(blk)[-1] <- paste(colnames(blk)[-1], suffix, sep = ".")
+    blocks[[key]] <- blk
+  }
+  blocks
 }
