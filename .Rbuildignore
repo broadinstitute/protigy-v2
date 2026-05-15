@@ -7,3 +7,5 @@
 ^dev$
 ^\.positai$
 ^\.claude$
+^\.Rprofile$
+^setup\.R$
