@@ -13,20 +13,21 @@ Enter the following code into your command line interface.
 git clone https://github.com/broadinstitute/protigy-v2.git
 ```
 
-Once the repository is cloned, open RStudio and enter the following code.
+Once the repository is cloned, open RStudio and run the setup script **once** to install ProTIGY and all dependencies:
 
 ```R
 # Change to the repo folder
 setwd("protigy-v2")
 
-# Install and load devtools. NOTE: After installing once, you don't need to install every time. Just use library()
-install.packages('devtools')
-library(devtools)
+# One-time install (Bioconductor + CRAN deps, then ProTIGY from source)
+source("setup.R")
+```
 
-# Install the package. NOTE: After installing once, you don't need to install every time. Just use library()
-devtools::install('.')
+`setup.R` installs Bioconductor packages (e.g. ComplexHeatmap, limma, vsn) that RStudio's "Install Required Packages" prompt does not resolve, along with CRAN dependencies and ProTIGY from the local source tree. You only need to run it once per machine after cloning.
 
-# Load the package and start the app
+To start the app on later sessions:
+
+```R
 library(Protigy)
 Protigy::launchApp()
 ```

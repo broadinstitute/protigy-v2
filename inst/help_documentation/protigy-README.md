@@ -2,6 +2,34 @@
 
 ProTIGY is a Shiny application that supports datasets organized as a matrix with features (proteins, genes, transcripts) measured across samples (experimental conditions, replicates). ProTIGY can analyze various omics data types including proteomics, post-translational modifications (PTMs), RNA-seq, metabolomics, and other quantitative molecular datasets. ProTIGY allows you to upload and process multiple data types from the same experiment simultaneously (e.g., RNA-seq, proteome, and phosphoproteome data from the same samples), enabling integrated multi-omics analysis.
 
+## Installation
+
+Enter the following code into your command line interface.
+
+```bash
+# Clone the repository
+git clone https://github.com/broadinstitute/protigy-v2.git
+```
+
+Once the repository is cloned, open RStudio and run the setup script **once** to install ProTIGY and all dependencies:
+
+```R
+# Change to the repo folder
+setwd("protigy-v2")
+
+# One-time install (Bioconductor + CRAN deps, then ProTIGY from source)
+source("setup.R")
+```
+
+`setup.R` installs Bioconductor packages (e.g. ComplexHeatmap, limma, vsn) that RStudio's "Install Required Packages" prompt does not resolve, along with CRAN dependencies and ProTIGY from the local source tree. You only need to run it once per machine after cloning.
+
+To start the app on later sessions:
+
+```R
+library(Protigy)
+Protigy::launchApp()
+```
+
 ## Key Features
 
 ### 📊 **Data Analysis & Visualization**
