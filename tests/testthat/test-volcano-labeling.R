@@ -156,6 +156,40 @@ test_that("volcano_build_hover_text preserves NA in gene symbol display", {
   expect_equal(out[2], "ID: i2<br>geneSymbol: NA")
 })
 
+test_that("volcano_build_hover_text appends user-selected label column line", {
+  out <- volcano_build_hover_text(
+    c("id1", "id2"),
+    gs_vals      = c("G1", "G2"),
+    gs_col_name  = "geneSymbol",
+    lbl_vals     = c("desc1", "desc2"),
+    lbl_col_name = "description"
+  )
+  expect_equal(out, c(
+    "ID: id1<br>geneSymbol: G1<br>description: desc1",
+    "ID: id2<br>geneSymbol: G2<br>description: desc2"
+  ))
+})
+
+test_that("volcano_build_hover_text ignores lbl_vals when length mismatches ids", {
+  out <- volcano_build_hover_text(
+    c("a", "b"),
+    gs_vals      = c("G1", "G2"),
+    gs_col_name  = "geneSymbol",
+    lbl_vals     = "only_one",
+    lbl_col_name = "description"
+  )
+  expect_equal(out, c("ID: a<br>geneSymbol: G1", "ID: b<br>geneSymbol: G2"))
+})
+
+test_that("volcano_build_hover_text supports label line without gene symbol line", {
+  out <- volcano_build_hover_text(
+    c("id1", "id2"),
+    lbl_vals     = c("d1", "d2"),
+    lbl_col_name = "description"
+  )
+  expect_equal(out, c("ID: id1<br>description: d1", "ID: id2<br>description: d2"))
+})
+
 ## volcano_label_top_significant_subset ########################################
 
 test_that("volcano_label_top_significant_subset returns top n by logP among significant", {

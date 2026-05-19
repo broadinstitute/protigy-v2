@@ -8,21 +8,38 @@
 # contrasts with darkred significant scatter points (plotVolcano sig.col).
 .volcano_label_hex <- "#FF00FF"
 
-# Build plotly hover `text` for volcano points: always `ID: …`; optional second line
-# from the real gene-symbol metadata column when `gs_vals` is provided (same length as ids).
+# Build plotly hover `text` for volcano points: always `ID: …`; optional second
+# line from the real gene-symbol metadata column when `gs_vals` is provided
+# (same length as ids); optional third line from the user-selected label column
+# when `lbl_vals` + `lbl_col_name` are provided and length matches ids.
 # @noRd
-volcano_build_hover_text <- function(ids, gs_vals = NULL, gs_col_name = NULL) {
+volcano_build_hover_text <- function(ids,
+                                     gs_vals = NULL, gs_col_name = NULL,
+                                     lbl_vals = NULL, lbl_col_name = NULL) {
   ids <- as.character(ids)
   ht  <- paste0("ID: ", ids)
-  if (is.null(gs_vals)) return(ht)
-  gs_vals <- as.character(gs_vals)
-  if (length(gs_vals) != length(ids)) return(ht)
-  nm <- if (!is.null(gs_col_name) && nzchar(as.character(gs_col_name)[1L])) {
-    as.character(gs_col_name)[1L]
-  } else {
-    "geneSymbol"
+
+  if (!is.null(gs_vals)) {
+    gs_vals <- as.character(gs_vals)
+    if (length(gs_vals) == length(ids)) {
+      nm <- if (!is.null(gs_col_name) && nzchar(as.character(gs_col_name)[1L])) {
+        as.character(gs_col_name)[1L]
+      } else {
+        "geneSymbol"
+      }
+      ht <- paste0(ht, "<br>", nm, ": ", gs_vals)
+    }
   }
-  paste0(ht, "<br>", nm, ": ", gs_vals)
+
+  if (!is.null(lbl_vals) && !is.null(lbl_col_name) &&
+      nzchar(as.character(lbl_col_name)[1L])) {
+    lbl_vals <- as.character(lbl_vals)
+    if (length(lbl_vals) == length(ids)) {
+      ht <- paste0(ht, "<br>", as.character(lbl_col_name)[1L], ": ", lbl_vals)
+    }
+  }
+
+  ht
 }
 
 # #Input parameters- 
@@ -174,12 +191,23 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     group_contrast<- volcano_groups
   }
   ## Plot
-  # Hover: always ID + actual gene symbol column when present, regardless of
-  # label-column choice (trim toggle does not affect hover).
+  # Hover: always ID + the real gene-symbol column when present. When the
+  # user-selected label column is neither the id column nor the detected
+  # geneSymbol column, append a third line with the resolved label value so
+  # the tooltip matches the on-plot annotation.
+  is_id_col <- identical(tolower(lbl_col), tolower(id_col))
+  is_gs_col <- !is.null(geneSymbol_col) && !is.na(geneSymbol_col) &&
+               identical(tolower(lbl_col), tolower(geneSymbol_col))
+
+  extra_lbl_vals <- if (!is_id_col && !is_gs_col) df$geneSymbol else NULL
+  extra_lbl_name <- if (!is_id_col && !is_gs_col) lbl_col       else NULL
+
   df$.hover_text <- volcano_build_hover_text(
     df$id,
     gs_vals      = gs_for_hover,
-    gs_col_name  = geneSymbol_col
+    gs_col_name  = geneSymbol_col,
+    lbl_vals     = extra_lbl_vals,
+    lbl_col_name = extra_lbl_name
   )
   volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP,
                        text = .data$.hover_text)) +
