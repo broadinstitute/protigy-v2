@@ -22,6 +22,24 @@ labelSetupUI <- function(ns, gctFileNames) {
   )
 }
 
+# Whether stored `intensity_data` means the intensity ("yes") YAML branch.
+# Canonical values are "Yes"/"No" (setupDefaults + collectInputs); logical
+# TRUE/FALSE can appear from the checkbox before collectInputs runs — `TRUE == "Yes"`
+# is NA in R, so compare explicitly.
+intensity_data_param_is_yes <- function(intensity_data) {
+  if (is.null(intensity_data) || length(intensity_data) < 1L) {
+    return(FALSE)
+  }
+  v <- intensity_data[[1L]]
+  if (is.logical(v)) {
+    return(isTRUE(v))
+  }
+  if (is.character(v)) {
+    return(identical(tolower(trimws(v[1L])), "yes"))
+  }
+  FALSE
+}
+
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the 
 # setupDefaults.yaml!
@@ -48,15 +66,25 @@ gctSetupUI <- function(ns,
   # find which groups are present in all omes
   groups_choices_all_omes <- base::Reduce(base::intersect, 
                                     lapply(GCTs, function(gct) names(gct@cdesc)))
+  # Select normalization choices based on current intensity_data parameter
+  ind <- paste0(
+    "intensity_data_",
+    tolower(ifelse(intensity_data_param_is_yes(parameters[[label]]$intensity_data), "yes", "no"))
+  )
   # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
-  norm_choices <- parameter_choices$data_normalization$intensity_data_no
+  norm_choices <- parameter_choices$data_normalization[[ind]]
   n_samples <- ncol(GCTs[[label]]@mat)
-  if (n_samples > 20) {
+  if (n_samples > 20L) {
     norm_choices <- norm_choices[norm_choices != "2-component"]
   }
-  # If current selection is 2-component but it should be disabled, use default
   norm_selected <- parameters[[label]]$data_normalization
-  if (n_samples > 20 && norm_selected == "2-component") {
+  # Mirror server observer: if 2-component is stored but disallowed for large N, reset selection
+  if (n_samples > 20L && length(norm_selected) &&
+      identical(as.character(norm_selected)[1L], "2-component")) {
+    norm_selected <- "None"
+  }
+  # If current selection is not in the available choices, fall back to None
+  if (!norm_selected %in% norm_choices) {
     norm_selected <- "None"
   }
 
@@ -206,7 +234,7 @@ gctSetupUI <- function(ns,
       checkboxInput(
         ns(paste0(label, '_intensity_data')),
         label = 'Intensity data',
-        value = parameters[[label]]$intensity_data == "Yes"),
+        value = intensity_data_param_is_yes(parameters[[label]]$intensity_data)),
       classes = "small-input",
       styles = "padding-top: 10px"),
 
@@ -260,12 +288,12 @@ gctSetupUI <- function(ns,
     ## max missing value input
     add_css_attributes(
       numericInput(
-        ns(paste0(label, '_max_missing')), 
+        ns(paste0(label, '_max_missing')),
         'Max. % missing values',
-        min = parameter_choices$max_missing$intensity_data_no$min,
-        max = parameter_choices$max_missing$intensity_data_no$max,
-        step = parameter_choices$max_missing$intensity_data_no$step,
-        value = parameters[[label]]$max_missing),
+        min = parameter_choices$max_missing[[ind]]$min,
+        max = parameter_choices$max_missing[[ind]]$max,
+        step = parameter_choices$max_missing[[ind]]$step,
+        value = min(parameters[[label]]$max_missing, parameter_choices$max_missing[[ind]]$max)),
       classes = "small-input",
       styles = "padding-bottom: 5px"),
     

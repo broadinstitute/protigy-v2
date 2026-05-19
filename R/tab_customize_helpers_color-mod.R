@@ -371,7 +371,7 @@ color_mod <- function(color_string, modifier, mod_R, mod_G, mod_B) {
   color_string = gsub("^#", "", color_string) # remove leading '#', if applicable
   
   if(missing(modifier)){ #if we're also missing a general color modifier
-    if(missing(mod_R) & missing(mod_G) & missing(mod_R)){ #if we're missing ALL color modifiers
+    if(missing(mod_R) & missing(mod_G) & missing(mod_B)){ #if we're missing ALL color modifiers
       modifier=30 #modifier is set to 30 by default
     } else{
       modifier=0 #if we have SOME colors specified, unspecified colors are not modified
@@ -424,8 +424,12 @@ color_range <- function(base_color_start, base_color_end, number_of_colors) {
   # base_color_end= "#B00B69"
   # number_of_colors=5
   
+  if (number_of_colors <= 1) {
+    return(base_color_start)
+  }
+
   distance = color_dist(base_color_start, base_color_end)
-  
+
   color_scale = sapply( (1:number_of_colors)-1 ,
                         function (i, base_color_start, distance, number_of_colors) {
                           color_mod(base_color_start,

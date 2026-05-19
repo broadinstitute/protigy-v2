@@ -464,12 +464,14 @@ colors:
 
   result <- import_colors_from_yaml(temp_file, custom_colors)
 
-  # 'control' should match globally from tissue column
+  # 'control' still matches globally from tissue column (cross-column name
+  # match is preserved to be helpful when users rename columns).
   expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")  # control (matched from tissue)
 
-  # 'drug_X' is unmatched (alphabetically first among unmatched)
-  # Unused colors: #EE6677, #228833
-  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # drug_X (sequential from unused)
+  # Bug #5: because `treatment` is NOT in the YAML, unmatched conditions
+  # keep their original defaults instead of being clobbered by unrelated
+  # leftover colors from other columns. drug_X keeps its original color.
+  expect_equal(result$multi_ome$treatment$colors[2], "#111111")  # drug_X (original)
 
   unlink(temp_file)
 })
@@ -751,4 +753,876 @@ groups.colors:
   expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")  # from colors
 
   unlink(temp_file)
+})
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 bug-fix regression tests
+# ---------------------------------------------------------------------------
+
+test_that("import_colors_from_yaml - malformed YAML raises an error (bug #1)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines("colors: [this is: not valid: yaml", temp_file)
+
+  # Prior to fix, malformed YAML silently returned original custom_colors and
+  # the UI showed "Import Successful". Now errors must propagate.
+  expect_error(import_colors_from_yaml(temp_file, custom_colors))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - flat groups.colors is applied (bug #2)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    ),
+    proteome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+
+  # Truly flat PANOPLY-style file: condition -> color, no column nesting.
+  yaml_content <- "
+groups.colors:
+  control: '#4477AA'
+  drug_A: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#EE6677")
+  expect_equal(result$proteome$treatment$colors[1], "#4477AA")
+  expect_equal(result$proteome$treatment$colors[2], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - invalid hex codes are skipped with warning (bug #7)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A", "drug_B"),
+        colors = c("#000000", "#111111", "#222222")
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: 'not-a-hex'
+      drug_B: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  expect_warning(
+    result <- import_colors_from_yaml(temp_file, custom_colors),
+    "invalid hex color"
+  )
+
+  # Valid entries applied, invalid entry keeps original
+  expect_equal(result$multi_ome$treatment$colors[1], "#4477AA")
+  expect_equal(result$multi_ome$treatment$colors[2], "#111111")  # original kept
+  expect_equal(result$multi_ome$treatment$colors[3], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - skips omes with no discrete columns (bug #15)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a", "b"),
+        colors = c("#AAAAAA", "#BBBBBB")
+      )
+    ),
+    proteome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = NULL,
+        colors = c("#111111", "#222222", "#333333")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  yaml_back <- yaml::read_yaml(temp_file)
+  expect_true("multi_ome" %in% names(yaml_back$colors))
+  # proteome had only continuous entries, so it should be omitted entirely.
+  expect_false("proteome" %in% names(yaml_back$colors))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - round-trip preserves YAML-special keys (bug #12)", {
+  # Keys like "yes", "no", "1" would otherwise parse as logical/numeric and
+  # fail equality match against current_vals on re-import.
+  custom_colors <- list(
+    multi_ome = list(
+      flag = list(
+        is_discrete = TRUE,
+        vals = c("yes", "no", "1"),
+        colors = c("#AAAAAA", "#BBBBBB", "#CCCCCC")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  # Reset to placeholder colors so the importer has something to change.
+  custom_colors$multi_ome$flag$colors <- c("#000000", "#000000", "#000000")
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+  expect_equal(result$multi_ome$flag$colors,
+               c("#AAAAAA", "#BBBBBB", "#CCCCCC"))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - propagates write errors (bug #10)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a"),
+        colors = c("#AAAAAA")
+      )
+    )
+  )
+
+  # Writing into a non-existent directory should now error out rather than
+  # silently returning FALSE. Suppress the upstream `file()` warning so the
+  # test log stays clean; the error itself is what we're asserting on.
+  bad_path <- file.path(tempfile(), "does", "not", "exist", "out.yaml")
+  expect_error(suppressWarnings(export_colors_to_yaml(custom_colors, bad_path)))
+})
+
+
+test_that("is_valid_hex_color - accepts 3/6/8-digit hex (H6)", {
+  expect_true(is_valid_hex_color("#AABBCC"))
+  expect_true(is_valid_hex_color("#000000"))
+  expect_true(is_valid_hex_color("#abcdef"))
+  expect_true(is_valid_hex_color("#FFF"))           # 3-digit now valid
+  expect_true(is_valid_hex_color("#abc"))           # 3-digit lowercase
+  expect_true(is_valid_hex_color("#AABBCCDD"))      # 8-digit (with alpha) now valid
+  expect_false(is_valid_hex_color("AABBCC"))        # missing #
+  expect_false(is_valid_hex_color("#ABCD"))         # 4-digit not allowed
+  expect_false(is_valid_hex_color("#GGGGGG"))       # non-hex chars
+  expect_false(is_valid_hex_color(NA_character_))
+  expect_false(is_valid_hex_color(NULL))
+  expect_false(is_valid_hex_color(c("#AABBCC", "#112233")))  # vector
+})
+
+
+test_that("normalize_hex_color - expands 3-digit and uppercases", {
+  expect_equal(as.character(normalize_hex_color("#fff")), "#FFFFFF")
+  expect_equal(as.character(normalize_hex_color("#ABC")), "#AABBCC")
+  expect_equal(as.character(normalize_hex_color("#a1b")), "#AA11BB")
+})
+
+
+test_that("normalize_hex_color - 6-digit pass through (uppercased)", {
+  expect_equal(as.character(normalize_hex_color("#aabbcc")), "#AABBCC")
+  expect_equal(as.character(normalize_hex_color("#AABBCC")), "#AABBCC")
+})
+
+
+test_that("normalize_hex_color - strips alpha and flags it", {
+  out <- normalize_hex_color("#AABBCCDD")
+  expect_equal(as.character(out), "#AABBCC")
+  expect_true(isTRUE(attr(out, "had_alpha")))
+})
+
+
+test_that("normalize_hex_color - rejects invalid input", {
+  expect_true(is.na(normalize_hex_color("red")))
+  expect_true(is.na(normalize_hex_color("#GG0000")))
+  expect_true(is.na(normalize_hex_color("AABBCC")))
+  expect_true(is.na(normalize_hex_color(NA_character_)))
+  expect_true(is.na(normalize_hex_color(NULL)))
+})
+
+
+test_that("export/import - continuous palettes round-trip (bug #8)", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("ctrl", "drug"),
+        colors = c("#000000", "#111111")
+      ),
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high", "na_color"),
+        colors = c("#FF0000", "#00FF00", "#0000FF", "#BBBBBB")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(custom_colors, temp_file)
+
+  # Wipe colors so the importer has something to change.
+  custom_colors$multi_ome$treatment$colors <- c("#777777", "#888888")
+  custom_colors$multi_ome$age$colors <- c("#777777", "#777777", "#777777", "#777777")
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$treatment$colors, c("#000000", "#111111"))
+  expect_equal(result$multi_ome$age$colors,
+               c("#FF0000", "#00FF00", "#0000FF", "#BBBBBB"))
+
+  unlink(temp_file)
+})
+
+
+test_that("export_colors_to_yaml - skips continuous function-form palettes (bug #8)", {
+  # When continuous.return_function=TRUE, $colors is a circlize colorRamp2
+  # closure -- not YAML-serializable. Must be silently skipped, not crash.
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = NULL,
+        colors = function(x) "#AAAAAA"  # stand-in for a colorRamp2 closure
+      ),
+      group = list(
+        is_discrete = TRUE,
+        vals = c("A", "B"),
+        colors = c("#111111", "#222222")
+      )
+    )
+  )
+
+  temp_file <- tempfile(fileext = ".yaml")
+  expect_no_error(export_colors_to_yaml(custom_colors, temp_file))
+
+  yaml_back <- yaml::read_yaml(temp_file)
+  # Discrete entry exported normally
+  expect_equal(as.character(yaml_back$colors$multi_ome$group$A), "#111111")
+  # Function-form continuous entry not emitted
+  expect_null(yaml_back$continuous_colors$multi_ome$age)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - unused colors stay within their column (bug #5)", {
+  # `treatment` is in the YAML, `batch` is not. Previously, leftover YAML
+  # colors from `treatment` would bleed into `batch`'s unmatched conditions.
+  # Now `batch` must keep its defaults.
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("ctrl", "drug"),
+        colors = c("#000000", "#111111")
+      ),
+      batch = list(
+        is_discrete = TRUE,
+        vals = c("batch1", "batch2"),
+        colors = c("#AAAAAA", "#BBBBBB")  # colorblind-safe defaults
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      ctrl: '#4477AA'
+      drug: '#EE6677'
+      extra: '#228833'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  # treatment gets its YAML colors
+  expect_equal(result$multi_ome$treatment$colors, c("#4477AA", "#EE6677"))
+
+  # batch is absent from YAML -> defaults preserved; #228833 must NOT leak in.
+  expect_equal(result$multi_ome$batch$colors, c("#AAAAAA", "#BBBBBB"))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml - duplicate condition names keep per-column color (bug #6)", {
+  # `Control` appears in both `Treatment` and `QC.status` with DIFFERENT
+  # colors in the YAML. Previously only the first occurrence survived
+  # globally, losing per-column distinctness on round-trip. Now each
+  # column gets its own color.
+  custom_colors <- list(
+    multi_ome = list(
+      Treatment = list(
+        is_discrete = TRUE,
+        vals = c("Control", "DrugA"),
+        colors = c("#000000", "#111111")
+      ),
+      QC.status = list(
+        is_discrete = TRUE,
+        vals = c("Control", "Fail"),
+        colors = c("#222222", "#333333")
+      )
+    )
+  )
+
+  yaml_content <- "
+colors:
+  multi_ome:
+    Treatment:
+      Control: '#4477AA'
+      DrugA: '#EE6677'
+    QC.status:
+      Control: '#228833'
+      Fail: '#CCBB44'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  result <- import_colors_from_yaml(temp_file, custom_colors)
+
+  expect_equal(result$multi_ome$Treatment$colors[1], "#4477AA")   # Treatment's Control
+  expect_equal(result$multi_ome$QC.status$colors[1], "#228833")   # QC.status's Control -- must differ
+
+  unlink(temp_file)
+})
+
+
+test_that("colors_structure_signature - stable under color-only edits (bug #4)", {
+  before <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  after_edit <- before
+  after_edit$multi_ome$treatment$colors <- c("#AAAAAA", "#BBBBBB")
+
+  # Color edits must NOT change the signature -- otherwise the Customize
+  # observer would clobber user edits back to globals$colors every time.
+  expect_identical(
+    colors_structure_signature(before),
+    colors_structure_signature(after_edit)
+  )
+})
+
+
+test_that("colors_structure_signature - changes when omes/columns change (bug #4)", {
+  small <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("#111", "#222"))
+    )
+  )
+  new_ome <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("#111", "#222"))
+    ),
+    ome2 = list(
+      batch = list(is_discrete = TRUE, vals = c("X", "Y"), colors = c("#333", "#444"))
+    )
+  )
+  new_vals <- list(
+    ome1 = list(
+      group = list(is_discrete = TRUE, vals = c("A", "B", "C"), colors = c("#1", "#2", "#3"))
+    )
+  )
+
+  # Adding an ome changes the signature -> refresh fires.
+  expect_false(identical(colors_structure_signature(small),
+                         colors_structure_signature(new_ome)))
+  # Adding a condition value changes the signature -> refresh fires.
+  expect_false(identical(colors_structure_signature(small),
+                         colors_structure_signature(new_vals)))
+
+  # Empty / NULL inputs return empty string consistently.
+  expect_identical(colors_structure_signature(NULL), "")
+  expect_identical(colors_structure_signature(list()), "")
+})
+
+
+test_that("make_custom_colors - handles regex-metachar column names (bug #11)", {
+  mock_gct <- new("GCT",
+    mat = matrix(1:9, nrow = 3, ncol = 3),
+    rdesc = data.frame(id = paste0("gene_", 1:3)),
+    cdesc = data.frame(
+      `group+plus` = c("A", "B", "C"),
+      `treatment(type)` = c("X", "Y", "Z"),
+      row.names = paste0("sample_", 1:3),
+      check.names = FALSE
+    ),
+    rid = paste0("gene_", 1:3),
+    cid = paste0("sample_", 1:3)
+  )
+
+  # Merged GCT has the same columns with ome-suffixed variants (simulating the
+  # code path that exercises the regex).
+  mock_merged <- new("GCT",
+    mat = matrix(1:9, nrow = 3, ncol = 3),
+    rdesc = data.frame(id = paste0("gene_", 1:3)),
+    cdesc = data.frame(
+      `group+plus` = c("A", "B", "C"),
+      `treatment(type)` = c("X", "Y", "Z"),
+      row.names = paste0("sample_", 1:3),
+      check.names = FALSE
+    ),
+    rid = paste0("gene_", 1:3),
+    cid = paste0("sample_", 1:3)
+  )
+
+  # Must not error on regex construction.
+  expect_no_error(result <- make_custom_colors(list(ome1 = mock_gct), mock_merged))
+  expect_true("group+plus" %in% names(result$ome1))
+  expect_true("treatment(type)" %in% names(result$ome1))
+})
+
+
+# ---------------------------------------------------------------------------
+# H3: import_colors_from_yaml_full structured-result tests
+# ---------------------------------------------------------------------------
+
+test_that("import_colors_from_yaml_full - returns structured result with all fields", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("control", "drug_A"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      control: '#4477AA'
+      drug_A: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+
+  expect_named(res, c("colors", "n_columns_updated", "n_omes_in_yaml",
+                      "invalid_entries", "missing_omes", "format",
+                      "warnings", "skipped_continuous_function_palettes",
+                      "alpha_stripped_count"))
+  expect_equal(res$format, "ProTIGY")
+  expect_equal(res$n_columns_updated, 1L)
+  expect_equal(res$n_omes_in_yaml, 1L)
+  expect_length(res$invalid_entries, 0)
+  expect_length(res$missing_omes, 0)
+  expect_length(res$warnings, 0)
+  expect_equal(res$alpha_stripped_count, 0L)
+  expect_equal(res$colors$multi_ome$treatment$colors, c("#4477AA", "#EE6677"))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports missing_omes", {
+  custom_colors <- list(
+    proteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  yaml_content <- "
+colors:
+  proteome:
+    treatment:
+      a: '#4477AA'
+  phosphoproteome:
+    treatment:
+      a: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$missing_omes, "phosphoproteome")
+  expect_equal(res$n_omes_in_yaml, 1L)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports format for PANOPLY shapes", {
+  custom_colors <- list(
+    multi_ome = list(treatment = list(is_discrete = TRUE,
+                                       vals = c("a", "b"),
+                                       colors = c("#000", "#000")))
+  )
+
+  # Nested PANOPLY
+  nested_file <- tempfile(fileext = ".yaml")
+  writeLines("groups.colors:\n  treatment:\n    a: '#4477AA'\n    b: '#EE6677'\n", nested_file)
+  expect_equal(import_colors_from_yaml_full(nested_file, custom_colors)$format, "PANOPLY-nested")
+  unlink(nested_file)
+
+  # Flat PANOPLY
+  flat_file <- tempfile(fileext = ".yaml")
+  writeLines("groups.colors:\n  a: '#4477AA'\n  b: '#EE6677'\n", flat_file)
+  expect_equal(import_colors_from_yaml_full(flat_file, custom_colors)$format, "PANOPLY-flat")
+  unlink(flat_file)
+})
+
+
+test_that("import_colors_from_yaml_full - normalizes 3-digit hex on import", {
+  custom_colors <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    g:
+      a: '#FFF'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$colors$multi_ome$g$colors, "#FFFFFF")
+  expect_length(res$invalid_entries, 0)
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - strips alpha and counts it", {
+  custom_colors <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a", "b"), colors = c("#000000", "#111111"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    g:
+      a: '#AABBCCDD'
+      b: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$colors$multi_ome$g$colors, c("#AABBCC", "#EE6677"))
+  expect_equal(res$alpha_stripped_count, 1L)
+  expect_true(any(grepl("alpha channel", res$warnings)))
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - reports skipped continuous function palettes", {
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high"),
+        colors = function(x) "#AAAAAA"   # function-form palette
+      )
+    )
+  )
+  yaml_content <- "
+continuous_colors:
+  multi_ome:
+    age:
+      low: '#FF0000'
+      mid: '#00FF00'
+      high: '#0000FF'
+colors:
+  multi_ome: {}
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+  expect_equal(res$skipped_continuous_function_palettes, "multi_ome$age")
+
+  unlink(temp_file)
+})
+
+
+test_that("import_colors_from_yaml_full - continuous invalid hex includes the key (low/mid/high)", {
+  # Regression for C8: invalid_entries previously reported only the bad value
+  # for continuous palettes, dropping the low/mid/high key. The fix iterates
+  # by index and includes yaml_names[k] in the message.
+  custom_colors <- list(
+    multi_ome = list(
+      age = list(
+        is_discrete = FALSE,
+        vals = c("low", "mid", "high"),
+        colors = c("#FF0000", "#00FF00", "#0000FF")
+      )
+    )
+  )
+  yaml_content <- "
+continuous_colors:
+  multi_ome:
+    age:
+      low: '#FF0000'
+      mid: '#zzz'
+      high: '#0000FF'
+colors:
+  multi_ome: {}
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  res <- import_colors_from_yaml_full(temp_file, custom_colors)
+
+  expect_length(res$invalid_entries, 1)
+  expect_match(res$invalid_entries[[1]],
+               "multi_ome\\$age\\$mid \\(continuous\\) = #zzz",
+               fixed = FALSE)
+  # Valid entries still applied; bad mid leaves original at index 2.
+  expect_equal(res$colors$multi_ome$age$colors,
+               c("#FF0000", "#00FF00", "#0000FF"))
+
+  unlink(temp_file)
+})
+
+test_that("import_colors_from_yaml back-compat wrapper still emits warning() for invalid hex", {
+  custom_colors <- list(
+    multi_ome = list(
+      treatment = list(
+        is_discrete = TRUE,
+        vals = c("a", "b"),
+        colors = c("#000000", "#111111")
+      )
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    treatment:
+      a: 'not-a-hex'
+      b: '#EE6677'
+"
+  temp_file <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, temp_file)
+
+  expect_warning(
+    out <- import_colors_from_yaml(temp_file, custom_colors),
+    "invalid hex color"
+  )
+  expect_type(out, "list")  # back-compat: just the colors list
+  expect_equal(out$multi_ome$treatment$colors[1], "#000000")  # original preserved
+  expect_equal(out$multi_ome$treatment$colors[2], "#EE6677")
+
+  unlink(temp_file)
+})
+
+
+# ---------------------------------------------------------------------------
+# get_preset_palette tests
+# ---------------------------------------------------------------------------
+
+test_that("get_preset_palette - returns N colors for known names", {
+  for (name in c("Paul Tol Bright", "Paul Tol Vibrant", "Paul Tol Muted",
+                 "ColorBrewer Set2", "ColorBrewer Paired", "Viridis")) {
+    pal <- get_preset_palette(name, n = 5)
+    expect_length(pal, 5)
+    expect_true(all(grepl("^#[0-9A-F]{6}$", pal)),
+                info = paste("Palette:", name))
+  }
+})
+
+
+test_that("get_preset_palette - reverse=TRUE flips order", {
+  forward <- get_preset_palette("Paul Tol Bright", 5)
+  reverse <- get_preset_palette("Paul Tol Bright", 5, reverse = TRUE)
+  expect_equal(reverse, rev(forward))
+})
+
+
+test_that("get_preset_palette - interpolates beyond palette max", {
+  pal <- get_preset_palette("Paul Tol Bright", n = 20)
+  expect_length(pal, 20)
+  expect_true(all(grepl("^#[0-9A-F]{6}$", pal)))
+})
+
+
+test_that("get_preset_palette - errors on unknown name", {
+  expect_error(get_preset_palette("Banana", n = 3), "Unknown preset palette")
+})
+
+
+# ---------------------------------------------------------------------------
+# colors_structure_signature collision tests (M6)
+# ---------------------------------------------------------------------------
+
+test_that("colors_structure_signature - distinguishes values containing | and ;", {
+  s_pipe <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a|b", "c"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  s_no_pipe <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a", "b|c"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  expect_false(identical(s_pipe, s_no_pipe))
+
+  s_semi <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a;b"),
+                              is_discrete = TRUE,
+                              colors = c("#000")))
+  ))
+  s_split <- colors_structure_signature(list(
+    multi_ome = list(g = list(vals = c("a", "b"),
+                              is_discrete = TRUE,
+                              colors = c("#000", "#111")))
+  ))
+  expect_false(identical(s_semi, s_split))
+})
+
+
+# ---------------------------------------------------------------------------
+# sync_colors_across_omes -- direct multi-condition multi-ome test
+# ---------------------------------------------------------------------------
+
+test_that("sync_colors_across_omes - updates only the matching condition across omes", {
+  cc <- list(
+    multi_ome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    ),
+    proteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    ),
+    phosphoproteome = list(
+      treatment = list(is_discrete = TRUE, vals = c("ctrl", "drug"),
+                       colors = c("#AAAAAA", "#BBBBBB"))
+    )
+  )
+  out <- sync_colors_across_omes(cc, "treatment", "ctrl", "#FF0000")
+  expect_equal(out$multi_ome$treatment$colors, c("#FF0000", "#BBBBBB"))
+  expect_equal(out$proteome$treatment$colors, c("#FF0000", "#BBBBBB"))
+  expect_equal(out$phosphoproteome$treatment$colors, c("#FF0000", "#BBBBBB"))
+})
+
+
+test_that("sync_colors_across_omes - handles factor vals via as.character coercion", {
+  cc <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE,
+               vals = factor(c("a", "b")),
+               colors = c("#000", "#111"))
+    ),
+    ome1 = list(
+      g = list(is_discrete = TRUE,
+               vals = factor(c("a", "b")),
+               colors = c("#000", "#111"))
+    )
+  )
+  out <- sync_colors_across_omes(cc, "g", "a", "#FF0000")
+  expect_equal(out$multi_ome$g$colors[1], "#FF0000")
+  expect_equal(out$ome1$g$colors[1], "#FF0000")
+})
+
+
+# ---------------------------------------------------------------------------
+# Round-trip preservation for tricky inputs
+# ---------------------------------------------------------------------------
+
+test_that("export+import - factor vals round-trip preserves colors", {
+  cc <- list(
+    multi_ome = list(
+      group = list(is_discrete = TRUE,
+                   vals = factor(c("alpha", "beta", "gamma")),
+                   colors = c("#AABBCC", "#112233", "#445566"))
+    )
+  )
+  tf <- tempfile(fileext = ".yaml")
+  export_colors_to_yaml(cc, tf)
+
+  cc$multi_ome$group$colors <- c("#000000", "#000000", "#000000")
+  out <- import_colors_from_yaml(tf, cc)
+  expect_equal(out$multi_ome$group$colors, c("#AABBCC", "#112233", "#445566"))
+  unlink(tf)
+})
+
+
+test_that("export+import - empty omes do not crash importer", {
+  yaml_content <- "
+colors:
+  multi_ome: {}
+"
+  tf <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, tf)
+  cc <- list(
+    multi_ome = list(
+      g = list(is_discrete = TRUE, vals = c("a"), colors = c("#000000"))
+    )
+  )
+  expect_no_error(out <- import_colors_from_yaml_full(tf, cc))
+  expect_equal(out$colors$multi_ome$g$colors, "#000000")  # unchanged
+  unlink(tf)
+})
+
+
+test_that("import - YAML keys with embedded special chars (+, parens) match", {
+  cc <- list(
+    multi_ome = list(
+      `group+plus` = list(is_discrete = TRUE,
+                          vals = c("a+b", "c(d)"),
+                          colors = c("#000000", "#111111"))
+    )
+  )
+  yaml_content <- "
+colors:
+  multi_ome:
+    group+plus:
+      'a+b': '#4477AA'
+      'c(d)': '#EE6677'
+"
+  tf <- tempfile(fileext = ".yaml")
+  writeLines(yaml_content, tf)
+  out <- import_colors_from_yaml(tf, cc)
+  expect_equal(out$multi_ome$`group+plus`$colors, c("#4477AA", "#EE6677"))
+  unlink(tf)
 })

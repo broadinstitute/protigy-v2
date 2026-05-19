@@ -80,3 +80,4 @@ Principal Component Analysis (PCA) plots are available in the **QC** tab and hel
   - **Fill Shapes**: Toggle to switch between hollow (default) and filled shapes when using shape visualization
     - **Hollow shapes (default)**: Open shapes without fill for better visibility
     - **Filled shapes**: Solid filled shapes when the toggle is enabled
+

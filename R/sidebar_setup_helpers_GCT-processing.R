@@ -272,6 +272,82 @@ protigy_legacy_id_query <- function(ids, keytype) {
   }
 }
 
+#' One string: `ProteinID_siteID_garbage` -> `ProteinID_siteID` for volcano display.
+#' Uses `protigy_legacy_detect_keytype()` + accession rules aligned with
+#' `protigy_legacy_id_query()` (UniProt prefix), and RefSeq / ENSP / ENSG regex
+#' at string start so versions like `NP_000468.1` are kept.
+#' @noRd
+protigy_legacy_protein_site_display_id_one <- function(s) {
+  s <- trimws(as.character(s))
+  if (length(s) != 1L) s <- s[1L]
+  if (is.na(s) || !nzchar(s)) return(s)
+  # Same space/underscore normalisation as earlier volcano display logic
+  repeat {
+    t2 <- gsub("_\\s+(\\d+)", "_\\1", s, perl = TRUE)
+    t2 <- gsub("\\s+(_\\d+)", "\\1", t2, perl = TRUE)
+    if (identical(t2, s)) break
+    s <- t2
+  }
+
+  kt <- protigy_legacy_detect_keytype(s)
+  p  <- ""
+
+  if (kt == "UNIPROT") {
+    q <- protigy_legacy_id_query(s, "UNIPROT")
+    if (nzchar(q) && startsWith(s, q)) p <- q
+  } else if (kt == "REFSEQ") {
+    m <- regexpr(
+      "^(?:NP|NM|NR|NC|NG|NW|NZ|NT|AC|XM|XR|XP|YP|WP)_\\d+(?:\\.\\d+)?",
+      s,
+      perl = TRUE
+    )
+    if (!identical(m, -1L)) {
+      ml <- attr(m, "match.length")[1L]
+      if (!is.na(ml) && ml > 0L) p <- substr(s, 1L, ml)
+    }
+  } else if (kt == "ENSEMBLPROT") {
+    m <- regexpr("^ENSP\\d+(?:\\.\\d+)?", s, perl = TRUE)
+    if (!identical(m, -1L)) {
+      ml <- attr(m, "match.length")[1L]
+      if (!is.na(ml) && ml > 0L) p <- substr(s, 1L, ml)
+    }
+  } else if (kt == "ENSEMBL") {
+    m <- regexpr("^ENSG\\d+(?:\\.\\d+)?", s, perl = TRUE)
+    if (!identical(m, -1L)) {
+      ml <- attr(m, "match.length")[1L]
+      if (!is.na(ml) && ml > 0L) p <- substr(s, 1L, ml)
+    }
+  }
+
+  if (!nzchar(p)) return(s)
+
+  if (nchar(s) <= nchar(p)) return(p)
+
+  rest <- substr(s, nchar(p) + 1L, nchar(s))
+  if (!startsWith(rest, "_")) return(s)
+
+  suffix <- substr(rest, 2L, nchar(rest))
+  if (!nzchar(suffix)) return(p)
+
+  brk <- regexpr("_", suffix, fixed = TRUE)[[1L]]
+  if (is.na(brk) || brk < 1L) {
+    site <- suffix
+  } else {
+    site <- substr(suffix, 1L, brk - 1L)
+  }
+  if (!nzchar(site)) return(p)
+
+  trimws(paste0(p, "_", site))
+}
+
+#' Vectorized `protigy_legacy_protein_site_display_id_one()`.
+#' @noRd
+protigy_legacy_protein_site_display_id <- function(x) {
+  x <- as.character(x)
+  if (length(x) == 0L) return(x)
+  vapply(x, protigy_legacy_protein_site_display_id_one, character(1L), USE.NAMES = FALSE)
+}
+
 #' Map a character vector of row IDs to gene symbols using one keytype + mapIds (Protigy-style).
 #'
 #' @return `list(symbols = character, keytype = character, n_total = int, n_unmapped = int)`.
@@ -531,6 +607,98 @@ repackage_transformed_gct_with_upload_rdesc <- function(gct_transformed, gct_upl
     gct_transformed@rdesc <- strip_gene_symbol_mapping_columns(gct_transformed@rdesc)
   }
   gct_transformed
+}
+
+# Split a tab-delimited line while preserving empty fields between delimiters.
+# @noRd
+split_tab_fields <- function(line) {
+  strsplit(line, "\t", fixed = TRUE)[[1]]
+}
+
+# Parse .gct cdesc metadata as raw character values (no numeric coercion).
+# This preserves annotation values like "001" exactly as provided in file.
+# @noRd
+read_gct_cdesc_as_character <- function(file_path) {
+  lines <- readLines(file_path, warn = FALSE)
+  if (length(lines) < 3L) {
+    stop("Invalid .gct file (expected at least 3 lines): ", file_path)
+  }
+
+  dims <- suppressWarnings(as.integer(split_tab_fields(lines[2L])))
+  if (length(dims) < 2L || any(is.na(dims[1:2]))) {
+    stop("Invalid .gct dimensions line: ", file_path)
+  }
+  ncmat <- dims[2L]
+  nrhd <- if (length(dims) >= 3L && !is.na(dims[3L])) dims[3L] else 0L
+  nchd <- if (length(dims) >= 4L && !is.na(dims[4L])) dims[4L] else 0L
+
+  header <- split_tab_fields(lines[3L])
+  if (nrhd > 0L) {
+    cid <- header[(nrhd + 2L):length(header)]
+  } else {
+    has_description <- any(grepl("description", header, ignore.case = TRUE))
+    col_offset <- if (has_description) 2L else 1L
+    cid <- header[(col_offset + 1L):length(header)]
+  }
+  cid <- as.character(cid)
+  if (length(cid) != ncmat) {
+    warning(
+      "Parsed cdesc sample count (", length(cid), ") does not match matrix sample count (",
+      ncmat, ") for ", basename(file_path), "."
+    )
+  }
+
+  if (nchd <= 0L) {
+    cdesc <- data.frame(id = cid, stringsAsFactors = FALSE)
+    rownames(cdesc) <- cid
+    return(cdesc)
+  }
+
+  meta_start <- 4L
+  meta_end <- 3L + nchd
+  if (length(lines) < meta_end) {
+    stop("Invalid .gct file (missing cdesc header rows): ", file_path)
+  }
+
+  cdesc_values <- vector("list", length = nchd)
+  cdesc_names <- character(nchd)
+  for (i in seq_len(nchd)) {
+    fields <- split_tab_fields(lines[meta_start + i - 1L])
+    value_start <- nrhd + 2L
+    value_end <- value_start + length(cid) - 1L
+    if (length(fields) < value_end) {
+      fields <- c(fields, rep(NA_character_, value_end - length(fields)))
+    }
+    cdesc_names[i] <- as.character(fields[1L])
+    cdesc_values[[i]] <- as.character(fields[value_start:value_end])
+  }
+
+  cdesc <- as.data.frame(cdesc_values, stringsAsFactors = FALSE, check.names = FALSE)
+  names(cdesc) <- make.unique(cdesc_names)
+  rownames(cdesc) <- cid
+  cdesc$id <- rownames(cdesc)
+  cdesc
+}
+
+# Parse a GCT/GCTX file while preserving .gct cdesc annotation values as strings.
+# @noRd
+parse_gctx_preserve_cdesc <- function(file_path) {
+  gct <- parse_gctx(file_path)
+  if (!grepl("\\.gct$", tolower(file_path))) {
+    return(gct)
+  }
+
+  cdesc_raw <- read_gct_cdesc_as_character(file_path)
+  if (!setequal(rownames(cdesc_raw), gct@cid)) {
+    warning(
+      "Could not safely restore raw cdesc values from .gct for ",
+      basename(file_path),
+      "; parsed cdesc rownames did not match GCT sample IDs."
+    )
+    return(gct)
+  }
+  gct@cdesc <- cdesc_raw[gct@cid, , drop = FALSE]
+  gct
 }
 
 # function to transform original GCT file so it is comparable to processed GCT file

@@ -1015,6 +1015,42 @@ test_that("create_PCA_plot handles hyphens in group names", {
   expect_true("Non-inflamed" %in% as.character(annot_col) || "Non-inflamed" %in% levels(annot_col))
 })
 
+test_that("create_PCA_plot uses alphabetical legend levels for discrete annotations", {
+  mock_gct <- create_mock_gct()
+  # Deliberately non-alphabetical order in data; legend should still be alphabetical.
+  mock_gct@cdesc$group <- c("zeta", "beta", "alpha", "beta", "zeta", "alpha", "beta", "alpha")
+
+  mock_colors <- list(
+    is_discrete = TRUE,
+    colors = list(group = c("red", "green", "blue")),
+    vals = c("alpha", "beta", "zeta")
+  )
+
+  result <- create_PCA_plot(mock_gct, "group", "test_ome", mock_colors, 1, 2)
+  expect_s3_class(result, "ggplot")
+  expect_identical(levels(result$data$group), c("alpha", "beta", "zeta"))
+})
+
+test_that("create_PCA_plot alphabetizes second variable legend levels", {
+  mock_gct <- create_mock_gct()
+  mock_gct@cdesc$group <- c("beta", "alpha", "beta", "alpha", "beta", "alpha", "beta", "alpha")
+  mock_gct@cdesc$batch <- c("z2", "z1", "z3", "z1", "z2", "z3", "z1", "z2")
+
+  mock_colors <- list(
+    is_discrete = TRUE,
+    colors = list(group = c("red", "blue")),
+    vals = c("alpha", "beta")
+  )
+
+  result <- create_PCA_plot(
+    mock_gct, "group", "test_ome", mock_colors, 1, 2,
+    second_col_of_interest = "batch", var1_display = "color", var2_display = "shape"
+  )
+  expect_s3_class(result, "ggplot")
+  expect_identical(levels(result$data$group), c("alpha", "beta"))
+  expect_identical(levels(result$data$batch), c("z1", "z2", "z3"))
+})
+
 test_that("create_PCA_plot handles continuous color mapping", {
   # Test PCA plot with continuous color mapping
   # Use a variable with many unique values (>20) to ensure it's treated as continuous

@@ -87,9 +87,12 @@ section.sidebar {
 /* the labels for all inputs*/
 .small-input .control-label {
   font-weight: 400;
+  display: block;
+  max-width: 100%;
+  white-space: normal;
   word-wrap: break-word;
-  overflow-wrap: break-word;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* style for primary action button */

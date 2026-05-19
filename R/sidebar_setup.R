@@ -196,7 +196,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     GCTs_and_params <- reactiveVal() # GCT object and corresponding parameters
     globals <- reactiveValues() # global values for plots, displays, etc.
     GCTs_original <- reactiveVal() # the original GCTS (not processed)
-    
+
+    # Export internal reactive state for shinytest2 integration tests.
+    # These are no-ops in production (shiny.testmode is FALSE by default).
+    shiny::exportTestValues(
+      sidebar_setup_complete   = { !is.null(GCTs_and_params()) },
+      sidebar_labels_validated = { labelsGO() > 0 }
+    )
+
     # initialize INTERNAL reactive values....only used in this module
     parameters_internal_reactive <- reactiveVal()
     GCTs_unprocessed_internal_reactive <- reactiveVal()
@@ -284,7 +291,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
-                style = "flex: 1; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; line-height: 1.4;",
+                style = "flex: 1 1 auto; min-width: 0; padding-right: 10px; color: #333; font-size: 13px; word-wrap: break-word; overflow-wrap: anywhere; word-break: break-word; white-space: normal; line-height: 1.4;",
                 files$name[i]
               ),
               actionButton(
@@ -580,10 +587,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
 
     # update GCT parameters with gct file paths and labels once labels are submitted
     observeEvent(labelsGO(), {
-      # Check if parameters are already set up (CSV/Excel case) or need label assignment (GCT case)
+      # Rebuild parameters for GCT uploads (supports adding files mid-session).
+      # Keep existing parameters only for CSV/Excel workflow, where converted
+      # parameters are already populated before labelsGO() increments.
       existing_params <- parameters_internal_reactive()
+      file_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+      is_gct_workflow <- all(file_extensions == "gct")
 
-      if (!is.null(existing_params) && length(existing_params) > 0) {
+      if (!is_gct_workflow && !is.null(existing_params) && length(existing_params) > 0) {
         # CSV/Excel case: parameters already have labels and structure, no need to rebuild
         message("Using existing CSV/Excel parameters with labels: ", paste(names(existing_params), collapse = ", "))
         gene_symbol_defaults_pending_labels(character(0))
@@ -623,9 +634,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     observeEvent(labelsGO(), {
       parameters <- parameters_internal_reactive()
       existing_gcts <- GCTs_unprocessed_internal_reactive()
+      file_extensions <- tools::file_ext(tolower(accumulated_files()$name))
+      is_gct_workflow <- all(file_extensions == "gct")
       
       # Check if GCTs are already parsed/converted (CSV/Excel case) or need parsing (GCT case)
-      if (!is.null(existing_gcts) && length(existing_gcts) > 0) {
+      if (!is_gct_workflow && !is.null(existing_gcts) && length(existing_gcts) > 0) {
         # CSV/Excel case: GCTs already converted and stored, just trigger UI update
         message("Using existing CSV/Excel converted GCTs: ", paste(names(existing_gcts), collapse = ", "))
         backNextLogic$placeChanged <- backNextLogic$placeChanged + 1
@@ -648,7 +661,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                   
                   # otherwise, parse the GCT
                 } else {
-                  gct <- parse_gctx(p$gct_file_path)
+                  gct <- parse_gctx_preserve_cdesc(p$gct_file_path)
                   incProgress(amount = 1)
                   return(gct)
                 }
@@ -685,7 +698,41 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       ignoreInit = TRUE,
       handlerExpr = {
         # get the correct label for this file
-        label = names(parameters_internal_reactive())[backNextLogic$place]
+        label <- names(parameters_internal_reactive())[backNextLogic$place]
+        params_now <- parameters_internal_reactive()
+        gcts_now <- GCTs_unprocessed_internal_reactive()
+        if (is.null(gcts_now)) {
+          gcts_now <- list()
+        }
+
+        # Defensive alignment: if a GCT is missing for the current label, attempt
+        # to parse it from the stored file path so setup navigation cannot skip/crash.
+        if (!is.null(label) && !(label %in% names(gcts_now)) && !is.null(params_now[[label]]$gct_file_path)) {
+          reparsed <- my_shinyalert_tryCatch(
+            text.error = "<b>Dataset Setup Error:</b>",
+            append.error = TRUE,
+            show.error = TRUE,
+            return.error = NULL,
+            expr = {
+              parse_gctx_preserve_cdesc(params_now[[label]]$gct_file_path)
+            }
+          )
+
+          if (!is.null(reparsed)) {
+            gcts_now[[label]] <- reparsed
+            GCTs_unprocessed_internal_reactive(gcts_now)
+          }
+        }
+
+        # If still missing, notify and stop rendering this step to avoid NULL-slot errors.
+        if (is.null(label) || is.null(GCTs_unprocessed_internal_reactive()[[label]])) {
+          showNotification(
+            "A dataset could not be loaded for setup. Please re-upload files and try again.",
+            type = "error",
+            duration = 8
+          )
+          return(NULL)
+        }
         
         # main GCT processing UI
         output$sideBarMain <- renderUI({gctSetupUI(ns = ns,
@@ -770,7 +817,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
         value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
-    }, ignoreInit = TRUE)
+    })
 
     # update sample filter values choices when sample filter column changes
     observe({

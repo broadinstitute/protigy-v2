@@ -87,9 +87,10 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             tags$li("QCProfilePlots_exports: Profile plots before and after normalization (PDF)"),
             tags$li("QCCorrelation_exports: Correlation heatmaps and boxplots (PDF)"),
             tags$li("QCPCA_exports: PCA plots and regression plots (PDF)"),
+            tags$li("QCCV_exports: CV tables (CSV), CV violin plots (PDF), and when CV filter is enabled, filtered CV tables/plots plus a CV-tab filtered GCT (does not replace the main processed GCT)"),
             tags$li("multiomeHeatmap_exports: Multi-omics heatmaps (PDF)"),
             tags$li("statSummary_exports: P-value histograms (PDF), statistical summary tables (CSV), ssGSEA-ready GCT"),
-            tags$li("statPlot_exports: Volcano plots (PDF)"),
+            tags$li("statPlot_exports: Volcano plots (PDF) and volcano labeled-feature tables (CSV)"),
             tags$li("customization: Color scheme (YAML) - automatically included in all exports")
           ),
           

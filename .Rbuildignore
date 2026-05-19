@@ -5,3 +5,7 @@
 ^app\.R$
 ^rsconnect$
 ^dev$
+^\.positai$
+^\.claude$
+^\.Rprofile$
+^setup\.R$

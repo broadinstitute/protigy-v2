@@ -111,7 +111,7 @@ app_UI <- function(request) {dashboardPage(
         "Help",
         tabPanel("General", helpGeneralTabUI(), value = "Help-General"),
         tabPanel("Customize", helpCustomizationTabUI(), value = "Help-Customize"),
-        tabPanel("Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
+        tabPanel("Setup + Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
         icon = icon("question")
       ),
       tabPanel("Customize",
@@ -122,6 +122,7 @@ app_UI <- function(request) {dashboardPage(
         "QC",
         tabPanel("Boxplots",QCBoxplots_Tab_UI(), value="QC-Boxplots"),
         tabPanel("Profile plots", QCProfilePlots_Tab_UI(),value="QC-Profile-Plots"),
+        tabPanel("CV", QCCV_Tab_UI(), value="QC-CV"),
         tabPanel("Correlation", QCCorrelation_Tab_UI(), value="QC-Correlation"),
         tabPanel("PCA", QCPCA_Tab_UI(), value="QC-PCA")),
      

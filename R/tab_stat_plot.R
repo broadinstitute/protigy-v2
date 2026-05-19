@@ -110,6 +110,33 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
       updateTabsetPanel(inputId = "ome_tabs", selected = default_ome())
     })
     
+    # poi_registry: parent-level named list keyed by "<ome>::<contrast_key>",
+    # each slot is a character() of feature IDs chosen by the user. Passed by
+    # reference into every ome module so union-across-contrasts works without
+    # each module poking at another's input$ state.
+    poi_registry <- reactiveVal(list())
+
+    # Initialize / extend registry when the ome set changes.
+    observeEvent(all_omes(), {
+      reg <- poi_registry()
+      missing_omes <- setdiff(all_omes(), names(reg))
+      if (length(missing_omes) > 0) {
+        reg[missing_omes] <- list(character(0))
+        poi_registry(reg)
+      }
+    }, ignoreNULL = TRUE)
+
+    # top_n_registry: parent-level named list keyed by "<ome>::<contrast_key>",
+    # each slot is a single integer — how many top significant features to label
+    # for that contrast. Independent per contrast; default 20L when not yet set.
+    top_n_registry <- reactiveVal(list())
+
+    # label_mode_registry: parent-level named list keyed by "<ome>::<contrast_key>",
+    # each slot is a character vector of active label modes for that contrast
+    # (e.g. c("poi", "significant_top20")). Independent per contrast so that
+    # checking "Top significant" on one contrast does not affect others.
+    label_mode_registry <- reactiveVal(list())
+
     # call the server function for each individual ome
     all_plots <- reactiveVal() # initialize
     observeEvent(all_omes(), {
@@ -123,7 +150,10 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map = reactive(custom_colors()[[ome]]),
           stat_params = stat_params,
-          stat_results = stat_results
+          stat_results = stat_results,
+          poi_registry = poi_registry,
+          top_n_registry = top_n_registry,
+          label_mode_registry = label_mode_registry
         )
       }, simplify = FALSE)
       
@@ -155,20 +185,205 @@ statPlot_Ome_Server <- function(id,
                                    default_annotation_column,
                                    color_map,
                                    stat_params,
-                                   stat_results) {
-  
+                                   stat_results,
+                                   poi_registry = NULL,
+                                   top_n_registry = NULL,
+                                   label_mode_registry = NULL) {
+
   ## module function
   moduleServer(id, function (input, output, session) {
-    
+
     # get namespace, use in renderUI-like functions
     ns <- session$ns
 
-    ## PROTEIN SEARCH & LABELING ################################################
-    # proteins_of_interest: per-ome reactiveVal storing feature IDs the user has
-    # selected via search or by clicking on the plot.
-    # hidden_label_count: count of labels suppressed by the overlap-avoidance algo.
-    proteins_of_interest <- reactiveVal(character(0))
-    hidden_label_count   <- reactiveVal(0L)
+    ## FEATURE SEARCH & LABELING ################################################
+    # POI is stored per contrast, not per ome, so features added while viewing
+    # one contrast do not bleed into other contrasts.
+    # Registry key format: "<ome>::<contrast_key>"
+    # For one-sample tests: contrast_key = input$volcano_groups
+    # For two-sample tests: contrast_key = input$volcano_contrasts
+
+    # current_contrast_key: reactive string identifying the active contrast.
+    # Returns NULL when the contrast input is not yet available.
+    current_contrast_key <- reactive({
+      req(stat_params())
+      test <- stat_params()[[ome]]$test
+      if (is.null(test) || test == "None" || test == "Moderated F test") return(NULL)
+      if (test == "One-sample Moderated T-test") {
+        req(input$volcano_groups)
+        paste0(ome, "::", input$volcano_groups)
+      } else {
+        req(input$volcano_contrasts)
+        paste0(ome, "::", input$volcano_contrasts)
+      }
+    })
+
+    # proteins_of_interest: reads the current contrast's slot from the registry.
+    proteins_of_interest <- reactive({
+      key <- current_contrast_key()
+      req(key)
+      reg <- poi_registry()
+      reg[[key]] %||% character(0)
+    })
+
+    # Setter helper — writes to the current contrast's slot in the shared registry.
+    set_poi <- function(new_ids) {
+      key <- isolate(current_contrast_key())
+      if (is.null(key)) return()
+      reg <- poi_registry()
+      reg[[key]] <- unique(as.character(new_ids))
+      poi_registry(reg)
+    }
+
+    # top_n_sig: reads this contrast's top-N value from the registry (default 20).
+    top_n_sig <- reactive({
+      key <- current_contrast_key()
+      req(key)
+      reg <- top_n_registry()
+      reg[[key]] %||% 20L
+    })
+
+    # Setter — writes this contrast's top-N value into the shared registry.
+    set_top_n <- function(n) {
+      key <- isolate(current_contrast_key())
+      if (is.null(key)) return()
+      reg <- top_n_registry()
+      reg[[key]] <- max(1L, as.integer(n)[1L])
+      top_n_registry(reg)
+    }
+
+    # label_mode_for_contrast: reads this contrast's stored label modes from
+    # the registry. Default character(0) when the contrast is first visited.
+    label_mode_for_contrast <- reactive({
+      key <- current_contrast_key()
+      req(key)
+      reg <- label_mode_registry()
+      reg[[key]] %||% character(0)
+    })
+
+    # Setter — writes this contrast's label modes into the shared registry.
+    set_label_mode <- function(modes) {
+      key <- isolate(current_contrast_key())
+      if (is.null(key)) return()
+      reg <- label_mode_registry()
+      reg[[key]] <- as.character(modes %||% character(0))
+      label_mode_registry(reg)
+    }
+
+    # Persist checkbox state into registry when the user checks/unchecks.
+    # ignoreInit = TRUE: the checkbox fires on load (value = character(0)), which
+    # would overwrite a previously saved value before the contrast-sync observer
+    # has had a chance to restore it. Skipping init is safe — the contrast-change
+    # observer handles the initial population.
+    observeEvent(input$label_mode, {
+      set_label_mode(input$label_mode)
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
+
+    # When the active contrast changes, restore its stored label_mode into the UI.
+    # isolate() around label_mode_for_contrast() avoids creating a reactive
+    # dependency on the registry here (contrast key change is the only trigger).
+    observeEvent(current_contrast_key(), {
+      stored <- isolate(label_mode_for_contrast())
+      updateCheckboxGroupInput(session, "label_mode", selected = stored)
+      # Re-apply mutual-exclusion disable state when switching contrasts.
+      grp_id <- ns("label_mode")
+      if ("significant" %in% stored) {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+      } else if ("significant_top20" %in% stored) {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+      } else {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"], #%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id
+        ))
+      }
+    }, ignoreNULL = TRUE, ignoreInit = FALSE)
+
+    # Mutual exclusion between "All significant" and "Top significant":
+    # checking one unchecks and disables the other.
+    observeEvent(input$label_mode, {
+      grp_id <- ns("label_mode")
+      if ("significant" %in% input$label_mode) {
+        # Uncheck and disable "Top significant"
+        updateCheckboxGroupInput(session, "label_mode",
+          selected = setdiff(input$label_mode, "significant_top20"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id
+        ))
+      } else if ("significant_top20" %in% input$label_mode) {
+        # Uncheck and disable "All significant"
+        updateCheckboxGroupInput(session, "label_mode",
+          selected = setdiff(input$label_mode, "significant"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id
+        ))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id
+        ))
+      } else {
+        # Neither checked — re-enable both
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"significant_top20\"], #%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id
+        ))
+      }
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
+    hidden_label_count <- reactiveVal(0L)
+
+    # union_mode: "none" | "ome"
+    # "ome" is driven by this ome's local label_union_ome checkbox (labeled
+    # "Label features for all contrasts" in the UI).
+    union_mode <- reactive({
+      if (isTRUE(input$label_union_ome)) return("ome")
+      "none"
+    })
+
+    # ome_union_poi: union of all POI slots belonging to this ome (all contrasts).
+    # Used when union_mode() == "ome" to label across contrasts within the ome.
+    ome_union_poi <- reactive({
+      req(union_mode() == "ome")
+      reg    <- poi_registry()
+      prefix <- paste0(ome, "::")
+      keys   <- names(reg)[startsWith(names(reg), prefix)]
+      Reduce(union, lapply(keys, function(k) reg[[k]] %||% character(0)), init = character(0))
+    })
+
+    # top_n_ui: shows a numeric input below the "Top significant" checkbox,
+    # only when that checkbox is checked. Value is per-contrast from top_n_registry.
+    output$top_n_ui <- renderUI({
+      req("significant_top20" %in% label_mode_for_contrast())
+      numericInput(
+        ns("top_n_sig_input"),
+        label = "Number of top features:",
+        value = top_n_sig(),
+        min = 1, step = 1, width = "120px"
+      )
+    })
+
+    # Persist the user's chosen top-N into the registry when changed.
+    observeEvent(input$top_n_sig_input, {
+      req(is.numeric(input$top_n_sig_input), !is.na(input$top_n_sig_input))
+      set_top_n(input$top_n_sig_input)
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+    # When the active contrast changes, sync the numeric input to that contrast's value.
+    observeEvent(current_contrast_key(), {
+      updateNumericInput(session, "top_n_sig_input", value = isolate(top_n_sig()))
+    }, ignoreNULL = TRUE, ignoreInit = FALSE)
 
     output$ome_plot_contents <- renderUI({
       # fallback if stat_results not defined yet
@@ -188,13 +403,16 @@ statPlot_Ome_Server <- function(id,
         # Volcano plot + controls side by side
         fluidRow(
           column(8,
-            shinydashboardPlus::box(
-              plotlyOutput(ns("volcano_plot")),
-              status = "primary",
-              width = NULL,
-              title = "Volcano Plot",
-              headerBorder = TRUE,
-              solidHeader = TRUE
+            tagList(
+              shinydashboardPlus::box(
+                plotlyOutput(ns("volcano_plot")),
+                status = "primary",
+                width = NULL,
+                title = "Volcano Plot",
+                headerBorder = TRUE,
+                solidHeader = TRUE
+              ),
+              uiOutput(ns("hidden_labels_warning"))
             )
           ),
           column(4,
@@ -226,40 +444,106 @@ statPlot_Ome_Server <- function(id,
         NULL
       }
 
-      # --- search column choices: all non-numeric columns in stat_results ---
-      search_col_choices <- if (!is.null(stat_results()) && !is.null(stat_results()[[ome]])) {
+      # --- non-numeric columns shared by label-column selector and search selector ---
+      char_cols_available <- if (!is.null(stat_results()) && !is.null(stat_results()[[ome]])) {
         df_cols   <- stat_results()[[ome]]
-        char_cols <- names(df_cols)[!sapply(df_cols, is.numeric)]
-        if (length(char_cols) == 0) char_cols <- names(df_cols)[1]
-        default_col <- grep("^id$", char_cols, value = TRUE, ignore.case = TRUE)
-        if (length(default_col) == 0) default_col <- char_cols[1]
-        list(choices = char_cols, selected = default_col[1])
+        cols      <- names(df_cols)[!sapply(df_cols, is.numeric)]
+        if (length(cols) == 0) cols <- names(df_cols)[1]
+        cols
       } else {
-        list(choices = "id", selected = "id")
+        "id"
       }
+      id_col_default <- {
+        hit <- grep("^id$", char_cols_available, value = TRUE, ignore.case = TRUE)
+        if (length(hit) > 0) hit[1] else char_cols_available[1]
+      }
+      # Ensure "id" (or the id column) appears first in the label-column list
+      label_col_choices <- unique(c(id_col_default, char_cols_available))
+      search_col_choices <- list(choices = char_cols_available, selected = id_col_default)
 
       tagList(
         group_contrast_selector,
 
         hr(),
 
+        # --- Label column selector ---
+        strong("Label column:"),
+        selectInput(
+          ns("label_column"),
+          label    = NULL,
+          choices  = label_col_choices,
+          selected = id_col_default
+        ),
+        checkboxInput(
+          ns("label_split_enabled"),
+          label = "Delimited values",
+          value = FALSE
+        ),
+        conditionalPanel(
+          condition = "input.label_split_enabled == true",
+          textInput(
+            ns("label_split_sep"),
+            label       = "Delimiter",
+            value       = ";",
+            placeholder = ";"
+          ),
+          helpText(
+            "If a label has several parts separated by this character (for example A;B;C), only the first part is shown."
+          ),
+          ns = ns
+        ),
+        checkboxInput(
+          ns("label_display_trim_enabled"),
+          label   = "Shorten long labels on plot",
+          value   = FALSE
+        ),
+
+        hr(),
+
         # --- Labeling mode ---
-        strong("Label Proteins:"),
+        strong("Label Features:"),
         checkboxGroupInput(
           ns("label_mode"),
           label    = NULL,
           choices  = c(
-            "Proteins of interest" = "poi",
-            "Top 20 significant"   = "significant_top20",
-            "All significant"      = "significant"
+            "Feature(s) of interest" = "poi",
+            "Top significant"        = "significant_top20",
+            "All significant"        = "significant"
           ),
           selected = character(0)
+        ),
+        helpText(
+          "Top significant and All significant pick plot labels from your results. ",
+          "They do not add anything to the manual list below."
+        ),
+        uiOutput(ns("top_n_ui")),
+
+        # --- Label across contrasts ---
+        # .volcano-union-checks targets the form-group margin so spacing matches
+        # the tight checkboxGroupInput style (default form-group margin-bottom is 15px).
+        tags$style(HTML(
+          ".volcano-union-checks .form-group { margin-bottom: 3px !important; }"
+        )),
+        tags$div(
+          style = paste(
+            "margin-top: 6px; margin-bottom: 4px; padding: 8px 10px;",
+            "border: 1px solid #cfe2ff; border-radius: 6px;",
+            "background-color: #f5f9ff;"
+          ),
+          tags$div(
+            style = "font-size: 12px; font-weight: 600; color: #2c5282; margin-bottom: 4px;",
+            "Across contrasts"
+          ),
+          tags$div(
+            class = "volcano-union-checks",
+            checkboxInput(ns("label_union_ome"), label = "Label features for all contrasts", value = FALSE)
+          )
         ),
 
         hr(),
 
         # --- Search section ---
-        strong("Search Proteins:"),
+        strong("Search Features:"),
         selectInput(
           ns("search_metadata_col"),
           label    = "Search column:",
@@ -269,7 +553,7 @@ statPlot_Ome_Server <- function(id,
         textAreaInput(
           ns("protein_search"),
           label       = NULL,
-          placeholder = "Paste IDs separated by space, comma, or semicolon",
+          placeholder = "Paste feature IDs separated by space, comma, or semicolon",
           rows        = 3
         ),
         actionButton(ns("search_btn"), "Search", class = "btn-sm btn-primary"),
@@ -277,44 +561,77 @@ statPlot_Ome_Server <- function(id,
         hr(),
 
         # --- POI list ---
-        strong("Proteins of Interest:"),
-        uiOutput(ns("poi_list_ui")),
-
-        # --- Hidden label warning ---
-        uiOutput(ns("hidden_labels_warning"))
+        strong("Feature(s) of Interest:"),
+        helpText(
+          "Only feature IDs you add with Search or by clicking the volcano appear here."
+        ),
+        uiOutput(ns("poi_list_ui"))
       )
     })
     
     # POI list UI
+    # In "none" mode: per-contrast list with individual remove buttons.
+    # In "ome" mode: read-only union list for all contrasts in this ome.
     output$poi_list_ui <- renderUI({
-      pois <- proteins_of_interest()
+      mode <- union_mode()
 
-      if (length(pois) == 0) {
-        return(p("No proteins selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
-      }
-
-      poi_rows <- lapply(pois, function(pid) {
-        fluidRow(
-          column(9, p(pid, style = "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;")),
-          column(3, actionButton(
-            inputId = ns(paste0("remove_poi_", make.names(pid))),
-            label   = "\u00d7",
-            class   = "btn-xs btn-danger",
-            style   = "padding: 1px 5px; margin: 0;"
-          ))
+      if (mode == "ome") {
+        # Show union of all contrast slots in this ome (read-only)
+        pois <- ome_union_poi()
+        if (length(pois) == 0) {
+          return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        }
+        tagList(
+          div(
+            style = "font-size: 12px; color: #555; max-height: 120px; overflow-y: auto;",
+            paste(pois, collapse = ", ")
+          ),
+          p("(Editing disabled while 'Label features for all contrasts' is on.)",
+            style = "font-size: 11px; color: #888; margin-top: 4px;"),
+          br(),
+          actionButton(ns("clear_all_poi"), "Clear all (current contrast)", class = "btn-xs btn-warning")
         )
-      })
 
-      tagList(
-        do.call(tagList, poi_rows),
-        br(),
-        actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
-      )
+      } else {
+        # "none" — per-contrast list with individual remove buttons
+        pois <- proteins_of_interest()
+        if (length(pois) == 0) {
+          return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
+        }
+        poi_rows <- lapply(pois, function(pid) {
+          fluidRow(
+            column(9, p(pid, style = "margin: 2px 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;")),
+            column(3, actionButton(
+              inputId = ns(paste0("remove_poi_", make.names(pid))),
+              label   = "\u00d7",
+              class   = "btn-xs btn-danger",
+              style   = "padding: 1px 5px; margin: 0;"
+            ))
+          )
+        })
+        tagList(
+          # Scroll container keeps the sidebar height stable when many POIs
+          # accumulate. Clear-all sits OUTSIDE so it stays visible without
+          # scrolling. Matches the read-only "ome" branch above (which uses
+          # 120px since it shows a comma-joined string instead of rows).
+          div(
+            style = "max-height: 220px; overflow-y: auto; overflow-x: hidden;",
+            do.call(tagList, poi_rows)
+          ),
+          br(),
+          actionButton(ns("clear_all_poi"), "Clear all", class = "btn-xs btn-warning")
+        )
+      }
     })
 
-    # Register per-protein remove button observers whenever POI list changes.
+    # Register per-feature remove button observers whenever POI list changes.
     # Track which buttons already have observers to avoid accumulating duplicates.
+    # Reset when the active contrast changes so each contrast gets a fresh slate.
     poi_observer_registry <- reactiveVal(character(0))
+
+    observeEvent(current_contrast_key(), {
+      poi_observer_registry(character(0))
+    }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
     observeEvent(proteins_of_interest(), {
       pois     <- proteins_of_interest()
@@ -330,7 +647,7 @@ statPlot_Ome_Server <- function(id,
           pid_local <- pid
           btn_id_local <- btn_id
           observeEvent(input[[btn_id_local]], {
-            proteins_of_interest(setdiff(proteins_of_interest(), pid_local))
+            set_poi(setdiff(proteins_of_interest(), pid_local))
             poi_observer_registry(setdiff(poi_observer_registry(), btn_id_local))
           }, ignoreNULL = TRUE, ignoreInit = TRUE, once = TRUE)
         })
@@ -342,27 +659,26 @@ statPlot_Ome_Server <- function(id,
 
     # Clear all POIs
     observeEvent(input$clear_all_poi, {
-      proteins_of_interest(character(0))
+      set_poi(character(0))
       hidden_label_count(0L)
     })
 
     # Auto-enable POI checkbox when proteins are added to the list
     observeEvent(proteins_of_interest(), {
       pois <- proteins_of_interest()
-      if (length(pois) > 0 && !"poi" %in% isolate(input$label_mode)) {
+      if (length(pois) > 0 && !"poi" %in% isolate(label_mode_for_contrast())) {
         updateCheckboxGroupInput(session, "label_mode",
-          selected = unique(c(isolate(input$label_mode), "poi")))
+          selected = unique(c(isolate(label_mode_for_contrast()), "poi")))
       }
     }, ignoreNULL = FALSE)
 
-    # Hidden label overflow warning
+    # Hidden label overlap note
     output$hidden_labels_warning <- renderUI({
       n <- hidden_label_count()
       if (is.null(n) || n == 0L) return(NULL)
-      div(
-        style = "margin-top: 8px; padding: 6px 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 12px; color: #856404;",
-        icon("triangle-exclamation"),
-        paste0(" Labels of ", n, " feature(s) were hidden due to overflow.")
+      helpText(
+        style = "margin-top: 6px; margin-bottom: 0; font-size: 12px;",
+        paste0("Note: Labels for ", n, " feature(s) are hidden to reduce overlap.")
       )
     })
 
@@ -412,8 +728,7 @@ statPlot_Ome_Server <- function(id,
       }
 
       if (length(matched_ids) > 0) {
-        current <- proteins_of_interest()
-        proteins_of_interest(unique(c(current, matched_ids)))
+        set_poi(unique(c(proteins_of_interest(), matched_ids)))
       }
     })
 
@@ -438,7 +753,11 @@ statPlot_Ome_Server <- function(id,
           volcano_contrasts = as.character(input$volcano_contrasts),
           df                = stat_results()[[ome]],
           stat_params       = stat_params,
-          stat_results      = stat_results
+          stat_results      = stat_results,
+          label_column                = input$label_column        %||% "id",
+          label_split_enabled         = isTRUE(input$label_split_enabled),
+          label_split_sep             = input$label_split_sep     %||% ";",
+          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled)
         ),
         error = function(e) {
           showNotification(
@@ -464,13 +783,80 @@ statPlot_Ome_Server <- function(id,
       )
 
       if (!is.null(df_plot)) {
+        # Apply user-selected label column to df_plot$geneSymbol before labeling
+        lbl_col_live <- input$label_column %||% "id"
+        if (lbl_col_live %in% colnames(df_raw)) {
+          id_col_live <- grep("^id$", colnames(df_raw), value = TRUE, ignore.case = TRUE)[1]
+          raw_vals <- df_raw[[lbl_col_live]][match(df_plot$id, as.character(df_raw[[id_col_live]]))]
+          resolved <- resolve_volcano_label_text(
+            raw_vals,
+            split_enabled = isTRUE(input$label_split_enabled),
+            separator     = input$label_split_sep %||% ";"
+          )
+          na_mask <- is.na(resolved) | !nzchar(resolved)
+          resolved[na_mask] <- df_plot$id[na_mask]
+          df_plot$geneSymbol <- resolved
+        }
+
+        # Compute the effective POI and label_mode based on union toggle state.
+        # In "ome" mode, build a per-contrast union: each contrast contributes its
+        # own POI, its own label_mode (significant / significant_top20), and its
+        # own top-N count. The current contrast's label_mode drives the local render.
+        effective_poi <- switch(
+          union_mode(),
+          "ome" = {
+            lm_reg  <- label_mode_registry()
+            tn_reg  <- top_n_registry()
+            poi_reg <- poi_registry()
+            sp <- stat_params()[[ome]]
+            sr <- stat_results()[[ome]]
+            # Use all known contrasts from stat_params as the source of truth —
+            # not poi_reg keys — so contrasts with only label_mode set (no manual
+            # POI) are still included in the union.
+            all_contrasts <- if (sp$test == "One-sample Moderated T-test")
+              sp$groups
+            else
+              sp$contrasts
+            keys <- paste0(ome, "::", all_contrasts)
+            Reduce(union, lapply(keys, function(k) {
+              c_poi   <- poi_reg[[k]]   %||% character(0)
+              c_lm    <- lm_reg[[k]]    %||% character(0)
+              c_n_top <- tn_reg[[k]]    %||% 20L
+              c_suffix <- sub(paste0("^", ome, "::"), "", k)
+              cols <- tryCatch(
+                if (sp$test == "One-sample Moderated T-test")
+                  get_volcano_cols(sr, sp$test, c_suffix, NULL)
+                else
+                  get_volcano_cols(sr, sp$test, NULL, c_suffix),
+                error = function(e) NULL
+              )
+              if (is.null(cols)) return(c_poi)
+              df_c <- tryCatch(
+                build_volcano_df(sr, cols, sp$cutoff, sp$stat),
+                error = function(e) NULL
+              )
+              if (is.null(df_c)) return(c_poi)
+              union(c_poi, volcano_labeled_feature_ids(df_c, c_lm, c_poi, c_n_top))
+            }), init = character(0))
+          },
+          proteins_of_interest()           # "none" — per-contrast baseline
+        )
+        # Force "poi" into label_mode when union is active and produced IDs.
+        effective_label_mode <- if (union_mode() != "none" && length(effective_poi) > 0) {
+          unique(c(label_mode_for_contrast(), "poi"))
+        } else {
+          label_mode_for_contrast()
+        }
+
         p <- add_volcano_labels(
           p,
           df              = df_plot,
-          poi             = proteins_of_interest(),
-          label_mode      = input$label_mode,
+          poi             = effective_poi,
+          label_mode      = effective_label_mode,
           y_cutoff        = attr(df_plot, "y_cutoff"),
-          hidden_count_rv = hidden_label_count
+          hidden_count_rv = hidden_label_count,
+          label_display_trim_enabled = isTRUE(input$label_display_trim_enabled),
+          n_top           = top_n_sig()
         )
       }
 
@@ -479,8 +865,20 @@ statPlot_Ome_Server <- function(id,
     })
 
     ## CLICK-TO-ADD/REMOVE OBSERVER ##
-    observeEvent(event_data("plotly_click", source = ns("volcano_click")), {
-      click <- event_data("plotly_click", source = ns("volcano_click"))
+    # Read click events defensively: when no volcano widget is active for this
+    # ome, querying event_data() can emit an "unregistered source" warning.
+    volcano_click_event <- reactive({
+      req(stat_params(), ome)
+      test <- stat_params()[[ome]]$test
+      if (is.null(test) || length(test) != 1L ||
+          !(test %in% c("One-sample Moderated T-test", "Two-sample Moderated T-test"))) {
+        return(NULL)
+      }
+      suppressWarnings(event_data("plotly_click", source = ns("volcano_click")))
+    })
+
+    observeEvent(volcano_click_event(), {
+      click <- volcano_click_event()
       req(click, stat_results(), stat_params())
 
       test <- stat_params()[[ome]]$test
@@ -512,9 +910,9 @@ statPlot_Ome_Server <- function(id,
 
       current <- proteins_of_interest()
       if (clicked_id %in% current) {
-        proteins_of_interest(setdiff(current, clicked_id))
+        set_poi(setdiff(current, clicked_id))
       } else {
-        proteins_of_interest(c(current, clicked_id))
+        set_poi(c(current, clicked_id))
       }
     })
     
@@ -539,7 +937,59 @@ statPlot_Ome_Server <- function(id,
       pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       on.exit(dev.off(), add = TRUE)
 
-      label_mode_export <- isolate(input$label_mode) %||% character(0)
+      label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
+      n_top_export      <- isolate(top_n_sig())
+      label_column_export <- isolate(input$label_column)        %||% "id"
+      label_split_export  <- isTRUE(isolate(input$label_split_enabled))
+      label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
+      label_trim_export   <- isTRUE(isolate(input$label_display_trim_enabled))
+
+      # Compute effective POI for export based on union toggle state.
+      export_union_mode <- isolate(union_mode())
+      export_poi <- switch(
+        export_union_mode,
+        "ome" = {
+          # Per-contrast union: each contrast uses its own POI, label_mode, top-N.
+          lm_reg_exp  <- isolate(label_mode_registry())
+          tn_reg_exp  <- isolate(top_n_registry())
+          poi_reg_exp <- isolate(poi_registry())
+          sp_exp <- stat_params()[[ome]]
+          sr_exp <- stat_results()[[ome]]
+          all_contrasts_exp <- if (sp_exp$test == "One-sample Moderated T-test")
+            sp_exp$groups else sp_exp$contrasts
+          keys_exp <- paste0(ome, "::", all_contrasts_exp)
+          Reduce(union, lapply(keys_exp, function(k) {
+            c_poi    <- poi_reg_exp[[k]] %||% character(0)
+            c_lm     <- lm_reg_exp[[k]] %||% character(0)
+            c_n_top  <- tn_reg_exp[[k]] %||% 20L
+            c_suffix <- sub(paste0("^", ome, "::"), "", k)
+            cols <- tryCatch(
+              if (sp_exp$test == "One-sample Moderated T-test")
+                get_volcano_cols(sr_exp, sp_exp$test, c_suffix, NULL)
+              else
+                get_volcano_cols(sr_exp, sp_exp$test, NULL, c_suffix),
+              error = function(e) NULL
+            )
+            if (is.null(cols)) return(c_poi)
+            df_c <- tryCatch(
+              build_volcano_df(sr_exp, cols, sp_exp$cutoff, sp_exp$stat),
+              error = function(e) NULL
+            )
+            if (is.null(df_c)) return(c_poi)
+            union(c_poi, volcano_labeled_feature_ids(df_c, c_lm, c_poi, c_n_top))
+          }), init = character(0))
+        },
+        {
+          # "none" — use only the current contrast's POI for export
+          isolate(proteins_of_interest())
+        }
+      )
+      # Force "poi" into label_mode when union is active and produced IDs.
+      export_label_mode <- if (export_union_mode != "none" && length(export_poi) > 0) {
+        unique(c(label_mode_export, "poi"))
+      } else {
+        label_mode_export
+      }
 
       if (test == "One-sample Moderated T-test") {
         groups <- stat_params()[[ome]]$groups
@@ -552,8 +1002,13 @@ statPlot_Ome_Server <- function(id,
               df                = df,
               stat_params       = stat_params,
               stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              label_proteins    = export_poi,
+              label_mode        = export_label_mode,
+              label_column                = label_column_export,
+              label_split_enabled         = label_split_export,
+              label_split_sep             = label_sep_export,
+              label_display_trim_enabled  = label_trim_export,
+              n_top             = n_top_export
             )
             print(gg)
           }, error = function(e) {
@@ -572,8 +1027,13 @@ statPlot_Ome_Server <- function(id,
               df                = df,
               stat_params       = stat_params,
               stat_results      = stat_results,
-              label_proteins    = proteins_of_interest(),
-              label_mode        = label_mode_export
+              label_proteins    = export_poi,
+              label_mode        = export_label_mode,
+              label_column                = label_column_export,
+              label_split_enabled         = label_split_export,
+              label_split_sep             = label_sep_export,
+              label_display_trim_enabled  = label_trim_export,
+              n_top             = n_top_export
             )
             print(gg)
           }, error = function(e) {
@@ -596,16 +1056,21 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        label_mode_export <- isolate(input$label_mode) %||% character(0)
+        label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
+        label_column_export <- isolate(input$label_column)        %||% "id"
+        label_split_export  <- isTRUE(isolate(input$label_split_enabled))
+        label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
         poi <- isolate(proteins_of_interest())
 
         show_poi <- "poi" %in% label_mode_export
         show_sig <- "significant" %in% label_mode_export
         show_sig_top <- "significant_top20" %in% label_mode_export
-        if (!show_poi && !show_sig && !show_sig_top) {
+        # Union mode counts as "label all" even without an explicit mode selected
+        csv_union_mode <- isolate(union_mode())
+        if (!show_poi && !show_sig && !show_sig_top && csv_union_mode == "none") {
           message(
             "Volcano labeled export skipped for ", ome,
-            ": enable at least one label option (POI, Top 20, or All significant)."
+            ": enable at least one label option (POI, Top significant, or All significant)."
           )
           return()
         }
@@ -620,6 +1085,49 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
+        n_top_csv <- isolate(top_n_sig())
+
+        # Effective POI: per-contrast union when union mode is on.
+        effective_poi_csv <- switch(
+          csv_union_mode,
+          "ome" = {
+            # Per-contrast union: each contrast uses its own POI, label_mode, top-N.
+            lm_reg_csv  <- isolate(label_mode_registry())
+            tn_reg_csv  <- isolate(top_n_registry())
+            poi_reg_csv <- isolate(poi_registry())
+            all_contrasts_csv <- if (sp$test == "One-sample Moderated T-test")
+              sp$groups else sp$contrasts
+            keys_csv <- paste0(ome, "::", all_contrasts_csv)
+            Reduce(union, lapply(keys_csv, function(k) {
+              c_poi    <- poi_reg_csv[[k]] %||% character(0)
+              c_lm     <- lm_reg_csv[[k]] %||% character(0)
+              c_n_top  <- tn_reg_csv[[k]] %||% 20L
+              c_suffix <- sub(paste0("^", ome, "::"), "", k)
+              cols <- tryCatch(
+                if (sp$test == "One-sample Moderated T-test")
+                  get_volcano_cols(df_raw, sp$test, c_suffix, NULL)
+                else
+                  get_volcano_cols(df_raw, sp$test, NULL, c_suffix),
+                error = function(e) NULL
+              )
+              if (is.null(cols)) return(c_poi)
+              df_c <- tryCatch(
+                build_volcano_df(df_raw, cols, sig_cutoff, sig_stat),
+                error = function(e) NULL
+              )
+              if (is.null(df_c)) return(c_poi)
+              union(c_poi, volcano_labeled_feature_ids(df_c, c_lm, c_poi, c_n_top))
+            }), init = character(0))
+          },
+          poi  # "none" — current contrast's POI only
+        )
+        # Force "poi" into label_mode when union is active and produced IDs.
+        effective_label_mode_csv <- if (csv_union_mode != "none" && length(effective_poi_csv) > 0) {
+          unique(c(label_mode_export, "poi"))
+        } else {
+          label_mode_export
+        }
+
         all_ids <- character(0)
 
         if (test == "One-sample Moderated T-test") {
@@ -627,14 +1135,14 @@ statPlot_Ome_Server <- function(id,
           for (group in groups) {
             cols <- get_volcano_cols(df_raw, test, group, NULL)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv, n_top_csv))
           }
         } else if (test == "Two-sample Moderated T-test") {
           contrasts <- sp$contrasts
           for (contrast in contrasts) {
             cols <- get_volcano_cols(df_raw, test, NULL, contrast)
             df_plot <- build_volcano_df(df_raw, cols, sig_cutoff, sig_stat)
-            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, label_mode_export, poi))
+            all_ids <- union(all_ids, volcano_labeled_feature_ids(df_plot, effective_label_mode_csv, effective_poi_csv, n_top_csv))
           }
         } else {
           message("Volcano labeled export not supported for test type: ", test)
@@ -642,7 +1150,7 @@ statPlot_Ome_Server <- function(id,
         }
 
         if (length(all_ids) == 0) {
-          message("Volcano labeled export: no proteins matched label criteria for ", ome)
+          message("Volcano labeled export: no features matched label criteria for ", ome)
           return()
         }
 
@@ -652,11 +1160,24 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        out_rows <- df_raw[as.character(df_raw[[id_col]]) %in% all_ids, , drop = FALSE]
-        out_path <- file.path(dir_name, paste0("volcano_labeled_proteins_", ome, ".csv"))
+        row_mask <- as.character(df_raw[[id_col]]) %in% all_ids
+        out_rows <- df_raw[row_mask, , drop = FALSE]
+
+        # Prepend resolved plot_label column so CSV mirrors on-plot labels
+        lbl_src <- if (label_column_export %in% colnames(df_raw)) label_column_export else id_col
+        resolved_labels <- resolve_volcano_label_text(
+          df_raw[[lbl_src]][row_mask],
+          split_enabled = label_split_export,
+          separator     = label_sep_export
+        )
+        na_lbl <- is.na(resolved_labels) | !nzchar(resolved_labels)
+        resolved_labels[na_lbl] <- as.character(df_raw[[id_col]])[row_mask][na_lbl]
+        out_rows <- cbind(plot_label = resolved_labels, out_rows)
+
+        out_path <- file.path(dir_name, paste0("volcano_labeled_features_", ome, ".csv"))
         write.csv(out_rows, file = out_path, row.names = FALSE)
         cat(
-          "Saved", nrow(out_rows), "volcano-labeled protein row(s) for", ome, "to:", out_path, "\n"
+          "Saved", nrow(out_rows), "volcano-labeled feature row(s) for", ome, "to:", out_path, "\n"
         )
       }, error = function(e) {
         message("Volcano labeled export failed for ome ", ome, ": ", conditionMessage(e))

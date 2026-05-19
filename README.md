@@ -6,35 +6,38 @@ ProTIGY is a Shiny application that supports datasets organized as a matrix with
 
 ## Installation
 
-Enter the following code into your command line interface.
+### First-time setup
+
+Clone the repository:
 
 ```bash
-# Clone the repository
 git clone https://github.com/broadinstitute/protigy-v2.git
 ```
 
-Once the repository is cloned, open RStudio and enter the following code.
+In RStudio, open the repo folder and run the setup script **once** to install ProTIGY and all dependencies:
 
 ```R
-# Change to the repo folder
-setwd("protigy-v2")
+setwd("protigy-v2")   # adjust the path if needed
+source("setup.R")
+```
 
-# Install and load devtools. NOTE: After installing once, you don't need to install every time. Just use library()
-install.packages('devtools')
-library(devtools)
+`setup.R` installs Bioconductor packages (e.g. ComplexHeatmap, limma, vsn) that RStudio's "Install Required Packages" prompt does not resolve, along with CRAN dependencies and ProTIGY from the local source tree. Run it only the first time you set up ProTIGY on a given computer (or after a fresh R installation).
 
-# Install the package. NOTE: After installing once, you don't need to install every time. Just use library()
-devtools::install('.')
+### Launching the app
 
-# Load the package and start the app
+```R
 library(Protigy)
 Protigy::launchApp()
 ```
 
+### Updates
+
+You do **not** need to run `setup.R` again when you pull updates with `git pull`, or when you clone the repository again to get the latest code—those packages remain installed in your R library. Open the repo in RStudio, set your working directory to the clone, and launch with `library(Protigy)` as above.
+
 ## Key Features
 
 ### 📊 **Data Analysis & Visualization**
-- **Quality Control (QC)**: Boxplots, profile plots, correlation analysis, and PCA plots
+- **Quality Control (QC)**: Boxplots, profile plots, CV plots, correlation analysis, and PCA plots
 - **Statistical Analysis**: Moderated t-tests, F-tests, and volcano plots
 - **Interactive Plots**: Zoom, pan, and explore your data
 - **Summary Statistics**: Data overview and sample information
@@ -50,15 +53,6 @@ Protigy::launchApp()
 - **Multi-omics Support**: Upload and analyze multiple data types from the same experiment simultaneously
 - **Supported Formats**: GCT v1.3, CSV, TSV, SSV (semicolon-separated), and Excel files
 - **Export Options**: High-quality figures (PDF), GCT files for data, and CSV files for statistics
-
-## Volcano plots (Statistics tab)
-
-After you run statistics, open **Statistics → Volcano Plot** for **one-sample** and **two-sample** moderated *t*-tests (not for the moderated F-test).
-
-- **Cutoff** (nominal or adjusted *p*-value and numeric threshold) is the same as in **Statistics → Summary** and controls the horizontal significance line on the volcano plot.
-- **Label proteins** (optional): turn on any combination of **Proteins of interest** (paste or search feature IDs, or click points on the plot to add/remove), **Top 20 significant** (among features above the line, ranked by significance with ties broken by absolute log2 fold change), and **All significant** (every feature above the line; can be crowded).
-- Labels and point highlights use **magenta** so they stand out from significant points (dark red) and non-significant points (gray).
-- You can **export** volcano PDFs and a proteins-of-interest list from the app export options when available.
 
 ## UI Navigation
 
@@ -146,6 +140,7 @@ After upload (and CSV/TSV/SSV/Excel design, if applicable), work through **Setup
   - **Profile Plots**: Visualize individual feature profiles
   - **Correlation**: Assess sample relationships
   - **PCA**: Identify patterns and outliers
+  - **CV**: Examine group-wise coefficient of variation distributions and optional CV filtering exports (valid for non-log-transformed intensity data only)
 
 ### 6. **Run Statistical Analysis** (Optional)
 - Statistical analysis is optional - you can use ProTIGY just for QC and data export
@@ -161,6 +156,8 @@ After upload (and CSV/TSV/SSV/Excel design, if applicable), work through **Setup
 
 - **R Version**: 4.0.0 or higher
 - **Memory**: Minimum 8GB RAM recommended; 16GB+ for large datasets (>10,000 features and >50 samples)
+- **Windows build tools**: [Rtools](https://cran.r-project.org/bin/windows/Rtools/) for package installation from source
+- **macOS build tools**: [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) for package installation from source
 
 ## Recommended Software
 
