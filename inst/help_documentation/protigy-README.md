@@ -19,7 +19,7 @@ setwd("protigy-v2")   # adjust the path if needed
 source("setup.R")
 ```
 
-`setup.R` installs Bioconductor packages (e.g. ComplexHeatmap, limma, vsn) that RStudio's "Install Required Packages" prompt does not resolve, along with CRAN dependencies and ProTIGY from the local source tree. Run it only the first time you set up ProTIGY on a given computer (or after a fresh R installation).
+`setup.R` installs Bioconductor packages (e.g. ComplexHeatmap, limma, vsn) that RStudio's "Install Required Packages" prompt does not resolve, along with CRAN dependencies, then installs ProTIGY from the local source tree into your R library. Run it the first time you set up ProTIGY on a given computer (or after a fresh R installation).
 
 ### Launching the app
 
@@ -28,9 +28,24 @@ library(Protigy)
 Protigy::launchApp()
 ```
 
+`library(Protigy)` loads the **installed** package from your R library, not the files in your git working directory.
+
 ### Updates
 
-You do **not** need to run `setup.R` again when you pull updates with `git pull`, or when you clone the repository again to get the latest code—those packages remain installed in your R library. Open the repo in RStudio, set your working directory to the clone, and launch with `library(Protigy)` as above.
+After `git pull` or when using a new clone, reinstall ProTIGY from that repo so `library(Protigy)` matches the code on disk:
+
+```R
+setwd("protigy-v2")   # adjust the path if needed
+source("setup.R")
+```
+
+You can also reinstall only ProTIGY (dependencies usually stay in your library):
+
+```R
+devtools::install(".")
+```
+
+You typically do **not** need the full Bioconductor bootstrap on every update—only when `DESCRIPTION` adds new dependencies or you are on a new machine. Until you reinstall, `library(Protigy)` continues to run whatever version was last installed.
 
 ## Key Features
 
