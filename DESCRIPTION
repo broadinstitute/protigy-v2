@@ -1,11 +1,13 @@
 Package: Protigy
 Title: Proteomics Toolset for Integrative Data Analysis
-Version: 2.5.0
+Version: 2.5.1
 Authors@R: c(
-    person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
-    person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut"),
     person("Natalie M", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre")),
-    person("C", "Williams", , "wcorinne@broadinstitute.org", role = "aut")
+    person("Cameron", "Lian", , "glian@broadinstitute.org ", role = "aut"),
+    person("Stephanie", "Vartany", , "svartany@broadinstitute.org", role = "aut"),
+    person("Disha", "Abburi", , "disha.abburi@gmail.com ", role = "aut"),
+    person("C", "Williams", , "wcorinne@broadinstitute.org", role = "aut"),
+    person("D R", "Mani", , "manidr@broadinstitute.org", role = "aut")
   )
 Description: A tool for multiomics data analysis and visualization.
 License: BSD_3_clause + file LICENSE

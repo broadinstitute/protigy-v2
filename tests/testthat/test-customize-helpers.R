@@ -1461,7 +1461,7 @@ colors:
 
 test_that("get_preset_palette - returns N colors for known names", {
   for (name in c("Paul Tol Bright", "Paul Tol Vibrant", "Paul Tol Muted",
-                 "ColorBrewer Set2", "ColorBrewer Paired", "Viridis")) {
+                 "Paul Tol Light", "ColorBrewer Set2", "ColorBrewer Paired", "Viridis")) {
     pal <- get_preset_palette(name, n = 5)
     expect_length(pal, 5)
     expect_true(all(grepl("^#[0-9A-F]{6}$", pal)),
@@ -1481,6 +1481,17 @@ test_that("get_preset_palette - interpolates beyond palette max", {
   pal <- get_preset_palette("Paul Tol Bright", n = 20)
   expect_length(pal, 20)
   expect_true(all(grepl("^#[0-9A-F]{6}$", pal)))
+})
+
+
+test_that("Paul Tol Muted and Light return full 9-color palettes without interpolation", {
+  muted <- get_preset_palette("Paul Tol Muted", 9)
+  expect_length(muted, 9)
+  expect_equal(length(unique(muted)), 9)
+
+  light <- get_preset_palette("Paul Tol Light", 9)
+  expect_length(light, 9)
+  expect_equal(length(unique(light)), 9)
 })
 
 

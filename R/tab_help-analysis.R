@@ -28,6 +28,13 @@ helpAnalysisTabUI <- function(id = "helpTab") {
             )
           ),
           tabPanel(
+            "QC Plots",
+            includeMarkdown(
+              system.file("help_documentation/protigy_qc_help.md",
+                          package = "Protigy")
+            )
+          ),
+          tabPanel(
             "Statistics",
             includeMarkdown(
               system.file("help_documentation/protigy_statistics_help.md", 
