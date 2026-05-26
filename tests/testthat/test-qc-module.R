@@ -534,6 +534,10 @@ test_that("calculate_PCA function works correctly", {
   expect_true("pca" %in% names(pca_result))
   expect_true("data_norm" %in% names(pca_result))
   expect_true("original_colnames" %in% names(pca_result))
+  expect_true("n_features" %in% names(pca_result))
+  expect_true("n_features_total" %in% names(pca_result))
+  expect_equal(pca_result$n_features, ncol(pca_result$data_norm))
+  expect_equal(pca_result$n_features_total, nrow(mock_gct@mat))
   
   # Test that PCA object is valid
   expect_true(inherits(pca_result$pca, "prcomp"))
@@ -544,6 +548,51 @@ test_that("calculate_PCA function works correctly", {
   expect_true("x" %in% names(pca_result$pca))
   expect_true("sdev" %in% names(pca_result$pca))
   expect_true(nrow(pca_result$pca$x) == length(pca_result$original_colnames))
+})
+
+test_that("ggplotly_with_gg_subtitle preserves ggplot subtitle", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  pca_result <- calculate_PCA(mock_gct)
+
+  gg <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    pca_result = pca_result
+  )
+
+  ply <- ggplotly_with_gg_subtitle(gg, tooltip = "text")
+  expect_true(grepl("features used", ply$x$layout$title$text, fixed = TRUE))
+  expect_true(grepl(gg$labels$title, ply$x$layout$title$text, fixed = TRUE))
+})
+
+test_that("create_PCA_plot shows feature count as subtitle", {
+  mock_gct <- create_mock_gct()
+  mock_colors <- create_mock_color_map()
+  pca_result <- calculate_PCA(mock_gct)
+
+  result <- create_PCA_plot(
+    gct = mock_gct,
+    col_of_interest = "group",
+    ome = "test_ome",
+    custom_color_map = mock_colors,
+    comp.x = 1,
+    comp.y = 2,
+    pca_result = pca_result
+  )
+
+  expect_equal(
+    result$labels$subtitle,
+    paste0(
+      format(pca_result$n_features, big.mark = ","), "/",
+      format(pca_result$n_features_total, big.mark = ","),
+      " features used"
+    )
+  )
 })
 
 test_that("create_PCA_plot works with pre-calculated PCA", {

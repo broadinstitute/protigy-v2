@@ -339,7 +339,7 @@ QCPCA_Ome_Server <- function(id,
     
     # render summary plot
     output$qc_PCA_plot <- renderPlotly(
-      ggplotly(qc_PCA_plot_reactive(), tooltip = "text")
+      ggplotly_with_gg_subtitle(qc_PCA_plot_reactive(), tooltip = "text")
     )
     
     ## PCA REGRESSION ##

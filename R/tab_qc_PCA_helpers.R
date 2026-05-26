@@ -41,7 +41,13 @@ calculate_PCA <- function(gct) {
   # Calculate PCA
   my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
   
-  return(list(pca = my_pca, data_norm = data.norm, original_colnames = original_colnames))
+  return(list(
+    pca = my_pca,
+    data_norm = data.norm,
+    original_colnames = original_colnames,
+    n_features = ncol(data.norm),
+    n_features_total = nrow(mat)
+  ))
 }
 
 ## plot PCA
@@ -71,11 +77,23 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   if (!is.null(pca_result)) {
     my_pca <- pca_result$pca
     original_colnames <- pca_result$original_colnames
+    n_features <- if (!is.null(pca_result$n_features)) {
+      pca_result$n_features
+    } else {
+      ncol(pca_result$data_norm)
+    }
+    n_features_total <- if (!is.null(pca_result$n_features_total)) {
+      pca_result$n_features_total
+    } else {
+      nrow(gct@mat)
+    }
   } else {
     # Calculate PCA if not provided
     pca_result <- calculate_PCA(gct)
     my_pca <- pca_result$pca
     original_colnames <- pca_result$original_colnames
+    n_features <- pca_result$n_features
+    n_features_total <- pca_result$n_features_total
   }
   
   # Get matrix for annotations (use original, unsorted for annotation extraction)
@@ -249,8 +267,13 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     geom_vline(xintercept = 0, linetype = "longdash", color = "darkgrey") +
     theme_bw() +
     theme(text = element_text(size = 12)) +
-    ggtitle(plot_title) +
     labs(
+      title = plot_title,
+      subtitle = paste0(
+        format(n_features, big.mark = ","), "/",
+        format(n_features_total, big.mark = ","),
+        " features used"
+      ),
       x = paste0("PC", comp.x, " (", round(prop_vars[comp.x] * 100, 1), "%)"),
       y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)")
     )
@@ -296,6 +319,26 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
   }
   
   g
+}
+
+## Convert ggplot to plotly while preserving ggplot2 subtitle
+## ggplotly() only transfers labs(title); subtitles are dropped in the browser.
+ggplotly_with_gg_subtitle <- function(gg, ...) {
+  p <- ggplotly(gg, ...)
+  subtitle <- gg$labels$subtitle
+  if (!is.null(subtitle) && nzchar(subtitle)) {
+    title <- gg$labels$title
+    if (is.null(title)) {
+      title <- ""
+    }
+    p$x$layout$title$text <- paste0(
+      title,
+      "<br><span style=\"font-size:12px;color:rgba(0,0,0,0.75)\">",
+      subtitle,
+      "</span>"
+    )
+  }
+  p
 }
 
 ## calculate PCA regression
