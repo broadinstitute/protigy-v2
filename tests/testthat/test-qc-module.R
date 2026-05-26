@@ -20,6 +20,8 @@ create_mock_gct <- function() {
   )
   
   test_rdesc <- data.frame(
+    id = paste0("gene_", 1:10),
+    geneSymbol = paste0("SYMBOL_", 1:10),
     gene_name = paste0("gene_", 1:10),
     row.names = paste0("gene_", 1:10)
   )
@@ -345,6 +347,9 @@ test_that("pca_variance_explained calculates variance correctly", {
   expect_true("table" %in% names(result))
   expect_s3_class(result$plot, "ggplot")
   expect_true(is.data.frame(result$table))
+  expect_true("tooltip" %in% names(result$plot$data))
+  expect_match(result$plot$data$tooltip[1], "^PC: PC")
+  expect_match(result$plot$data$tooltip[1], "% variance explained:")
 })
 
 test_that("create_PCA_reg creates valid ggplot objects", {
@@ -593,6 +598,87 @@ test_that("create_PCA_plot shows feature count as subtitle", {
       " features used"
     )
   )
+})
+
+test_that("PCA loadings helpers return expected structure", {
+  mock_gct <- create_mock_gct()
+  pca_result <- calculate_PCA(mock_gct)
+
+  loadings_df <- get_pca_loadings_df(pca_result, gct = mock_gct)
+  expect_equal(nrow(loadings_df), pca_result$n_features)
+  expect_true("feature" %in% names(loadings_df))
+  expect_true(all(paste0("PC", seq_len(min(10L, ncol(pca_result$pca$rotation)))) %in% names(loadings_df)))
+  expect_equal(loadings_df$id, paste0("gene_", 1:10))
+  expect_equal(loadings_df$geneSymbol, paste0("SYMBOL_", 1:10))
+
+  n_rank_pcs <- min(10L, ncol(pca_result$pca$rotation))
+  cum_col <- paste0("cumulative_loading_PC1_", n_rank_pcs)
+  export_df <- get_pca_loadings_df(pca_result, gct = mock_gct, for_export = TRUE)
+  expect_equal(
+    names(export_df)[1:4],
+    c("rank", cum_col, "id", "geneSymbol")
+  )
+  expect_false("feature" %in% names(export_df))
+  expect_equal(export_df$rank, seq_len(nrow(export_df)))
+  expect_true(all(diff(export_df[[cum_col]]) <= 1e-10))
+  pc_cols <- grep("^PC\\d+$", names(export_df), value = TRUE)
+  expect_length(pc_cols, ncol(pca_result$pca$rotation))
+
+  top_global <- top_pca_loading_features(loadings_df, topn = 5, max_pcs = 10L)
+  expect_length(top_global, 5)
+  expect_equal(top_global, export_df$id[seq_len(5)])
+
+  cumplot <- create_PCA_loadings_cumulative(pca_result, ome = "test_ome", gct = mock_gct)
+  expect_s3_class(cumplot, "ggplot")
+  expect_equal(length(unique(cumplot$data$feature)), 10)
+  legend_lvls <- levels(cumplot$data$legend_label)
+  expect_length(legend_lvls, 10)
+  expect_equal(as.integer(sub(":.*$", "", legend_lvls)), seq_len(10))
+  plot_display <- sub("^\\d{2}: ", "", legend_lvls)
+  expected_display <- ifelse(
+    !is.na(export_df$geneSymbol[seq_len(10)]) & nzchar(export_df$geneSymbol[seq_len(10)]),
+    export_df$geneSymbol[seq_len(10)],
+    export_df$id[seq_len(10)]
+  )
+  expect_equal(plot_display, expected_display)
+  n_pc_plot <- min(10L, ncol(pca_result$pca$rotation))
+  top_features <- top_pca_loading_features(loadings_df, topn = 10L, max_pcs = n_pc_plot)
+  plot_cum_at_pc10 <- cumplot$data[
+    cumplot$data$PC == n_pc_plot & cumplot$data$feature %in% top_features,
+    c("feature", "cumulative")
+  ]
+  plot_cum_at_pc10 <- plot_cum_at_pc10[match(top_features, plot_cum_at_pc10$feature), ]
+  expect_equal(
+    plot_cum_at_pc10$cumulative,
+    export_df[[cum_col]][seq_len(10)],
+    tolerance = 1e-10
+  )
+
+  minimal_mat <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 3, ncol = 2)
+  rownames(minimal_mat) <- c("gene1", "gene2", "gene3")
+  colnames(minimal_mat) <- c("sample1", "sample2")
+  minimal_gct <- new("GCT",
+    mat = minimal_mat,
+    cdesc = data.frame(group = c("A", "B"), row.names = colnames(minimal_mat)),
+    rdesc = data.frame(id = rownames(minimal_mat), row.names = rownames(minimal_mat)),
+    rid = rownames(minimal_mat),
+    cid = colnames(minimal_mat)
+  )
+  minimal_pca <- calculate_PCA(minimal_gct)
+  minimal_export <- get_pca_loadings_df(minimal_pca, gct = minimal_gct, for_export = TRUE)
+  n_min_pcs <- ncol(minimal_pca$pca$rotation)
+  expect_equal(names(minimal_export)[2], paste0("cumulative_loading_PC1_", n_min_pcs))
+  expect_true(all(grepl("^\\d{2}: ", legend_lvls)))
+  expect_true(all(cumplot$data$cumulative >= 0))
+  n_pc_all <- ncol(pca_result$pca$rotation)
+  n_pc_plot <- min(10L, n_pc_all)
+  final_vals <- cumplot$data[cumplot$data$PC == n_pc_plot, "cumulative"]
+  if (n_pc_all <= n_pc_plot) {
+    expect_true(all(abs(final_vals - 1) < 1e-10))
+  } else {
+    expect_true(all(final_vals < 1))
+  }
+
 })
 
 test_that("create_PCA_plot works with pre-calculated PCA", {

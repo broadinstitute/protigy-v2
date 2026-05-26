@@ -269,11 +269,7 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     theme(text = element_text(size = 12)) +
     labs(
       title = plot_title,
-      subtitle = paste0(
-        format(n_features, big.mark = ","), "/",
-        format(n_features_total, big.mark = ","),
-        " features used"
-      ),
+      subtitle = pca_feature_count_subtitle(pca_result),
       x = paste0("PC", comp.x, " (", round(prop_vars[comp.x] * 100, 1), "%)"),
       y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)")
     )
@@ -341,6 +337,247 @@ ggplotly_with_gg_subtitle <- function(gg, ...) {
   p
 }
 
+## Feature loadings table (features x PCs) from a cached PCA result
+##' @param pca_result Cached output from `calculate_PCA()`.
+##' @param gct Optional processed GCT used to attach `id` and `geneSymbol` from `@rdesc`.
+##' @param for_export If TRUE, return rows sorted by `rank` (1 = highest). Includes
+##'   `cumulative_loading_PC1_k` where `k` is min(10, number of PCs), then `id`,
+##'   `geneSymbol`, and all raw PC loadings. Ignores `max_pcs`.
+##' @param max_pcs Maximum number of PC columns to return; `NULL` keeps all PCs.
+get_pca_loadings_df <- function(pca_result, gct = NULL, for_export = FALSE, max_pcs = 10L) {
+  loadings <- pca_result$pca$rotation
+  df <- as.data.frame(loadings, check.names = FALSE)
+  df$feature <- rownames(loadings)
+
+  df$id <- df$feature
+  df$geneSymbol <- NA_character_
+
+  if (!is.null(gct)) {
+    rdesc <- gct@rdesc
+    rdesc_rn <- rownames(rdesc)
+    if (is.null(rdesc_rn)) {
+      rdesc_rn <- gct@rid
+    }
+    idx <- match(df$feature, rdesc_rn)
+    if ("id" %in% names(rdesc)) {
+      mapped_id <- rdesc[idx, "id", drop = TRUE]
+      df$id <- ifelse(is.na(mapped_id), df$feature, unname(mapped_id))
+    }
+    if ("geneSymbol" %in% names(rdesc)) {
+      mapped_gs <- rdesc[idx, "geneSymbol", drop = TRUE]
+      df$geneSymbol <- unname(mapped_gs)
+    }
+  }
+
+  pc_cols_all <- grep("^PC", names(df), value = TRUE)
+  pc_cols <- pc_cols_all
+  if (!is.null(max_pcs)) {
+    pc_cols <- head(pc_cols, as.integer(max_pcs))
+  }
+  if (for_export) {
+    rank_through <- pca_rank_pcs_used(length(pc_cols_all))
+    cum_col <- pca_cumulative_loading_column_name(rank_through)
+    ranked <- pca_rank_features_by_pc_loading(df, through_pc = rank_through)
+    df <- df[match(ranked$feature, df$feature), , drop = FALSE]
+    df$rank <- seq_len(nrow(df))
+    df[[cum_col]] <- ranked[[cum_col]]
+    return(df[, c("rank", cum_col, "id", "geneSymbol", pc_cols_all), drop = FALSE])
+  }
+  df[, c("id", "geneSymbol", "feature", pc_cols), drop = FALSE]
+}
+
+## Subtitle text for PCA plots showing features used vs total
+pca_feature_count_subtitle <- function(pca_result) {
+  n_features <- pca_result$n_features
+  n_features_total <- pca_result$n_features_total
+  paste0(
+    format(n_features, big.mark = ","), "/",
+    format(n_features_total, big.mark = ","),
+    " features used"
+  )
+}
+
+## loading^2 for each feature x PC
+pca_loading_sq_matrix <- function(loadings_df) {
+  pc_cols <- grep("^PC", names(loadings_df), value = TRUE)
+  mat <- as.matrix(loadings_df[, pc_cols, drop = FALSE])
+  storage.mode(mat) <- "double"
+  mat^2
+}
+
+## Number of leading PCs used for ranking / plot (at most `max_pcs`, capped by available PCs).
+pca_rank_pcs_used <- function(n_pc_all, max_pcs = 10L) {
+  min(as.integer(max_pcs), as.integer(n_pc_all))
+}
+
+## Export column name for cumulative loading through PC1..k.
+pca_cumulative_loading_column_name <- function(through_pc) {
+  paste0("cumulative_loading_PC1_", as.integer(through_pc))
+}
+
+## Fraction of total squared loading captured through the first `through_pc` PCs (0-1).
+pca_cumulative_loading_fraction <- function(loadings_df, through_pc = 10L) {
+  sq_mat <- pca_loading_sq_matrix(loadings_df)
+  if (ncol(sq_mat) == 0L) {
+    return(numeric(nrow(sq_mat)))
+  }
+  k <- min(as.integer(through_pc), ncol(sq_mat))
+  sq_all <- rowSums(sq_mat)
+  sq_through <- rowSums(sq_mat[, seq_len(k), drop = FALSE])
+  ifelse(sq_all == 0, 0, sq_through / sq_all)
+}
+
+## Rank features by PC1-`through_pc` importance (same metric as the cumulative plot at PC k).
+## Primary: cumulative squared-loading fraction through PC1..k; ties: max |loading| on those PCs, then id.
+pca_rank_features_by_pc_loading <- function(loadings_df, through_pc = 10L) {
+  pc_cols_all <- grep("^PC", names(loadings_df), value = TRUE)
+  if (length(pc_cols_all) == 0L) {
+    out <- data.frame(feature = character(), stringsAsFactors = FALSE)
+    out[[pca_cumulative_loading_column_name(0L)]] <- numeric()
+    return(out)
+  }
+  k <- pca_rank_pcs_used(length(pc_cols_all), max_pcs = through_pc)
+  cum_col <- pca_cumulative_loading_column_name(k)
+  cum_frac <- pca_cumulative_loading_fraction(loadings_df, through_pc = k)
+  pc_rank_cols <- head(pc_cols_all, k)
+  max_abs <- apply(
+    abs(as.matrix(loadings_df[, pc_rank_cols, drop = FALSE])),
+    1,
+    max
+  )
+  feature <- if ("feature" %in% names(loadings_df)) {
+    loadings_df$feature
+  } else {
+    loadings_df$id
+  }
+  tie_id <- if ("id" %in% names(loadings_df)) loadings_df$id else feature
+  ord <- order(-cum_frac, -max_abs, tie_id)
+  out <- data.frame(feature = feature[ord], stringsAsFactors = FALSE)
+  out[[cum_col]] <- cum_frac[ord]
+  out
+}
+
+## Plot legend / label text: `geneSymbol` when present, otherwise `id`.
+pca_feature_display_label <- function(id, geneSymbol) {
+  if (length(geneSymbol) == 1L && !is.na(geneSymbol) && nzchar(geneSymbol)) {
+    unname(geneSymbol)
+  } else {
+    unname(id)
+  }
+}
+
+## Top-N feature names using `pca_rank_features_by_pc_loading()`.
+##' @param max_pcs Number of leading PCs used for ranking (default 10).
+top_pca_loading_features <- function(loadings_df, topn, max_pcs = 10L) {
+  if (is.null(max_pcs)) {
+    max_pcs <- length(grep("^PC", names(loadings_df), value = TRUE))
+  }
+  ranked <- pca_rank_features_by_pc_loading(loadings_df, through_pc = max_pcs)
+  head(ranked$feature, min(as.integer(topn), nrow(ranked)))
+}
+
+## Cumulative squared-loading plot for the top 10 features (PC1-10 on the x-axis).
+## Top 10 and legend order match export rank (cumulative squared loading through PC1-10).
+create_PCA_loadings_cumulative <- function(pca_result, ome = "", gct = NULL) {
+  topn <- 10L
+  loadings_df <- get_pca_loadings_df(pca_result, gct = gct, max_pcs = NULL)
+
+  n_pc_all <- ncol(pca_result$pca$rotation)
+  n_pc_plot <- pca_rank_pcs_used(n_pc_all)
+  sq_all_mat <- pca_loading_sq_matrix(loadings_df)
+
+  highlight_features <- top_pca_loading_features(loadings_df, topn, max_pcs = n_pc_plot)
+
+  rows <- lapply(seq_along(highlight_features), function(i) {
+    f <- highlight_features[i]
+    meta <- loadings_df[loadings_df$feature == f, , drop = FALSE][1L, , drop = FALSE]
+    has_gs <- "geneSymbol" %in% names(meta) &&
+      !is.na(meta$geneSymbol) &&
+      nzchar(meta$geneSymbol)
+    sq_all <- as.numeric(sq_all_mat[f, , drop = TRUE])
+    total_sq <- sum(sq_all)
+    sq_plot <- sq_all[seq_len(n_pc_plot)]
+    pct_pc <- if (total_sq == 0) rep(0, n_pc_plot) else 100 * sq_plot / total_sq
+    cumulative <- if (total_sq == 0) {
+      rep(0, n_pc_plot)
+    } else {
+      cumsum(sq_plot) / total_sq
+    }
+    data.frame(
+      feature = f,
+      id = meta$id,
+      geneSymbol = if (has_gs) meta$geneSymbol else NA_character_,
+      display_label = pca_feature_display_label(meta$id, meta$geneSymbol),
+      PC = seq_len(n_pc_plot),
+      pct_pc = pct_pc,
+      cumulative = cumulative,
+      stringsAsFactors = FALSE
+    )
+  })
+  plot_df <- dplyr::bind_rows(rows)
+  display_levels <- plot_df$display_label[match(highlight_features, plot_df$feature)]
+  feature_ranks <- seq_along(display_levels)
+  legend_labels <- paste0(sprintf("%02d", feature_ranks), ": ", display_levels)
+  plot_df$legend_label <- legend_labels[match(plot_df$feature, highlight_features)]
+  plot_df$legend_label <- factor(plot_df$legend_label, levels = legend_labels)
+
+  plot_df$tooltip <- paste0(
+    "Rank: ", match(plot_df$feature, highlight_features),
+    "<br>id: ", plot_df$id,
+    ifelse(
+      !is.na(plot_df$geneSymbol) & nzchar(plot_df$geneSymbol),
+      paste0("<br>geneSymbol: ", plot_df$geneSymbol),
+      ""
+    ),
+    "<br>PC: PC", plot_df$PC,
+    "<br>Individual loading: ", round(plot_df$pct_pc, 1), "%",
+    "<br>Cumulative loading: ", round(plot_df$cumulative * 100, 1), "%"
+  )
+
+  title <- if (nzchar(ome)) {
+    paste0("Top 10 features - cumulative loading: ", ome)
+  } else {
+    "Top 10 features - cumulative loading"
+  }
+
+  n_features <- length(display_levels)
+  if (n_features <= 9L) {
+    line_colors <- get_preset_palette("Paul Tol Muted", n_features)
+  } else {
+    line_colors <- c(get_preset_palette("Paul Tol Muted", 9L), "#BBBBBB")
+    line_colors <- line_colors[seq_len(n_features)]
+  }
+  names(line_colors) <- legend_labels
+
+  ggplot(plot_df, aes(
+    x = .data$PC,
+    y = .data$cumulative,
+    group = .data$feature,
+    color = .data$legend_label,
+    text = .data$tooltip
+  )) +
+    geom_line(linewidth = 0.9, alpha = 0.65) +
+    geom_point(size = 2.5, alpha = 0.75) +
+    scale_color_manual(
+      values = line_colors,
+      breaks = legend_labels,
+      labels = legend_labels
+    ) +
+    scale_x_continuous(breaks = seq_len(n_pc_plot), labels = paste0("PC", seq_len(n_pc_plot))) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, NA)) +
+    theme_bw() +
+    theme(
+      text = element_text(size = 12),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    labs(
+      title = title,
+      x = NULL,
+      y = "Cumulative squared loading",
+      color = "Rank"
+    )
+}
+
 ## calculate PCA regression
 pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
   # Determine maximum available PCs
@@ -384,15 +621,43 @@ pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
     }
   }
   var.explained <- pca$sdev^2
-  pct.var <- var.explained * 100 / sum (var.explained)
-  
+  pct.var <- var.explained * 100 / sum(var.explained)
+
+  dims_sorted <- sort(unique(data$dims))
+  pc_levels <- paste0(
+    "PC", dims_sorted,
+    " (", round(pct.var[dims_sorted], 1), "%)"
+  )
+  data$pc_label <- factor(
+    paste0("PC", data$dims, " (", round(pct.var[data$dims], 1), "%)"),
+    levels = pc_levels
+  )
+  data$tooltip <- paste0(
+    "PC: ", data$pc_label,
+    "<br>% variance explained: ", round(data$pct.exp, 1), "%"
+  )
+
   # calculate % sum total (over pca components in p) of variance attributable to each experimental factor
-  expt.var <- data %>% group_by(.data$experimental.factor) %>% 
-    summarize (sum.total.var.pct=sum(.data$pct.exp/100 * pct.var[.data$dims]/100 * 100))
-  
-  g <- ggplot (data=data,aes(as.factor(.data$dims),.data$pct.exp,group=.data$experimental.factor,color=.data$experimental.factor)) +
-    geom_line() + geom_point() + labs (x="Component (% Total Variance Explained)",y="% Variance Explained within Component") + 
-    theme_bw() + scale_x_discrete(labels = paste0 ("PC",data$dims, " (",round(pct.var,1),"%)")) +
+  expt.var <- data %>% group_by(.data$experimental.factor) %>%
+    summarize(sum.total.var.pct = sum(.data$pct.exp / 100 * pct.var[.data$dims] / 100 * 100))
+
+  g <- ggplot(
+    data = data,
+    aes(
+      x = .data$pc_label,
+      y = .data$pct.exp,
+      group = .data$experimental.factor,
+      color = .data$experimental.factor,
+      text = .data$tooltip
+    )
+  ) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Component (% total variance explained)",
+      y = "% variance explained within component"
+    ) +
+    theme_bw() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
   return (list (plot=g, table=expt.var))
@@ -419,7 +684,12 @@ create_PCA_reg <- function(gct, col_of_interest, ome, custom_color_map = NULL, c
   
   #perform batch effect check and plot PCA regression
   pca.var <- pca_variance_explained (my_pca, cdesc[col_of_interest], components=1:components.max)
-  g <- pca.var$plot+ggtitle(glue("Cumulative Variance Explained by {col_of_interest} for {ome}: ",'{round(pca.var$table$sum.total.var.pct, digits=2)}'))
+  g <- pca.var$plot +
+    ggtitle(glue(
+      "Cumulative Variance Explained by {col_of_interest} for {ome}: ",
+      "{round(pca.var$table$sum.total.var.pct, digits=2)}"
+    )) +
+    theme(legend.position = "none")
   
   # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
   return(g)

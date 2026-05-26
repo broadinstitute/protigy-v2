@@ -568,6 +568,7 @@ make_custom_colors <- function(GCTs, GCTs_merged) {
 #'   * "Paul Tol Bright"
 #'   * "Paul Tol Vibrant"
 #'   * "Paul Tol Muted"
+#'   * "Paul Tol Light"
 #'   * "ColorBrewer Set2"
 #'   * "ColorBrewer Paired"
 #'   * "Viridis"
@@ -588,6 +589,7 @@ get_preset_palette <- function(name, n, reverse = FALSE) {
     "Paul Tol Bright"   = .preset_tol_palette("bright", n),
     "Paul Tol Vibrant"  = .preset_tol_palette("vibrant", n),
     "Paul Tol Muted"    = .preset_tol_palette("muted", n),
+    "Paul Tol Light"    = .preset_tol_palette("light", n),
     "ColorBrewer Set2"  = .preset_brewer_palette("Set2", n),
     "ColorBrewer Paired" = .preset_brewer_palette("Paired", n),
     "Viridis"           = .preset_viridis_palette(n),
@@ -600,19 +602,33 @@ get_preset_palette <- function(name, n, reverse = FALSE) {
 }
 
 
-# Internal: Tol qualitative palette via khroma, falling back to a hardcoded
-# 7-color version if khroma errors. Palettes interpolate when n > max.
+# Internal: max qualitative colors per Paul Tol scheme (via khroma).
+.preset_tol_palette_max <- function(which) {
+  switch(which,
+    bright = 7L,
+    vibrant = 7L,
+    muted = 9L,
+    light = 9L,
+    stop("Unknown Tol palette: ", which, call. = FALSE)
+  )
+}
+
+# Internal: Tol qualitative palette via khroma, falling back to hardcoded
+# values if khroma errors. Palettes interpolate when n > max.
 .preset_tol_palette <- function(which, n) {
+  max_qual <- .preset_tol_palette_max(which)
   fallback <- list(
     bright  = c('#4477AA', '#EE6677', '#228833', '#CCBB44',
                 '#66CCEE', '#AA3377', '#BBBBBB'),
     vibrant = c('#0077BB', '#33BBEE', '#009988', '#EE7733',
                 '#CC3311', '#EE3377', '#BBBBBB'),
-    muted   = c('#332288', '#88CCEE', '#44AA99', '#117733', '#999933',
-                '#DDCC77', '#CC6677', '#882255', '#AA4499')
+    muted   = c('#CC6677', '#332288', '#DDCC77', '#117733', '#88CCEE',
+                '#882255', '#44AA99', '#999933', '#AA4499'),
+    light   = c('#77AADD', '#EE8866', '#EEDD88', '#FFAABB', '#99DDFF',
+                '#44BB99', '#BBCC33', '#AAAA00', '#DDDDDD')
   )
   base <- tryCatch(
-    as.vector(khroma::color(which)(min(n, 7L))),
+    as.vector(khroma::color(which)(max_qual)),
     error = function(e) fallback[[which]]
   )
   if (length(base) == 0) base <- fallback[[which]]

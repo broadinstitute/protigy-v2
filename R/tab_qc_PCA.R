@@ -129,23 +129,28 @@ QCPCA_Ome_UI <- function (id, ome) {
   ns <- NS(id)
   
   tagList(
-    # PCA plots
-    fluidRow(shinydashboardPlus::box(
-      plotlyOutput(ns("qc_PCA_plot")),
-      br(),
-      plotlyOutput(ns("qc_PCA_reg"), height="auto"),
-      sidebar = boxSidebar(
-        uiOutput(ns("qc_PCA_sidebar_contents")),
-        id = ns("qc_PCA_sidebar"),
-        width = 25,
-        icon = icon("gears", class = "fa-2xl"),
-        background = "rgba(91, 98, 104, 0.9)"
-      ),
-      status = "primary",
-      width = 12,
-      title = "PCA Plots",
-      headerBorder = TRUE,
-      solidHeader = TRUE))
+    fluidRow(
+      shinydashboardPlus::box(
+        width = 12,
+        title = "PCA",
+        status = "primary",
+        headerBorder = TRUE,
+        solidHeader = TRUE,
+        br(),
+        plotlyOutput(ns("qc_PCA_plot")),
+        br(),
+        plotlyOutput(ns("qc_PCA_reg"), height = "auto"),
+        br(),
+        plotlyOutput(ns("qc_PCA_loadings_cumulative")),
+        sidebar = boxSidebar(
+          uiOutput(ns("qc_PCA_sidebar_contents")),
+          id = ns("qc_PCA_sidebar"),
+          width = 25,
+          icon = icon("gears", class = "fa-2xl"),
+          background = "rgba(91, 98, 104, 0.9)"
+        )
+      )
+    )
   )
 }
 
@@ -166,13 +171,33 @@ QCPCA_Ome_Server <- function(id,
     
     ## CACHED PCA CALCULATION ##
     # Calculate PCA once per dataset - only recalculates when GCT_processed changes
-    # This ensures PCA remains consistent when only visualization parameters change
     cached_pca_result <- reactive({
       req(GCT_processed())
       calculate_PCA(GCT_processed())
     })
     
-    # sidebar contents
+    # Keep PC axis choices in range for the current PCA model
+    observeEvent(cached_pca_result(), {
+      pca_result <- cached_pca_result()
+      n_pc <- ncol(pca_result$pca$x)
+      pc_choices <- seq_len(min(10L, n_pc))
+      pc1_sel <- as.numeric(input$qc_PCA_PC1 %||% 1)
+      pc2_sel <- as.numeric(input$qc_PCA_PC2 %||% 2)
+      if (!pc1_sel %in% pc_choices) pc1_sel <- pc_choices[1]
+      if (!pc2_sel %in% pc_choices) pc2_sel <- pc_choices[min(2, length(pc_choices))]
+      updateSelectInput(session, "qc_PCA_PC1", choices = pc_choices, selected = pc1_sel)
+      updateSelectInput(session, "qc_PCA_PC2", choices = pc_choices, selected = pc2_sel)
+    }, ignoreInit = FALSE)
+    
+    pca_comp_x <- reactive({
+      as.numeric(input$qc_PCA_PC1 %||% 1)
+    })
+    
+    pca_comp_y <- reactive({
+      as.numeric(input$qc_PCA_PC2 %||% 2)
+    })
+    
+    # sidebar: PCA axes (scores + loadings) and score-plot annotation controls
     output$qc_PCA_sidebar_contents <- renderUI({
       req(GCT_processed())
       
@@ -266,25 +291,24 @@ QCPCA_Ome_Server <- function(id,
       )
     })
 
-    ## PCA PLOT ##
+    ## SAMPLE SCORES ##
     
-    # reactive
     qc_PCA_plot_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2, 
-                    input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
-                    input$qc_PCA_var1_display, input$qc_PCA_var2_display, 
-                    input$qc_PCA_fill_shapes, color_map(),
-                    cached_pca_result()), 
+      eventExpr = c(
+        input$qc_PCA_annotation, input$qc_PCA_PC1, input$qc_PCA_PC2,
+        input$qc_PCA_add_second_var, input$qc_PCA_second_annotation,
+        input$qc_PCA_var1_display, input$qc_PCA_var2_display,
+        input$qc_PCA_fill_shapes, color_map(),
+        cached_pca_result()
+      ),
       valueExpr = {
         
-        # get annotation column
         if (!is.null(input$qc_PCA_annotation)) {
           annot_column <- input$qc_PCA_annotation
         } else {
           annot_column <- default_annotation_column()
         }
         
-        # get second annotation column if selected
         second_annot_column <- NULL
         var1_display <- "color"
         var2_display <- "shape"
@@ -300,18 +324,15 @@ QCPCA_Ome_Server <- function(id,
             var2_display <- input$qc_PCA_var2_display
           }
           
-          # validate that both variables don't use the same display method
           if (var1_display == var2_display) {
             validate(need(FALSE, "First and second variables cannot use the same display method (color or shape). Please select different display options."))
           }
           
-          # validate that second variable is different from first
           if (!is.null(second_annot_column) && second_annot_column == annot_column) {
             validate(need(FALSE, "Second variable must be different from the first variable. Please select a different variable."))
           }
         }
         
-        # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
           annot_color_map <- custom_colors[[annot_column]]
@@ -319,45 +340,39 @@ QCPCA_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # get fill shapes option
         fill_shapes <- if (!is.null(input$qc_PCA_fill_shapes)) input$qc_PCA_fill_shapes else FALSE
         
-        # generate plot using cached PCA
-        create_PCA_plot(gct = GCT_processed(),
-                            col_of_interest = annot_column,
-                            ome = ome,
-                            custom_color_map = annot_color_map,
-                            comp.x = as.numeric(ifelse(is.null(input$qc_PCA_PC1), 1, input$qc_PCA_PC1)),
-                            comp.y = as.numeric(ifelse(is.null(input$qc_PCA_PC2), 2, input$qc_PCA_PC2)),
-                            second_col_of_interest = second_annot_column,
-                            var1_display = var1_display,
-                            var2_display = var2_display,
-                            fill_shapes = fill_shapes,
-                            pca_result = cached_pca_result())
+        create_PCA_plot(
+          gct = GCT_processed(),
+          col_of_interest = annot_column,
+          ome = ome,
+          custom_color_map = annot_color_map,
+          comp.x = pca_comp_x(),
+          comp.y = pca_comp_y(),
+          second_col_of_interest = second_annot_column,
+          var1_display = var1_display,
+          var2_display = var2_display,
+          fill_shapes = fill_shapes,
+          pca_result = cached_pca_result()
+        )
       }
     )
     
-    # render summary plot
-    output$qc_PCA_plot <- renderPlotly(
+    output$qc_PCA_plot <- renderPlotly({
       ggplotly_with_gg_subtitle(qc_PCA_plot_reactive(), tooltip = "text")
-    )
+    })
     
-    ## PCA REGRESSION ##
-    
-    # reactive
     qc_PCA_reg_reactive <- eventReactive(
-      eventExpr = c(input$qc_PCA_annotation, color_map(), cached_pca_result()), 
+      eventExpr = c(input$qc_PCA_annotation, color_map(), cached_pca_result()),
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
         
-        # get annotation column
         if (!is.null(input$qc_PCA_annotation)) {
           annot_column <- input$qc_PCA_annotation
         } else {
           annot_column <- default_annotation_column()
         }
         
-        # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
           annot_color_map <- custom_colors[[annot_column]]
@@ -365,55 +380,88 @@ QCPCA_Ome_Server <- function(id,
           annot_color_map <- NULL
         }
         
-        # generate plot using cached PCA
-        create_PCA_reg(gct = GCT_processed(),
-                           col_of_interest = annot_column,
-                           ome = ome,
-                           custom_color_map = annot_color_map,
-                           pca_result = cached_pca_result())
+        create_PCA_reg(
+          gct = GCT_processed(),
+          col_of_interest = annot_column,
+          ome = ome,
+          custom_color_map = annot_color_map,
+          pca_result = cached_pca_result()
+        )
       }
     )
     
-    # render summary plot
-    output$qc_PCA_reg <- renderPlotly(
-      ggplotly(qc_PCA_reg_reactive())
+    output$qc_PCA_reg <- renderPlotly({
+      ggplotly(qc_PCA_reg_reactive(), tooltip = "text")
+    })
+    
+    ## FEATURE LOADINGS ##
+    
+    qc_PCA_loadings_table_df <- reactive({
+      req(GCT_processed())
+      get_pca_loadings_df(
+        cached_pca_result(),
+        gct = GCT_processed(),
+        for_export = TRUE
+      )
+    })
+
+    qc_PCA_loadings_cumulative_reactive <- eventReactive(
+      eventExpr = cached_pca_result(),
+      valueExpr = {
+        create_PCA_loadings_cumulative(
+          pca_result = cached_pca_result(),
+          ome = ome,
+          gct = GCT_processed()
+        )
+      }
     )
+
+    output$qc_PCA_loadings_cumulative <- renderPlotly({
+      ggplotly(qc_PCA_loadings_cumulative_reactive(), tooltip = "text")
+    })
     
-    ## COMPILE EXPORTS ##
+    ## EXPORTS (single bundle per ome) ##
     
-    
-    qc_PCA_plot_export_function <- function(dir_name) {
+    qc_PCA_export_bundle <- function(dir_name) {
       ggsave_params <- get_ggsave_params()
+      
       ggsave(
-        filename = paste0("qc_PCA_plot_", ome, ".pdf"), 
-        plot = qc_PCA_plot_reactive(), 
-        device = 'pdf',
+        filename = paste0("qc_PCA_scores_", ome, ".pdf"),
+        plot = qc_PCA_plot_reactive(),
+        device = "pdf",
         path = dir_name,
         width = ggsave_params$width,
-        height = ggsave_params$height, 
+        height = ggsave_params$height,
         units = ggsave_params$units
+      )
+      
+      ggsave(
+        filename = paste0("qc_PCA_regression_", ome, ".pdf"),
+        plot = qc_PCA_reg_reactive(),
+        device = "pdf",
+        path = dir_name,
+        width = ggsave_params$width,
+        height = ggsave_params$height,
+        units = ggsave_params$units
+      )
+      
+      ggsave(
+        filename = paste0("qc_PCA_loadings_cumulative_", ome, ".pdf"),
+        plot = qc_PCA_loadings_cumulative_reactive(),
+        device = "pdf",
+        path = dir_name,
+        width = ggsave_params$width,
+        height = ggsave_params$height,
+        units = ggsave_params$units
+      )
+      
+      write.csv(
+        qc_PCA_loadings_table_df(),
+        file = file.path(dir_name, paste0("qc_PCA_loadings_", ome, ".csv")),
+        row.names = FALSE
       )
     }
     
-    qc_PCA_reg_export_function <- function(dir_name) {
-      ggsave_params <- get_ggsave_params()
-      ggsave(
-        filename = paste0("qc_PCA_reg_", ome, ".pdf"), 
-        plot = qc_PCA_reg_reactive(), 
-        device = 'pdf',
-        path = dir_name,
-        width = ggsave_params$width,
-        height = ggsave_params$height, 
-        units = ggsave_params$units
-      )
-    }
-    
-    return(
-      list(
-        qc_PCA_plot = qc_PCA_plot_export_function,
-        qc_PCA_reg = qc_PCA_reg_export_function
-      )
-    )
+    return(list(qc_PCA = qc_PCA_export_bundle))
   })
 }
-

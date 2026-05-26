@@ -26,7 +26,7 @@ customizeTabUI <- function(id = "customizeTab") {
   ns <- NS(id) # namespace function, wrap UI inputId's with this `ns("inputId")`
 
   preset_choices <- c("(custom)", "Paul Tol Bright", "Paul Tol Vibrant",
-                      "Paul Tol Muted", "ColorBrewer Set2",
+                      "Paul Tol Muted", "Paul Tol Light", "ColorBrewer Set2",
                       "ColorBrewer Paired", "Viridis")
 
   tagList(
