@@ -10,14 +10,35 @@ match exactly (within tolerance). This is **golden-file regression testing**,
 not manual derivation. The oracle is limma run in isolation in this sandbox;
 the assumption is that limma is correct.
 
+## Two testing layers
+
+This sandbox feeds **two complementary** test layers:
+
+1. **Golden-file regression** (`tests/testthat/test-lm-golden-regression.R`):
+   does `lm.regression()` match limma run in isolation? Oracle = limma; catches
+   *drift*. Uses the `type*`/`continuous`/`intensity` fixtures + `golden/*.rds`.
+2. **Ground-truth correctness** (`tests/testthat/test-lm-ground-truth.R`): is the
+   statistical backbone *correct* against effects we planted ourselves? Catches
+   *wrongness* that golden regeneration would hide (because a buggy path would
+   produce a buggy golden). Uses the `gt_*` fixtures; no golden files — it asserts
+   statistical properties (uniform null p-values, FDR control, sign algebra,
+   recovery/power, blocking) directly.
+
 ## Layout
 
 - `synthesize_datasets.R` — generates five `data/<name>.rds` fixtures:
   `type1_rm_with_groups`, `type2_rm_only`, `type3_contrasts`,
   `continuous_covariate`, `intensity_trend`. Seeds and structure are baked in.
-- `manual/run_*.R` — one script per fixture; runs limma directly (no protigy
-  wrappers) and saves the canonical output frame to `golden/<name>.rds`.
-- `golden/*.rds` — committed expected outputs.
+- `synthesize_ground_truth.R` — generates five `data/gt_*.rds` fixtures for the
+  ground-truth layer: `gt_pure_null` (calibration/FDR), `gt_sign_convention`
+  (sign & magnitude algebra), `gt_power_recovery` (sensitivity/specificity),
+  `gt_blocking` (within-subject correlation; blocking must beat the unblocked
+  fit), `gt_rank_deficient` (graceful degradation on an aliased design). Seeds
+  201–205; regenerates byte-identically. The ground-truth test auto-regenerates
+  these if missing, so they need not be committed.
+- `manual/run_*.R` — one script per golden fixture; runs limma directly (no
+  protigy wrappers) and saves the canonical output frame to `golden/<name>.rds`.
+- `golden/*.rds` — committed expected outputs (golden layer only).
 - `compare/assert_equivalent.R` — tolerance-based comparison helper used by
   both the sandbox self-check and the `testthat` regression suite.
 
