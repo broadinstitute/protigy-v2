@@ -286,7 +286,7 @@ test_that("app_UI() still evaluates after adding Setup controls (construct smoke
   )
 }
 
-test_that("Tab_Server returns list(exports=<reactive>, setup_state=<reactiveValues>)", {
+test_that("Tab_Server returns list(exports, setup_state, analysis)", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
   globals <- shiny::reactiveValues(default_ome = "proteome",
@@ -304,9 +304,13 @@ test_that("Tab_Server returns list(exports=<reactive>, setup_state=<reactiveValu
     }
   )
   expect_true(is.list(ret))
-  expect_named(ret, c("exports", "setup_state"), ignore.order = TRUE)
+  # 5D extended the contract with $analysis (the Start-Analysis cache reactiveVal
+  # Phases 6/7 read); exports + setup_state are unchanged.
+  expect_named(ret, c("exports", "setup_state", "analysis"),
+               ignore.order = TRUE)
   expect_true(is.function(ret$exports))                 # a reactiveVal IS a function
   expect_s3_class(ret$setup_state, "reactivevalues")
+  expect_true(is.function(ret$analysis))                # a reactiveVal IS a function
 })
 
 test_that("marker table: compound autofill, add, remove, clear all flow", {

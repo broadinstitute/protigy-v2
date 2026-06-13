@@ -63,22 +63,66 @@ pelsa_switcher_bar_UI <- function(suffix) {
 #
 # @param input,output,session  the app_server reactive context
 # @param GCTs_and_params        reactiveVal data-flow contract object
-# @return a reactive resolving to the active dataset name (character scalar)
+# @return a LIST:
+#   $active_dataset         reactive resolving to the active dataset name.
+#   $set_analyzed_datasets  function(datasets) — the Phase-4/5D SEAM SETTER. The
+#                           Setup tab's Start-Analysis calls this with the
+#                           checked subset so the switcher + sections then show
+#                           ONLY the analyzed datasets. Passing NULL / character(0)
+#                           restores the "all uploaded omes" default (the
+#                           observe() below re-syncs on the next GCT change).
+#
+# BACKWARD-COMPAT (documented): the previous contract returned the bare
+# active_dataset reactive. app_server now reads $active_dataset; any caller that
+# only needs the active dataset uses res$active_dataset.
 pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
 
-  # Phase-5 seam: defaults to all uploaded omes; Phase 5 repoints this by
-  # calling pelsa_analyzed_datasets(<checked subset from Setup>).
+  # Phase-5/5D seam: defaults to all uploaded omes; Start-Analysis repoints this
+  # via set_analyzed_datasets(<checked subset from Setup>).
   pelsa_analyzed_datasets <- reactiveVal(NULL)
 
-  # Keep the default in sync with uploaded omes until Phase 5 overrides it.
+  # User-driven override flag: once Start-Analysis sets the analyzed set, the
+  # auto-sync below must NOT clobber it on an unrelated reactive flush. It is
+  # cleared (back to auto-sync) only when a NEW upload replaces the GCTs, which
+  # is detected by a change in the uploaded ome-name signature.
+  user_pinned <- reactiveVal(FALSE)
+  last_upload_sig <- reactiveVal(NULL)
+
+  # Keep the default in sync with uploaded omes until Start-Analysis overrides
+  # it. A new upload (GCT ome set changes) un-pins so the default tracks fresh
+  # uploads; an unrelated reactive flush leaves a user-pinned set untouched.
   observe({
     gp <- GCTs_and_params()
-    if (is.null(gp) || is.null(gp$GCTs)) {
+    sig <- if (is.null(gp) || is.null(gp$GCTs)) NULL else names(gp$GCTs)
+
+    upload_changed <- !identical(sig, isolate(last_upload_sig()))
+    if (upload_changed) {
+      last_upload_sig(sig)
+      user_pinned(FALSE)
+    }
+
+    if (is.null(sig)) {
       pelsa_analyzed_datasets(NULL)
-    } else {
-      pelsa_analyzed_datasets(names(gp$GCTs))
+    } else if (!isolate(user_pinned())) {
+      pelsa_analyzed_datasets(sig)
     }
   })
+
+  # The Phase-4 seam setter handed to the Setup tab. Validates + pins.
+  set_analyzed_datasets <- function(datasets) {
+    datasets <- as.character(datasets %||% character(0))
+    datasets <- datasets[!is.na(datasets) & nzchar(datasets)]
+    if (length(datasets) == 0L) {
+      user_pinned(FALSE)
+      gp <- isolate(GCTs_and_params())
+      pelsa_analyzed_datasets(if (is.null(gp) || is.null(gp$GCTs)) NULL
+                              else names(gp$GCTs))
+      return(invisible())
+    }
+    user_pinned(TRUE)
+    pelsa_analyzed_datasets(datasets)
+    invisible()
+  }
 
   analyzed_datasets <- reactive({
     pelsa_analyzed_datasets()
@@ -130,5 +174,8 @@ pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
     selected
   })
 
-  return(active_dataset)
+  list(
+    active_dataset        = active_dataset,
+    set_analyzed_datasets = set_analyzed_datasets
+  )
 }

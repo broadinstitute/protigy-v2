@@ -671,6 +671,19 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
 
       shiny::tags$hr(),
 
+      # 6b. START ANALYSIS (5D). Gated by a pre-flight validation checklist; on
+      #     success it runs the compute pipeline (staged withProgress) and drives
+      #     the container's analyzed-datasets seam. Validation errors render
+      #     inline below the button (never a crash / silent no-op).
+      shiny::actionButton(
+        ns("pelsa_start"), "Start Analysis",
+        icon  = shiny::icon("play"),
+        class = "btn-primary"
+      ),
+      shiny::uiOutput(ns("pelsa_validation_msgs")),
+
+      shiny::tags$hr(),
+
       # 7. MAINTENANCE: per-species UniProt-annotation refresh (5C).
       #    Visually separated as a maintenance action — independent of
       #    Start-Analysis. The species checklist is re-read LIVE each time the

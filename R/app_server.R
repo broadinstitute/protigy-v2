@@ -118,28 +118,34 @@ app_server <- function(input, output, session) {
   
   ## PELSA container: app-level dataset switcher + active-dataset coordination.
   ## Lives at top-level session scope (not a module) so one switcher input
-  ## drives all three PELSA sections. Returns the active_dataset() reactive.
-  pelsa_active_dataset <- pelsaContainer_Server(
+  ## drives all three PELSA sections. Returns $active_dataset (reactive) +
+  ## $set_analyzed_datasets (the Phase-4/5D seam setter Start-Analysis drives).
+  pelsa_container <- pelsaContainer_Server(
     input = input,
     output = output,
     session = session,
     GCTs_and_params = GCTs_and_params
   )
+  pelsa_active_dataset <- pelsa_container$active_dataset
 
   ## PELSA Section 1 module (Setup)
   # Returns list(exports = <per-ome export reactiveVal>, setup_state = <live
-  # reactiveValues>). $exports feeds the export gathering below (unchanged
-  # contract); $setup_state is the shared run-config seam Phases 5B/6/7 read.
-  # (Sections 2 & 3 still return the bare exports reactiveVal — only Setup
-  # carries a setup_state companion.)
+  # reactiveValues>, analysis = <per-dataset analysis cache reactiveVal>).
+  # $exports feeds the export gathering below (unchanged contract);
+  # $setup_state is the shared run-config seam Phases 5B/6/7 read;
+  # $analysis is the 5D Start-Analysis cache Phases 6/7 READ (never recompute).
+  # set_analyzed_datasets is threaded in so Start-Analysis can drive the
+  # container's analyzed-datasets seam on success.
   all_PELSASection1 <- PELSASection1_Tab_Server(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original,
-    active_dataset = pelsa_active_dataset
+    active_dataset = pelsa_active_dataset,
+    set_analyzed_datasets = pelsa_container$set_analyzed_datasets
   )
   all_PELSASection1_exports <- all_PELSASection1$exports
   pelsa_setup_state <- all_PELSASection1$setup_state  # consumed by Phases 5B-7
+  pelsa_analysis <- all_PELSASection1$analysis        # consumed by Phases 6-7
 
   ## PELSA Section 2 module (Summary)
   all_PELSASection2_exports <- PELSASection2_Tab_Server(

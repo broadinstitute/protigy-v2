@@ -85,7 +85,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                                      GCTs_and_params,
                                      globals,
                                      GCTs_original,
-                                     active_dataset) {
+                                     active_dataset,
+                                     set_analyzed_datasets = NULL) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -723,6 +724,113 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       }
     }, ignoreInit = TRUE)
 
+    ## START ANALYSIS (5D) ##
+    # The compute pipeline that assembles the verified Phase-2 helpers into a
+    # per-dataset cache the Summary (Phase 6) + Volcano (Phase 7) sections READ
+    # (never recompute in render). The PURE validation + assembly logic lives in
+    # tab_pelsa_analysis_helpers.R (pelsa_validate_setup / pelsa_run_analysis);
+    # this observer stays thin: snapshot setup_state under isolate(), validate,
+    # then run the assembly under STAGED withProgress, surface errors as inline
+    # UI + notifications, and drive the analyzed-datasets seam on success.
+    #
+    # DECISIONS (see the helper banner): cache-as-is feature annotation (no
+    # UniProt top-up on this path — refresh is 5C's job); compute ALL checked
+    # datasets at Start (matches the analyzed-datasets semantics).
+    #
+    # The cache the sections read. Keyed by dataset; each value is the per-dataset
+    # object from pelsa_run_analysis_one (matched/unmatched/cv/depth/coverage/
+    # peptide_metrics/annotation/unannotated/qc), or list(error=) on failure.
+    pelsa_analysis <- reactiveVal(NULL)
+    last_validation <- reactiveVal(list(ok = TRUE, errors = character(0)))
+    analysis_in_flight <- reactiveVal(FALSE)
+
+    output$pelsa_validation_msgs <- renderUI({
+      pelsa_validation_msg_ui(last_validation())
+    })
+
+    observeEvent(input$pelsa_start, {
+      if (isTRUE(analysis_in_flight())) return()  # ignore overlapping clicks
+
+      # Snapshot setup_state under isolate() so mid-compute input edits cannot
+      # corrupt this run.
+      snapshot <- isolate(pelsa_setup_snapshot(setup_state))
+      gp <- isolate(GCTs_and_params())
+      gcts_processed <- if (is.null(gp)) NULL else gp$GCTs
+      gcts_raw       <- isolate(GCTs_original())
+      database_dir   <- pelsa_database_dir()
+
+      # Pre-flight validation (pure). Render inline + bail on failure.
+      validation <- pelsa_validate_setup(snapshot, gcts_processed, database_dir)
+      last_validation(validation)
+      if (!isTRUE(validation$ok)) {
+        showNotification(
+          "Cannot start analysis — see the checklist below the button.",
+          type = "warning", duration = 4)
+        return()
+      }
+
+      analysis_in_flight(TRUE)
+      shinyjs::disable("pelsa_start")
+      on.exit({
+        shinyjs::enable("pelsa_start")
+        analysis_in_flight(FALSE)
+      }, add = TRUE)
+
+      result <- tryCatch(
+        withProgress(message = "Running PELSA analysis", value = 0, {
+          # Read the species FASTA + feature cache ONCE (shared across datasets
+          # of the same species). Off the per-dataset loop.
+          setProgress(value = 0.05, detail = "Loading FASTA")
+          fasta_path <- pelsa_species_fasta_path(database_dir, snapshot$species)
+          fasta_map  <- pelsa_read_fasta(fasta_path)
+
+          setProgress(value = 0.15, detail = "Reading feature annotation cache")
+          species_dir <- file.path(database_dir, snapshot$species)
+          feat_df <- pelsa_read_feature_cache(species_dir)
+
+          pelsa_run_analysis(
+            gcts           = gcts_processed,
+            gcts_original  = gcts_raw,
+            setup_snapshot = snapshot,
+            fasta_map      = fasta_map,
+            feat_df        = feat_df,
+            set_progress   = function(value, detail) {
+              # Map the assembly's 0..1 onto the 0.15..1.0 remaining band.
+              setProgress(value = 0.15 + 0.85 * value, detail = detail)
+            }
+          )
+        }),
+        error = function(e) {
+          showNotification(sprintf("Analysis failed: %s", conditionMessage(e)),
+                           type = "error", duration = NULL)
+          NULL
+        }
+      )
+
+      if (is.null(result)) return()
+
+      pelsa_analysis(result)
+
+      # Drive the Phase-4 analyzed-datasets seam: the switcher + sections now
+      # show ONLY the analyzed datasets.
+      if (is.function(set_analyzed_datasets)) {
+        set_analyzed_datasets(snapshot$datasets)
+      }
+
+      # Use the canonical predicate (the ONE place that defines fail-vs-success)
+      # so Phase 6/7 + this observer agree on the rule.
+      failed <- names(Filter(pelsa_analysis_failed, result))
+      if (length(failed) > 0L) {
+        showNotification(sprintf(
+          "Analysis complete with %d dataset error(s): %s",
+          length(failed), paste(failed, collapse = ", ")),
+          type = "warning", duration = 8)
+      } else {
+        showNotification(sprintf("Analysis complete for %d dataset(s).",
+                                 length(result)), type = "message", duration = 5)
+      }
+    }, ignoreInit = TRUE)
+
     ## EXPORTS (per-ome wiring preserved from the scaffold) ##
     # NOTE: exports must eventually recompute ALL analyzed datasets, not just the
     # active one. For now we instantiate the per-ome server for every ome so the
@@ -757,7 +865,12 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # ASYMMETRY (documented): Sections 2 & 3 still return the BARE exports
     # reactiveVal — only Setup carries a setup_state companion, because only
     # Setup owns shared run-configuration state. Revisit if 2/3 grow their own.
-    list(exports = all_exports, setup_state = setup_state)
+    #
+    # $analysis (5D): the per-dataset analysis cache reactiveVal Start-Analysis
+    # populates. Phases 6 (Summary) and 7 (Volcano) READ this; they never
+    # recompute the heavy objects in render. NULL until the first Start-Analysis.
+    list(exports = all_exports, setup_state = setup_state,
+         analysis = pelsa_analysis)
   })
 }
 
