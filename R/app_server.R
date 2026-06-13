@@ -116,6 +116,40 @@ app_server <- function(input, output, session) {
     globals = globals
   )
   
+  ## PELSA container: app-level dataset switcher + active-dataset coordination.
+  ## Lives at top-level session scope (not a module) so one switcher input
+  ## drives all three PELSA sections. Returns the active_dataset() reactive.
+  pelsa_active_dataset <- pelsaContainer_Server(
+    input = input,
+    output = output,
+    session = session,
+    GCTs_and_params = GCTs_and_params
+  )
+
+  ## PELSA Section 1 module (Setup)
+  all_PELSASection1_exports <- PELSASection1_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset
+  )
+
+  ## PELSA Section 2 module (Summary)
+  all_PELSASection2_exports <- PELSASection2_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset
+  )
+
+  ## PELSA Section 3 module (Volcano Plot)
+  all_PELSASection3_exports <- PELSASection3_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset
+  )
+
   ## TEMPLATE module
   # all_template_exports <- templateSingleOme_Tab_Server(
   #   GCTs_and_params = GCTs_and_params,
@@ -136,7 +170,10 @@ app_server <- function(input, output, session) {
         QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports,
         statSummary_exports = all_statSummary_exports,
-        statPlot_exports = all_statPlot_exports
+        statPlot_exports = all_statPlot_exports,
+        PELSASection1_exports = all_PELSASection1_exports,
+        PELSASection2_exports = all_PELSASection2_exports,
+        PELSASection3_exports = all_PELSASection3_exports
       )
     )
 
