@@ -160,11 +160,18 @@ app_server <- function(input, output, session) {
   )
 
   ## PELSA Section 3 module (Volcano Plot)
+  # Consumes the Statistics tab's stat_results/stat_params (Decision A: PELSA
+  # does NOT recompute differential stats) + the 5D analysis cache + setup_state
+  # (markers + species for feature annotation). NO recompute in render.
   all_PELSASection3_exports <- PELSASection3_Tab_Server(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original,
-    active_dataset = pelsa_active_dataset
+    active_dataset = pelsa_active_dataset,
+    stat_results = stat_setup_output$stat_results,
+    stat_params = stat_setup_output$stat_params,
+    pelsa_analysis = pelsa_analysis,
+    pelsa_setup_state = pelsa_setup_state
   )
 
   ## TEMPLATE module
