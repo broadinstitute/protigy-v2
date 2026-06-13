@@ -10,31 +10,45 @@
 #   4. Marker paste box      (textAreaInput + "Add markers" button)
 #   5. Marker reactive table (DT, columns Accession / Gene Symbol)
 #                            + Remove selected / Clear all buttons
-#   6. Condition grouping column + Replicate identifier column (selectInputs
-#      driven by the ACTIVE dataset's cdesc)
+#   6. PER-DATASET condition/replicate configuration (5B): for each CHECKED
+#      dataset, a condition-grouping + replicate-identifier selectInput (driven
+#      by THAT dataset's cdesc), a draggable condition-ORDER widget, and one
+#      draggable replicate-order widget per condition. An "apply the same setup
+#      to all datasets" checkbox copies the source dataset's column choices +
+#      ordering to every checked dataset.
 #
 # The pure, testable logic lives in tab_pelsa_section1_helpers.R; this server
 # stays thin (wiring + reactivity only).
 #
-# SETUP-STATE OBJECT (extended by 5B/5C/5D)
-#   The Tab server exposes a `setup_state` reactiveValues that downstream
-#   sub-tasks read/extend:
+# SETUP-STATE OBJECT (the documented contract read/extended by 5C/5D + 6/7)
+#   The Tab server exposes a `setup_state` reactiveValues:
 #     setup_state$datasets       chr — checked datasets to analyze (5D drives
 #                                      the container's pelsa_analyzed_datasets
 #                                      off this; see SEAM below)
-#     setup_state$species        chr scalar — selected species
-#     setup_state$compound       chr scalar — selected treatment compound
-#     setup_state$marker_rows    data.frame(accession, gene) — the marker table
-#     setup_state$condition_col  chr scalar — condition grouping column (5A: shared)
-#     setup_state$replicate_col  chr scalar — replicate identifier column (5A: shared)
+#     setup_state$species        chr scalar — selected species (SHARED)
+#     setup_state$compound       chr scalar — selected treatment compound (SHARED)
+#     setup_state$marker_rows    data.frame(accession, gene) — marker table (SHARED)
+#
+#   PER-DATASET fields (5B) — NAMED LISTS keyed by dataset name (ome). Only the
+#   checked datasets have entries; toggling a dataset adds/removes its entry:
+#     setup_state$condition_col[[ds]]   chr scalar — condition grouping column
+#     setup_state$replicate_col[[ds]]   chr scalar — replicate identifier column
+#     setup_state$condition_order[[ds]] chr — chosen order of that ds's conditions
+#     setup_state$replicate_order[[ds]][[cond]] chr — chosen sample order within
+#                                            each condition (named by condition)
+#     setup_state$sample_order[[ds]]    chr — the CANONICAL ordered sample-name
+#                                            vector (column order downstream
+#                                            plots respect), built by
+#                                            pelsa_build_sample_order().
 #   It is returned alongside the export functions as
 #   list(exports = <all_exports reactive>, setup_state = setup_state).
 #
+#   APPLY-ALL SOURCE (documented): when "apply to all" is ticked, the SOURCE
+#   dataset is the ACTIVE dataset if it is among the checked datasets, else the
+#   first checked dataset. Only the per-dataset condition/replicate COLUMNS +
+#   ORDERING are copied; species/compound/markers stay shared and untouched.
+#
 # DEFERRED SEAMS (documented; built later)
-#   - 5B: PER-DATASET condition/replicate config + "apply to all" checkbox, and
-#         the shinyjqui orderInput condition/replicate ORDERING widgets. The
-#         condition/replicate selectors below are SHARED (active-dataset-driven)
-#         placeholders to be upgraded per-dataset in 5B.
 #   - 5C: species UniProt-refresh button + progress.
 #   - 5D: Start-Analysis button + validation + withProgress + the compute
 #         pipeline; accession<->gene UniProt/org.db resolution (the marker-table
@@ -98,29 +112,18 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     default_ome   <- reactive(globals$default_ome) # don't remove
     custom_colors <- reactive(globals$colors)
 
-    # cdesc columns of the ACTIVE dataset (drives the condition/replicate
-    # selectors). 5B upgrades these to per-dataset selectors.
-    active_cdesc_cols <- reactive({
-      ome <- active_dataset()
-      req(ome, ome %in% all_omes())
-      gct <- GCTs()[[ome]]
-      req(gct)
-      cols <- names(gct@cdesc)
-      validate(need(
-        length(cols) > 0,
-        "selected dataset has no sample-annotation columns"
-      ))
-      cols
-    })
-
-    ## SETUP STATE (extended by 5B/5C/5D) ##
+    ## SETUP STATE (the documented per-dataset contract; see header) ##
+    # SHARED scalars + per-dataset NAMED LISTS keyed by dataset (ome).
     setup_state <- reactiveValues(
-      datasets      = character(0),
-      species       = NULL,
-      compound      = NULL,
-      marker_rows   = pelsa_empty_marker_rows(),
-      condition_col = NULL,
-      replicate_col = NULL
+      datasets        = character(0),
+      species         = NULL,
+      compound        = NULL,
+      marker_rows     = pelsa_empty_marker_rows(),
+      condition_col   = list(),  # [[ds]] -> chr scalar
+      replicate_col   = list(),  # [[ds]] -> chr scalar
+      condition_order = list(),  # [[ds]] -> chr (condition order)
+      replicate_order = list(),  # [[ds]] -> list(cond -> chr sample order)
+      sample_order    = list()   # [[ds]] -> chr (canonical sample order)
     )
 
     # Re-read the compound presets on Setup entry (and whenever the box renders)
@@ -137,7 +140,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       datasets  <- all_omes()
       species   <- pelsa_list_species(pelsa_database_dir())
       compounds <- names(compound_markers()$compounds)
-      cdesc     <- active_cdesc_cols()
 
       add_css_attributes(
         shinydashboardPlus::box(
@@ -192,27 +194,17 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
           tags$hr(),
 
-          # 6. Condition grouping + replicate identifier columns (SHARED; 5B
-          #    upgrades to per-dataset + ordering widgets).
-          selectInput(
-            ns("pelsa_condition_col"),
-            label   = "Condition grouping column",
-            choices = cdesc
+          # 6. PER-DATASET condition/replicate configuration + ordering (5B).
+          #    "Apply to all" copies one dataset's column+order config to every
+          #    checked dataset. The per-dataset panels are rendered server-side
+          #    (they depend on the checked-dataset set and each dataset's cdesc).
+          tags$label("Condition / replicate configuration"),
+          checkboxInput(
+            ns("pelsa_apply_all"),
+            label = "Apply the same setup to all datasets",
+            value = FALSE
           ),
-          selectInput(
-            ns("pelsa_replicate_col"),
-            label   = "Replicate identifier column",
-            choices = cdesc
-          ),
-
-          # 5B SEAM: per-dataset condition/replicate ORDERING (shinyjqui
-          # orderInput) goes here. Placeholder only for 5A.
-          div(
-            id = ns("pelsa_ordering_placeholder"),
-            style = "color:#6c757d; font-style:italic; margin-top:8px;",
-            "Condition / replicate ordering and per-dataset configuration ",
-            "are added in a later step."
-          )
+          uiOutput(ns("pelsa_perdataset_config"))
         ),
         classes = c("box-no-header", "box-with-tabs")
       )
@@ -230,14 +222,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
     observeEvent(input$pelsa_compound, {
       setup_state$compound <- input$pelsa_compound
-    }, ignoreNULL = FALSE)
-
-    observeEvent(input$pelsa_condition_col, {
-      setup_state$condition_col <- input$pelsa_condition_col
-    }, ignoreNULL = FALSE)
-
-    observeEvent(input$pelsa_replicate_col, {
-      setup_state$replicate_col <- input$pelsa_replicate_col
     }, ignoreNULL = FALSE)
 
     ## MARKER TABLE ##
@@ -314,6 +298,436 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         selection = "multiple",
         options = list(pageLength = 10, searching = FALSE, dom = "tip")
       )
+    })
+
+    ###########################################################################
+    ## PER-DATASET CONDITION / REPLICATE CONFIG + ORDERING (5B)
+    ## Input ids are positional (dataset index i, condition index j) so arbitrary
+    ## dataset/condition strings can't collide; see pelsa_setup_ids() for the id
+    ## scheme. i = position in all_omes(); j = position in the distinct-condition
+    ## list. Includes orderInput drag widgets + reset + keyboard-rank fallback.
+    ###########################################################################
+
+    # SAFETY (do NOT change to a checked-subset index): .ds_index maps over the
+    # STABLE FULL ome list (all_omes() == names(GCTs())), NOT input$pelsa_datasets.
+    # So a dataset's index is fixed for the life of this reactive context and
+    # index-keyed observers/inputs never desync as datasets are checked/unchecked.
+    # The only thing that reorders all_omes() is a wholesale GCTs replacement,
+    # which rebuilds this whole module context anyway. Keying off the checked
+    # subset instead WOULD desync observers from their inputs.
+    .ds_index <- function(ome) match(ome, all_omes())
+
+    .ids <- pelsa_setup_ids()
+    id_condition_col   <- .ids$condition_col
+    id_replicate_col   <- .ids$replicate_col
+    id_condition_order <- .ids$condition_order
+    id_condition_reset <- .ids$condition_reset
+    id_condition_rank  <- .ids$condition_rank
+    id_replicate_order <- .ids$replicate_order
+    id_replicate_reset <- .ids$replicate_reset
+    id_replicate_rank  <- .ids$replicate_rank
+
+    # cdesc data.frame for a dataset (rownames = sample names) or NULL.
+    cdesc_for <- function(ome) {
+      if (is.null(ome) || !(ome %in% all_omes())) return(NULL)
+      gct <- GCTs()[[ome]]
+      if (is.null(gct)) return(NULL)
+      gct@cdesc
+    }
+
+    # cdesc column names for a dataset; character(0) if unknown/columnless.
+    cdesc_cols_for <- function(ome) {
+      cd <- cdesc_for(ome)
+      if (is.null(cd)) character(0) else names(cd)
+    }
+
+    # Immutable per-dataset setter: replace setup_state[[field]] with a copy that
+    # has [[ome]] set to `value` (value NULL drops the entry). Used pervasively
+    # below to keep the named-list updates immutable + terse.
+    set_ds <- function(field, ome, value) {
+      cur <- setup_state[[field]]
+      cur[[ome]] <- value
+      setup_state[[field]] <- cur
+    }
+
+    # Immutable nested setter for replicate_order[[ome]][[cond]] (one condition's
+    # sample order). Keeps the doubly-nested named-list update immutable + terse.
+    set_ds_rep <- function(ome, cond, value) {
+      by_cond <- setup_state$replicate_order[[ome]] %||% list()
+      by_cond[[cond]] <- value
+      set_ds("replicate_order", ome, by_cond)
+    }
+
+    # The currently-checked datasets, intersected with the available omes and
+    # kept in all_omes() order (stable, deterministic).
+    checked_datasets <- reactive({
+      sel <- input$pelsa_datasets
+      if (is.null(sel)) sel <- character(0)
+      all_omes()[all_omes() %in% sel]
+    })
+
+    # The apply-all SOURCE dataset (documented): active dataset if checked, else
+    # the first checked dataset. NULL when nothing is checked.
+    apply_all_source <- function() {
+      checked <- checked_datasets()
+      if (length(checked) == 0L) return(NULL)
+      act <- active_dataset()
+      if (!is.null(act) && act %in% checked) act else checked[[1]]
+    }
+
+    # ---- per-dataset config UI (one panel per CHECKED dataset) ----------------
+    output$pelsa_perdataset_config <- renderUI({
+      checked <- checked_datasets()
+      if (length(checked) == 0L) {
+        return(helpText("Check at least one dataset to configure conditions."))
+      }
+
+      panels <- lapply(checked, function(ome) {
+        i     <- .ds_index(ome)
+        cdesc <- cdesc_for(ome)
+        cols  <- if (is.null(cdesc)) character(0) else names(cdesc)
+
+        sel_cond <- setup_state$condition_col[[ome]] %||%
+          (if (length(cols)) cols[[1]] else NULL)
+        sel_rep  <- setup_state$replicate_col[[ome]] %||%
+          (if (length(cols)) cols[[1]] else NULL)
+        if (length(cols) && !(sel_cond %in% cols)) sel_cond <- cols[[1]]
+        if (length(cols) && !(sel_rep  %in% cols)) sel_rep  <- cols[[1]]
+
+        pelsa_dataset_config_panel(
+          ome = ome, cols = cols, sel_cond = sel_cond, sel_rep = sel_rep,
+          ids = list(
+            condition_col   = ns(id_condition_col(i)),
+            replicate_col   = ns(id_replicate_col(i)),
+            condition_order = ns(id_condition_order(i)),
+            condition_reset = ns(id_condition_reset(i)),
+            condition_rank  = ns(id_condition_rank(i)),
+            replicate_cards = ns(sprintf("pelsa_replicate_cards_d%d", i))
+          )
+        )
+      })
+
+      do.call(tagList, panels)
+    })
+
+    # ---- distinct conditions per dataset (reactive on the chosen cond col) ----
+    # Returns a named-by-ome list of distinct conditions for each checked dataset.
+    distinct_conditions_for <- function(ome) {
+      cdesc <- cdesc_for(ome)
+      if (is.null(cdesc)) return(character(0))
+      i <- .ds_index(ome)
+      cond_col <- input[[id_condition_col(i)]] %||% setup_state$condition_col[[ome]]
+      if (is.null(cond_col) || !(cond_col %in% names(cdesc))) return(character(0))
+      pelsa_distinct_conditions(cdesc, cond_col)
+    }
+
+    # ---- per-condition replicate cards (one renderUI per dataset index) -------
+    # Guarded by a registry so each renderer is created once (re-assigning
+    # output$<id> replaces rather than stacks, but the guard keeps it explicit).
+    rendered_card_outputs <- reactiveVal(character(0))
+
+    register_replicate_card_renderer <- function(ome) {
+      i  <- .ds_index(ome)
+      out_id <- sprintf("pelsa_replicate_cards_d%d", i)
+      reg <- rendered_card_outputs()
+      if (out_id %in% reg) return(invisible())
+
+      local({
+        ome_local <- ome
+        i_local   <- i
+        output[[out_id]] <- renderUI({
+          cdesc <- cdesc_for(ome_local)
+          if (is.null(cdesc)) return(NULL)
+          conds <- distinct_conditions_for(ome_local)
+          if (length(conds) == 0L) {
+            return(helpText("Choose a condition column to order replicates."))
+          }
+          cond_col <- input[[id_condition_col(i_local)]] %||%
+            setup_state$condition_col[[ome_local]]
+          rep_col  <- input[[id_replicate_col(i_local)]] %||%
+            setup_state$replicate_col[[ome_local]]
+          cards <- lapply(seq_along(conds), function(j) {
+            cond <- conds[[j]]
+            samples <- pelsa_samples_for_condition(cdesc, cond_col, rep_col, cond)
+            pelsa_replicate_card(
+              cond     = cond,
+              samples  = samples,
+              order_id = ns(id_replicate_order(i_local, j)),
+              reset_id = ns(id_replicate_reset(i_local, j)),
+              rank_id  = ns(id_replicate_rank(i_local, j))
+            )
+          })
+          do.call(tagList, cards)
+        })
+      })
+
+      rendered_card_outputs(unique(c(reg, out_id)))
+      invisible()
+    }
+
+    # ---- seeding the orderInputs (default / merge with saved) -----------------
+    seed_condition_order <- function(ome) {
+      cdesc <- cdesc_for(ome)
+      if (is.null(cdesc)) return(invisible())
+      i <- .ds_index(ome)
+      available <- distinct_conditions_for(ome)
+      saved <- setup_state$condition_order[[ome]]
+      order <- pelsa_merge_ordering(saved, available)
+      updateOrderInput(session, inputId = id_condition_order(i), items = order)
+      set_ds("condition_order", ome, order)
+    }
+
+    seed_replicate_orders <- function(ome) {
+      cdesc <- cdesc_for(ome)
+      if (is.null(cdesc)) return(invisible())
+      i <- .ds_index(ome)
+      conds <- distinct_conditions_for(ome)
+      cond_col <- input[[id_condition_col(i)]] %||% setup_state$condition_col[[ome]]
+      rep_col  <- input[[id_replicate_col(i)]] %||% setup_state$replicate_col[[ome]]
+      saved_by_cond <- setup_state$replicate_order[[ome]] %||% list()
+      new_by_cond <- list()
+      for (j in seq_along(conds)) {
+        cond <- conds[[j]]
+        default_samples <- pelsa_samples_for_condition(cdesc, cond_col, rep_col, cond)
+        order <- pelsa_merge_ordering(saved_by_cond[[cond]], default_samples)
+        new_by_cond[[cond]] <- order
+        if (length(default_samples) > 1L) {
+          updateOrderInput(session, inputId = id_replicate_order(i, j), items = order)
+        }
+      }
+      set_ds("replicate_order", ome, new_by_cond)
+    }
+
+    # ---- observer-dedup registry (prevents leaks on re-render) ----------------
+    # Dynamic per-dataset/per-condition inputs are a classic observer-leak
+    # source. Track which observer KEYS exist and never create one twice
+    # (mirrors tab_stat_plot.R's poi_observer_registry).
+    setup_observer_registry <- reactiveVal(character(0))
+
+    register_dataset_observers <- function(ome) {
+      i   <- .ds_index(ome)
+      key <- sprintf("ds_%d", i)
+      reg <- setup_observer_registry()
+      if (key %in% reg) return(invisible())
+
+      local({
+        ome_local <- ome
+        i_local   <- i
+
+        # Condition / replicate COLUMN selectors -> setup_state + reseed orders.
+        # A column change invalidates this dataset's saved orders (drop -> reseed).
+        observeEvent(input[[id_condition_col(i_local)]], {
+          set_ds("condition_col", ome_local, input[[id_condition_col(i_local)]])
+          set_ds("condition_order", ome_local, NULL)
+          set_ds("replicate_order", ome_local, NULL)
+          seed_condition_order(ome_local)
+          seed_replicate_orders(ome_local)
+        }, ignoreNULL = TRUE)
+
+        observeEvent(input[[id_replicate_col(i_local)]], {
+          set_ds("replicate_col", ome_local, input[[id_replicate_col(i_local)]])
+          set_ds("replicate_order", ome_local, NULL)
+          seed_replicate_orders(ome_local)
+        }, ignoreNULL = TRUE)
+
+        # Condition order drag -> setup_state.
+        observeEvent(input[[id_condition_order(i_local)]], {
+          set_ds("condition_order", ome_local, input[[id_condition_order(i_local)]])
+        }, ignoreNULL = FALSE)
+
+        # Condition reset -> default order.
+        observeEvent(input[[id_condition_reset(i_local)]], {
+          set_ds("condition_order", ome_local, NULL)
+          seed_condition_order(ome_local)
+        }, ignoreNULL = TRUE)
+
+        # Condition keyboard rank (comma-separated) -> reorder.
+        observeEvent(input[[id_condition_rank(i_local)]], {
+          txt <- input[[id_condition_rank(i_local)]]
+          if (is.null(txt) || !nzchar(trimws(txt))) return()
+          requested <- trimws(strsplit(txt, ",", fixed = TRUE)[[1]])
+          requested <- requested[nzchar(requested)]
+          available <- distinct_conditions_for(ome_local)
+          order <- pelsa_merge_ordering(requested, available)
+          updateOrderInput(session, inputId = id_condition_order(i_local), items = order)
+          set_ds("condition_order", ome_local, order)
+        }, ignoreNULL = TRUE)
+      })
+
+      setup_observer_registry(unique(c(reg, key)))
+      invisible()
+    }
+
+    # Per-condition replicate observers: keyed by (dataset i, condition j). Same
+    # dedup registry so re-rendering cards / switching cond col never leaks.
+    register_condition_observers <- function(ome) {
+      cdesc <- cdesc_for(ome)
+      if (is.null(cdesc)) return(invisible())
+      i     <- .ds_index(ome)
+      conds <- distinct_conditions_for(ome)
+      reg   <- setup_observer_registry()
+      new_keys <- character(0)
+
+      # Skip single-replicate conditions: their card collapses to a static label
+      # with no order/reset/rank inputs, so observing them would be dead wiring.
+      cond_col <- input[[id_condition_col(i)]] %||% setup_state$condition_col[[ome]]
+      rep_col  <- input[[id_replicate_col(i)]] %||% setup_state$replicate_col[[ome]]
+
+      for (j in seq_along(conds)) {
+        if (length(pelsa_samples_for_condition(cdesc, cond_col, rep_col, conds[[j]])) <= 1L) next
+
+        key <- sprintf("ds_%d_cond_%d", i, j)
+        if (key %in% reg) next
+        local({
+          i_local    <- i
+          j_local    <- j
+          ome_local  <- ome
+          cond_local <- conds[[j]]
+
+          # Default replicate (sample) order for this condition, recomputed live.
+          default_samples_local <- function() {
+            cd  <- cdesc_for(ome_local)
+            cc  <- input[[id_condition_col(i_local)]] %||% setup_state$condition_col[[ome_local]]
+            rc  <- input[[id_replicate_col(i_local)]] %||% setup_state$replicate_col[[ome_local]]
+            pelsa_samples_for_condition(cd, cc, rc, cond_local)
+          }
+
+          # Replicate order drag -> setup_state.
+          observeEvent(input[[id_replicate_order(i_local, j_local)]], {
+            set_ds_rep(ome_local, cond_local,
+                       input[[id_replicate_order(i_local, j_local)]])
+          }, ignoreNULL = FALSE)
+
+          # Replicate reset -> default sample sort for this condition.
+          observeEvent(input[[id_replicate_reset(i_local, j_local)]], {
+            default_samples <- default_samples_local()
+            updateOrderInput(session, inputId = id_replicate_order(i_local, j_local),
+                             items = default_samples)
+            set_ds_rep(ome_local, cond_local, default_samples)
+          }, ignoreNULL = TRUE)
+
+          # Replicate keyboard rank -> reorder.
+          observeEvent(input[[id_replicate_rank(i_local, j_local)]], {
+            txt <- input[[id_replicate_rank(i_local, j_local)]]
+            if (is.null(txt) || !nzchar(trimws(txt))) return()
+            requested <- trimws(strsplit(txt, ",", fixed = TRUE)[[1]])
+            requested <- requested[nzchar(requested)]
+            order <- pelsa_merge_ordering(requested, default_samples_local())
+            updateOrderInput(session, inputId = id_replicate_order(i_local, j_local), items = order)
+            set_ds_rep(ome_local, cond_local, order)
+          }, ignoreNULL = TRUE)
+        })
+        new_keys <- c(new_keys, key)
+      }
+      if (length(new_keys)) {
+        setup_observer_registry(unique(c(reg, new_keys)))
+      }
+      invisible()
+    }
+
+    # ---- wire everything when the checked-dataset set changes -----------------
+    observeEvent(checked_datasets(), {
+      checked <- checked_datasets()
+
+      # Drop unchecked datasets from every per-dataset field (pure, tested).
+      fields <- c("condition_col", "replicate_col",
+                  "condition_order", "replicate_order", "sample_order")
+      pruned <- pelsa_prune_perdataset_state(
+        stats::setNames(lapply(fields, function(f) setup_state[[f]]), fields),
+        checked)
+      for (f in fields) setup_state[[f]] <- pruned[[f]]
+
+      for (ome in checked) {
+        register_replicate_card_renderer(ome)
+        register_dataset_observers(ome)
+
+        # Seed column defaults if not yet set.
+        cols <- cdesc_cols_for(ome)
+        if (length(cols) > 0L) {
+          if (is.null(setup_state$condition_col[[ome]])) set_ds("condition_col", ome, cols[[1]])
+          if (is.null(setup_state$replicate_col[[ome]])) set_ds("replicate_col", ome, cols[[1]])
+        }
+        register_condition_observers(ome)
+        seed_condition_order(ome)
+        seed_replicate_orders(ome)
+      }
+    }, ignoreNULL = FALSE)
+
+    # ---- APPLY TO ALL ---------------------------------------------------------
+    # Copy the SOURCE dataset's condition/replicate columns + ordering to every
+    # checked dataset whose cdesc has both columns. Species/compound/markers stay
+    # shared and untouched.
+    observeEvent(input$pelsa_apply_all, {
+      if (!isTRUE(input$pelsa_apply_all)) return()
+      src <- apply_all_source()
+      if (is.null(src)) {
+        showNotification("Check at least one dataset before applying to all.",
+                         type = "warning", duration = 3)
+        updateCheckboxInput(session, "pelsa_apply_all", value = FALSE)
+        return()
+      }
+      i_src    <- .ds_index(src)
+      src_cond <- input[[id_condition_col(i_src)]] %||% setup_state$condition_col[[src]]
+      src_rep  <- input[[id_replicate_col(i_src)]] %||% setup_state$replicate_col[[src]]
+      src_cond_order <- setup_state$condition_order[[src]]
+      src_rep_order  <- setup_state$replicate_order[[src]]
+
+      applied <- FALSE
+      skipped <- character(0)
+      for (ome in checked_datasets()) {
+        if (identical(ome, src)) next
+        cols <- cdesc_cols_for(ome)
+        if (!(src_cond %in% cols) || !(src_rep %in% cols)) {
+          skipped <- c(skipped, ome)
+          next
+        }
+        i <- .ds_index(ome)
+        # Columns + selectInputs.
+        set_ds("condition_col", ome, src_cond)
+        set_ds("replicate_col", ome, src_rep)
+        updateSelectInput(session, id_condition_col(i), selected = src_cond)
+        updateSelectInput(session, id_replicate_col(i), selected = src_rep)
+        # Orders (copy then re-seed against the target's own samples).
+        set_ds("condition_order", ome, src_cond_order)
+        set_ds("replicate_order", ome, src_rep_order)
+        seed_condition_order(ome)
+        seed_replicate_orders(ome)
+        applied <- TRUE
+      }
+      if (applied) {
+        showNotification(sprintf("Applied %s's setup to all compatible datasets.",
+                                 src), type = "message", duration = 3)
+      }
+      if (length(skipped)) {
+        showNotification(sprintf(
+          "Skipped %d dataset(s) lacking column(s) '%s'/'%s': %s",
+          length(skipped), src_cond, src_rep, paste(skipped, collapse = ", ")
+        ), type = "warning", duration = 5)
+      }
+      updateCheckboxInput(session, "pelsa_apply_all", value = FALSE)
+    }, ignoreInit = TRUE)
+
+    # ---- canonical sample_order (what Summary/Volcano consume) ----------------
+    # Recomputed for every checked dataset on any ordering / column change.
+    observe({
+      checked <- checked_datasets()
+      so <- list()
+      for (ome in checked) {
+        cdesc <- cdesc_for(ome)
+        if (is.null(cdesc)) next
+        cond_col <- setup_state$condition_col[[ome]]
+        rep_col  <- setup_state$replicate_col[[ome]]
+        if (is.null(cond_col) || is.null(rep_col)) next
+        if (!(cond_col %in% names(cdesc)) || !(rep_col %in% names(cdesc))) next
+        so[[ome]] <- pelsa_build_sample_order(
+          condition_order              = setup_state$condition_order[[ome]],
+          replicate_order_by_condition = setup_state$replicate_order[[ome]],
+          cdesc                        = cdesc,
+          condition_col                = cond_col,
+          replicate_col                = rep_col
+        )
+      }
+      setup_state$sample_order <- so
     })
 
     ## EXPORTS (per-ome wiring preserved from the scaffold) ##

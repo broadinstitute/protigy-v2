@@ -249,7 +249,8 @@ test_that("Setup control ids are namespaced + wired in the module server", {
     "pelsa_datasets", "pelsa_species", "pelsa_compound",
     "pelsa_marker_input", "pelsa_add_markers", "pelsa_marker_table",
     "pelsa_remove_markers", "pelsa_clear_markers",
-    "pelsa_condition_col", "pelsa_replicate_col"
+    # 5B: per-dataset config replaces the shared condition/replicate selects.
+    "pelsa_apply_all", "pelsa_perdataset_config"
   )
   fn_body <- paste(deparse(body(PELSASection1_Tab_Server)), collapse = "\n")
   for (id in ids) {
@@ -399,7 +400,7 @@ test_that("cleared markers STAY cleared across a compound re-render echo (no res
   )
 })
 
-test_that("setup_state datasets / condition / replicate wiring populates", {
+test_that("setup_state datasets wiring populates + per-dataset cond/rep (5B)", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
   globals <- shiny::reactiveValues(default_ome = "proteome",
@@ -415,12 +416,17 @@ test_that("setup_state datasets / condition / replicate wiring populates", {
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
       session$setInputs(pelsa_datasets = "proteome")
+      session$flushReact()
       expect_identical(setup_state$datasets, "proteome")
 
-      session$setInputs(pelsa_condition_col = cdesc[[1]],
-                        pelsa_replicate_col = cdesc[[1]])
-      expect_identical(setup_state$condition_col, cdesc[[1]])
-      expect_identical(setup_state$replicate_col, cdesc[[1]])
+      # 5B: condition/replicate are now PER-DATASET named lists; the per-dataset
+      # selectInput id is index-encoded (proteome is dataset 1 -> _d1).
+      expect_true(is.list(setup_state$condition_col))
+      session$setInputs(pelsa_condition_col_d1 = cdesc[[1]],
+                        pelsa_replicate_col_d1 = cdesc[[1]])
+      session$flushReact()
+      expect_identical(setup_state$condition_col[["proteome"]], cdesc[[1]])
+      expect_identical(setup_state$replicate_col[["proteome"]], cdesc[[1]])
     }
   )
 })

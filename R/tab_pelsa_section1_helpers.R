@@ -14,16 +14,27 @@
 #   pelsa_merge_marker_rows(existing, new)      de-duplicated union by accession
 #   pelsa_empty_marker_rows()                   the canonical empty 2-col marker frame
 #
+# Section-1 ORDERING helpers (Task 5B) — also pure/testable:
+#   pelsa_distinct_conditions(cdesc, col)          distinct condition values (occurrence order)
+#   pelsa_samples_for_condition(cdesc, ...)         sample names of one condition, replicate-sorted
+#   pelsa_default_replicate_order(cdesc, ...)        per-condition default replicate (sample) order
+#   pelsa_merge_ordering(saved, available)          keep saved order, append new, drop removed
+#   pelsa_build_sample_order(...)                    canonical ordered sample-name vector
+#
 # DEFERRED SEAMS (documented; NOT implemented in 5A):
 #   - accession<->gene resolution (org.Hs.eg.db / org.Mm.eg.db; canonical /
 #     reviewed flags; gene -> accession-choice prompt) is HEAVY and deferred to
 #     5D. pelsa_marker_rows_from_input() takes a `resolver` arg as the seam:
 #     when NULL (the 5A default) gene is left NA, to be filled by 5D's resolver.
-#   - per-DATASET (per-ome) condition/replicate config + "apply to all" -> 5B.
-#   - shinyjqui orderInput condition/replicate ordering widgets -> 5B.
 #   - species UniProt-refresh button + progress -> 5C.
 #   - driving the container's pelsa_analyzed_datasets from the datasets control
 #     + the Start-Analysis compute pipeline -> 5D.
+#
+# IMPLEMENTED IN 5B (was a deferred 5A seam):
+#   - per-DATASET (per-ome) condition/replicate config + "apply to all" checkbox.
+#   - shinyjqui orderInput condition/replicate ordering widgets, backed by the
+#     ordering helpers below (the widgets live in the module server; the merge /
+#     sample-order LOGIC is here, pure and tested).
 ################################################################################
 
 # The canonical empty marker-table frame: two character columns. Used as the
@@ -281,4 +292,317 @@ pelsa_merge_marker_rows <- function(existing, new) {
   )
   rownames(combined) <- NULL
   combined
+}
+
+################################################################################
+# Section-1 ORDERING helpers (Task 5B)
+#
+# The Setup tab lets the user ORDER conditions and, within each condition, the
+# replicate samples. The confirmed order becomes the canonical column order
+# (sample_order) every downstream PELSA plot respects.
+#
+# All cdesc inputs below are a data.frame whose ROW NAMES are the sample names
+# (this matches cmapR GCTs, where rownames(gct@cdesc) == gct@cid). The condition
+# and replicate columns are columns of that data.frame.
+################################################################################
+
+# Coerce a cdesc column to a plain character vector (factors -> labels), so
+# ordering compares on the displayed values, not factor codes.
+# @noRd
+.pelsa_col_chr <- function(cdesc, col) {
+  if (!is.data.frame(cdesc)) {
+    stop(".pelsa_col_chr(): `cdesc` must be a data.frame.", call. = FALSE)
+  }
+  if (!is.character(col) || length(col) != 1L || is.na(col) || !nzchar(col)) {
+    stop(".pelsa_col_chr(): `col` must be a single non-empty string.",
+         call. = FALSE)
+  }
+  if (!col %in% names(cdesc)) {
+    stop(sprintf(".pelsa_col_chr(): column '%s' is not in cdesc.", col),
+         call. = FALSE)
+  }
+  as.character(cdesc[[col]])
+}
+
+# Distinct condition values, in FIRST-SEEN (occurrence) order.
+#
+# This is the natural/default condition order: the order conditions first appear
+# down the cdesc rows. NA values are dropped.
+#
+# @param cdesc data.frame (rownames = sample names).
+# @param condition_col single column name.
+# @return character vector of distinct conditions (occurrence order).
+# @noRd
+pelsa_distinct_conditions <- function(cdesc, condition_col) {
+  vals <- .pelsa_col_chr(cdesc, condition_col)
+  vals <- vals[!is.na(vals)]
+  unique(vals)
+}
+
+# Sample names belonging to ONE condition, sorted by the replicate-identifier
+# column (the default replicate order). Sample names are the cdesc rownames.
+#
+# Ties on the replicate column are broken by sample name for determinism.
+#
+# @param cdesc         data.frame (rownames = sample names).
+# @param condition_col condition grouping column name.
+# @param replicate_col replicate identifier column name.
+# @param condition     the condition value to select.
+# @return character vector of sample names for that condition, replicate-sorted.
+# @noRd
+pelsa_samples_for_condition <- function(cdesc, condition_col, replicate_col,
+                                        condition) {
+  cond_vals <- .pelsa_col_chr(cdesc, condition_col)
+  rep_vals  <- .pelsa_col_chr(cdesc, replicate_col)
+  samples   <- rownames(cdesc)
+  if (is.null(samples)) samples <- as.character(seq_len(nrow(cdesc)))
+
+  in_cond <- !is.na(cond_vals) & cond_vals == condition
+  if (!any(in_cond)) return(character(0))
+
+  ord <- order(rep_vals[in_cond], samples[in_cond], method = "radix")
+  samples[in_cond][ord]
+}
+
+# Default per-condition replicate (sample) ordering: a NAMED LIST keyed by
+# condition, each element the condition's samples sorted by replicate_col.
+#
+# Conditions are taken in their distinct/occurrence order.
+#
+# @return named list condition -> character vector of sample names.
+# @noRd
+pelsa_default_replicate_order <- function(cdesc, condition_col, replicate_col) {
+  conds <- pelsa_distinct_conditions(cdesc, condition_col)
+  out <- lapply(conds, function(cond) {
+    pelsa_samples_for_condition(cdesc, condition_col, replicate_col, cond)
+  })
+  names(out) <- conds
+  out
+}
+
+# Reconcile a SAVED order against the currently AVAILABLE items: keep saved
+# items that are still available (in their saved order), then append any newly
+# available items (in their available order). Mirrors updateDatasetOrdering()
+# from the multi-ome heatmap (keep-saved / drop-removed / append-new).
+#
+# @param saved     character vector — a previously chosen order (may be NULL).
+# @param available character vector — items that currently exist.
+# @return character vector — the reconciled order (subset+superset of available).
+# @noRd
+pelsa_merge_ordering <- function(saved, available) {
+  available <- as.character(available)
+  available <- available[!is.na(available)]
+  if (is.null(saved)) saved <- character(0)
+  saved <- as.character(saved)
+
+  kept <- saved[saved %in% available]
+  kept <- unique(kept)
+  appended <- setdiff(available, kept)
+  c(kept, appended)
+}
+
+# Build the canonical SAMPLE order from a condition order + per-condition
+# replicate order. This is the column order every downstream PELSA plot
+# (Summary, Volcano) respects.
+#
+# Algorithm:
+#   - Reconcile condition_order against the cdesc's distinct conditions
+#     (drop conditions no longer present, append any missing in natural order).
+#   - For each condition in that reconciled order, take its replicate order
+#     (reconciled against the condition's actual samples, so removed samples are
+#     dropped and any not-yet-ordered samples are appended in default order).
+#   - Concatenate.
+#
+# Pure and deterministic: identical inputs always yield the identical vector.
+#
+# @param condition_order              character vector — chosen condition order.
+# @param replicate_order_by_condition named list condition -> sample-name order.
+# @param cdesc                        data.frame (rownames = sample names).
+# @param condition_col                condition grouping column name.
+# @param replicate_col                replicate identifier column name.
+# @return character vector of sample names — the canonical column order.
+# @noRd
+pelsa_build_sample_order <- function(condition_order,
+                                     replicate_order_by_condition,
+                                     cdesc,
+                                     condition_col,
+                                     replicate_col) {
+  if (!is.data.frame(cdesc)) {
+    stop("pelsa_build_sample_order(): `cdesc` must be a data.frame.",
+         call. = FALSE)
+  }
+  if (is.null(replicate_order_by_condition)) {
+    replicate_order_by_condition <- list()
+  }
+  if (!is.list(replicate_order_by_condition)) {
+    stop("pelsa_build_sample_order(): `replicate_order_by_condition` must be ",
+         "a (named) list.", call. = FALSE)
+  }
+
+  available_conds <- pelsa_distinct_conditions(cdesc, condition_col)
+  conds <- pelsa_merge_ordering(condition_order, available_conds)
+
+  ordered <- lapply(conds, function(cond) {
+    default_samples <- pelsa_samples_for_condition(
+      cdesc, condition_col, replicate_col, cond
+    )
+    saved_rep <- replicate_order_by_condition[[cond]]
+    pelsa_merge_ordering(saved_rep, default_samples)
+  })
+
+  out <- unlist(ordered, use.names = FALSE)
+  if (is.null(out)) out <- character(0)
+  out
+}
+
+################################################################################
+# Section-1 per-dataset config UI builders (Task 5B) — pure tag constructors.
+#
+# These build the markup for the per-dataset config panel and the per-condition
+# replicate card. They are pure functions of their args (an `ns` namespacer,
+# pre-computed ids, and values), so the module server stays thin and the markup
+# is testable without a running session. All inputIds are passed in ALREADY
+# namespaced via ns() by the caller.
+################################################################################
+
+# One bordered, scroll-contained card for a single condition's replicate order.
+#
+# Single-replicate (<= 1 sample) conditions COLLAPSE to a static label (no drag
+# widget). Multi-replicate conditions get a shinyjqui orderInput inside a
+# scroll-capped card, plus a Reset button and a keyboard-accessible comma-rank
+# textInput fallback (orderInput drag has no keyboard path).
+#
+# @param cond        condition name (card header).
+# @param samples     character vector of this condition's sample names (default
+#                    order); length<=1 collapses to a static label.
+# @param order_id    ns()-namespaced inputId for the orderInput.
+# @param reset_id    ns()-namespaced inputId for the Reset actionButton.
+# @param rank_id     ns()-namespaced inputId for the keyboard-rank textInput.
+# @return a shiny tag (the card).
+# @noRd
+pelsa_replicate_card <- function(cond, samples, order_id, reset_id, rank_id) {
+  header <- shiny::tags$div(style = "font-weight:600; margin-bottom:4px;", cond)
+
+  if (length(samples) <= 1L) {
+    body <- shiny::tags$div(
+      style = "font-size:12px; color:#495057;",
+      if (length(samples) == 0L) "(no samples)" else samples[[1]]
+    )
+    return(shiny::tags$div(
+      style = paste0("border:1px solid #e0e0e0; border-radius:6px; ",
+                     "padding:8px; margin-bottom:8px;"),
+      header, body
+    ))
+  }
+
+  shiny::tags$div(
+    style = paste0("border:1px solid #e0e0e0; border-radius:6px; ",
+                   "padding:8px; margin-bottom:8px; max-height:220px; ",
+                   "overflow-y:auto;"),
+    header,
+    orderInput(inputId = order_id, label = NULL, items = samples, width = "100%"),
+    shiny::div(style = "margin-top:6px;",
+               shiny::actionButton(reset_id, "Reset", class = "btn-xs")),
+    shiny::textInput(rank_id, label = NULL, value = "",
+                     placeholder = "keyboard: comma-separated order")
+  )
+}
+
+# The per-dataset configuration panel: condition + replicate column selectors,
+# a condition orderInput (+reset+keyboard-rank), and a placeholder uiOutput for
+# the per-condition replicate cards.
+#
+# @param ome             dataset name (panel header).
+# @param cols            character vector of cdesc column names (selector choices).
+# @param sel_cond        currently-selected condition column.
+# @param sel_rep         currently-selected replicate column.
+# @param ids             named list of ns()-namespaced inputIds:
+#                        condition_col, replicate_col, condition_order,
+#                        condition_reset, condition_rank, replicate_cards.
+# @return a shiny tag (the panel).
+# @noRd
+pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids) {
+  border <- paste0("border:1px solid #dee2e6; border-radius:6px; ",
+                   "padding:10px; margin-bottom:12px;")
+
+  if (length(cols) == 0L) {
+    return(shiny::div(
+      class = "pelsa-ds-config", style = border,
+      shiny::tags$strong(ome),
+      shiny::helpText("This dataset has no sample-annotation columns to group by.")
+    ))
+  }
+
+  shiny::div(
+    class = "pelsa-ds-config", style = border,
+    shiny::tags$strong(ome),
+    shiny::selectInput(ids$condition_col, label = "Condition grouping column",
+                       choices = cols, selected = sel_cond),
+    shiny::selectInput(ids$replicate_col, label = "Replicate identifier column",
+                       choices = cols, selected = sel_rep),
+
+    shiny::tags$label("Condition order (drag to reorder)"),
+    orderInput(inputId = ids$condition_order, label = NULL, items = list(),
+               width = "100%"),
+    shiny::div(
+      style = "margin-top:6px;",
+      shiny::actionButton(ids$condition_reset, "Reset to default order",
+                          class = "btn-xs"),
+      shiny::tags$span(
+        style = "margin-left:8px; font-size:12px; color:#6c757d;",
+        "Keyboard: type a comma-separated order then Enter"
+      )
+    ),
+    shiny::textInput(ids$condition_rank, label = NULL, value = "",
+                     placeholder = "e.g. CondB, CondA"),
+
+    shiny::tags$hr(style = "margin:8px 0;"),
+    shiny::tags$label("Replicate order within each condition"),
+    shiny::uiOutput(ids$replicate_cards)
+  )
+}
+
+# Prune per-dataset setup_state lists down to the currently-checked datasets.
+#
+# Each field in `state_lists` is a named list keyed by dataset name; entries for
+# datasets not in `checked` are dropped (immutable — a NEW list per field is
+# returned, the input is never mutated). Fields absent / NULL are returned as an
+# empty list so callers always get the full set of keys back.
+#
+# @param state_lists named list field -> (named list keyed by dataset).
+# @param checked     character vector of datasets to KEEP.
+# @return named list with the same field names, each pruned to `checked`.
+# @noRd
+pelsa_prune_perdataset_state <- function(state_lists, checked) {
+  if (!is.list(state_lists)) {
+    stop("pelsa_prune_perdataset_state(): `state_lists` must be a named list.",
+         call. = FALSE)
+  }
+  checked <- as.character(checked)
+  lapply(state_lists, function(field) {
+    if (is.null(field) || length(field) == 0L) return(list())
+    keep <- intersect(names(field), checked)
+    if (length(keep) == 0L) return(list())
+    field[keep]
+  })
+}
+
+# Positional input-id encoders for the per-dataset config controls. IDs are
+# keyed by dataset index i (position in all_omes()) and condition index j, so
+# arbitrary dataset/condition strings can never collide or produce illegal ids.
+# These are the single source of truth for the bare (un-namespaced) ids; the
+# module server ns()-wraps them for UI and uses them bare for update*Input().
+# @noRd
+pelsa_setup_ids <- function() {
+  list(
+    condition_col   = function(i)    sprintf("pelsa_condition_col_d%d", i),
+    replicate_col   = function(i)    sprintf("pelsa_replicate_col_d%d", i),
+    condition_order = function(i)    sprintf("pelsa_condition_order_d%d", i),
+    condition_reset = function(i)    sprintf("pelsa_condition_reset_d%d", i),
+    condition_rank  = function(i)    sprintf("pelsa_condition_rank_d%d", i),
+    replicate_cards = function(i)    sprintf("pelsa_replicate_cards_d%d", i),
+    replicate_order = function(i, j) sprintf("pelsa_replicate_order_d%d_c%d", i, j),
+    replicate_reset = function(i, j) sprintf("pelsa_replicate_reset_d%d_c%d", i, j),
+    replicate_rank  = function(i, j) sprintf("pelsa_replicate_rank_d%d_c%d", i, j)
+  )
 }
