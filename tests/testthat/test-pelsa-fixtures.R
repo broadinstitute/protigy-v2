@@ -269,6 +269,15 @@ test_that("seeded PEP.PeptidePosition annotations match FASTA-derived starts", {
   expect_gt(checked, 5L)
 })
 
+test_that("multi-gene and no-gene handles are non-empty and present in $peptides", {
+  syn <- pelsa_make_synthetic(seed = 1)
+  for (h in c(syn$multi_gene_peptide, syn$no_gene_peptide)) {
+    expect_type(h, "character")
+    expect_true(nzchar(h))
+    expect_true(h %in% syn$peptides$PEP.StrippedSequence)
+  }
+})
+
 test_that("condition_map maps every sample column to a condition", {
   syn <- pelsa_make_synthetic(seed = 1)
   expect_setequal(names(syn$condition_map), syn$sample_cols)

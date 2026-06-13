@@ -328,6 +328,11 @@ pelsa_make_synthetic <- function(seed = 1, n_extra_peptides = 50) {
 
     shared_peptide_accessions = c("SHARED1", "SHARED2", "SHARED3"),
 
+    # ;-aligned multi-gene row (acc "MULTI1;MULTI2", gene "GENEA;GENEB")
+    multi_gene_peptide = "MULTIGENEPEPK",
+    # empty-gene row (acc "NOGENEPROT", gene "")
+    no_gene_peptide = "NOGENEPEPTIDEK",
+
     low_n_condition = low_n_condition
   )
 }
