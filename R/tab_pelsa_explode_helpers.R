@@ -132,7 +132,10 @@ pelsa_explode_accessions <- function(df,
   # Map each flattened token back to its original row, then keep only non-empty
   # tokens. Per-row kept counts via tabulate() (vectorized, no per-row loop).
   flat_row <- rep.int(seq_len(n_row), n_acc_raw)
-  keep <- nzchar(flat_acc)
+  # Drop empty AND NA accession tokens (strsplit(NA) -> NA, and nzchar(NA) is
+  # TRUE, so NA must be excluded explicitly). A row whose accessions are all
+  # empty/NA contributes zero exploded rows.
+  keep <- !is.na(flat_acc) & nzchar(flat_acc)
   accession <- flat_acc[keep]
   n_acc <- tabulate(flat_row[keep], nbins = n_row)
 

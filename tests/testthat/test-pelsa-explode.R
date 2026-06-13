@@ -173,6 +173,22 @@ test_that("hand-built: empty middle accession token is dropped (A;;B -> A,B)", {
   expect_setequal(exploded$accession, c("A", "B"))
 })
 
+test_that("hand-built: NA accessions are dropped (not emitted as NA rows)", {
+  df <- data.frame(
+    PG.ProteinAccessions = c("A;B", NA_character_),
+    PG.Genes = c("GA;GB", "GX"),
+    PEP.PeptidePosition = c("1;2", "9"),
+    PEP.StrippedSequence = c("PEPK", "GHOSTK"),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  # Only the A;B row contributes (2 rows); the NA-accession row drops entirely.
+  expect_equal(nrow(exploded), 2L)
+  expect_setequal(exploded$accession, c("A", "B"))
+  expect_false(anyNA(exploded$accession))
+})
+
 test_that("single position token recycles to many accessions", {
   df <- data.frame(
     PG.ProteinAccessions = "A;B;C",
