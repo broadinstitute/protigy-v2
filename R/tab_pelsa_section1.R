@@ -40,8 +40,12 @@
 #                                            vector (column order downstream
 #                                            plots respect), built by
 #                                            pelsa_build_sample_order().
-#   It is returned alongside the export functions as
-#   list(exports = <all_exports reactive>, setup_state = setup_state).
+#   It is returned alongside the export functions as a REACTIVE snapshot:
+#   list(exports = <all_exports>, setup_state = reactive(pelsa_setup_snapshot(...)),
+#   analysis = <pelsa_analysis>). The consumers (2/3) is.function()-guard the seam
+#   and CALL it with (); a bare reactiveValues fails that guard, so the producer
+#   wraps the snapshot in reactive() (see the return-block comment for the seam
+#   contract).
 #
 #   APPLY-ALL SOURCE (documented): when "apply to all" is ticked, the SOURCE
 #   dataset is the ACTIVE dataset if it is among the checked datasets, else the
@@ -66,20 +70,8 @@ PELSASection1_Tab_UI <- function(id = "PELSASection1Tab") {
   )
 }
 
-# Resolve the PELSA database directory live.
-#   - installed package: system.file("database", package = "Protigy")
-#   - dev/load_all:      the same call resolves to inst/database
-# Returns "" when unavailable (pelsa_list_species() then yields character(0)).
-# @noRd
-pelsa_database_dir <- function() {
-  system.file("database", package = "Protigy")
-}
-
-# Resolve the compound-marker preset yaml path live (same install/dev rule).
-# @noRd
-pelsa_compound_markers_path <- function() {
-  system.file("pelsa", "compound_markers.yaml", package = "Protigy")
-}
+# pelsa_database_dir() + pelsa_compound_markers_path() live in
+# tab_pelsa_section1_helpers.R (pure path resolvers, shared with Section 3).
 
 PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                                      GCTs_and_params,
@@ -455,13 +447,20 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         i_local   <- i
 
         # Condition / replicate COLUMN selectors -> setup_state + reseed orders.
-        # A column change invalidates this dataset's saved orders (drop -> reseed).
+        # A column change invalidates this dataset's saved orders (drop -> reseed)
+        # AND changes the distinct-condition set. We MUST re-register the
+        # per-condition replicate observers so positions that became
+        # multi-replicate under the new column get wired (the positional observers
+        # already retarget to the live condition at their position; this only adds
+        # observers for newly-multi-replicate positions, deduped by the registry —
+        # no leak across repeated A->B->A switches).
         observeEvent(input[[id_condition_col(i_local)]], {
           set_ds("condition_col", ome_local, input[[id_condition_col(i_local)]])
           set_ds("condition_order", ome_local, NULL)
           set_ds("replicate_order", ome_local, NULL)
           seed_condition_order(ome_local)
           seed_replicate_orders(ome_local)
+          register_condition_observers(ome_local)
         }, ignoreNULL = TRUE)
 
         observeEvent(input[[id_replicate_col(i_local)]], {
@@ -498,8 +497,27 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       invisible()
     }
 
-    # Per-condition replicate observers: keyed by (dataset i, condition j). Same
-    # dedup registry so re-rendering cards / switching cond col never leaks.
+    # Per-condition replicate observers: ONE stable observer per (dataset i,
+    # POSITION j). Keyed POSITIONALLY (ds_<i>_cond_<j>) on the SAME dedup registry
+    # so re-rendering cards / switching the condition column never leaks (the
+    # positional orderInput input ids are reused across columns — re-registering
+    # by-value would stack a second observer on the same input id).
+    #
+    # H1 FIX: the condition VALUE the observer writes to is resolved LIVE at
+    # observe-time from the CURRENT distinct conditions at position j (cond_at_j),
+    # NOT captured at registration. Switching the condition column re-renders the
+    # cards in the new conditions' order; the stable position-j observer then
+    # writes set_ds_rep(ome, <new condition at j>, ...), so user replicate ordering
+    # for the new column is RETAINED (pelsa_build_sample_order looks the order up by
+    # the new condition name). Capturing the value at registration would write to
+    # the OLD condition value and silently drop the new column's replicate order.
+    #
+    # A position j is registered the FIRST time it ever holds a multi-replicate
+    # condition (under ANY column). It is then permanently bound to "whatever
+    # multi-replicate condition currently sits at position j", which is exactly the
+    # input/card the user is interacting with. Single-replicate positions get no
+    # observer (dead wiring); if a later column makes that position multi-replicate
+    # it is registered then.
     register_condition_observers <- function(ome) {
       cdesc <- cdesc_for(ome)
       if (is.null(cdesc)) return(invisible())
@@ -522,39 +540,55 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           i_local    <- i
           j_local    <- j
           ome_local  <- ome
-          cond_local <- conds[[j]]
 
-          # Default replicate (sample) order for this condition, recomputed live.
+          # The condition VALUE currently at position j (resolved LIVE so a
+          # condition-column switch retargets this observer to the new column's
+          # condition at this position). NULL when position j no longer exists.
+          cond_at_j <- function() {
+            cur <- distinct_conditions_for(ome_local)
+            if (j_local > length(cur)) return(NULL)
+            cur[[j_local]]
+          }
+
+          # Default replicate (sample) order for the condition currently at j.
           default_samples_local <- function() {
+            cond <- cond_at_j()
+            if (is.null(cond)) return(character(0))
             cd  <- cdesc_for(ome_local)
             cc  <- input[[id_condition_col(i_local)]] %||% setup_state$condition_col[[ome_local]]
             rc  <- input[[id_replicate_col(i_local)]] %||% setup_state$replicate_col[[ome_local]]
-            pelsa_samples_for_condition(cd, cc, rc, cond_local)
+            pelsa_samples_for_condition(cd, cc, rc, cond)
           }
 
-          # Replicate order drag -> setup_state.
+          # Replicate order drag -> setup_state (keyed by the LIVE condition at j).
           observeEvent(input[[id_replicate_order(i_local, j_local)]], {
-            set_ds_rep(ome_local, cond_local,
+            cond <- cond_at_j()
+            if (is.null(cond)) return()
+            set_ds_rep(ome_local, cond,
                        input[[id_replicate_order(i_local, j_local)]])
           }, ignoreNULL = FALSE)
 
-          # Replicate reset -> default sample sort for this condition.
+          # Replicate reset -> default sample sort for the condition at j.
           observeEvent(input[[id_replicate_reset(i_local, j_local)]], {
+            cond <- cond_at_j()
+            if (is.null(cond)) return()
             default_samples <- default_samples_local()
             updateOrderInput(session, inputId = id_replicate_order(i_local, j_local),
                              items = default_samples)
-            set_ds_rep(ome_local, cond_local, default_samples)
+            set_ds_rep(ome_local, cond, default_samples)
           }, ignoreNULL = TRUE)
 
-          # Replicate keyboard rank -> reorder.
+          # Replicate keyboard rank -> reorder (keyed by the LIVE condition at j).
           observeEvent(input[[id_replicate_rank(i_local, j_local)]], {
+            cond <- cond_at_j()
+            if (is.null(cond)) return()
             txt <- input[[id_replicate_rank(i_local, j_local)]]
             if (is.null(txt) || !nzchar(trimws(txt))) return()
             requested <- trimws(strsplit(txt, ",", fixed = TRUE)[[1]])
             requested <- requested[nzchar(requested)]
             order <- pelsa_merge_ordering(requested, default_samples_local())
             updateOrderInput(session, inputId = id_replicate_order(i_local, j_local), items = order)
-            set_ds_rep(ome_local, cond_local, order)
+            set_ds_rep(ome_local, cond, order)
           }, ignoreNULL = TRUE)
         })
         new_keys <- c(new_keys, key)
@@ -879,7 +913,17 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # $analysis (5D): the per-dataset analysis cache reactiveVal Start-Analysis
     # populates. Phases 6 (Summary) and 7 (Volcano) READ this; they never
     # recompute the heavy objects in render. NULL until the first Start-Analysis.
-    list(exports = all_exports, setup_state = setup_state,
+    #
+    # SEAM CONTRACT: setup_state is returned as a REACTIVE that yields a plain
+    # snapshot LIST (pelsa_setup_snapshot), NOT the bare reactiveValues. The
+    # consumers (Sections 2 & 3) guard with is.function() and CALL the seam with
+    # () to read ss$sample_order / $condition_order / $marker_rows / $condition_col
+    # / $species. A bare reactiveValues is NOT a function (is.function() is FALSE),
+    # so it would be silently downgraded to reactive(NULL) in production AND would
+    # error when called with (). Returning reactive(pelsa_setup_snapshot(...)) makes
+    # is.function() TRUE and delivers the live snapshot list the consumers expect.
+    list(exports = all_exports,
+         setup_state = reactive(pelsa_setup_snapshot(setup_state)),
          analysis = pelsa_analysis)
   })
 }

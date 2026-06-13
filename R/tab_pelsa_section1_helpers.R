@@ -37,6 +37,23 @@
 #     sample-order LOGIC is here, pure and tested).
 ################################################################################
 
+# ---- live path resolvers (shared with Section 3) -----------------------------
+
+# Resolve the PELSA database directory live.
+#   - installed package: system.file("database", package = "Protigy")
+#   - dev/load_all:      the same call resolves to inst/database
+# Returns "" when unavailable (pelsa_list_species() then yields character(0)).
+# @noRd
+pelsa_database_dir <- function() {
+  system.file("database", package = "Protigy")
+}
+
+# Resolve the compound-marker preset yaml path live (same install/dev rule).
+# @noRd
+pelsa_compound_markers_path <- function() {
+  system.file("pelsa", "compound_markers.yaml", package = "Protigy")
+}
+
 # The canonical empty marker-table frame: two character columns. Used as the
 # starting state of the reactive marker table and the zero-row return of the
 # row-building helpers, so the table schema is defined in exactly one place.

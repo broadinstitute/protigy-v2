@@ -295,12 +295,14 @@ test_that("Tab_Server returns list(exports, setup_state, analysis)", {
   active_dataset <- shiny::reactive("proteome")
 
   ret <- NULL
+  snap <- NULL
   shiny::testServer(
     PELSASection1_Tab_Server,
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
       ret <<- session$returned
+      snap <<- session$returned$setup_state()  # call the seam -> snapshot list
     }
   )
   expect_true(is.list(ret))
@@ -309,7 +311,15 @@ test_that("Tab_Server returns list(exports, setup_state, analysis)", {
   expect_named(ret, c("exports", "setup_state", "analysis"),
                ignore.order = TRUE)
   expect_true(is.function(ret$exports))                 # a reactiveVal IS a function
-  expect_s3_class(ret$setup_state, "reactivevalues")
+  # SEAM: setup_state is a REACTIVE (is.function TRUE) that yields a plain
+  # snapshot LIST — NOT a bare reactiveValues (which would fail the consumers'
+  # is.function() guard and be downgraded to reactive(NULL) in production).
+  expect_true(is.function(ret$setup_state))
+  expect_true(shiny::is.reactive(ret$setup_state))
+  expect_false(shiny::is.reactivevalues(ret$setup_state))
+  expect_true(is.list(snap) && !shiny::is.reactivevalues(snap))
+  expect_true(all(c("datasets", "species", "marker_rows", "condition_col",
+                    "condition_order", "sample_order") %in% names(snap)))
   expect_true(is.function(ret$analysis))                # a reactiveVal IS a function
 })
 

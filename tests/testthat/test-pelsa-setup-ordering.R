@@ -406,6 +406,142 @@ test_that("apply-all auto-unticks so a target dataset stays editable afterward",
   )
 })
 
+# ---- REGRESSION: the setup_state SEAM (CRITICAL) -----------------------------
+# The Tab server must return setup_state as a REACTIVE that yields a plain
+# snapshot LIST (not the bare reactiveValues). The consumers (Sections 2 & 3)
+# guard with is.function() and CALL the seam with (); a bare reactiveValues is
+# NOT a function, so it would be silently downgraded to reactive(NULL) in
+# production (markers / ordering / species lost). This test would have caught
+# that: it asserts the returned seam is.function() AND that calling it exposes
+# the live setup_state fields.
+test_that("Tab server returns setup_state as a reactive yielding the live snapshot", {
+  gp <- .ordering_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(gp)
+  globals <- shiny::reactiveValues(default_ome = "prot",
+                                   colors = list(prot = NULL, rna = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("prot")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      session$setInputs(pelsa_datasets = "prot")
+      session$flushReact()
+      session$setInputs(pelsa_condition_col_d1 = "grp",
+                        pelsa_replicate_col_d1 = "rid",
+                        pelsa_species = "homo_sapiens")
+      session$flushReact()
+
+      # Set a marker so we can prove it flows through the seam.
+      session$setInputs(pelsa_marker_input = "P12345")
+      session$setInputs(pelsa_add_markers = 1)
+      session$flushReact()
+
+      seam <- session$returned$setup_state
+
+      # (1) The seam is a FUNCTION / reactive (is.function TRUE) — the exact
+      # property the consumer is.function() guards on. A bare reactiveValues
+      # would FAIL this and be downgraded to reactive(NULL) in production.
+      expect_true(is.function(seam))
+
+      # (2) Calling it yields a plain LIST populated from the live reactiveValues.
+      snap <- seam()
+      expect_true(is.list(snap))
+      expect_false(shiny::is.reactivevalues(snap))
+
+      # (3) Every field the consumers read is present + populated from live state.
+      expect_identical(snap$species, "homo_sapiens")
+      expect_identical(snap$condition_col[["prot"]], "grp")
+      expect_setequal(snap$condition_order[["prot"]], c("ctrl", "drug"))
+      expect_true(!is.null(snap$sample_order[["prot"]]))
+      expect_true("P12345" %in% snap$marker_rows$accession)
+    }
+  )
+})
+
+# ---- REGRESSION: H1 — replicate order survives a condition-column switch -----
+# Switching a dataset's condition column must RE-WIRE the per-condition replicate
+# observers to the NEW column's conditions, so user replicate ordering for the
+# new column is RETAINED (not silently dropped to default because a stale
+# positional observer wrote to the OLD condition value).
+test_that("H1: replicate order is retained after switching the condition column", {
+  # cdesc where BOTH candidate condition columns yield multi-replicate conditions
+  # so the per-condition replicate observers exist under each column.
+  cdesc <- data.frame(
+    colA = c("a1", "a1", "a2", "a2"),  # 2 conds x 2 reps
+    colB = c("b1", "b2", "b1", "b2"),  # 2 conds x 2 reps (orthogonal split)
+    rid  = c("r1", "r2", "r1", "r2"),
+    row.names = c("s1", "s2", "s3", "s4"),
+    stringsAsFactors = FALSE
+  )
+  mat <- matrix(rnorm(2 * nrow(cdesc)), nrow = 2,
+                dimnames = list(c("f1", "f2"), rownames(cdesc)))
+  gct <- methods::new("GCT", mat = mat, cdesc = cdesc,
+                      rdesc = data.frame(id = c("f1", "f2"),
+                                         stringsAsFactors = FALSE),
+                      cid = rownames(cdesc), rid = c("f1", "f2"))
+  gp <- list(GCTs = list(prot = gct),
+             parameters = list(prot = list(annotation_column = NA)))
+
+  GCTs_and_params <- shiny::reactiveVal(gp)
+  globals <- shiny::reactiveValues(default_ome = "prot", colors = list(prot = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("prot")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      session$setInputs(pelsa_datasets = "prot")
+      session$flushReact()
+
+      # Column A: conditions a1 (s1,s2), a2 (s3,s4). Set a custom replicate order
+      # for a1's card (position j=1): reverse it to s2, s1.
+      session$setInputs(pelsa_condition_col_d1 = "colA",
+                        pelsa_replicate_col_d1 = "rid")
+      session$flushReact()
+      session$setInputs(pelsa_replicate_order_d1_c1 = c("s2", "s1"))
+      session$flushReact()
+      expect_identical(setup_state$replicate_order[["prot"]][["a1"]],
+                       c("s2", "s1"))
+
+      # Switch to column B: conditions b1 (s1,s3), b2 (s2,s4). Set a custom
+      # replicate order for b1's card (position j=1): reverse to s3, s1.
+      session$setInputs(pelsa_condition_col_d1 = "colB")
+      session$flushReact()
+      session$setInputs(pelsa_replicate_order_d1_c1 = c("s3", "s1"))
+      session$flushReact()
+
+      # H1: the NEW column's replicate order is RETAINED under the NEW condition
+      # name b1 (NOT silently written to the stale a1 / dropped to default).
+      expect_identical(setup_state$replicate_order[["prot"]][["b1"]],
+                       c("s3", "s1"))
+      # And the canonical sample order honors it (b1 first if condition order
+      # keeps b1 first; assert b1's samples appear reversed within the order).
+      so <- setup_state$sample_order[["prot"]]
+      expect_true(which(so == "s3") < which(so == "s1"))
+
+      # Switch BACK to A and confirm no corruption: a fresh order takes hold.
+      session$setInputs(pelsa_condition_col_d1 = "colA")
+      session$flushReact()
+      session$setInputs(pelsa_replicate_order_d1_c1 = c("s1", "s2"))
+      session$flushReact()
+      expect_identical(setup_state$replicate_order[["prot"]][["a1"]],
+                       c("s1", "s2"))
+
+      # No observer leak across the switches: the registry is bounded + unique.
+      reg <- setup_observer_registry()
+      expect_true(length(reg) == length(unique(reg)))
+      # Only 2 positions ever (i=1, j in {1,2}) -> at most 2 cond keys.
+      cond_keys <- grep("_cond_", reg, value = TRUE)
+      expect_true(length(cond_keys) <= 2L)
+    }
+  )
+})
+
 test_that("an NA condition value is dropped from the wired sample_order", {
   # cdesc with an NA in the condition column: the NA-row sample must NOT appear
   # in the canonical sample_order (the pure helper drops NA; assert the SERVER
