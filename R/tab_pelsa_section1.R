@@ -133,80 +133,19 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     })
 
     ## SETUP UI ##
+    # The Setup box's PURE markup lives in pelsa_setup_box_ui() (helpers); this
+    # renderUI just gates on a valid active dataset, gathers the live choices,
+    # and delegates. The per-dataset config (5B) + marker table render into the
+    # uiOutput/DT placeholders the builder emits.
     output$setup_box <- renderUI({
       ome <- active_dataset()
       req(ome, ome %in% all_omes())
 
-      datasets  <- all_omes()
-      species   <- pelsa_list_species(pelsa_database_dir())
-      compounds <- names(compound_markers()$compounds)
-
-      add_css_attributes(
-        shinydashboardPlus::box(
-          width = 12,
-          title = "PELSA Setup",
-          solidHeader = TRUE,
-          status      = "primary",
-
-          # 1. Datasets to analyze (FIRST control).
-          checkboxGroupInput(
-            ns("pelsa_datasets"),
-            label    = "Datasets to analyze",
-            choices  = datasets,
-            selected = datasets
-          ),
-
-          # 2. Species (live list of inst/database/ subfolders). 5C adds refresh.
-          selectInput(
-            ns("pelsa_species"),
-            label   = "Species",
-            choices = species,
-            selected = if (length(species)) species[[1]] else NULL
-          ),
-
-          # 3. Treatment compound (presets from compound_markers.yaml).
-          #    Selecting a compound autofills the marker table (server observer).
-          selectInput(
-            ns("pelsa_compound"),
-            label   = "Treatment compound",
-            choices = c("(none)" = "", compounds)
-          ),
-
-          # 4. Marker paste box + add button.
-          textAreaInput(
-            ns("pelsa_marker_input"),
-            label       = "Add marker proteins (accessions)",
-            placeholder = "P12345 Q99999 ... (space/comma/semicolon/newline)",
-            rows        = 3
-          ),
-          actionButton(ns("pelsa_add_markers"), "Add markers"),
-
-          tags$hr(),
-
-          # 5. Marker reactive table + remove/clear.
-          tags$label("Marker proteins"),
-          DT::dataTableOutput(ns("pelsa_marker_table")),
-          div(
-            style = "margin-top: 8px;",
-            actionButton(ns("pelsa_remove_markers"), "Remove selected"),
-            actionButton(ns("pelsa_clear_markers"), "Clear all")
-          ),
-
-          tags$hr(),
-
-          # 6. PER-DATASET condition/replicate configuration + ordering (5B).
-          #    "Apply to all" copies one dataset's column+order config to every
-          #    checked dataset. The per-dataset panels are rendered server-side
-          #    (they depend on the checked-dataset set and each dataset's cdesc).
-          tags$label("Condition / replicate configuration"),
-          checkboxInput(
-            ns("pelsa_apply_all"),
-            label = "Apply the same setup to all datasets",
-            value = FALSE
-          ),
-          uiOutput(ns("pelsa_perdataset_config"))
-        ),
-        classes = c("box-no-header", "box-with-tabs")
+      pelsa_setup_box_ui(
+        datasets  = all_omes(),
+        species   = pelsa_list_species(pelsa_database_dir()),
+        compounds = names(compound_markers()$compounds),
+        ns        = ns
       )
     })
 
@@ -729,6 +668,60 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       }
       setup_state$sample_order <- so
     })
+
+    ## SPECIES UNIPROT-ANNOTATION REFRESH (5C) ##
+    # Maintenance action, OFF the reactive path (once per button click). The
+    # multi-species loop, universe resolution, fetch + MERGE + atomic write, and
+    # error capture all live in pelsa_run_species_refresh()
+    # (tab_pelsa_refresh_helpers.R) so this observer stays thin: gather inputs,
+    # drive withProgress, surface the results as notifications. fetch_fn is the
+    # real pelsa_fetch_uniprot here; tests inject a stub into the helper directly
+    # (no network).
+    #
+    # RE-CLICK GUARD: an in-flight reactiveVal + a disabled button prevent a
+    # second click mid-fetch from starting an overlapping write (which would
+    # race the atomic rename). Hard to unit-test (needs a live session); the
+    # guard is belt-and-suspenders alongside the atomic write.
+    refresh_in_flight <- reactiveVal(FALSE)
+    observeEvent(input$pelsa_refresh_btn, {
+      if (isTRUE(refresh_in_flight())) return()   # ignore overlapping clicks
+
+      selected <- input$pelsa_refresh_species
+      if (is.null(selected) || length(selected) == 0L) {
+        showNotification("Select at least one species to refresh.",
+                         type = "warning", duration = 4)
+        return()
+      }
+      gp <- GCTs_and_params()
+      uploaded_gcts <- if (is.null(gp)) NULL else gp$GCTs
+
+      refresh_in_flight(TRUE)
+      shinyjs::disable("pelsa_refresh_btn")
+      on.exit({
+        shinyjs::enable("pelsa_refresh_btn")
+        refresh_in_flight(FALSE)
+      }, add = TRUE)
+
+      withProgress(
+        message = "Refreshing UniProt annotation library", value = 0, {
+          results <- pelsa_run_species_refresh(
+            species        = selected,
+            database_dir   = pelsa_database_dir(),
+            uploaded_gcts  = uploaded_gcts,
+            fetch_fn       = pelsa_fetch_uniprot,
+            set_progress   = function(value, detail) {
+              setProgress(value = value, detail = detail)
+            }
+          )
+        }
+      )
+
+      # Per-result error/warning/success notifications are FORMATTED by a pure
+      # helper (tested without a session); here we just emit them.
+      for (note in pelsa_refresh_notifications(results)) {
+        showNotification(note$message, type = note$type, duration = note$duration)
+      }
+    }, ignoreInit = TRUE)
 
     ## EXPORTS (per-ome wiring preserved from the scaffold) ##
     # NOTE: exports must eventually recompute ALL analyzed datasets, not just the

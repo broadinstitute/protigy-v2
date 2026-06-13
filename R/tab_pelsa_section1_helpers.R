@@ -587,6 +587,124 @@ pelsa_prune_perdataset_state <- function(state_lists, checked) {
   })
 }
 
+# The PELSA Setup box markup (pure tag constructor).
+#
+# Builds the entire add_css_attributes(box(...)) for the Setup tab: datasets
+# checklist, species + compound selectors, marker paste box + table placeholder,
+# the per-dataset config placeholder (5B, rendered server-side), and the 5C
+# maintenance refresh sub-section (species checklist + button). Kept pure (a
+# function of its choice vectors + `ns`) so the module renderUI stays thin and
+# the markup is testable without a running session. All inputIds are namespaced
+# via the passed `ns`.
+#
+# @param datasets  character vector of dataset (ome) names (checkbox choices).
+# @param species   character vector of species (live inst/database/ subfolders).
+# @param compounds character vector of compound preset names.
+# @param ns        the module namespacer (session$ns / NS(id)).
+# @return a shiny tag (the Setup box).
+# @noRd
+pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
+  add_css_attributes(
+    shinydashboardPlus::box(
+      width = 12,
+      title = "PELSA Setup",
+      solidHeader = TRUE,
+      status      = "primary",
+
+      # 1. Datasets to analyze (FIRST control).
+      shiny::checkboxGroupInput(
+        ns("pelsa_datasets"),
+        label    = "Datasets to analyze",
+        choices  = datasets,
+        selected = datasets
+      ),
+
+      # 2. Species (live list of inst/database/ subfolders).
+      shiny::selectInput(
+        ns("pelsa_species"),
+        label   = "Species",
+        choices = species,
+        selected = if (length(species)) species[[1]] else NULL
+      ),
+
+      # 3. Treatment compound (presets from compound_markers.yaml).
+      #    Selecting a compound autofills the marker table (server observer).
+      shiny::selectInput(
+        ns("pelsa_compound"),
+        label   = "Treatment compound",
+        choices = c("(none)" = "", compounds)
+      ),
+
+      # 4. Marker paste box + add button.
+      shiny::textAreaInput(
+        ns("pelsa_marker_input"),
+        label       = "Add marker proteins (accessions)",
+        placeholder = "P12345 Q99999 ... (space/comma/semicolon/newline)",
+        rows        = 3
+      ),
+      shiny::actionButton(ns("pelsa_add_markers"), "Add markers"),
+
+      shiny::tags$hr(),
+
+      # 5. Marker reactive table + remove/clear.
+      shiny::tags$label("Marker proteins"),
+      DT::dataTableOutput(ns("pelsa_marker_table")),
+      shiny::div(
+        style = "margin-top: 8px;",
+        shiny::actionButton(ns("pelsa_remove_markers"), "Remove selected"),
+        shiny::actionButton(ns("pelsa_clear_markers"), "Clear all")
+      ),
+
+      shiny::tags$hr(),
+
+      # 6. PER-DATASET condition/replicate configuration + ordering (5B).
+      #    "Apply to all" copies one dataset's column+order config to every
+      #    checked dataset. The per-dataset panels are rendered server-side
+      #    (they depend on the checked-dataset set and each dataset's cdesc).
+      shiny::tags$label("Condition / replicate configuration"),
+      shiny::checkboxInput(
+        ns("pelsa_apply_all"),
+        label = "Apply the same setup to all datasets",
+        value = FALSE
+      ),
+      shiny::uiOutput(ns("pelsa_perdataset_config")),
+
+      shiny::tags$hr(),
+
+      # 7. MAINTENANCE: per-species UniProt-annotation refresh (5C).
+      #    Visually separated as a maintenance action — independent of
+      #    Start-Analysis. The species checklist is re-read LIVE each time the
+      #    Setup box renders (the caller passes a fresh pelsa_list_species()).
+      #    Clicking the button rebuilds the checked species' uniprot_features
+      #    cache off the reactive path, with a progress bar (fetches take
+      #    minutes) and a MERGE-over-cache + atomic write so a partial/flaky
+      #    refresh never loses prior coverage.
+      shiny::tags$div(
+        class = "pelsa-refresh-section",
+        style = paste0("border:1px dashed #b0b0b0; border-radius:6px; ",
+                       "padding:10px; margin-top:6px; background:#fafafa;"),
+        shiny::tags$strong("Maintenance: UniProt annotation library"),
+        shiny::helpText(
+          "Rebuild the per-species feature cache used for volcano feature ",
+          "annotation. This fetches from UniProt and can take several ",
+          "minutes per species. It is independent of Start Analysis."
+        ),
+        shiny::checkboxGroupInput(
+          ns("pelsa_refresh_species"),
+          label   = "Species to refresh",
+          choices = species
+        ),
+        shiny::actionButton(
+          ns("pelsa_refresh_btn"),
+          "Refresh per-species UniProt annotation library",
+          icon = shiny::icon("sync")
+        )
+      )
+    ),
+    classes = c("box-no-header", "box-with-tabs")
+  )
+}
+
 # Positional input-id encoders for the per-dataset config controls. IDs are
 # keyed by dataset index i (position in all_omes()) and condition index j, so
 # arbitrary dataset/condition strings can never collide or produce illegal ids.
