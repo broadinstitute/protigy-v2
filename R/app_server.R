@@ -127,12 +127,19 @@ app_server <- function(input, output, session) {
   )
 
   ## PELSA Section 1 module (Setup)
-  all_PELSASection1_exports <- PELSASection1_Tab_Server(
+  # Returns list(exports = <per-ome export reactiveVal>, setup_state = <live
+  # reactiveValues>). $exports feeds the export gathering below (unchanged
+  # contract); $setup_state is the shared run-config seam Phases 5B/6/7 read.
+  # (Sections 2 & 3 still return the bare exports reactiveVal — only Setup
+  # carries a setup_state companion.)
+  all_PELSASection1 <- PELSASection1_Tab_Server(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original,
     active_dataset = pelsa_active_dataset
   )
+  all_PELSASection1_exports <- all_PELSASection1$exports
+  pelsa_setup_state <- all_PELSASection1$setup_state  # consumed by Phases 5B-7
 
   ## PELSA Section 2 module (Summary)
   all_PELSASection2_exports <- PELSASection2_Tab_Server(

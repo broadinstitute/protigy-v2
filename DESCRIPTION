@@ -74,7 +74,8 @@ Suggests:
     testthat (>= 3.2.0),
     shinytest2,
     chromote,
-    viridisLite
+    viridisLite,
+    withr
 Config/testthat/edition: 3
 LazyData: false
 Config/roxygen2/version: 8.0.0
