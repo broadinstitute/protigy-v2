@@ -383,7 +383,19 @@ test_that("intensity_line_ggplot: single vs faceted panel both build", {
     pep_end              = c(14L, 24L, 34L),
     stringsAsFactors     = FALSE
   )
-  list(Proteome = list(matched = matched, annotation = matched))
+  list(Proteome = list(matched = matched,
+                       annotation_features = .mk_annotation_features(nrow(matched))))
+}
+
+# Minimal row-aligned annotation_features stub for the new cache shape (the
+# volcano server recomputes annotation itself, so the values are placeholders).
+.mk_annotation_features <- function(n) {
+  data.frame(
+    feature_class_primary = rep("none", n),
+    winning_accession     = rep(NA_character_, n),
+    winning_gene          = rep(NA_character_, n),
+    stringsAsFactors      = FALSE
+  )
 }
 
 .mk_setup_state <- function() {
@@ -420,7 +432,8 @@ test_that("intensity_line_ggplot: single vs faceted panel both build", {
     pep_occurrence_idx   = c(1L, 1L, 1L),
     stringsAsFactors     = FALSE
   )
-  list(Proteome = list(matched = matched, annotation = matched))
+  list(Proteome = list(matched = matched,
+                       annotation_features = .mk_annotation_features(nrow(matched))))
 }
 
 # A real cmapR GCT (3 peptides x 4 samples) with a cdesc `condition` column so

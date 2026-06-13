@@ -70,12 +70,17 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       reactive(NULL)
     }
 
-    # The active dataset's cache entry (or NULL).
+    # The active dataset's cache entry (or NULL). Defense-in-depth: a FAILED
+    # entry is treated as NULL here too (mirrors Volcano's cache_entry() gate),
+    # so the dashboard's per-output reactives never read a failed entry's missing
+    # fields even if the top-level gate were bypassed.
     active_entry <- reactive({
       cache <- analysis_cache()
       ome <- active_dataset()
       if (is.null(cache) || is.null(ome)) return(NULL)
-      cache[[ome]]
+      entry <- cache[[ome]]
+      if (pelsa_analysis_failed(entry)) return(NULL)
+      entry
     })
 
     # The active dataset's canonical sample order (or NULL).
@@ -120,8 +125,10 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       entry <- cache[[ome]]
       if (pelsa_analysis_failed(entry)) {
         stage <- entry$stage
-        stage_txt <- if (is.null(stage) || is.na(stage)) "" else
-          sprintf(" (stage: %s)", stage)
+        # Harden against a length-0 stage (is.na() would error on length 0):
+        # require a length-1 non-NA value before formatting the stage hint.
+        stage_txt <- if (length(stage) == 1L && !is.na(stage))
+          sprintf(" (stage: %s)", stage) else ""
         return(pelsa_section2_message_box(
           sprintf("PELSA - Summary: %s failed", ome),
           sprintf("Analysis failed for this dataset%s: %s",

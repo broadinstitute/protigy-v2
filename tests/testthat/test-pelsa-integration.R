@@ -132,8 +132,10 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   expect_setequal(
     names(cache),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "peptide_metrics", "annotation", "unannotated", "qc")
+      "coverage", "peptide_metrics", "annotation_features", "unannotated", "qc")
   )
+  # The full-duplicate `annotation` frame is NOT stored (~27MB/dataset saved).
+  expect_false("annotation" %in% names(cache))
   # matched carries the .row_id join key + the 2B span columns.
   expect_true(all(c(".row_id", "accession", "gene", "pep_start", "pep_end",
                     "pep_occurrence_idx", "n_occurrences",
@@ -288,11 +290,14 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   # ---- CROSS-HELPER CONTRACT: matched accessions feed coverage + annotation -
   # Every accession the coverage table reports must be an accession the matched
   # cache actually produced (coverage is derived FROM matched). And the
-  # annotation frame is the matched cache + feature columns (same row count).
+  # annotation frame, reconstructed from matched + the stored feature columns, is
+  # row-aligned to the matched cache (same row count + the feature columns).
   expect_true(all(cov$accession %in% unique(cache$matched$accession)))
-  expect_equal(nrow(cache$annotation), nrow(cache$matched))
+  expect_equal(nrow(cache$annotation_features), nrow(cache$matched))
+  ann <- pelsa_annotation_frame(cache)
+  expect_equal(nrow(ann), nrow(cache$matched))
   expect_true(all(c("feature_class_primary", "winning_accession",
-                    "winning_gene") %in% colnames(cache$annotation)))
+                    "winning_gene") %in% colnames(ann)))
 
   # ---- CROSS-HELPER CONTRACT: isoform-base marker rule is consistent --------
   # The isoform marker P12345-2 flags the ISOPEPTIDEK peptide whose matched

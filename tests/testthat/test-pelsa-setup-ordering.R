@@ -326,11 +326,28 @@ test_that("apply-all copies source dataset config to compatible datasets", {
                         pelsa_replicate_col_d1 = "rid")
       session$flushReact()
 
+      # Give the source a non-default replicate order so we could detect a
+      # (mis)copy: prot's ctrl samples are p_c2, p_c1.
+      session$setInputs(pelsa_condition_order_d1 = c("drug", "ctrl"))
+      session$flushReact()
+
       session$setInputs(pelsa_apply_all = TRUE)
       session$flushReact()
 
+      # Condition + replicate COLUMNS transfer (column names are shared).
       expect_identical(setup_state$condition_col[["rna"]], "grp")
       expect_identical(setup_state$replicate_col[["rna"]], "rid")
+      # Condition ORDER transfers (condition VALUES are shared across datasets).
+      expect_identical(setup_state$condition_order[["rna"]], c("drug", "ctrl"))
+
+      # MED-2 (honest apply-all): the toast says replicate ordering uses each
+      # dataset's default — so rna's replicate_order must reference ITS OWN
+      # samples (r_c1 / r_d1), never the source's (p_c1 / p_c2 / p_dA / p_dB).
+      rna_rep <- setup_state$replicate_order[["rna"]]
+      rna_samples <- unlist(rna_rep, use.names = FALSE)
+      src_samples <- c("p_c1", "p_c2", "p_dA", "p_dB")
+      expect_false(any(src_samples %in% rna_samples))
+      expect_true(all(rna_samples %in% c("r_c1", "r_d1")))
     }
   )
 })

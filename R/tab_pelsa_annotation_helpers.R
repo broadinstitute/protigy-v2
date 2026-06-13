@@ -60,6 +60,13 @@ PELSA_FEATURE_PRIORITY <- c(
 # Sentinel class for peptides with no overlapping feature.
 NONE_FEATURE_CLASS <- "none"
 
+# The 3 feature columns pelsa_annotate_features() appends to its input frame.
+# The analysis cache stores ONLY these (row-aligned to `matched`) instead of a
+# full annotated duplicate; pelsa_annotation_frame() reconstructs the full frame.
+PELSA_ANNOTATION_FEATURE_COLS <- c(
+  "feature_class_primary", "winning_accession", "winning_gene"
+)
+
 # Named 0-based rank vector (unknown label -> 999). Built once from the ladder.
 .PELSA_FEATURE_PRIORITY_RANK <- stats::setNames(
   seq_along(PELSA_FEATURE_PRIORITY) - 1L,

@@ -644,8 +644,16 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       src_cond <- input[[id_condition_col(i_src)]] %||% setup_state$condition_col[[src]]
       src_rep  <- input[[id_replicate_col(i_src)]] %||% setup_state$replicate_col[[src]]
       src_cond_order <- setup_state$condition_order[[src]]
-      src_rep_order  <- setup_state$replicate_order[[src]]
 
+      # WHAT TRANSFERS (and what does NOT): the condition/replicate COLUMN
+      # choices and the condition ORDER reference column NAMES + condition VALUES,
+      # which are shared across datasets, so they copy faithfully. The per-
+      # condition replicate ORDER, however, is keyed by condition value but holds
+      # the SOURCE's SAMPLE NAMES — targets have different sample names, so
+      # copying it would be dropped by pelsa_merge_ordering's intersection and
+      # silently fall back to each target's default. We therefore do NOT copy it;
+      # each target keeps its own default replicate ordering. The toast below says
+      # exactly this (honest apply-all — never claim a transfer that didn't happen).
       applied <- FALSE
       skipped <- character(0)
       for (ome in checked_datasets()) {
@@ -661,16 +669,21 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         set_ds("replicate_col", ome, src_rep)
         updateSelectInput(session, id_condition_col(i), selected = src_cond)
         updateSelectInput(session, id_replicate_col(i), selected = src_rep)
-        # Orders (copy then re-seed against the target's own samples).
+        # Condition order copies (condition VALUES are shared); replicate order is
+        # NOT copied (source sample names don't exist in the target) — re-seed it
+        # to the target's own default instead.
         set_ds("condition_order", ome, src_cond_order)
-        set_ds("replicate_order", ome, src_rep_order)
+        set_ds("replicate_order", ome, NULL)
         seed_condition_order(ome)
         seed_replicate_orders(ome)
         applied <- TRUE
       }
       if (applied) {
-        showNotification(sprintf("Applied %s's setup to all compatible datasets.",
-                                 src), type = "message", duration = 3)
+        showNotification(sprintf(
+          paste0("Applied %s's condition/replicate columns and condition order ",
+                 "to all compatible datasets; replicate ordering uses each ",
+                 "dataset's default."),
+          src), type = "message", duration = 5)
       }
       if (length(skipped)) {
         showNotification(sprintf(

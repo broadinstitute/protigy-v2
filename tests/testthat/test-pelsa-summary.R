@@ -307,6 +307,57 @@ test_that("Summary shows the error for a failed dataset entry", {
   )
 })
 
+test_that("Summary failed entry with a length-0 stage renders without error", {
+  # Regression: stage_txt formerly used is.na(stage), which ERRORS on length 0.
+  cache <- list(ds1 = list(error = "boom", stage = character(0)))
+  GCTs_and_params <- shiny::reactiveVal(list(GCTs = list(ds1 = NULL),
+                                             parameters = list(ds1 = list())))
+  globals <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original <- shiny::reactiveVal(list(ds1 = NULL))
+  active_dataset <- shiny::reactive("ds1")
+  pelsa_analysis <- shiny::reactiveVal(cache)
+  pelsa_setup_state <- shiny::reactive(NULL)
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis,
+                pelsa_setup_state = pelsa_setup_state),
+    {
+      html <- as.character(output$summary_box$html %||% output$summary_box)
+      expect_true(grepl("failed", html))
+      expect_true(grepl("boom", html))
+      # No "(stage: ...)" hint when the stage is length 0.
+      expect_false(grepl("stage:", html))
+    }
+  )
+})
+
+test_that("Summary active_entry is NULL for a failed entry (defense-in-depth)", {
+  cache <- list(ds1 = list(error = "boom", stage = "Computing CV"))
+  GCTs_and_params <- shiny::reactiveVal(list(GCTs = list(ds1 = NULL),
+                                             parameters = list(ds1 = list())))
+  globals <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original <- shiny::reactiveVal(list(ds1 = NULL))
+  active_dataset <- shiny::reactive("ds1")
+  pelsa_analysis <- shiny::reactiveVal(cache)
+  pelsa_setup_state <- shiny::reactive(NULL)
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis,
+                pelsa_setup_state = pelsa_setup_state),
+    {
+      # The dashboard's per-output reactives gate on active_entry(); a failed
+      # entry must surface as NULL so they never read missing fields.
+      expect_null(active_entry())
+    }
+  )
+})
+
 test_that("Summary renders metrics + exports for a good cache entry", {
   cache <- .summary_build_cache("ds1")
   expect_false(pelsa_analysis_failed(cache$ds1))

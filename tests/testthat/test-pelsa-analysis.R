@@ -236,8 +236,10 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_setequal(
     names(one),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "peptide_metrics", "annotation", "unannotated", "qc")
+      "coverage", "peptide_metrics", "annotation_features", "unannotated", "qc")
   )
+  # The full-duplicate `annotation` frame is NOT stored (memory win).
+  expect_false("annotation" %in% names(one))
 
   # matched / unmatched (2B).
   expect_s3_class(one$matched, "data.frame")
@@ -277,8 +279,19 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_true(all(c("missed_cleavages", "peptide_length") %in%
                     colnames(one$peptide_metrics)))
 
-  # Annotation (2I): the volcano feature-color column is present.
-  expect_true("feature_class_primary" %in% colnames(one$annotation))
+  # Annotation (2I): only the 3 feature columns are stored, row-aligned to
+  # matched; the full annotated frame is reconstructable via the accessor.
+  expect_setequal(
+    colnames(one$annotation_features),
+    c("feature_class_primary", "winning_accession", "winning_gene")
+  )
+  expect_equal(nrow(one$annotation_features), nrow(one$matched))
+  ann <- pelsa_annotation_frame(one)
+  expect_s3_class(ann, "data.frame")
+  expect_equal(nrow(ann), nrow(one$matched))
+  expect_true(all(c("feature_class_primary", "winning_accession",
+                    "winning_gene") %in% colnames(ann)))
+  expect_true(all(colnames(one$matched) %in% colnames(ann)))
 
   # QC counts.
   expect_true(all(c("n_peptides", "n_matched_rows", "n_unmatched_rows",

@@ -409,6 +409,35 @@ pelsa_analysis_failed <- function(entry) {
   is.list(entry) && !is.null(entry$error)
 }
 
+# Reconstruct a cache entry's full annotated frame: `matched` cbound with the 3
+# stored feature columns (annotation_features). The cache stores only the 3
+# feature columns (row-aligned to `matched`) rather than a full annotated
+# duplicate of `matched` (~27MB/dataset saved); this rebuilds the frame consumers
+# previously read as `entry$annotation`.
+#
+# @param entry a SUCCESSFUL per-dataset cache entry (list with $matched and
+#              $annotation_features). Behaviour on a failed entry is undefined;
+#              callers should gate with pelsa_analysis_failed() first.
+# @return data.frame = matched + feature_class_primary/winning_accession/
+#         winning_gene, or NULL when the entry lacks the required components.
+# @noRd
+pelsa_annotation_frame <- function(entry) {
+  if (!is.list(entry)) return(NULL)
+  matched <- entry$matched
+  feats   <- entry$annotation_features
+  if (!is.data.frame(matched) || !is.data.frame(feats)) return(NULL)
+  if (nrow(matched) != nrow(feats)) {
+    stop("pelsa_annotation_frame: matched and annotation_features row counts ",
+         "disagree (", nrow(matched), " vs ", nrow(feats), ")", call. = FALSE)
+  }
+  out <- matched
+  rownames(out) <- NULL
+  for (col in PELSA_ANNOTATION_FEATURE_COLS) {
+    out[[col]] <- feats[[col]]
+  }
+  out
+}
+
 # ---- per-dataset assembly ----------------------------------------------------
 
 # Assemble one dataset's per-dataset analysis cache from the verified helpers.
@@ -423,6 +452,10 @@ pelsa_analysis_failed <- function(entry) {
 # The returned named list is the load-bearing contract Phases 6 (Summary) and 7
 # (Volcano) READ (never recompute). On SUCCESS it has exactly these 10
 # components (EXACT names + shapes as implemented):
+#   (NOTE: the former full-duplicate `annotation` frame is no longer stored; the
+#   cache now carries `annotation_features` — just the 3 feature columns,
+#   row-aligned to `matched` — and pelsa_annotation_frame(entry) reconstructs the
+#   full annotated frame on demand. ~27MB/dataset saved.)
 #   matched        data.frame, one row per (peptide, accession, occurrence) that
 #                  FASTA-mapped. Key cols: accession, pep_start, pep_end (1-based
 #                  inclusive), pep_occurrence_idx, n_occurrences,
@@ -446,9 +479,11 @@ pelsa_analysis_failed <- function(entry) {
 #                  NA), over_length_flag.
 #   peptide_metrics data.frame, one row per peptide-frame row. Cols:
 #                  PEP.StrippedSequence, missed_cleavages, peptide_length.
-#   annotation     data.frame = the matched cache PLUS feature_class_primary,
-#                  winning_accession, winning_gene (the volcano feature-color
-#                  mode + Summary reuse this).
+#   annotation_features data.frame, row-aligned to `matched`, with exactly 3
+#                  columns: feature_class_primary, winning_accession,
+#                  winning_gene. The full annotated frame (matched + these 3) is
+#                  reconstructed on demand via pelsa_annotation_frame(entry); the
+#                  cache does NOT store the full duplicate.
 #   unannotated    character vector of accessions present in the matched cache but
 #                  ABSENT from feat_df (isoform-base fallback applied).
 #   qc             list: n_peptides, n_exploded, n_matched_rows, n_unmatched_rows,
@@ -524,9 +559,15 @@ pelsa_run_analysis_one <- function(gct,
 
   # --- 2I feature annotation (cache-as-is) ----------------------------------
   .step("Annotating features")
-  # Annotate the MATCHED cache (peptide x accession w/ pep_start/pep_end) so the
-  # volcano feature-color mode + Summary reuse one annotated frame.
+  # Annotate the MATCHED cache (peptide x accession w/ pep_start/pep_end). The
+  # annotated frame is `matched` PLUS exactly 3 feature columns
+  # (feature_class_primary, winning_accession, winning_gene), row-aligned to
+  # `matched`. We store ONLY those 3 columns (not the full annotated duplicate of
+  # `matched`, which wasted ~27MB/dataset) and reconstruct the full frame on
+  # demand via pelsa_annotation_frame(entry).
   annotation <- pelsa_annotate_features(matched, feat_df)
+  annotation_features <- annotation[, PELSA_ANNOTATION_FEATURE_COLS, drop = FALSE]
+  rownames(annotation_features) <- NULL
   unannotated <- pelsa_unannotated_accessions(matched, feat_df)
 
   # --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ---
@@ -594,16 +635,16 @@ pelsa_run_analysis_one <- function(gct,
   )
 
   list(
-    matched         = matched,
-    unmatched       = unmatched,
-    cv              = cv,
-    n_quantified    = n_quantified,
-    depth_summary   = depth_summary,
-    coverage        = coverage,
-    peptide_metrics = peptide_metrics,
-    annotation      = annotation,
-    unannotated     = unannotated,
-    qc              = qc
+    matched             = matched,
+    unmatched           = unmatched,
+    cv                  = cv,
+    n_quantified        = n_quantified,
+    depth_summary       = depth_summary,
+    coverage            = coverage,
+    peptide_metrics     = peptide_metrics,
+    annotation_features = annotation_features,
+    unannotated         = unannotated,
+    qc                  = qc
   )
 }
 

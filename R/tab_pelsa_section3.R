@@ -238,12 +238,20 @@ PELSASection3_Ome_Server <- function(id,
       )
     })
 
+    # Narrow seam: feat_df reads ONLY the species off setup_state. Depending on
+    # the whole setup_state() would re-read the 26MB feature TSV on ANY setup-
+    # state change (condition columns, orders, ...); scoping to species_r() means
+    # feat_df re-reads only when the species actually changes.
+    species_r <- reactive({
+      ss <- pelsa_setup_state()
+      if (is.null(ss)) NULL else ss$species
+    })
+
     # Species feature table (2I/3A feat_df), read once per species via the
     # on-disk cache. Read-only; NO network. NULL when unavailable (3A then
     # colors everything "none").
     feat_df <- reactive({
-      ss <- pelsa_setup_state()
-      species <- if (is.null(ss)) NULL else ss$species
+      species <- species_r()
       if (is.null(species) || length(species) != 1L || is.na(species) ||
           !nzchar(species)) {
         return(NULL)
