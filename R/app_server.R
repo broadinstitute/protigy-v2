@@ -148,11 +148,15 @@ app_server <- function(input, output, session) {
   pelsa_analysis <- all_PELSASection1$analysis        # consumed by Phases 6-7
 
   ## PELSA Section 2 module (Summary)
+  # Reads the 5D analysis cache (pelsa_analysis) + setup_state (for the canonical
+  # sample / condition ordering). NO recompute in render.
   all_PELSASection2_exports <- PELSASection2_Tab_Server(
     GCTs_and_params = GCTs_and_params,
     globals = globals,
     GCTs_original = GCTs_original,
-    active_dataset = pelsa_active_dataset
+    active_dataset = pelsa_active_dataset,
+    pelsa_analysis = pelsa_analysis,
+    pelsa_setup_state = pelsa_setup_state
   )
 
   ## PELSA Section 3 module (Volcano Plot)
