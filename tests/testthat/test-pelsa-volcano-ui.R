@@ -209,6 +209,48 @@ test_that("sibling_mask flags every row of the pinned protein", {
   expect_equal(pelsa_volcano_sibling_mask(df, "NOPE")$n_siblings, 0L)
 })
 
+test_that("pin_opacity: per-point background opacity for the proxy-restyle fade", {
+  df <- .mk_volcano_df()  # rows: PEPA(marker,ACC1), PEPB(ACC2), PEPC(marker,ACC1)
+  # Background = non-marker rows only (PEPB) in marker-split order.
+  bg <- pelsa_volcano_marker_split(df)$background
+  # No pin -> every background point gets the base default opacity (0.6).
+  none <- pelsa_volcano_pin_opacity(df, NULL)
+  expect_length(none$opacity, nrow(bg))
+  expect_true(all(none$opacity == 0.6))
+  expect_equal(none$n_siblings, 0L)
+
+  # Pin ACC2 (PEPB is the only non-marker ACC2 row) -> that bg point full, rest dim.
+  pinned <- pelsa_volcano_pin_opacity(df, "ACC2")
+  expect_length(pinned$opacity, nrow(bg))
+  # PEPB is ACC2 -> opacity 1; (there are no other background rows here)
+  expect_equal(pinned$opacity[which(bg$winning_accession == "ACC2")], 1)
+  expect_true(all(pinned$opacity[bg$winning_accession != "ACC2"] == 0.12))
+  expect_equal(pinned$n_siblings, sum(bg$winning_accession == "ACC2"))
+
+  # Pin an absent accession -> all background dimmed (no siblings).
+  absent <- pelsa_volcano_pin_opacity(df, "NOPE")
+  expect_true(all(absent$opacity == 0.12))
+  expect_equal(absent$n_siblings, 0L)
+})
+
+test_that("pin_opacity: opacity vector aligns to the background-trace point order", {
+  # A 4-row frame, two background proteins; assert element j of the opacity
+  # vector targets background point j (same order build's split produces).
+  df <- data.frame(
+    id = c("p1", "p2", "p3", "p4"),
+    logFC = c(1, 2, 3, 4), logP = c(1, 2, 3, 4),
+    winning_accession = c("ACC1", "ACC2", "ACC1", "ACC2"),
+    is_marker = c(FALSE, FALSE, FALSE, FALSE),
+    sig_color = rep("gray", 4), feature_color = rep("#d3d3d3", 4),
+    stringsAsFactors = FALSE
+  )
+  bg <- pelsa_volcano_marker_split(df)$background
+  op <- pelsa_volcano_pin_opacity(df, "ACC1")
+  # bg rows in order p1(ACC1), p2(ACC2), p3(ACC1), p4(ACC2).
+  expect_equal(op$opacity, c(1, 0.12, 1, 0.12))
+  expect_equal(op$opacity[bg$winning_accession == "ACC1"], c(1, 1))
+})
+
 test_that("labels_sidecar emits the exact 12 columns in order", {
   df <- .mk_volcano_df()
   out <- pelsa_volcano_labels_sidecar(df, "all_peptide")
@@ -226,6 +268,34 @@ test_that("labels_sidecar emits the exact 12 columns in order", {
   empty <- pelsa_volcano_labels_sidecar(df[0, , drop = FALSE], "best_peptide")
   expect_equal(ncol(empty), 12L)
   expect_equal(nrow(empty), 0L)
+})
+
+test_that("tooltip falls back PER ROW to PG.* when winning_accession is NA", {
+  # A per-row NA winning_accession/gene must fall back to that row's PG.* value
+  # (element-wise), NOT render the literal "NA". The OLD `%||%`-on-the-whole-
+  # vector logic only triggered when the ENTIRE column was NULL, so a single NA
+  # row leaked "NA" into its tooltip.
+  df <- data.frame(
+    id = c("p1", "p2"), logFC = c(1, 2), logP = c(1, 2),
+    winning_accession = c(NA_character_, "ACC2"),
+    winning_gene      = c(NA_character_, "G2"),
+    PG.ProteinAccessions = c("PGACC1", "PGACC2"),
+    PG.Genes             = c("PGGENE1", "PGGENE2"),
+    sig_color = rep("gray", 2), feature_color = rep("#d3d3d3", 2),
+    pep_start = c(10L, 20L), pep_end = c(14L, 24L), is_marker = c(FALSE, FALSE),
+    label = c("x", "y"), feature_class_primary = rep("none", 2),
+    stringsAsFactors = FALSE, check.names = FALSE
+  )
+  p <- pelsa_volcano_build_plot(df, full_df = df, source_id = "tip")
+  pb <- suppressWarnings(plotly::plotly_build(p))
+  txt <- pb$x$data[[1]]$text  # background trace, both non-marker rows
+  # Row 1's NA winner falls back to PGACC1 (its own PG value), NOT "NA".
+  expect_match(txt[1], "Accession: PGACC1", fixed = TRUE)
+  expect_match(txt[1], "Gene: PGGENE1", fixed = TRUE)
+  expect_false(grepl("Accession: NA", txt[1], fixed = TRUE))
+  # Row 2 keeps its real winning accession/gene.
+  expect_match(txt[2], "Accession: ACC2", fixed = TRUE)
+  expect_match(txt[2], "Gene: G2", fixed = TRUE)
 })
 
 test_that("build_plot returns a plotly object for both source ids", {
@@ -650,6 +720,52 @@ test_that("7E: a simulated pin populates metadata + computes 3C line data", {
     # exercised via pinned_line_data() above — accessing the output directly
     # would raise the no-pin validate when line data is transiently empty).
     expect_false(is.null(output$pelsa_pin_metadata))
+  })
+})
+
+test_that("PERF: a pin does NOT rebuild the main volcano (build_plot not re-called)", {
+  # The fade is a client-side plotlyProxy restyle, so output$pelsa_volcano_plot
+  # must NOT depend on pinned() — pinning must not re-invoke the heavy
+  # pelsa_volcano_build_plot (the ~1.1-1.5s / ~15MB cost). We trace build_plot
+  # and assert its call count for the MAIN volcano source does not increase when
+  # only pinned() changes.
+  build_calls <- new.env(parent = emptyenv())
+  build_calls$n_main <- 0L
+  trace(
+    "pelsa_volcano_build_plot",
+    tracer = quote({
+      if (identical(source_id, "Proteome-pelsa_volcano")) {
+        # bump a counter in the test env via the global option set below.
+        e <- getOption(".pelsa_build_counter_env"); e$n_main <- e$n_main + 1L
+      }
+    }),
+    print = FALSE, where = asNamespace("Protigy")
+  )
+  options(.pelsa_build_counter_env = build_calls)
+  on.exit({ untrace("pelsa_volcano_build_plot", where = asNamespace("Protigy"))
+            options(.pelsa_build_counter_env = NULL) }, add = TRUE)
+
+  shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B")
+    force(active_volcano_df())
+    # Render the main volcano once (registers the reactive).
+    force(output$pelsa_volcano_plot)
+    n_before <- getOption(".pelsa_build_counter_env")$n_main
+    expect_gte(n_before, 1L)  # built at least once
+
+    # Pin a peptide. The fade is a proxy restyle; the render must NOT re-run.
+    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
+                label = "G1_aa10", row = 1L))
+    force(output$pelsa_volcano_plot)
+    n_after <- getOption(".pelsa_build_counter_env")$n_main
+    expect_equal(n_after, n_before)  # NO rebuild on pin
+
+    # Unpin -> still no rebuild of the main volcano.
+    pinned(NULL)
+    force(output$pelsa_volcano_plot)
+    expect_equal(getOption(".pelsa_build_counter_env")$n_main, n_before)
   })
 })
 

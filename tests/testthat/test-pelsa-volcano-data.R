@@ -361,6 +361,99 @@ test_that("best_peptide panel uses 2G rollup (one dot per distinct best-peptide)
   expect_true("is_marker" %in% colnames(best_out))
 })
 
+# --- H2 regression: shared stripped sequence -> CONSISTENT best-peptide dot ---
+
+test_that("H2: best-peptide dot for a non-unique stripped seq is mutually consistent", {
+  # A stripped sequence "SHARED" appears in TWO stat_df rows (the same peptide
+  # shared across two protein groups — common in DIA), with DIFFERENT
+  # accession / logFC / P.Value / adj.P.Val per row:
+  #   row1 (FIRST): A1, logFC +3, P.Value 0.5,   adj 0.5   (NOT the rollup winner)
+  #   row2:         A2, logFC -1, P.Value 0.001, adj 0.001 (the rollup winner)
+  # The OLD builder back-mapped "SHARED" to the FIRST stat_df row (A1), so the
+  # dot's protein/gene/span/color/y-height came from A1 while its logFC came from
+  # the rollup (A2) — a dot whose label, color, and HEIGHT belonged to different
+  # proteins. The fix derives ALL of those from the rollup's WON accession (A2).
+  stat <- data.frame(
+    PEP.StrippedSequence = c("SHARED", "SHARED", "OTHER"),
+    PG.ProteinAccessions = c("A1", "A2", "A3"),
+    PG.Genes             = c("GA1", "GA2", "GA3"),
+    pep_start            = c(10L, 200L, 50L),
+    pep_end              = c(14L, 204L, 54L),
+    .row_id              = c(1L, 2L, 3L),
+    stringsAsFactors     = FALSE, check.names = FALSE
+  )
+  stat[["logFC.C1"]]     <- c(3.0, -1.0, 0.2)
+  stat[["adj.P.Val.C1"]] <- c(0.5, 0.001, 0.8)
+  stat[["P.Value.C1"]]   <- c(0.5, 0.001, 0.7)
+
+  matched <- .make_matched(
+    seq       = c("SHARED", "SHARED", "OTHER"),
+    accession = c("A1", "A2", "A3"),
+    gene      = c("GA1", "GA2", "GA3"),
+    pep_start = c(10L, 200L, 50L),
+    pep_end   = c(14L, 204L, 54L),
+    row_id    = c(1L, 2L, 3L)
+  )
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1",
+    opts = list(panel = "best_peptide")
+  )
+
+  shared <- out[out$id == "SHARED", , drop = FALSE]
+  expect_equal(nrow(shared), 1L)
+
+  # The coordinate is the peptide's OWN (rollup) stats — the won (A2) row.
+  expect_equal(shared$logFC, -1.0)
+  expect_equal(shared$adj.P.Val, 0.001)
+  # raw-p / logP come from the SAME won accession (A2), NOT A1's 0.5.
+  expect_equal(shared$P.Value, 0.001)
+  expect_equal(shared$logP, -log10(0.001))
+
+  # Protein / gene / span / winner ALL come from the won accession A2 (NOT A1).
+  expect_equal(shared$PG.ProteinAccessions, "A2")
+  expect_equal(shared$PG.Genes, "GA2")
+  expect_equal(shared$winning_accession, "A2")
+  expect_equal(shared$winning_gene, "GA2")
+  expect_equal(shared$pep_start, 200L)
+  expect_equal(shared$pep_end, 204L)
+
+  # Color is consistent with the won logFC (-1 -> down -> blue), NOT A1's +3.
+  expect_equal(shared$sig_direction, "down")
+  expect_equal(shared$sig_color, "#1f4e9c")
+})
+
+test_that("H2: shared seq won by a MARKER accession flags is_marker by the winner", {
+  # "SHARED" maps to A1 (non-marker, first row) and MK (marker, the winner).
+  # is_marker must reflect the WON accession (MK), not the arbitrary first row.
+  stat <- data.frame(
+    PEP.StrippedSequence = c("SHARED", "SHARED"),
+    PG.ProteinAccessions = c("A1", "P12345"),
+    PG.Genes             = c("GA1", "GMK"),
+    pep_start            = c(10L, 200L),
+    pep_end              = c(14L, 204L),
+    .row_id              = c(1L, 2L),
+    stringsAsFactors     = FALSE, check.names = FALSE
+  )
+  stat[["logFC.C1"]]     <- c(3.0, -1.0)
+  stat[["adj.P.Val.C1"]] <- c(0.5, 0.001)
+  stat[["P.Value.C1"]]   <- c(0.5, 0.001)
+  matched <- .make_matched(
+    seq = c("SHARED", "SHARED"), accession = c("A1", "P12345"),
+    gene = c("GA1", "GMK"), pep_start = c(10L, 200L), pep_end = c(14L, 204L),
+    row_id = c(1L, 2L)
+  )
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = c("P12345"), contrast = "C1", opts = list(panel = "best_peptide")
+  )
+  shared <- out[out$id == "SHARED", , drop = FALSE]
+  expect_equal(nrow(shared), 1L)
+  expect_equal(shared$winning_accession, "P12345")
+  expect_true(shared$is_marker)            # won by the marker accession
+})
+
 # --- output column contract ---------------------------------------------------
 
 test_that("output carries the full tooltip/plot column contract", {

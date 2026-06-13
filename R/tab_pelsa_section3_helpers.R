@@ -406,10 +406,12 @@ pelsa_volcano_resolve_click <- function(event, volcano_df) {
 
 # Split a volcano frame into the PINNED protein's peptides (the pinned peptide +
 # its sibling peptides — every row whose winning_accession equals the pinned
-# accession) and the REST. The plot builder draws the siblings as a separate
-# full-opacity trace on top while dimming the background cloud's alpha on the
-# pin redraw, so a pin highlights the whole pinned protein. (Single mechanism:
-# the redraw — there is no plotlyProxy restyle.)
+# accession) and the REST. On pin, the main volcano is NOT rebuilt; instead the
+# FADE is applied client-side via a plotlyProxy restyle (single mechanism) that
+# sets a per-point marker-opacity vector on the background trace — full opacity
+# for the pinned protein's peptides, dimmed for the rest. This mask drives that
+# opacity vector (see pelsa_volcano_pin_opacity). It is also reused by the
+# static PDF export path's build.
 #
 # Matching is on `winning_accession` (the representative accession 3A resolves
 # per peptide), so a peptide pinned in a multi-protein group lights up its
@@ -434,6 +436,51 @@ pelsa_volcano_sibling_mask <- function(volcano_df, accession) {
   wa <- as.character(volcano_df$winning_accession)
   mask <- !is.na(wa) & wa == accession
   list(siblings = mask, n_siblings = sum(mask))
+}
+
+# Default + dimmed background marker opacities. The default matches the build's
+# bg_alpha so the unpinned restyle restores the exact base look.
+.PELSA_VOLCANO_BG_ALPHA      <- 0.6
+.PELSA_VOLCANO_BG_ALPHA_DIM  <- 0.12
+
+# Build the per-point marker-opacity vector for the BACKGROUND trace of the main
+# volcano, for a plotlyProxy "restyle" fade (the perf fix). The main volcano is
+# built ONCE (with sibling_acc = NULL) so its background trace contains EVERY
+# non-marker point in pelsa_volcano_marker_split(df)$background row order; this
+# restyle sets that trace's marker.opacity WITHOUT rebuilding the ~100k-point
+# figure (a small message, not a ~15MB redraw).
+#
+# When `accession` is NULL/NA (unpin / contrast switch) -> every background point
+# returns to the default opacity (the base look). When set -> the pinned
+# protein's peptides get full opacity (1) and the rest are dimmed.
+#
+# The vector is aligned to the background-trace point order: it is computed over
+# `pelsa_volcano_marker_split(df)$background`, the SAME split the build applies,
+# so element j of this vector targets background point j of the rendered trace.
+#
+# @param df        the FULL volcano frame the base plot was built from.
+# @param accession the pinned protein's representative accession, or NULL/NA.
+# @return list(opacity = <numeric vector, length = #background points>,
+#   n_siblings = <integer>); opacity is the base default everywhere when no pin.
+# @noRd
+pelsa_volcano_pin_opacity <- function(df, accession) {
+  if (!is.data.frame(df)) {
+    stop("pelsa_volcano_pin_opacity: df must be a data.frame")
+  }
+  bg <- pelsa_volcano_marker_split(df)$background
+  nb <- nrow(bg)
+  if (nb == 0L) return(list(opacity = numeric(0), n_siblings = 0L))
+
+  no_pin <- is.null(accession) || length(accession) != 1L || is.na(accession) ||
+    !nzchar(accession)
+  if (no_pin) {
+    return(list(opacity = rep(.PELSA_VOLCANO_BG_ALPHA, nb), n_siblings = 0L))
+  }
+
+  sib <- pelsa_volcano_sibling_mask(bg, accession)$siblings
+  opacity <- rep(.PELSA_VOLCANO_BG_ALPHA_DIM, nb)
+  opacity[sib] <- 1
+  list(opacity = opacity, n_siblings = sum(sib))
 }
 
 # ---- 7F: the 12-column volcano-labels sidecar CSV shaping --------------------
@@ -504,13 +551,17 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # distinct `source` id, so the plot code is written ONCE.
 #
 # Trace order is z-order only (later traces draw ON TOP):
-#   1. background (non-marker, non-sibling)  — the dense cloud, dimmed on pin
+#   1. background (non-marker, non-sibling)  — the dense cloud
 #   2. siblings   (the pinned protein's peptides) — full opacity, drawn on top
 #   3. markers    (magenta overlay, on top, ALWAYS)
 #   (+ a geom_text label layer + an optional threshold hline)
-# The sibling fade is achieved by THIS redraw (the background alpha drops when
-# sibling_acc is set + siblings move to their own opaque trace) — there is no
-# plotlyProxy restyle.
+# IMPORTANT (perf): the MAIN volcano is built with sibling_acc = NULL, so the
+# fade is NOT done by rebuilding here — it is a client-side plotlyProxy "restyle"
+# of the background trace's marker.opacity (see pelsa_volcano_pin_opacity and the
+# plotly_click observer in tab_pelsa_section3.R). The sibling_acc != NULL path
+# (and bg_alpha dim) is retained ONLY for callers that DO want a static rebuild
+# (e.g. tests / a one-shot non-interactive render); the interactive volcano does
+# not use it. There is exactly ONE interactive fade mechanism: the proxy restyle.
 #
 # @param df          the FULL volcano frame the plot consumes (every point).
 # @param full_df     the same frame, used for the y_cutoff attr + label-row
@@ -525,6 +576,21 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # @param register_click  TRUE -> event_register the plotly_click on this source.
 # @return a plotly object (toWebGL'd).
 # @noRd
+# Drop the `hoveron` attribute from every trace of a (pre-build) plotly object.
+# ggplotly sets hoveron = "points" on geom_point traces; scattergl (toWebGL)
+# rejects it and warns on EVERY plotly_build, including Shiny's serialize-time
+# rebuild that a build-site suppressWarnings cannot wrap. Stripping it once
+# silences the benign warning at its source. @noRd
+.pelsa_strip_hoveron <- function(p) {
+  if (is.list(p$x) && !is.null(p$x$data) && length(p$x$data) > 0L) {
+    p$x$data <- lapply(p$x$data, function(tr) {
+      tr$hoveron <- NULL
+      tr
+    })
+  }
+  p
+}
+
 pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
                                      label_mode = "top_n", n_top = 3L,
@@ -552,9 +618,16 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
     pos <- ifelse(no_span, "unknown", paste0(d$pep_start, "-", d$pep_end))
     len_chr <- ifelse(no_span, "", as.character(d$pep_end - d$pep_start + 1L))
     len_line <- ifelse(no_span, "", paste0("<br>Length: ", len_chr))
+    # Element-wise fallback (NOT %||% on the whole vector): a per-ROW NA/empty
+    # winning_accession/gene must fall back to that row's PG.* value, otherwise a
+    # single NA row would render the literal "NA" in its tooltip.
+    acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
+                     d$PG.ProteinAccessions, d$winning_accession)
+    gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
+                      d$PG.Genes, d$winning_gene)
     paste0(
-      "Accession: ", d$winning_accession %||% d$PG.ProteinAccessions, "<br>",
-      "Gene: ", d$winning_gene %||% d$PG.Genes, "<br>",
+      "Accession: ", acc_fb, "<br>",
+      "Gene: ", gene_fb, "<br>",
       "Position: ", pos, len_line
     )
   }
@@ -619,7 +692,16 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   gg <- gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") +
     ggplot2::theme_bw()
 
-  p <- plotly::ggplotly(gg, source = source_id, tooltip = "text")
+  # suppressWarnings on BOTH ggplotly + toWebGL: ggplotly leaks the benign
+  # "'scattergl' objects don't have these attributes: 'hoveron'" warning (one per
+  # geom_point trace) that otherwise spams test output.
+  p <- suppressWarnings(plotly::ggplotly(gg, source = source_id, tooltip = "text"))
+  # ggplotly sets `hoveron = "points"` on each geom_point trace; scattergl (what
+  # toWebGL produces) does not support `hoveron`, so EVERY downstream
+  # plotly_build (incl. Shiny's serialize-time rebuild, which suppressWarnings
+  # here can't reach) re-emits the warning. Strip it once now so the rebuild is
+  # clean -- the attribute is benign and unused for scattergl.
+  p <- .pelsa_strip_hoveron(p)
   p <- suppressWarnings(plotly::toWebGL(p))
   if (isTRUE(register_click)) {
     p <- plotly::event_register(p, "plotly_click")

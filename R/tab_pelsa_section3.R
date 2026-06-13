@@ -24,8 +24,10 @@
 #       in the package but is intentionally NOT wired into the volcano render.
 #
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
-# 7E left-click PIN -> per-protein intensity line panel (3C) + redraw-based
-# sibling-protein highlight (no plotlyProxy); 7F per-ome exports.
+# 7E left-click PIN -> per-protein intensity line panel (3C) + a client-side
+# plotlyProxy-restyle sibling-protein FADE (the main volcano does NOT rebuild on
+# pin — only the background trace's marker.opacity is restyled); 7F per-ome
+# exports.
 #
 # Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
 ################################################################################
@@ -591,17 +593,20 @@ PELSASection3_Ome_Server <- function(id,
     # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
     # is rendered (no thinning — toWebGL handles every point on the GPU).
     #
-    # SIBLING FADE — ONE mechanism (the redraw): the render DEPENDS on pinned(),
-    # so a pin rebuilds the plot with the pinned protein's siblings carved into
-    # their own full-opacity trace while the background cloud is dimmed
-    # (bg_alpha inside the builder). This makes the highlight exact at the trace
-    # level. The earlier redundant plotlyProxy restyle was removed (it duplicated
-    # the redraw's fade and relied on a fragile trace-index assumption) — there
-    # is now exactly ONE fade mechanism, not two.
+    # SIBLING FADE — ONE mechanism (a client-side plotlyProxy restyle, NOT a
+    # rebuild): the base plot is built ONCE per (dataset, contrast, color-mode,
+    # label-mode) with sibling_acc = NULL, so pinned() is ISOLATED out of this
+    # render's reactive deps. A left-click pin then dims the background trace via
+    # plotlyProxyInvoke("restyle", ...) (a small marker.opacity message), so the
+    # ~100k-point / ~15MB figure is NOT re-serialized on every pin (~1.1-1.5s
+    # saved per pin; the ggplotly conversion was the cost, not the GPU draw).
+    # The proxy restyle is the PRIMARY fade mechanism (see the plotly_click
+    # observeEvent below) — exactly ONE mechanism, not the old depends-on-pinned
+    # redraw.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
-      pin <- pinned()
+      # sibling_acc = NULL on purpose: the fade is a proxy restyle, not a rebuild.
       pelsa_volcano_build_plot(
         df             = df,
         full_df        = df,
@@ -609,7 +614,7 @@ PELSASection3_Ome_Server <- function(id,
         label_mode     = label_mode_for_contrast(),
         n_top          = top_n_for_contrast(),
         source_id      = ns("pelsa_volcano"),
-        sibling_acc    = if (is.null(pin)) NULL else pin$accession,
+        sibling_acc    = NULL,
         register_click = TRUE
       )
     })
@@ -649,10 +654,35 @@ PELSASection3_Ome_Server <- function(id,
       pinned(res)
     }, ignoreInit = TRUE)
 
-    # NOTE: the sibling fade is handled ENTIRELY by the output$pelsa_volcano_plot
-    # redraw above (it depends on pinned(), carving the sibling trace + dimming
-    # the background). The previously-present redundant plotlyProxy restyle was
-    # removed so there is exactly ONE fade mechanism.
+    # SIBLING FADE via plotlyProxy restyle (the ONE mechanism). The base volcano
+    # is built once (sibling_acc = NULL), so the main render does NOT rebuild on
+    # pin. Here, whenever pinned() changes (pin / unpin / contrast-switch clear),
+    # we restyle ONLY the background trace's per-point marker.opacity — full for
+    # the pinned protein's peptides, dimmed for the rest (or the base default
+    # everywhere when unpinned). This is a small message, not a ~15MB rebuild.
+    #
+    # Trace order in pelsa_volcano_build_plot is fixed: trace 0 = background
+    # (every non-marker point, in marker-split background order), trace 1 =
+    # markers, trace 2 = labels. We restyle ONLY trace 0 (JS index 0). The
+    # opacity vector is computed over the SAME background split, so element j
+    # targets background point j. pelsa_volcano_pin_opacity is ~0.001s.
+    # NB: plotlyProxy targets the plotlyOutput's OUTPUT id ("pelsa_volcano_plot"),
+    # not the plotly SOURCE id ("pelsa_volcano"). plotlyProxy auto-namespaces it
+    # via session$ns, so pass the bare output id.
+    volcano_proxy <- plotly::plotlyProxy("pelsa_volcano_plot", session)
+    observeEvent(pinned(), {
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(df) || nrow(df) == 0L) return()
+      pin <- pinned()
+      acc <- if (is.null(pin)) NULL else pin$accession
+      op <- pelsa_volcano_pin_opacity(df, acc)
+      if (length(op$opacity) == 0L) return()
+      # restyle: marker.opacity as a per-point array on the background trace (0).
+      plotly::plotlyProxyInvoke(
+        volcano_proxy, "restyle",
+        list(`marker.opacity` = list(op$opacity)), list(0L)
+      )
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
     ## 7E — PINNED metadata table + per-protein intensity LINE plot (3C)

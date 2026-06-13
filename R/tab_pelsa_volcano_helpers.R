@@ -300,6 +300,74 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 
 # ---- best-peptide panel (one dot per distinct best-peptide via 2G) ----------
 
+# Resolve the UNAMBIGUOUS per-dot identity columns for a best-peptide rollup
+# result (H2 fix). The rollup already returns, per distinct best-peptide, its
+# OWN peptide-level (adj_p, logFC) coordinate plus the `won_accessions` it won.
+# A best-peptide dot's protein/gene/span/feature/marker MUST come from the
+# peptide's WON accession (the rollup's winner) -- NOT from an arbitrary first
+# `stat_df` row matched on the stripped sequence, which (when a stripped
+# sequence is shared across protein groups, common in DIA) can disagree with
+# the rollup's winner and produce a dot whose label, color, and y-height belong
+# to different proteins.
+#
+# Representative won accession: the FIRST token of `won_accessions` (the
+# rollup's deterministic sort already orders them, e.g. by accession), so the
+# dot's accession/gene/span are reproducible. The raw P.Value for the y-axis is
+# pulled from the exploded stat frame `m` matched on the (peptide_seq,
+# accession) PAIR -- which is unique (one row per peptide x accession x
+# occurrence; the leading occurrence is taken) -- NOT on the stripped sequence
+# alone. This keeps logP consistent with the same won accession.
+#
+# @param rolled a pelsa_best_peptide_rollup() frame (peptide_seq, adj_p, logFC,
+#   label, won_accessions, n_won).
+# @param m      the exploded (peptide x accession x occurrence) stat frame the
+#   rollup consumed, carrying PEP.StrippedSequence / accession / gene /
+#   pep_start / pep_end / P.Value.
+# @return data.frame, one row per rolled best-peptide, with columns
+#   won_accession, won_gene, pep_start, pep_end, P.Value -- all from the SAME
+#   won accession (mutually consistent).
+# @noRd
+.pelsa_best_back_map <- function(rolled, m) {
+  n <- nrow(rolled)
+  # Representative won accession = first ;-token of won_accessions.
+  won_acc <- vapply(
+    strsplit(as.character(rolled$won_accessions), ";", fixed = TRUE),
+    function(x) if (length(x) == 0L) NA_character_ else trimws(x[[1L]]),
+    character(1)
+  )
+
+  # Build a (peptide_seq, accession) -> first-occurrence lookup over m. The pair
+  # is unique per occurrence; take the LEADING (smallest pep_start) occurrence so
+  # a peptide mapping to the same accession at several positions is deterministic.
+  mm <- data.frame(
+    seq       = as.character(m[["PEP.StrippedSequence"]]),
+    acc       = as.character(m[["accession"]]),
+    gene      = as.character(m[["gene"]]),
+    pep_start = as.integer(m[["pep_start"]]),
+    pep_end   = if ("pep_end" %in% colnames(m)) as.integer(m[["pep_end"]]) else
+      rep(NA_integer_, nrow(m)),
+    P.Value   = if ("P.Value" %in% colnames(m)) as.numeric(m[["P.Value"]]) else
+      rep(NA_real_, nrow(m)),
+    stringsAsFactors = FALSE
+  )
+  mm <- mm[order(mm$seq, mm$acc, mm$pep_start, na.last = TRUE), , drop = FALSE]
+  pair <- paste0(mm$seq, "\r", mm$acc)
+  mm <- mm[!duplicated(pair), , drop = FALSE]
+
+  lookup_key <- paste0(mm$seq, "\r", mm$acc)
+  qry_key <- paste0(as.character(rolled$peptide_seq), "\r", won_acc)
+  idx <- match(qry_key, lookup_key)
+
+  data.frame(
+    won_accession = won_acc,
+    won_gene      = mm$gene[idx],
+    pep_start     = mm$pep_start[idx],
+    pep_end       = mm$pep_end[idx],
+    P.Value       = mm$P.Value[idx],
+    stringsAsFactors = FALSE
+  )
+}
+
 # @noRd
 .pelsa_build_volcano_best <- function(stat_df, matched_cache, feat_df, markers,
                                       contrast, stat_cols, sig_cutoff,
@@ -327,33 +395,34 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 
   rolled <- pelsa_best_peptide_rollup(m)
 
-  # Map each best-peptide back to its source stat row to recover the
-  # ;-accession / ;-gene / span for annotation + marker matching + P.Value/logP.
-  stat_pep <- as.character(stat_df[["PEP.StrippedSequence"]])
-  src <- match(rolled$peptide_seq, stat_pep)
+  # H2 FIX: derive the dot's protein/gene/span + raw P.Value from the rollup's
+  # WON accession (consistent with the label + coordinate), NOT from an arbitrary
+  # first stat_df row matched on the stripped sequence (which mis-positions /
+  # mis-labels a dot when a stripped sequence is shared across protein groups).
+  back <- .pelsa_best_back_map(rolled, m)
 
   df <- data.frame(
     id        = rolled$peptide_seq,
-    logFC     = rolled$logFC,
-    adj.P.Val = rolled$adj_p,
-    P.Value   = as.numeric(stat_df[[stat_cols$pval]])[src],
+    logFC     = rolled$logFC,    # peptide's OWN coordinate (unambiguous)
+    adj.P.Val = rolled$adj_p,    # peptide's OWN coordinate (unambiguous)
+    P.Value   = back$P.Value,    # raw-p of the SAME (peptide, won accession)
     stringsAsFactors = FALSE,
     check.names = FALSE
   )
   df$logP <- -log10(df$P.Value)
-  df$PG.ProteinAccessions <- as.character(stat_df[["PG.ProteinAccessions"]])[src]
-  df$PG.Genes <- if ("PG.Genes" %in% colnames(stat_df)) {
-    as.character(stat_df[["PG.Genes"]])[src]
-  } else {
-    rep(NA_character_, nrow(df))
-  }
-  df$pep_start <- as.integer(stat_df[["pep_start"]])[src]
-  df$pep_end <- as.integer(stat_df[["pep_end"]])[src]
+  # The dot's protein/gene/span are the WON accession's (single accession, not a
+  # ;-list), so the label/color/coordinate all describe the same protein.
+  df$PG.ProteinAccessions <- back$won_accession
+  df$PG.Genes <- back$won_gene
+  df$pep_start <- as.integer(back$pep_start)
+  df$pep_end <- as.integer(back$pep_end)
 
-  # 2I feature annotation on the ;-frame.
+  # 2I feature annotation on the WON accession (protein-panel shape: one
+  # accession per row), so feature_color + winning_accession describe the won
+  # protein -- consistent with the labeled accession.
   annot_in <- data.frame(
-    PG.ProteinAccessions = df$PG.ProteinAccessions,
-    PG.Genes             = df$PG.Genes,
+    accession            = back$won_accession,
+    gene                 = back$won_gene,
     pep_start            = df$pep_start,
     pep_end              = df$pep_end,
     stringsAsFactors     = FALSE,
@@ -365,8 +434,8 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   df$winning_accession <- annotated$winning_accession
   df$winning_gene <- annotated$winning_gene
 
-  # 2J marker flag.
-  df$is_marker <- pelsa_match_markers(df$PG.ProteinAccessions, markers)
+  # 2J marker flag on the WON accession (consistent with the dot's protein).
+  df$is_marker <- pelsa_match_markers(back$won_accession, markers)
 
   # The 2G rollup already built the ;-joined multilabel over won accessions.
   df$label <- rolled$label
