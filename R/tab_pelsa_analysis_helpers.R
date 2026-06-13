@@ -49,8 +49,15 @@
 #   call pelsa_run_analysis_one() (below) on demand instead of looping here.
 #
 # CONDITION MAP / GCTs_original ALIGNMENT (the integration crux, documented):
-#   - CV (2D) runs on the RAW intensities. We read them from gcts_original[[ds]]
-#     (the unprocessed uploaded GCT). The raw matrix columns are the sample
+#   - CV (2D) runs on RAW LINEAR intensities. We read them from
+#     gcts_original[[ds]] — BUT note Protigy's `GCTs_original` is the
+#     LOG-TRANSFORMED matrix (post perform_log_transformation), not raw linear.
+#     CV is NOT invariant under log, so the pipeline DELINEARIZES that matrix by
+#     the dataset's declared log base (params$log_transformation -> log2 => 2^x,
+#     log10 => 10^x, None/NA => already-linear pass-through) via
+#     pelsa_delinearize() BEFORE sum-normalize + CV. Depth (2E) and the
+#     intensity-line plot keep using the PROCESSED log2 matrix as-is. The raw
+#     matrix columns are the sample
 #     names; the condition map is built from THAT dataset's cdesc condition
 #     column (setup$condition_col[[ds]]) keyed by sample name, so a named
 #     condition_map aligns to columns regardless of column order
@@ -235,6 +242,61 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
   NULL
 }
 
+# ---- delinearize (raw-intensity recovery for CV) -----------------------------
+
+# Recover LINEAR (raw) intensities from a (possibly) log-transformed matrix.
+#
+# WHY THIS EXISTS: Protigy's `GCTs_original` is NOT the raw uploaded matrix in
+# linear space -- it is the matrix AFTER `perform_log_transformation`
+# (R/sidebar_setup_helpers_GCT-processing.R), i.e. the LOG-transformed values
+# when log2/log10 was selected. The PELSA within-condition CV
+# (pelsa_within_condition_cv) is defined on RAW LINEAR intensities (the notebook
+# delinearizes before sum-normalizing + CV; CV is NOT invariant under log).
+# So the analysis pipeline must DELINEARIZE `GCTs_original` by the dataset's
+# declared log base BEFORE feeding it to the CV path.
+#
+# The declared base comes from that dataset's setup parameters
+# `log_transformation` in {"None","log2","log10"} (perform_log_transformation:
+# log2 = log(x,2), log10 = log(x,10); "None" = no transform, and the
+# negative-values fallback ALSO sets the method to "None"). Therefore:
+#   - "None" / NA / missing  -> the matrix is ALREADY LINEAR; pass it through
+#                               UNCHANGED (do NOT exponentiate -- that would
+#                               corrupt an already-linear matrix).
+#   - "log2"                 -> 2 ^ mat
+#   - "log10"                -> 10 ^ mat
+# NA stays NA (2^NA == NA), so missingness is preserved.
+#
+# PURE + closed-form testable: a function of (mat, log_base) only.
+#
+# @param mat       numeric matrix (or data.frame intensity block, coerced).
+# @param log_base  one of "None"/NA/NULL (linear pass-through), "log2", "log10".
+# @return numeric matrix in LINEAR space, same shape/dimnames as mat.
+# @noRd
+pelsa_delinearize <- function(mat, log_base) {
+  if (is.data.frame(mat)) mat <- as.matrix(mat)
+  if (!is.matrix(mat) || !is.numeric(mat)) {
+    stop("pelsa_delinearize: `mat` must be a numeric matrix or data.frame.",
+         call. = FALSE)
+  }
+
+  base <- if (is.null(log_base) || length(log_base) == 0L) {
+    NA_character_
+  } else {
+    as.character(log_base)[[1]]
+  }
+
+  # Already-linear: "None", NA, missing, or empty -> pass through unchanged.
+  if (is.na(base) || !nzchar(base) || identical(base, "None")) {
+    return(mat)
+  }
+  if (identical(base, "log2"))  return(2 ^ mat)
+  if (identical(base, "log10")) return(10 ^ mat)
+
+  stop(sprintf(
+    "pelsa_delinearize: unknown log_base '%s' (expected None/log2/log10).",
+    base), call. = FALSE)
+}
+
 # ---- GCT -> peptide frame ----------------------------------------------------
 
 # Build a peptide-level data.frame from a cmapR GCT: cbind(@rdesc, @mat).
@@ -403,13 +465,23 @@ pelsa_analysis_failed <- function(entry) {
 # drawing coverage.
 #
 # @param gct           the PROCESSED GCT (or peptide data.frame) for this ds.
-# @param gct_original  the UNPROCESSED (raw) GCT (or frame) for this ds — the CV
-#                      source. May be NULL (then CV is skipped, cv = NULL).
+# @param gct_original  the GCT (or frame) Protigy stored as `GCTs_original` for
+#                      this ds — the CV source. NOTE: this is the
+#                      LOG-TRANSFORMED matrix (post perform_log_transformation),
+#                      NOT raw linear, so the CV path DELINEARIZES it by
+#                      `log_base` first (pelsa_delinearize) to recover the raw
+#                      linear intensities CV is defined on. May be NULL (then CV
+#                      is skipped, cv = NULL).
 # @param fasta_map     named list accession -> sequence (read once by caller).
 # @param feat_df       the species feature cache (read once by caller); used
 #                      as-is (cache-as-is decision — no UniProt top-up).
 # @param condition_col the chosen condition grouping column for this dataset.
 # @param min_nonNA     min non-NA replicates for a finite CV (passed to 2D).
+# @param log_base      this dataset's declared log transformation, one of
+#                      "None"/NA (already linear), "log2", "log10". The CV input
+#                      (gct_original's matrix) is delinearized by it BEFORE
+#                      sum-normalize + CV. The DEPTH metric and intensity-line
+#                      use the PROCESSED log2 matrix as-is and are NOT affected.
 # @param progress      NULL or a function(detail) advancing a sub-progress stage.
 # @param stage_env     NULL or an environment whose $stage the assembly updates
 #                      to the current stage label (so a caller's tryCatch can
@@ -422,6 +494,7 @@ pelsa_run_analysis_one <- function(gct,
                                    feat_df,
                                    condition_col,
                                    min_nonNA = 3L,
+                                   log_base = NA_character_,
                                    progress = NULL,
                                    stage_env = NULL) {
   .step <- function(detail) {
@@ -456,7 +529,11 @@ pelsa_run_analysis_one <- function(gct,
   annotation <- pelsa_annotate_features(matched, feat_df)
   unannotated <- pelsa_unannotated_accessions(matched, feat_df)
 
-  # --- 2D within-condition CV on the RAW intensities ------------------------
+  # --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ---
+  # GCTs_original is LOG-transformed (Protigy stores the post-log matrix), so we
+  # delinearize by this dataset's declared log base BEFORE sum-normalize + CV.
+  # CV is NOT invariant under log; the notebook delinearizes first. "None"/NA
+  # means the matrix is already linear -> pelsa_delinearize passes it through.
   .step("Computing CV")
   cv <- NULL
   if (!is.null(gct_original)) {
@@ -465,7 +542,8 @@ pelsa_run_analysis_one <- function(gct,
     } else {
       .pelsa_gct_cdesc(gct)  # data.frame seam: reuse the processed cdesc if any
     }
-    raw_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
+    log_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
+    raw_mat <- pelsa_delinearize(log_mat, log_base)
     if (!is.null(cdesc_raw) && is.data.frame(cdesc_raw) &&
         condition_col %in% names(cdesc_raw)) {
       cmap <- pelsa_condition_map_for(cdesc_raw, colnames(raw_mat), condition_col)
@@ -535,13 +613,24 @@ pelsa_run_analysis_one <- function(gct,
 # shared across datasets of the same species; the caller caches it).
 #
 # @param gcts           named list of PROCESSED GCTs (or frames), keyed by ds.
-# @param gcts_original  named list of UNPROCESSED GCTs (or frames), keyed by ds
-#                       (the CV source). May be NULL / missing a ds (CV skipped).
+# @param gcts_original  named list of GCTs (or frames) Protigy stored as
+#                       `GCTs_original`, keyed by ds (the CV source). These are
+#                       LOG-TRANSFORMED (post perform_log_transformation), so the
+#                       CV path DELINEARIZES each by `log_base_by_ds[[ds]]`
+#                       (pelsa_delinearize) before sum-normalize + CV. May be
+#                       NULL / missing a ds (CV skipped).
 # @param setup_snapshot pelsa_setup_snapshot() list (datasets + per-ds
 #                       condition_col).
 # @param fasta_map      named list accession -> sequence (read once).
 # @param feat_df        species feature cache data.frame (read once, used as-is).
 # @param min_nonNA      min non-NA replicates for a finite CV.
+# @param log_base_by_ds named list/character keyed by ds giving each dataset's
+#                       declared log transformation ("None"/NA/"log2"/"log10").
+#                       Sourced from GCTs_and_params()$parameters[[ds]]$
+#                       log_transformation. A ds absent here defaults to "None"
+#                       (treated as already-linear). ONLY the CV input is
+#                       delinearized; depth + intensity-line stay on the
+#                       processed log2 matrix.
 # @param set_progress   NULL or function(value, detail) advancing an overall
 #                       0..1 progress bar; each dataset occupies an equal slice.
 # @return named-by-dataset list of per-dataset cache objects (see the Cache
@@ -555,6 +644,7 @@ pelsa_run_analysis <- function(gcts,
                                fasta_map,
                                feat_df,
                                min_nonNA = 3L,
+                               log_base_by_ds = NULL,
                                set_progress = NULL) {
   datasets <- setup_snapshot$datasets %||% character(0)
   datasets <- as.character(datasets)
@@ -583,6 +673,9 @@ pelsa_run_analysis <- function(gcts,
     stage_env <- new.env(parent = emptyenv())
     stage_env$stage <- NA_character_
 
+    ds_log_base <- if (is.null(log_base_by_ds)) NA_character_
+                   else log_base_by_ds[[ds]] %||% NA_character_
+
     out[[ds]] <- tryCatch(
       pelsa_run_analysis_one(
         gct          = gcts[[ds]],
@@ -591,6 +684,7 @@ pelsa_run_analysis <- function(gcts,
         feat_df      = feat_df,
         condition_col = condition_cols[[ds]],
         min_nonNA    = min_nonNA,
+        log_base     = ds_log_base,
         progress     = sub_progress,
         stage_env    = stage_env
       ),

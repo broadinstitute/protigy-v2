@@ -185,6 +185,40 @@ test_that("peptide frame = cbind(rdesc, mat) for a GCT; df passes through", {
   expect_identical(pelsa_dataset_peptide_frame(syn$peptides), syn$peptides)
 })
 
+# ---- pelsa_delinearize (closed-form: recover raw linear from log) ------------
+
+test_that("pelsa_delinearize inverts log2 (2^x) and log10 (10^x)", {
+  m <- matrix(c(3, 0, 1, 2), nrow = 2)            # log2 of c(8,1,2,4)
+  expect_equal(pelsa_delinearize(m, "log2"), 2 ^ m)
+  expect_equal(pelsa_delinearize(m, "log2")[1, 1], 8)   # 2^3 == 8 (known value)
+
+  m10 <- matrix(c(1, 2, 0, 3), nrow = 2)           # log10 of c(10,100,1,1000)
+  expect_equal(pelsa_delinearize(m10, "log10"), 10 ^ m10)
+  expect_equal(pelsa_delinearize(m10, "log10")[2, 1], 100)  # 10^2 == 100
+})
+
+test_that("pelsa_delinearize passes through 'None'/NA/NULL unchanged (no exp)", {
+  m <- matrix(c(100, 200, 50, 400), nrow = 2)      # already LINEAR
+  expect_identical(pelsa_delinearize(m, "None"), m)
+  expect_identical(pelsa_delinearize(m, NA_character_), m)
+  expect_identical(pelsa_delinearize(m, NULL), m)
+  expect_identical(pelsa_delinearize(m, character(0)), m)
+})
+
+test_that("pelsa_delinearize preserves NA (2^NA == NA) and coerces data.frame", {
+  m <- matrix(c(3, NA, 1, 2), nrow = 2)
+  out <- pelsa_delinearize(m, "log2")
+  expect_true(is.na(out[2, 1]))
+  expect_equal(out[1, 1], 8)
+  # data.frame intensity block is coerced to a numeric matrix.
+  df <- as.data.frame(matrix(c(3, 1), nrow = 1))
+  expect_equal(pelsa_delinearize(df, "log2"), 2 ^ as.matrix(df))
+})
+
+test_that("pelsa_delinearize rejects an unknown base", {
+  expect_error(pelsa_delinearize(matrix(1), "ln"), "unknown log_base")
+})
+
 # ---- pelsa_run_analysis_one (assembly, injected fasta + feat) ----------------
 
 test_that("run_analysis_one builds all cache components with sane shapes", {
@@ -283,6 +317,123 @@ test_that("run_analysis_one is GRACEFUL when no peptide FASTA-maps (no error)", 
   # The rest still computes (depth/peptide_metrics are FASTA-independent).
   expect_false(is.null(one$depth_summary))
   expect_equal(nrow(one$peptide_metrics), nrow(syn$peptides))
+})
+
+# ---- CV DELINEARIZE wiring (the regression test that proves the bug fixed) ---
+# GCTs_original is LOG-transformed; the CV must run on raw LINEAR intensities, so
+# the pipeline must delinearize (2^x for log2) BEFORE sum-norm + CV. We feed a
+# known log2 matrix through the analysis path and assert the CV equals the
+# closed-form CV of 2^m (NOT of the log-space m).
+
+# Build a GCT around an arbitrary (already-built) intensity matrix + two-row
+# peptide annotation, with a simple 2-condition cdesc (3 reps each).
+.mk_gct_from_mat <- function(mat) {
+  rids <- paste0("pep", seq_len(nrow(mat)))
+  rownames(mat) <- rids
+  rdesc <- data.frame(
+    PG.ProteinAccessions = rep("SHARED1", nrow(mat)),
+    PG.Genes             = rep("SHAREDGENE", nrow(mat)),
+    PEP.StrippedSequence = rep("SHAREDPEPTIDEK", nrow(mat)),
+    PEP.PeptidePosition  = rep("5", nrow(mat)),
+    row.names = rids, stringsAsFactors = FALSE, check.names = FALSE
+  )
+  sc <- colnames(mat)
+  cdesc <- data.frame(
+    condition = sub("_R[0-9]+$", "", sc),
+    row.names = sc, stringsAsFactors = FALSE
+  )
+  cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+}
+
+test_that("CV is computed on DELINEARIZED (linear) intensities for a log2 dataset", {
+  sc <- c("A_R1", "A_R2", "A_R3", "B_R1", "B_R2", "B_R3")
+  # A LOG2-space matrix (these are log2 intensities, as stored in GCTs_original).
+  log_mat <- matrix(
+    c(3, 4, 5,   2, 2, 3,
+      6, 6, 7,   4, 5, 5),
+    nrow = 2, byrow = TRUE, dimnames = list(NULL, sc)
+  )
+  cmap <- stats::setNames(sub("_R[0-9]+$", "", sc), sc)
+
+  gct <- .mk_gct_from_mat(log_mat)
+  feat_df <- .mk_feat_df()
+
+  one <- pelsa_run_analysis_one(
+    gct = gct, gct_original = gct,
+    fasta_map = list(SHARED1 = "MKLVSHAREDPEPTIDEK"),
+    feat_df = feat_df, condition_col = "condition",
+    min_nonNA = 3L, log_base = "log2"
+  )
+
+  # Closed-form expectations: CV on the LINEAR (2^m) matrix, and on the (wrong)
+  # log-space matrix. min_nonNA = 3 so all rows are "ok" (3 reps per condition).
+  expected_linear <- pelsa_within_condition_cv(2 ^ log_mat, cmap, min_nonNA = 3L)
+  wrong_log       <- pelsa_within_condition_cv(log_mat,     cmap, min_nonNA = 3L)
+
+  # The pipeline CV must MATCH the linear-world CV ...
+  got <- one$cv[order(one$cv$row_id, one$cv$condition),
+                c("row_id", "condition", "cv_pct")]
+  exp <- expected_linear[order(expected_linear$row_id, expected_linear$condition),
+                         c("row_id", "condition", "cv_pct")]
+  rownames(got) <- NULL; rownames(exp) <- NULL
+  expect_equal(got, exp)
+
+  # ... and be DEMONSTRABLY DIFFERENT from the (buggy) log-world CV.
+  wrong <- wrong_log[order(wrong_log$row_id, wrong_log$condition), "cv_pct"]
+  expect_false(isTRUE(all.equal(got$cv_pct, wrong)))
+})
+
+test_that("CV is computed AS-IS for a 'None' (already-linear) dataset (no exp)", {
+  sc <- c("A_R1", "A_R2", "A_R3", "B_R1", "B_R2", "B_R3")
+  # An already-LINEAR matrix (raw intensities, log_transformation == "None").
+  lin_mat <- matrix(
+    c(100, 200, 300,   10, 20, 30,
+      400, 500, 600,   40, 50, 60),
+    nrow = 2, byrow = TRUE, dimnames = list(NULL, sc)
+  )
+  cmap <- stats::setNames(sub("_R[0-9]+$", "", sc), sc)
+
+  gct <- .mk_gct_from_mat(lin_mat)
+  one <- pelsa_run_analysis_one(
+    gct = gct, gct_original = gct,
+    fasta_map = list(SHARED1 = "MKLVSHAREDPEPTIDEK"),
+    feat_df = .mk_feat_df(), condition_col = "condition",
+    min_nonNA = 3L, log_base = "None"
+  )
+
+  # No exponentiation: CV equals the closed-form CV on the raw matrix as-is.
+  expected <- pelsa_within_condition_cv(lin_mat, cmap, min_nonNA = 3L)
+  got <- one$cv[order(one$cv$row_id, one$cv$condition),
+                c("row_id", "condition", "cv_pct")]
+  exp <- expected[order(expected$row_id, expected$condition),
+                  c("row_id", "condition", "cv_pct")]
+  rownames(got) <- NULL; rownames(exp) <- NULL
+  expect_equal(got, exp)
+})
+
+test_that("run_analysis threads per-ds log_base into the CV delinearize", {
+  sc <- c("A_R1", "A_R2", "A_R3", "B_R1", "B_R2", "B_R3")
+  log_mat <- matrix(
+    c(3, 4, 5,   2, 2, 3,
+      6, 6, 7,   4, 5, 5),
+    nrow = 2, byrow = TRUE, dimnames = list(NULL, sc)
+  )
+  cmap <- stats::setNames(sub("_R[0-9]+$", "", sc), sc)
+  gct <- .mk_gct_from_mat(log_mat)
+
+  snap <- list(datasets = "ds1", species = "human",
+               condition_col = list(ds1 = "condition"))
+  res <- pelsa_run_analysis(
+    gcts = list(ds1 = gct), gcts_original = list(ds1 = gct),
+    setup_snapshot = snap, fasta_map = list(SHARED1 = "MKLVSHAREDPEPTIDEK"),
+    feat_df = .mk_feat_df(),
+    log_base_by_ds = list(ds1 = "log2")
+  )
+  expected_linear <- pelsa_within_condition_cv(2 ^ log_mat, cmap, min_nonNA = 3L)
+  got <- res$ds1$cv[order(res$ds1$cv$row_id, res$ds1$cv$condition), "cv_pct"]
+  exp <- expected_linear[order(expected_linear$row_id, expected_linear$condition),
+                         "cv_pct"]
+  expect_equal(got, exp)
 })
 
 test_that("run_analysis_one returns cv = NULL when the condition column is all-NA", {

@@ -3,12 +3,19 @@
 #
 # Pure (non-reactive) helpers for the single CV definition used everywhere CV
 # appears in PELSA (per-condition KDE in Summary, per-sample companion CV).
-# CV is ALWAYS computed on RAW (un-log-transformed, linear) intensities that
+# CV is ALWAYS computed on RAW (un-log-transformed, LINEAR) intensities that
 # have first been SUM-NORMALIZED per condition, then sd/mean*100. This mirrors
-# the PELSA notebook pipeline (normalization.py::sum_normalize then CV). The
-# caller (Phase 6) supplies the ORIGINAL raw uploaded intensities (GCTs_original),
-# NOT Protigy's processed/log2 matrix; these helpers just take whatever raw
-# matrix they are given.
+# the PELSA notebook pipeline (normalization.py: DELINEARIZE the log GCT, then
+# sum_normalize then CV). These helpers take whatever matrix they are given and
+# assume it is ALREADY LINEAR (the math here does NOT log/delinearize).
+#
+# IMPORTANT CALLER CONTRACT: Protigy's `GCTs_original` is the LOG-TRANSFORMED
+# matrix (post perform_log_transformation), NOT raw linear. CV is NOT invariant
+# under log. So the SOLE caller (pelsa_run_analysis_one in
+# tab_pelsa_analysis_helpers.R) must DELINEARIZE that matrix by the dataset's
+# declared log base (pelsa_delinearize: log2 => 2^x, log10 => 10^x, None/NA =>
+# already-linear pass-through) BEFORE handing it to these helpers. Passing a
+# log-space matrix in here yields a quantitatively WRONG CV.
 #
 # VECTORIZED ONLY. PELSA matrices are 100k+ rows. All per-row work uses
 # matrixStats (rowMeans2 / rowSds) and rowSums over per-condition column blocks.

@@ -759,6 +759,15 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       gcts_raw       <- isolate(GCTs_original())
       database_dir   <- pelsa_database_dir()
 
+      # Per-dataset log base for the CV delinearize. GCTs_original is the
+      # LOG-transformed matrix; the CV is defined on raw LINEAR intensities, so
+      # pelsa_run_analysis delinearizes each dataset's CV input by this base
+      # (None/NA => already linear). Snapshot it under isolate() with the rest.
+      params_snap <- if (is.null(gp)) list() else (gp$parameters %||% list())
+      log_base_by_ds <- lapply(params_snap, function(p) {
+        p$log_transformation %||% NA_character_
+      })
+
       # Pre-flight validation (pure). Render inline + bail on failure.
       validation <- pelsa_validate_setup(snapshot, gcts_processed, database_dir)
       last_validation(validation)
@@ -794,6 +803,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
             setup_snapshot = snapshot,
             fasta_map      = fasta_map,
             feat_df        = feat_df,
+            log_base_by_ds = log_base_by_ds,
             set_progress   = function(value, detail) {
               # Map the assembly's 0..1 onto the 0.15..1.0 remaining band.
               setProgress(value = 0.15 + 0.85 * value, detail = detail)
