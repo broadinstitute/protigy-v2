@@ -53,5 +53,7 @@ utils::globalVariables(c(
   "pep_start", "pep_end", "feature_class", "class_score",
   "peptide_seq", "adj_p", "logFC", "gene",
   # PELSA annotation (Task 2I) data.table NSE symbols
-  "_row_id", "token_idx", "gene_token", "_rank"
+  "_row_id", "token_idx", "gene_token", "_rank",
+  # PELSA volcano builder (Task 3A) data.table NSE symbols
+  ".key", "entry"
 ))
