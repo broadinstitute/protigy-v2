@@ -50,5 +50,6 @@ NULL
 
 utils::globalVariables(c(
   ".SD", ".N", ".I", "accession", "start", "end",
-  "pep_start", "pep_end", "feature_class", "class_score"
+  "pep_start", "pep_end", "feature_class", "class_score",
+  "peptide_seq", "adj_p", "logFC", "gene"
 ))
