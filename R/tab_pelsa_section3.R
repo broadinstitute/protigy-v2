@@ -14,17 +14,20 @@
 #       loading — only the ACTIVE contrast's heavy volcano df is held, the prior
 #       contrast's df is freed on switch (registries persist user settings).
 #   7C  the WebGL volcano: 3A pelsa_build_volcano_df() (cached per contrast) ->
-#       3B pelsa_thin_background() -> ggplot -> ggplotly + plotly::toWebGL, with
-#       a single color toggle (two-sided significance vs UniProt feature class),
-#       a magenta marker overlay always on top, label modes (all markers / best
-#       per marker / top-N=3), the empirical y-cutoff threshold line, and a
-#       metadata hover tooltip.
+#       ggplot -> ggplotly + plotly::toWebGL, with a single color toggle
+#       (two-sided significance vs UniProt feature class), a magenta marker
+#       overlay always on top, label modes (all markers / best per marker /
+#       top-N=3), the empirical y-cutoff threshold line, and a metadata hover
+#       tooltip. The FULL df is rendered (every point) — toWebGL handles 100k+
+#       points on the GPU, so NO background downsampling is applied (per user
+#       decision: draw all points). The 3B pelsa_thin_background() helper remains
+#       in the package but is intentionally NOT wired into the volcano render.
 #
-# Pass 2 (7D best-peptide panel / 7E hover-pin intensity panel / 7F exports) is
-# a SEPARATE later task — clean seams are left below (documented + TODO), but
-# nothing for it is built here.
+# Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
+# 7E left-click PIN -> per-protein intensity line panel (3C) + redraw-based
+# sibling-protein highlight (no plotlyProxy); 7F per-ome exports.
 #
-# Pure plot-assembly logic: R/tab_pelsa_section3_helpers.R (tested).
+# Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
 ################################################################################
 
 ################################################################################
@@ -196,6 +199,43 @@ PELSASection3_Ome_Server <- function(id,
       unique(acc[!is.na(acc) & nzchar(acc)])
     })
 
+    # The active dataset's confirmed condition ORDER (x-axis factor levels for
+    # the 3C intensity line plot). NULL when setup_state lacks it.
+    condition_order_r <- reactive({
+      ss <- pelsa_setup_state()
+      co <- if (is.null(ss)) NULL else ss$condition_order
+      if (is.null(co)) NULL else co[[ome]]
+    })
+
+    # The active dataset's processed numeric matrix (peptides x samples), AS-IS
+    # log2 intensities the 3C intensity builder reads. NULL when no GCT.
+    processed_mat_r <- reactive({
+      gct <- tryCatch(GCT_processed(), error = function(e) NULL)
+      if (is.null(gct)) return(NULL)
+      tryCatch({
+        if (methods::is(gct, "GCT")) methods::slot(gct, "mat")
+        else if (is.matrix(gct)) gct
+        else NULL
+      }, error = function(e) NULL)
+    })
+
+    # sample -> condition map aligned to processed_mat columns (3C consumes a
+    # named char vector). Built from the dataset's cdesc condition column.
+    condition_map_r <- reactive({
+      gct <- tryCatch(GCT_processed(), error = function(e) NULL)
+      pm <- processed_mat_r()
+      ss <- pelsa_setup_state()
+      if (is.null(gct) || is.null(pm) || is.null(ss)) return(NULL)
+      cond_col <- ss$condition_col[[ome]]
+      if (is.null(cond_col) || !nzchar(cond_col)) return(NULL)
+      cdesc <- tryCatch(.pelsa_gct_cdesc(gct), error = function(e) NULL)
+      if (is.null(cdesc)) return(NULL)
+      tryCatch(
+        pelsa_condition_map_for(cdesc, colnames(pm), cond_col),
+        error = function(e) NULL
+      )
+    })
+
     # Species feature table (2I/3A feat_df), read once per species via the
     # on-disk cache. Read-only; NO network. NULL when unavailable (3A then
     # colors everything "none").
@@ -349,11 +389,85 @@ PELSASection3_Ome_Server <- function(id,
       df
     })
 
-    # The thinned frame the plot consumes + its honesty counts.
-    thinned <- reactive({
-      df <- active_volcano_df()
-      pelsa_thin_background(df, keep_frac = 0.3, logfc_thresh = 0.5, seed = 1L)
+    # The frame the plot consumes = the FULL active volcano df (every point).
+    # Background downsampling (3B pelsa_thin_background) was intentionally removed
+    # per user decision: toWebGL renders all points on the GPU, so no thinning.
+    plot_df <- reactive(active_volcano_df())
+
+    ## ------------------------------------------------------------------------
+    ## 7D — BEST-PEPTIDE SECOND PANEL (lazy: only when the checkbox is ON)
+    ## ------------------------------------------------------------------------
+    # Same stat_df/cache/feat_df/markers/contrast as the all-peptide df — only
+    # opts$panel differs ("best_peptide" -> one dot per distinct best-peptide via
+    # the 2G rollup). Cached per contrast like the all-peptide df, FREED on
+    # switch. NEVER built when the checkbox is OFF (the reactive short-circuits).
+    best_show <- reactive(isTRUE(input$pelsa_show_best_panel))
+    best_volcano_df_cache <- reactiveVal(list())
+
+    best_volcano_df <- reactive({
+      req(best_show())
+      contrast <- active_contrast()
+      req(contrast)
+      stat_raw <- stat_df_raw()
+      validate(need(pelsa_volcano_has_contrast(stat_raw, contrast),
+                    "Selected contrast has no statistics columns yet."))
+      entry <- cache_entry()
+      validate(need(!is.null(entry),
+                    "Run Start Analysis in the PELSA Setup tab first."))
+
+      cache <- best_volcano_df_cache()
+      if (!is.null(cache[[contrast]])) return(cache[[contrast]])
+
+      matched <- entry$matched %||% data.frame()
+      fdf <- feat_df() %||% data.frame(accession = character(0),
+                                       start = integer(0), end = integer(0),
+                                       feature_class = character(0))
+      stat_df <- pelsa_volcano_stat_df(stat_raw, matched)
+      df <- tryCatch(
+        pelsa_build_volcano_df(
+          stat_df       = stat_df,
+          matched_cache = if (nrow(matched) > 0L) matched else
+            pelsa_volcano_empty_matched(),
+          feat_df       = fdf,
+          markers       = isolate(marker_accessions()),
+          contrast      = contrast,
+          opts          = list(panel = "best_peptide", sig_cutoff = 0.05)
+        ),
+        error = function(e) {
+          showNotification(
+            paste0("Could not build best-peptide data: ", conditionMessage(e)),
+            type = "error", duration = 8
+          )
+          NULL
+        }
+      )
+      validate(need(!is.null(df), "Best-peptide data could not be built."))
+      best_volcano_df_cache(stats::setNames(list(df), contrast))
+      df
     })
+
+    # Best-peptide panel: also the FULL df (no thinning — toWebGL renders all).
+    best_plot_df <- reactive(best_volcano_df())
+
+    # Free the best-panel cache whenever the checkbox goes OFF.
+    observeEvent(best_show(), {
+      if (!best_show()) best_volcano_df_cache(list())
+    }, ignoreInit = TRUE)
+
+    ## ------------------------------------------------------------------------
+    ## 7E — PINNED peptide selection (left-click). reactiveVal holds the resolved
+    ## click; HOVER never touches this path (the heavy intensity plot is a
+    ## SEPARATE output computed only when this reactiveVal is set).
+    ## ------------------------------------------------------------------------
+    pinned <- reactiveVal(NULL)  # list(peptide_seq, accession, label, row)
+
+    # CLEAR the pin on contrast switch: a pin made under contrast A would
+    # otherwise survive into contrast B, where its highlighted siblings /
+    # metadata / intensity panel describe a peptide selected under the OLD
+    # contrast's coordinates (misleading). The contrast key changes on switch.
+    observeEvent(current_contrast_key(), {
+      pinned(NULL)
+    }, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
     ## LAYOUT
@@ -386,20 +500,41 @@ PELSASection3_Ome_Server <- function(id,
       }
 
       fluidRow(
-        # TODO (pass 2, 7E): a LEFT-side pinned intensity panel goes here, fed by
-        # the left-click PIN on the plot (3C intensity builder) + a plotlyProxy
-        # sibling-peptide fade. Documented seam only — not built this pass.
-        column(8,
+        # 7E LEFT-side pinned intensity panel: a metadata table + the per-protein
+        # 3C intensity LINE plot, populated on the left-click PIN of the volcano.
+        # The line plot lives in its OWN plotlyOutput so it is computed ONLY on
+        # click (the hover path never touches it).
+        column(3,
+          shinydashboardPlus::box(
+            uiOutput(ns("pelsa_pin_metadata")),
+            plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "320px"),
+            helpText("Click a point to pin its peptide profile."),
+            width = NULL, title = "Pinned Peptide", headerBorder = TRUE
+          )
+        ),
+        column(6,
           tagList(
             shinydashboardPlus::box(
               plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "560px"),
-              uiOutput(ns("pelsa_thin_note")),
               status = "primary", width = NULL, title = "PELSA Volcano",
               headerBorder = TRUE, solidHeader = TRUE
+            ),
+            # 7D best-peptide second panel, BELOW the all-peptide volcano, shown
+            # only when the sidebar checkbox is ON.
+            conditionalPanel(
+              condition = sprintf("input['%s']",
+                                  ns("pelsa_show_best_panel")),
+              shinydashboardPlus::box(
+                plotly::plotlyOutput(ns("pelsa_volcano_best_plot"),
+                                     height = "560px"),
+                status = "primary", width = NULL,
+                title = "PELSA Volcano (best peptide per protein)",
+                headerBorder = TRUE, solidHeader = TRUE
+              )
             )
           )
         ),
-        column(4,
+        column(3,
           shinydashboardPlus::box(
             uiOutput(ns("pelsa_volcano_sidebar")),
             width = NULL, title = "Plot Controls", headerBorder = TRUE
@@ -441,147 +576,222 @@ PELSASection3_Ome_Server <- function(id,
                        min = 1, step = 1, width = "140px")
         ),
         hr(),
-        # TODO (pass 2, 7D): a "Show best-peptide panel" toggle stub. The
-        # best-peptide second panel reuses 3A's panel="best_peptide". Not built.
+        # 7D best-peptide second panel toggle (lazy: the best-peptide df is built
+        # only while this is ON; freed when toggled off).
         checkboxInput(ns("pelsa_show_best_panel"),
-                      "Show best-peptide panel (coming soon)", value = FALSE),
+                      "Show best peptide per protein", value = FALSE),
         helpText("Marker-protein peptides are always drawn in magenta on top.")
       )
     })
 
-    output$pelsa_thin_note <- renderUI({
-      note <- tryCatch(pelsa_volcano_thin_note(thinned()),
-                       error = function(e) NULL)
-      if (is.null(note)) return(NULL)
-      helpText(note)
-    })
-
     ## ------------------------------------------------------------------------
-    ## 7C — THE WEBGL VOLCANO PLOT
+    ## 7C — THE WEBGL VOLCANO PLOT (shared assembly; click registered)
     ## ------------------------------------------------------------------------
+    # The plot assembly is factored into pelsa_volcano_build_plot() so the
+    # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
+    # is rendered (no thinning — toWebGL handles every point on the GPU).
+    #
+    # SIBLING FADE — ONE mechanism (the redraw): the render DEPENDS on pinned(),
+    # so a pin rebuilds the plot with the pinned protein's siblings carved into
+    # their own full-opacity trace while the background cloud is dimmed
+    # (bg_alpha inside the builder). This makes the highlight exact at the trace
+    # level. The earlier redundant plotlyProxy restyle was removed (it duplicated
+    # the redraw's fade and relied on a fragile trace-index assumption) — there
+    # is now exactly ONE fade mechanism, not two.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
-      th <- thinned()
-      df <- th$df
+      df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
-
-      color_mode <- input$pelsa_color_mode %||% "significance"
-      label_mode <- label_mode_for_contrast()
-      n_top      <- top_n_for_contrast()
-
-      split <- pelsa_volcano_marker_split(df)
-      bg     <- split$background
-      mk     <- split$markers
-
-      # Color for the background trace (the single toggle picks the column).
-      bg_colors <- if (nrow(bg) > 0L)
-        pelsa_volcano_color_column(bg, color_mode) else character(0)
-
-      # Metadata-only hover tooltip (NO line plot — pass 2 adds the pinned
-      # intensity panel). accession / gene / position span / peptide length.
-      tip <- function(d) {
-        if (nrow(d) == 0L) return(character(0))
-        # Guard the pep-span-attach miss: a peptide with no matched_cache row
-        # has NA pep_start/pep_end. Show "unknown" position + blank length
-        # rather than a bare "NA-NA" / "NA".
-        no_span <- is.na(d$pep_start) | is.na(d$pep_end)
-        pos <- ifelse(no_span, "unknown",
-                      paste0(d$pep_start, "-", d$pep_end))
-        len_chr <- ifelse(no_span, "",
-                          as.character(d$pep_end - d$pep_start + 1L))
-        len_line <- ifelse(no_span, "", paste0("<br>Length: ", len_chr))
-        paste0(
-          "Accession: ", d$winning_accession %||% d$PG.ProteinAccessions, "<br>",
-          "Gene: ", d$winning_gene %||% d$PG.Genes, "<br>",
-          "Position: ", pos, len_line
-        )
-      }
-
-      gg <- ggplot2::ggplot()
-      if (nrow(bg) > 0L) {
-        bg$.tip <- tip(bg)
-        gg <- gg + ggplot2::geom_point(
-          data = bg,
-          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-          color = bg_colors, alpha = 0.6, size = 1
-        )
-      }
-      # Marker overlay: magenta, black edge, ON TOP, ALWAYS.
-      if (nrow(mk) > 0L) {
-        mk$.tip <- tip(mk)
-        gg <- gg + ggplot2::geom_point(
-          data = mk,
-          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-          fill = .PELSA_VOLCANO_MARKER_COLOR,
-          color = .PELSA_VOLCANO_MARKER_EDGE,
-          shape = 21, size = 2.4, stroke = 0.5
-        )
-      }
-
-      # Threshold line: dashed horizontal at the empirical raw-p (y_cutoff attr).
-      # NO line when nothing passes (y_cutoff == Inf).
-      y_cut <- attr(active_volcano_df(), "y_cutoff")
-      if (!is.null(y_cut) && is.finite(y_cut)) {
-        gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
-                                       color = "grey40")
-      }
-
-      # On-plot labels (label text fixed to the 3A <gene>_aa<pos> column).
-      lab_idx <- tryCatch(
-        pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
-        error = function(e) integer(0)
+      pin <- pinned()
+      pelsa_volcano_build_plot(
+        df             = df,
+        full_df        = df,
+        color_mode     = input$pelsa_color_mode %||% "significance",
+        label_mode     = label_mode_for_contrast(),
+        n_top          = top_n_for_contrast(),
+        source_id      = ns("pelsa_volcano"),
+        sibling_acc    = if (is.null(pin)) NULL else pin$accession,
+        register_click = TRUE
       )
-      if (length(lab_idx) > 0L) {
-        lab_df <- df[lab_idx, , drop = FALSE]
-        lab_df <- lab_df[!is.na(lab_df$label) & nzchar(lab_df$label), ,
-                         drop = FALSE]
-        if (nrow(lab_df) > 0L) {
-          gg <- gg + ggplot2::geom_text(
-            data = lab_df,
-            ggplot2::aes(x = .data$logFC, y = .data$logP, label = .data$label),
-            size = 2.6, vjust = -0.8, check_overlap = TRUE
-          )
-        }
-      }
-
-      gg <- gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") +
-        ggplot2::theme_bw()
-
-      p <- plotly::ggplotly(gg, source = ns("pelsa_volcano"), tooltip = "text")
-      # GPU render for 100k+ points. toWebGL emits cosmetic "scattergl has no
-      # attribute 'hoveron'" notices when converting ggplot geom_point traces;
-      # they are harmless (the scattergl trace ignores the dropped attribute).
-      p <- suppressWarnings(plotly::toWebGL(p))
-      plotly::event_register(p, "plotly_click")
-      p
     })
 
     ## ------------------------------------------------------------------------
-    ## PASS-2 SEAMS (documented placeholders — NOT built this pass)
+    ## 7D — BEST-PEPTIDE PANEL PLOT (same shared assembly, own source id)
     ## ------------------------------------------------------------------------
-    # 7E: left-click PIN -> intensity panel (3C) + plotlyProxy sibling-peptide
-    #     fade. The click source is already registered as ns("pelsa_volcano");
-    #     a future observeEvent(event_data("plotly_click", source =
-    #     ns("pelsa_volcano"))) resolves the clicked peptide and renders the
-    #     pinned intensity panel in the left column placeholder above.
-    # 7D: best-peptide second panel via pelsa_build_volcano_df(panel =
-    #     "best_peptide"), gated by input$pelsa_show_best_panel.
+    output$pelsa_volcano_best_plot <- plotly::renderPlotly({
+      req(best_show())
+      df <- best_plot_df()
+      validate(need(nrow(df) > 0L,
+                    "No best peptides to plot for this contrast."))
+      pelsa_volcano_build_plot(
+        df             = df,
+        full_df        = df,
+        color_mode     = input$pelsa_color_mode %||% "significance",
+        label_mode     = label_mode_for_contrast(),
+        n_top          = top_n_for_contrast(),
+        source_id      = ns("pelsa_volcano_best"),
+        sibling_acc    = NULL,
+        register_click = FALSE
+      )
+    })
 
-    ## EXPORTS (7F is pass 2) ##
-    return(list())
+    ## ------------------------------------------------------------------------
+    ## 7E — LEFT-CLICK PIN: resolve clicked peptide -> pinned() reactiveVal
+    ## ------------------------------------------------------------------------
+    # event_data() returns the clicked point's (x, y) == (logFC, logP); the pure
+    # resolver maps that to the volcano-df peptide + its representative accession
+    # (winning_accession). tryCatch so a bad click never crashes the session.
+    observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_volcano")), {
+      ev <- plotly::event_data("plotly_click", source = ns("pelsa_volcano"))
+      res <- tryCatch(
+        pelsa_volcano_resolve_click(ev, active_volcano_df()),
+        error = function(e) NULL
+      )
+      pinned(res)
+    }, ignoreInit = TRUE)
+
+    # NOTE: the sibling fade is handled ENTIRELY by the output$pelsa_volcano_plot
+    # redraw above (it depends on pinned(), carving the sibling trace + dimming
+    # the background). The previously-present redundant plotlyProxy restyle was
+    # removed so there is exactly ONE fade mechanism.
+
+    ## ------------------------------------------------------------------------
+    ## 7E — PINNED metadata table + per-protein intensity LINE plot (3C)
+    ## ------------------------------------------------------------------------
+    # The 3C line data is computed ONLY here (on pin) — the hover path never
+    # reaches it. tryCatch around the whole render so a bad click is inert.
+    pinned_line_data <- reactive({
+      pin <- pinned()
+      req(pin, pin$accession, nzchar(pin$accession))
+      entry <- cache_entry()
+      req(entry)
+      contrast <- active_contrast(); req(contrast)
+      pm <- processed_mat_r(); req(pm)
+      cmap <- condition_map_r(); req(cmap)
+      corder <- condition_order_r()
+      req(length(corder) > 0L)
+      matched <- entry$matched %||% data.frame()
+      req(nrow(matched) > 0L)
+      stat_df <- pelsa_volcano_stat_df(stat_df_raw(), matched)
+
+      acc <- pin$accession
+      is_mk <- acc %in% isolate(marker_accessions())
+      tryCatch(
+        pelsa_intensity_line_data(
+          accession = acc, stat_df = stat_df, matched_cache = matched,
+          processed_mat = pm, condition_map = cmap, condition_order = corder,
+          contrast = contrast, sig_cutoff = 0.05, is_marker = is_mk),
+        error = function(e) NULL)
+    })
+
+    output$pelsa_pin_metadata <- renderUI({
+      pin <- pinned()
+      if (is.null(pin)) {
+        return(helpText("No peptide pinned yet."))
+      }
+      tags$table(class = "table table-condensed",
+        tags$tbody(
+          tags$tr(tags$td(strong("Peptide")), tags$td(pin$peptide_seq %||% "")),
+          tags$tr(tags$td(strong("Protein")), tags$td(pin$accession %||% "")),
+          tags$tr(tags$td(strong("Label")),   tags$td(pin$label %||% ""))
+        )
+      )
+    })
+
+    output$pelsa_intensity_plot <- plotly::renderPlotly({
+      ld <- tryCatch(pinned_line_data(), error = function(e) NULL)
+      validate(need(!is.null(ld) && nrow(ld) > 0L,
+                    "Click a point to pin its peptide profile."))
+      suppressWarnings(plotly::ggplotly(pelsa_intensity_line_ggplot(ld)))
+    })
+
+    ## ------------------------------------------------------------------------
+    ## 7F — EXPORTS (per-ome export list; re-derive from cache + stat_results)
+    ## ------------------------------------------------------------------------
+    # Each export_fn writes ONE file into dir_name, recomputing from the cache +
+    # the Statistics-tab results (NOT the on-screen objects). The all-peptide
+    # volcano PDF reuses the shared plot builder.
+    build_export_df <- function(panel) {
+      entry <- cache_entry()
+      pelsa_volcano_export_df(
+        stat_results()[[ome]],
+        if (is.null(entry)) NULL else entry$matched,
+        feat_df(), isolate(marker_accessions()), active_contrast(), panel)
+    }
+
+    # Common tryCatch wrapper: log the failure (with the ome + a label) and
+    # no-op so one bad export never aborts the whole zip.
+    safe_export <- function(label, body) function(dir_name) tryCatch(
+      body(dir_name),
+      error = function(e) {
+        message("PELSA ", label, " export failed for ", ome, ": ",
+                conditionMessage(e))
+        invisible(NULL)
+      })
+
+    export_volcano_plot <- safe_export("volcano PDF", function(dir_name) {
+      df <- isolate(build_export_df("all_peptide"))
+      if (is.null(df) || nrow(df) == 0L) return(invisible(NULL))
+      path <- file.path(dir_name, paste0("pelsa_volcano_", ome, ".pdf"))
+      # Static PDF: a plain re-derived ggplot via the grDevices pdf device — no
+      # browser/network. FULL df plotted (no thinning — matches on-screen).
+      grDevices::pdf(path, width = 9, height = 7)
+      on.exit(grDevices::dev.off(), add = TRUE)
+      print(.pelsa_export_ggplot(
+        df, df, isolate(input$pelsa_color_mode) %||% "significance"))
+      invisible(path)
+    })
+
+    export_proteins_of_interest <- safe_export("POI", function(dir_name) {
+      key <- isolate(current_contrast_key())
+      poi <- if (!is.null(poi_registry) && !is.null(key))
+        isolate(poi_registry())[[key]] else NULL
+      poi <- poi %||% isolate(marker_accessions())
+      out <- data.frame(accession = as.character(poi %||% character(0)),
+                        stringsAsFactors = FALSE)
+      path <- file.path(dir_name,
+                        paste0("pelsa_proteins_of_interest_", ome, ".csv"))
+      utils::write.csv(out, path, row.names = FALSE)
+      invisible(path)
+    })
+
+    export_volcano_labels <- safe_export("volcano-labels", function(dir_name) {
+      df_all  <- isolate(build_export_df("all_peptide"))
+      df_best <- if (isolate(best_show()))
+        isolate(build_export_df("best_peptide")) else NULL
+      parts <- list()
+      if (!is.null(df_all))
+        parts[[length(parts) + 1L]] <-
+          pelsa_volcano_labels_sidecar(df_all, "all_peptide")
+      if (!is.null(df_best))
+        parts[[length(parts) + 1L]] <-
+          pelsa_volcano_labels_sidecar(df_best, "best_peptide")
+      if (length(parts) == 0L) return(invisible(NULL))
+      path <- file.path(dir_name, paste0("pelsa_volcano_labels_", ome, ".csv"))
+      utils::write.csv(do.call(rbind, parts), path, row.names = FALSE)
+      invisible(path)
+    })
+
+    export_plotted_intensities <- safe_export("plotted-intensities",
+                                              function(dir_name) {
+      entry <- cache_entry()
+      out <- pelsa_plotted_intensities_df(
+        stat_results()[[ome]],
+        if (is.null(entry)) data.frame() else entry$matched %||% data.frame(),
+        isolate(marker_accessions()), active_contrast(),
+        isolate(processed_mat_r()), isolate(condition_map_r()),
+        isolate(condition_order_r()))
+      if (is.null(out) || nrow(out) == 0L) return(invisible(NULL))
+      path <- file.path(dir_name,
+                        paste0("pelsa_plotted_intensities_", ome, ".csv"))
+      utils::write.csv(out, path, row.names = FALSE)
+      invisible(path)
+    })
+
+    return(list(
+      volcano_plot         = export_volcano_plot,
+      proteins_of_interest = export_proteins_of_interest,
+      volcano_labels       = export_volcano_labels,
+      plotted_intensities  = export_plotted_intensities
+    ))
   })
-}
-
-# A canonical empty matched-cache frame (the columns 3A's all-peptide join
-# reads), used when the active dataset has no matched rows so 3A still runs and
-# yields an unlabeled (label = NA) frame rather than erroring. @noRd
-pelsa_volcano_empty_matched <- function() {
-  data.frame(
-    PEP.StrippedSequence = character(0),
-    accession            = character(0),
-    gene                 = character(0),
-    pep_start            = integer(0),
-    pep_end              = integer(0),
-    stringsAsFactors     = FALSE,
-    check.names          = FALSE
-  )
 }

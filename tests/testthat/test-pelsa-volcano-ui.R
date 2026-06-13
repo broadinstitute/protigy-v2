@@ -146,6 +146,136 @@ test_that("thin note: NULL when nothing thinned, string otherwise", {
 })
 
 # ---------------------------------------------------------------------------
+# PASS 2 (7D-7F) PURE HELPERS
+# ---------------------------------------------------------------------------
+
+.mk_volcano_df <- function() {
+  data.frame(
+    id                   = c("PEPA", "PEPB", "PEPC"),
+    logFC                = c(2.0, -1.5, 0.1),
+    adj.P.Val            = c(0.001, 0.02, 0.8),
+    P.Value              = c(0.0001, 0.005, 0.7),
+    logP                 = c(4.0, 2.3, 0.15),
+    label                = c("G1_aa10", "G2_aa20", "G1_aa30"),
+    winning_accession    = c("ACC1", "ACC2", "ACC1"),
+    winning_gene         = c("G1", "G2", "G1"),
+    PG.ProteinAccessions = c("ACC1", "ACC2", "ACC1"),
+    PG.Genes             = c("G1", "G2", "G1"),
+    feature_class_primary = c("none", "none", "none"),
+    feature_color        = c("#d3d3d3", "#d3d3d3", "#d3d3d3"),
+    sig_color            = c("darkred", "#1f4e9c", "gray"),
+    pep_start            = c(10L, 20L, 30L),
+    pep_end              = c(14L, 24L, 34L),
+    is_marker            = c(TRUE, FALSE, TRUE),
+    stringsAsFactors     = FALSE, check.names = FALSE
+  )
+}
+
+test_that("resolve_click maps event (x,y) -> nearest peptide + winning accession", {
+  df <- .mk_volcano_df()
+  # Click exactly on PEPB (logFC=-1.5, logP=2.3).
+  res <- pelsa_volcano_resolve_click(data.frame(x = -1.5, y = 2.3), df)
+  expect_equal(res$peptide_seq, "PEPB")
+  expect_equal(res$accession, "ACC2")
+  expect_equal(res$row, 2L)
+  # A noisy click near PEPA snaps to PEPA.
+  res2 <- pelsa_volcano_resolve_click(data.frame(x = 1.9, y = 3.95), df)
+  expect_equal(res2$peptide_seq, "PEPA")
+  # NULL event / empty df -> NULL.
+  expect_null(pelsa_volcano_resolve_click(NULL, df))
+  expect_null(pelsa_volcano_resolve_click(data.frame(x = 1, y = 1),
+                                          df[0, , drop = FALSE]))
+  # No-coordinate event -> NULL.
+  expect_null(pelsa_volcano_resolve_click(data.frame(x = NA_real_,
+                                                     y = NA_real_), df))
+})
+
+test_that("resolve_click falls back to first PG token when winning_accession NA", {
+  df <- .mk_volcano_df()
+  df$winning_accession <- NA_character_
+  df$PG.ProteinAccessions <- c("X1;X2", "Y1", "Z1")
+  res <- pelsa_volcano_resolve_click(data.frame(x = 2.0, y = 4.0), df)
+  expect_equal(res$accession, "X1")
+})
+
+test_that("sibling_mask flags every row of the pinned protein", {
+  df <- .mk_volcano_df()
+  m <- pelsa_volcano_sibling_mask(df, "ACC1")
+  expect_equal(m$siblings, c(TRUE, FALSE, TRUE))   # rows 1 & 3 are ACC1
+  expect_equal(m$n_siblings, 2L)
+  # NULL / NA / absent accession -> no siblings.
+  expect_equal(pelsa_volcano_sibling_mask(df, NULL)$n_siblings, 0L)
+  expect_equal(pelsa_volcano_sibling_mask(df, NA_character_)$n_siblings, 0L)
+  expect_equal(pelsa_volcano_sibling_mask(df, "NOPE")$n_siblings, 0L)
+})
+
+test_that("labels_sidecar emits the exact 12 columns in order", {
+  df <- .mk_volcano_df()
+  out <- pelsa_volcano_labels_sidecar(df, "all_peptide")
+  expect_equal(colnames(out),
+               c("panel", "peptide_sequence", "gene", "accession", "pep_start",
+                 "display_label", "feature_class_primary", "winning_accession",
+                 "winning_gene", "logFC", "adj_p", "raw_p"))
+  expect_equal(nrow(out), 3L)
+  expect_true(all(out$panel == "all_peptide"))
+  expect_equal(out$peptide_sequence, c("PEPA", "PEPB", "PEPC"))
+  expect_equal(out$adj_p, df$adj.P.Val)
+  expect_equal(out$raw_p, df$P.Value)
+  expect_equal(out$winning_accession, df$winning_accession)
+  # Empty df -> zero rows but full 12-col width.
+  empty <- pelsa_volcano_labels_sidecar(df[0, , drop = FALSE], "best_peptide")
+  expect_equal(ncol(empty), 12L)
+  expect_equal(nrow(empty), 0L)
+})
+
+test_that("build_plot returns a plotly object for both source ids", {
+  df <- .mk_volcano_df()
+  p <- pelsa_volcano_build_plot(df, full_df = df, source_id = "s1")
+  expect_s3_class(p, "plotly")
+  # With a pinned sibling accession (the fade path) it still builds.
+  p2 <- pelsa_volcano_build_plot(df, full_df = df, source_id = "s2",
+                                 sibling_acc = "ACC1", register_click = TRUE)
+  expect_s3_class(p2, "plotly")
+})
+
+test_that("sibling_mask: single-peptide protein -> exactly one TRUE; builds", {
+  df <- .mk_volcano_df()  # ACC2 maps to exactly one row (PEPB, row 2)
+  m <- pelsa_volcano_sibling_mask(df, "ACC2")
+  expect_equal(m$n_siblings, 1L)
+  expect_equal(which(m$siblings), 2L)
+  # End-to-end: pinning a single-peptide protein builds without error.
+  expect_s3_class(
+    pelsa_volcano_build_plot(df, full_df = df, source_id = "single",
+                             sibling_acc = "ACC2"),
+    "plotly")
+})
+
+test_that("resolve_click: two near-identical points -> first df row (which.min tie)", {
+  df <- .mk_volcano_df()
+  # Make rows 1 and 3 share coordinates; a click there must pick the FIRST
+  # (row 1) per the documented which.min tie behavior.
+  df$logFC[3] <- df$logFC[1]
+  df$logP[3]  <- df$logP[1]
+  res <- pelsa_volcano_resolve_click(
+    data.frame(x = df$logFC[1], y = df$logP[1]), df)
+  expect_equal(res$row, 1L)
+  expect_equal(res$peptide_seq, "PEPA")
+})
+
+test_that("intensity_line_ggplot: single vs faceted panel both build", {
+  # Non-marker (single panel value) -> no facet; marker (two values) -> facet.
+  one <- data.frame(
+    accession = "ACC1", peptide_seq = "PEPA", pep_occurrence_idx = 1L,
+    aa_label = "aa10", panel = "significant",
+    condition = factor(c("A", "B"), levels = c("A", "B")),
+    mean_log2 = c(1, 2), n_rep_nonNA = c(2L, 2L), stringsAsFactors = FALSE)
+  expect_s3_class(pelsa_intensity_line_ggplot(one), "ggplot")
+  two <- rbind(one, transform(one, panel = "other", mean_log2 = c(3, 4)))
+  g <- pelsa_intensity_line_ggplot(two)
+  expect_s3_class(g, "ggplot")
+})
+
+# ---------------------------------------------------------------------------
 # testServer (light)
 # ---------------------------------------------------------------------------
 
@@ -190,6 +320,62 @@ test_that("thin note: NULL when nothing thinned, string otherwise", {
   list(species = NULL,  # NULL -> feat_df NULL path (colors "none"); no network
        marker_rows = data.frame(accession = "ACC1", gene = "G1",
                                 stringsAsFactors = FALSE))
+}
+
+# A fuller fixture for the 7D/7E/7F testServer paths: matched carries .row_id +
+# pep_occurrence_idx, the cache holds a processed matrix-like GCT seam, and the
+# setup_state has condition_col / condition_order so the 3C intensity path runs.
+.mk_stat_results_full <- function() {
+  list(Proteome = data.frame(
+    id                   = c("PEPA", "PEPB", "PEPC"),
+    .row_id              = c(1L, 2L, 3L),
+    PEP.StrippedSequence = c("PEPA", "PEPB", "PEPC"),
+    PG.ProteinAccessions = c("ACC1", "ACC2", "ACC1"),
+    PG.Genes             = c("G1", "G2", "G1"),
+    logFC.A_over_B       = c(2.0, -1.5, 0.1),
+    adj.P.Val.A_over_B   = c(0.001, 0.02, 0.8),
+    P.Value.A_over_B     = c(0.0001, 0.005, 0.7),
+    stringsAsFactors     = FALSE, check.names = FALSE
+  ))
+}
+
+.mk_cache_full <- function() {
+  matched <- data.frame(
+    .row_id              = c(1L, 2L, 3L),
+    PEP.StrippedSequence = c("PEPA", "PEPB", "PEPC"),
+    accession            = c("ACC1", "ACC2", "ACC1"),
+    gene                 = c("G1", "G2", "G1"),
+    pep_start            = c(10L, 20L, 30L),
+    pep_end              = c(14L, 24L, 34L),
+    pep_occurrence_idx   = c(1L, 1L, 1L),
+    stringsAsFactors     = FALSE
+  )
+  list(Proteome = list(matched = matched, annotation = matched))
+}
+
+# A real cmapR GCT (3 peptides x 4 samples) with a cdesc `condition` column so
+# the section's processed_mat_r / condition_map_r reactives resolve. Rows align
+# to matched_cache .row_id (1..3); 2 conditions x 2 replicates.
+.mk_gct <- function() {
+  m <- matrix(c(1, 2, 5, 6,   2, 3, 6, 7,   3, 4, 7, 8),
+              nrow = 3, byrow = TRUE,
+              dimnames = list(c("PEPA", "PEPB", "PEPC"),
+                              c("s1", "s2", "s3", "s4")))
+  new("GCT",
+      mat = m,
+      rdesc = data.frame(id = c("PEPA", "PEPB", "PEPC")),
+      cdesc = data.frame(condition = c("A", "A", "B", "B"),
+                         row.names = c("s1", "s2", "s3", "s4")),
+      rid = c("PEPA", "PEPB", "PEPC"),
+      cid = c("s1", "s2", "s3", "s4"))
+}
+
+.mk_setup_state_full <- function() {
+  list(species = NULL,
+       marker_rows = data.frame(accession = "ACC1", gene = "G1",
+                                stringsAsFactors = FALSE),
+       condition_col = list(Proteome = "condition"),
+       condition_order = list(Proteome = c("A", "B")))
 }
 
 test_that("gate: NULL stat_results shows the notice and renders no plot", {
@@ -261,9 +447,12 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
       expect_length(sig, nrow(df2))
       expect_length(feat, nrow(df2))
 
-      # "showing N of M" note: thinned() returns counts; note NULL when nothing
-      # thinned (small synthetic frame). Just assert it does not error.
-      expect_silent(pelsa_volcano_thin_note(thinned()))
+      # No downsampling: the plot consumes the FULL df (every point), so plot_df
+      # equals active_volcano_df row-for-row. The thin-note output is gone.
+      expect_equal(nrow(plot_df()), nrow(active_volcano_df()))
+      expect_identical(plot_df(), active_volcano_df())
+      # The thin-note output was removed entirely — referencing it now errors.
+      expect_error(output$pelsa_thin_note, "hasn't been defined")
 
       # Plot output exists (renders without error).
       expect_false(is.null(output$pelsa_volcano_plot))
@@ -394,4 +583,122 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
       expect_false(is.null(output$pelsa_volcano_plot))  # renders, no error
     }
   )
+})
+
+# ---------------------------------------------------------------------------
+# testServer (light): 7D best panel / 7E pin+intensity / 7F exports
+# ---------------------------------------------------------------------------
+
+.full_args <- function() {
+  list(
+    id = "Proteome", ome = "Proteome",
+    GCT_processed = reactive(.mk_gct()),
+    parameters = reactive(NULL),
+    default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+    stat_results = reactive(.mk_stat_results_full()),
+    stat_params = reactive(.mk_stat_params()),
+    pelsa_analysis = reactive(.mk_cache_full()),
+    pelsa_setup_state = reactive(.mk_setup_state_full()),
+    poi_registry = reactiveVal(list()),
+    top_n_registry = reactiveVal(list()),
+    label_mode_registry = reactiveVal(list())
+  )
+}
+
+test_that("7D: best-panel df built ONLY when the checkbox is ON", {
+  shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B",
+                      pelsa_show_best_panel = FALSE)
+    # OFF: best cache stays empty (the reactive short-circuits on best_show()).
+    expect_length(best_volcano_df_cache(), 0L)
+
+    # ON: best-peptide df builds (panel = "best_peptide", one dot per peptide).
+    session$setInputs(pelsa_show_best_panel = TRUE)
+    bdf <- best_volcano_df()
+    expect_true(is.data.frame(bdf) && nrow(bdf) >= 1L)
+    expect_equal(names(best_volcano_df_cache()), "A_over_B")
+
+    # Toggling OFF frees the best cache.
+    session$setInputs(pelsa_show_best_panel = FALSE)
+    expect_length(best_volcano_df_cache(), 0L)
+  })
+})
+
+test_that("7E: a simulated pin populates metadata + computes 3C line data", {
+  shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B")
+    force(active_volcano_df())
+
+    # Simulate the resolved click by setting the pinned reactiveVal directly
+    # (event_data() needs a live browser; the resolver itself is unit-tested).
+    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
+                label = "G1_aa10", row = 1L))
+
+    # 3C line data computes for the pinned protein (ACC1 -> marker -> both panels).
+    ld <- pinned_line_data()
+    expect_true(is.data.frame(ld) && nrow(ld) > 0L)
+    expect_true(all(c("accession", "peptide_seq", "condition", "mean_log2",
+                      "panel", "aa_label") %in% colnames(ld)))
+    expect_true(all(ld$accession == "ACC1"))
+    expect_setequal(as.character(unique(ld$condition)), c("A", "B"))
+
+    # The metadata table renders (the intensity plot's validate-gated render is
+    # exercised via pinned_line_data() above — accessing the output directly
+    # would raise the no-pin validate when line data is transiently empty).
+    expect_false(is.null(output$pelsa_pin_metadata))
+  })
+})
+
+test_that("7E: switching contrast CLEARS a stale pin", {
+  shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B")
+    force(active_volcano_df())
+    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
+                label = "G1_aa10", row = 1L))
+    expect_false(is.null(pinned()))
+
+    # Switch to the other contrast -> the pin (made under A_over_B coords) clears.
+    session$setInputs(pelsa_volcano_contrast = "A_over_C")
+    expect_equal(active_contrast(), "A_over_C")
+    expect_null(pinned())
+    # The intensity line data is gated on a pin, so it no longer computes.
+    expect_error(pinned_line_data(), class = "shiny.silent.error")
+  })
+})
+
+test_that("7F: exports list has the 4 fns and each writes a file", {
+  shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B",
+                      pelsa_show_best_panel = FALSE)
+    force(active_volcano_df())
+
+    exports <- session$returned
+    expect_setequal(names(exports),
+                    c("volcano_plot", "proteins_of_interest",
+                      "volcano_labels", "plotted_intensities"))
+    expect_true(all(vapply(exports, is.function, logical(1))))
+
+    dir <- tempfile("pelsa_export_"); dir.create(dir)
+    for (fn in exports) fn(dir)
+    files <- list.files(dir)
+    expect_true(any(grepl("pelsa_volcano_Proteome\\.pdf$", files)))
+    expect_true(any(grepl("pelsa_proteins_of_interest_Proteome\\.csv$", files)))
+    expect_true(any(grepl("pelsa_volcano_labels_Proteome\\.csv$", files)))
+    expect_true(any(grepl("pelsa_plotted_intensities_Proteome\\.csv$", files)))
+
+    # The 12-col sidecar shape on disk.
+    lab <- utils::read.csv(
+      file.path(dir, "pelsa_volcano_labels_Proteome.csv"),
+      stringsAsFactors = FALSE)
+    expect_equal(ncol(lab), 12L)
+    expect_true("winning_accession" %in% colnames(lab))
+  })
 })
