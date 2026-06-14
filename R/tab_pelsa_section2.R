@@ -3,7 +3,7 @@
 #
 # A DASHBOARD that READS the per-dataset analysis cache built by Setup's
 # Start-Analysis (5D, the `pelsa_analysis` reactiveVal) and renders metrics +
-# plots for the ACTIVE dataset. It NEVER recomputes the heavy objects in render —
+# plots for the ACTIVE dataset. It NEVER recomputes the heavy objects in render -
 # every panel reads from the (already-small) cache tables. The pure plot-data /
 # shaping logic lives in tab_pelsa_section2_helpers.R.
 #
@@ -28,7 +28,7 @@
 
 # Exact caption required for the per-condition CV KDE (planning Decision).
 .PELSA_CV_CAPTION <- paste0(
-  "CV of sum-normalized (un-logged) intensities — replicate ",
+  "CV of sum-normalized (un-logged) intensities - replicate ",
   "reproducibility after loading/depth correction."
 )
 
@@ -140,7 +140,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       pelsa_section2_dashboard_ui(ns, ome)
     })
 
-    ## 6A — EXPERIMENT-WIDE ##
+    ## 6A - EXPERIMENT-WIDE ##
 
     output$total_peptide_ids <- shinydashboard::renderValueBox({
       entry <- active_entry()
@@ -183,7 +183,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       req(entry)
       if ((entry$qc$n_matched_rows %||% 0L) == 0L) {
         return(pelsa_blank_plot(
-          "No peptides mapped to FASTA — check species / FASTA."))
+          "No peptides mapped to FASTA - check species / FASTA."))
       }
       pelsa_coverage_distribution_plot(entry$coverage)
     })
@@ -211,7 +211,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       ggplotly(missed_plot_reactive())
     })
 
-    ## 6B — PER-CONDITION CV KDE ##
+    ## 6B - PER-CONDITION CV KDE ##
 
     cv_plot_reactive <- reactive({
       entry <- active_entry()
@@ -237,7 +237,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         style = "color:#6c757d; font-size:0.9em;")
     })
 
-    ## 6C — PER-SAMPLE DEPTH ##
+    ## 6C - PER-SAMPLE DEPTH ##
 
     depth_plot_reactive <- reactive({
       entry <- active_entry()
@@ -267,7 +267,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
                     options = list(dom = "t", ordering = FALSE))
     })
 
-    ## 6D — MAPPING / ANNOTATION QC (collapsible, bottom) ##
+    ## 6D - MAPPING / ANNOTATION QC (collapsible, bottom) ##
 
     output$unmatched_table <- DT::renderDataTable({
       entry <- active_entry()
@@ -303,9 +303,9 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       )
     })
 
-    ## 6E — EXPORTS ##
+    ## 6E - EXPORTS ##
     # Per-ome export list re-derived from the cache for ALL analyzed datasets
-    # (NOT just the active one). The cache is the source — each export function
+    # (NOT just the active one). The cache is the source - each export function
     # reads its dataset's cache entry and writes one CSV into dir_name.
     all_exports <- reactive({
       cache <- analysis_cache()
@@ -494,7 +494,7 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
 # x-limit at the 99th percentile of cv_pct. @noRd
 pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
   if (is.null(cv) || !is.data.frame(cv) || nrow(cv) == 0L) {
-    return(pelsa_blank_plot("No CV data — a raw GCT + condition column are required."))
+    return(pelsa_blank_plot("No CV data - a raw GCT + condition column are required."))
   }
   elig <- pelsa_cv_kde_eligibility(cv, condition_order)
   if (length(elig$eligible) == 0L) {
@@ -555,7 +555,7 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
 }
 
 ################################################################################
-# Export builders (6E) — re-derive each file from the cache entry
+# Export builders (6E) - re-derive each file from the cache entry
 ################################################################################
 
 # Build the per-ome export list for ONE analyzed dataset's cache entry. Each

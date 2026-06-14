@@ -1,12 +1,12 @@
 ################################################################################
-# Module: PELSA feature-class annotation (Task 2I) — the HIGHEST-parity-risk
+# Module: PELSA feature-class annotation (Task 2I) - the HIGHEST-parity-risk
 # helper. Overlap-joins per-peptide spans against the UniProt feature table and
 # resolves ONE primary feature class per peptide across all its proteins.
 #
 # Gold standard = the notebook's plots/volcano_annotate.py::annotate_feature_class
 # + pick_primary_feature_class + FEATURE_PRIORITY / FEATURE_COLORS, ported
 # VERBATIM below. The priority ladder ORDER is the NOTEBOOK's (transmembrane
-# BEFORE repeat) — this differs from schema.json's level order and the planning
+# BEFORE repeat) - this differs from schema.json's level order and the planning
 # doc; the NOTEBOOK wins.
 #
 # Public helpers:
@@ -33,7 +33,7 @@
 #     by 2B (one matched row per occurrence, each with its own pep_start/pep_end);
 #     here each occurrence row simply annotates against its own range.
 #   - pelsa_unannotated_accessions DOES apply isoform-base fallback (P12345-2 is
-#     not counted unannotated if base P12345 is present) — an intentional
+#     not counted unannotated if base P12345 is present) - an intentional
 #     asymmetry vs the exact-accession overlap merge.
 #   - INVERTED spans (pep_start > pep_end) are DROPPED from the overlap grid (so
 #     they get "none" + leading-accession fallback) with a one-time warning().
@@ -41,11 +41,11 @@
 #     such rows must never reach the join; the warning surfaces upstream bugs.
 ################################################################################
 
-# ---- Constants (ported VERBATIM — order/ranks/colors are parity-locked) ------
+# ---- Constants (ported VERBATIM - order/ranks/colors are parity-locked) ------
 
 # Priority ladder, highest -> lowest. rank = 0-based index (0 = highest).
 # NOTE: transmembrane_or_signal BEFORE repeat_or_coiled_coil (the NOTEBOOK's
-# order; differs from schema.json feature_class_levels — notebook wins).
+# order; differs from schema.json feature_class_levels - notebook wins).
 PELSA_FEATURE_PRIORITY <- c(
   "active_or_binding_site",
   "catalytic_domain",
@@ -288,7 +288,7 @@ pelsa_read_feature_cache <- function(species_dir, n_max = Inf) {
 #
 # STRICT POSITIONAL alignment: the j-th gene token aligns to the j-th accession
 # token; positions with no gene token (incl. a too-short ;-list or a single gene
-# token across many accessions) get "". A single gene token does NOT recycle —
+# token across many accessions) get "". A single gene token does NOT recycle -
 # this is what preserves alignment when a middle accession's gene slot is empty
 # (so token C's gene stays with C, never shifted). FULLY VECTORIZED (no per-row
 # R loop): O(total grid tokens) via sequence()/cumsum() + integer indexing.
@@ -487,7 +487,7 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
 # Set difference of the plot's ;-tokenized accessions minus the feature table's
 # accessions, WITH isoform-base fallback: an accession "P12345-2" counts as
 # annotated if base "P12345" is in feat_df. (This isoform-base fallback applies
-# ONLY here — the overlap merge in pelsa_annotate_features is on exact accession.)
+# ONLY here - the overlap merge in pelsa_annotate_features is on exact accession.)
 #
 # @param plot_df_or_accessions either a data.frame with PG.ProteinAccessions /
 #        accession, or a bare character vector of (possibly ;-delimited)

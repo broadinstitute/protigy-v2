@@ -1,5 +1,5 @@
 ################################################################################
-# Module: PELSA Start-Analysis — pure validation + compute-pipeline assembly
+# Module: PELSA Start-Analysis - pure validation + compute-pipeline assembly
 # (Task 5D).
 #
 # The Setup tab's "Start Analysis" button (tab_pelsa_section1.R) runs a one-shot
@@ -41,16 +41,16 @@
 #
 # COMPUTE-ALL-AT-START: pelsa_run_analysis computes EVERY checked dataset's heavy
 #   objects once per Start-Analysis (simpler, matches the "analyzed datasets"
-#   semantics — the switcher then shows exactly the analyzed set). The planning
+#   semantics - the switcher then shows exactly the analyzed set). The planning
 #   doc's switch-time freeing of INACTIVE rendered objects is a Phase 6/7 render
 #   concern, not a compute concern. ALTERNATIVE (documented, not chosen): compute
-#   lazily per-active-dataset to bound peak memory with many large datasets — the
+#   lazily per-active-dataset to bound peak memory with many large datasets - the
 #   seam is the per-dataset keying of the returned cache, so a lazy variant would
 #   call pelsa_run_analysis_one() (below) on demand instead of looping here.
 #
 # CONDITION MAP / GCTs_original ALIGNMENT (the integration crux, documented):
 #   - CV (2D) runs on RAW LINEAR intensities. We read them from
-#     gcts_original[[ds]] — BUT note Protigy's `GCTs_original` is the
+#     gcts_original[[ds]] - BUT note Protigy's `GCTs_original` is the
 #     LOG-TRANSFORMED matrix (post perform_log_transformation), not raw linear.
 #     CV is NOT invariant under log, so the pipeline DELINEARIZES that matrix by
 #     the dataset's declared log base (params$log_transformation -> log2 => 2^x,
@@ -161,14 +161,14 @@ pelsa_species_fasta_path <- function(database_dir, species) {
 #      in that dataset's cdesc.
 #   3. Each checked dataset has a confirmed (non-empty) condition order.
 #   4. A species is selected AND its FASTA exists under
-#      inst/database/<species>/fasta/ — else the planning-doc message
+#      inst/database/<species>/fasta/ - else the planning-doc message
 #      "No FASTA for <species>...".
 #
 # An EMPTY marker table is VALID (markers are a volcano OVERLAY, not a
-# prerequisite) — no marker check here.
+# prerequisite) - no marker check here.
 #
 # @param setup_snapshot a pelsa_setup_snapshot() list (or the live reactiveValues
-#                        — both support $field access).
+#                        - both support $field access).
 # @param gcts           named list of per-ome GCTs (for cdesc column existence).
 # @param database_dir   the PELSA database dir (FASTA existence check).
 # @return list(ok = logical scalar, errors = character()).
@@ -453,8 +453,8 @@ pelsa_annotation_frame <- function(entry) {
 # (Volcano) READ (never recompute). On SUCCESS it has exactly these 10
 # components (EXACT names + shapes as implemented):
 #   (NOTE: the former full-duplicate `annotation` frame is no longer stored; the
-#   cache now carries `annotation_features` — just the 3 feature columns,
-#   row-aligned to `matched` — and pelsa_annotation_frame(entry) reconstructs the
+#   cache now carries `annotation_features` - just the 3 feature columns,
+#   row-aligned to `matched` - and pelsa_annotation_frame(entry) reconstructs the
 #   full annotated frame on demand. ~27MB/dataset saved.)
 #   matched        data.frame, one row per (peptide, accession, occurrence) that
 #                  FASTA-mapped. Key cols: accession, pep_start, pep_end (1-based
@@ -495,13 +495,13 @@ pelsa_annotation_frame <- function(entry) {
 # pipeline phase that threw (e.g. "Computing CV").
 #
 # GRACEFUL ZERO-MATCH: a dataset whose peptides do not FASTA-map at all is NOT an
-# error — it returns a valid cache with qc$n_matched_rows == 0L (empty matched /
+# error - it returns a valid cache with qc$n_matched_rows == 0L (empty matched /
 # coverage / annotation). Phase 6 should check qc$n_matched_rows > 0L before
 # drawing coverage.
 #
 # @param gct           the PROCESSED GCT (or peptide data.frame) for this ds.
 # @param gct_original  the GCT (or frame) Protigy stored as `GCTs_original` for
-#                      this ds — the CV source. NOTE: this is the
+#                      this ds - the CV source. NOTE: this is the
 #                      LOG-TRANSFORMED matrix (post perform_log_transformation),
 #                      NOT raw linear, so the CV path DELINEARIZES it by
 #                      `log_base` first (pelsa_delinearize) to recover the raw
@@ -509,7 +509,7 @@ pelsa_annotation_frame <- function(entry) {
 #                      is skipped, cv = NULL).
 # @param fasta_map     named list accession -> sequence (read once by caller).
 # @param feat_df       the species feature cache (read once by caller); used
-#                      as-is (cache-as-is decision — no UniProt top-up).
+#                      as-is (cache-as-is decision - no UniProt top-up).
 # @param condition_col the chosen condition grouping column for this dataset.
 # @param min_nonNA     min non-NA replicates for a finite CV (passed to 2D).
 # @param log_base      this dataset's declared log transformation, one of
@@ -705,7 +705,7 @@ pelsa_run_analysis <- function(gcts,
     ds <- datasets[[k]]
     base_frac <- (k - 1L) / n
     sub_progress <- if (is.null(set_progress)) NULL else function(detail) {
-      set_progress(base_frac, sprintf("(%d/%d) %s — %s", k, n, ds, detail))
+      set_progress(base_frac, sprintf("(%d/%d) %s - %s", k, n, ds, detail))
     }
 
     # Track the last stage reached so a failure reports WHICH phase threw

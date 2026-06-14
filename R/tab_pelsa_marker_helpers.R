@@ -1,5 +1,5 @@
 ################################################################################
-# PELSA marker matching + parsing (Task 2J) — the pure, testable matching/
+# PELSA marker matching + parsing (Task 2J) - the pure, testable matching/
 # parsing core. The org.db / UniProt accession<->gene resolution UI (canonical
 # / reviewed flags) lives in Phase 5; this file only owns the deterministic
 # helpers it will call.
@@ -19,7 +19,7 @@
 #
 # pelsa_isoform_base consolidates the suffix-strip that tab_pelsa_coverage_helpers.R,
 # tab_pelsa_annotation_helpers.R, and tab_pelsa_fasta_helpers.R each inlined
-# (sub("-[0-9]+$", "", x)); those files are intentionally left unchanged — this
+# (sub("-[0-9]+$", "", x)); those files are intentionally left unchanged - this
 # is the shared entry point for future use (Phase 5/7).
 ################################################################################
 

@@ -22,21 +22,21 @@
 #
 # SETUP-STATE OBJECT (the documented contract read/extended by 5C/5D + 6/7)
 #   The Tab server exposes a `setup_state` reactiveValues:
-#     setup_state$datasets       chr — checked datasets to analyze (5D drives
+#     setup_state$datasets       chr - checked datasets to analyze (5D drives
 #                                      the container's pelsa_analyzed_datasets
 #                                      off this; see SEAM below)
-#     setup_state$species        chr scalar — selected species (SHARED)
-#     setup_state$compound       chr scalar — selected treatment compound (SHARED)
-#     setup_state$marker_rows    data.frame(accession, gene) — marker table (SHARED)
+#     setup_state$species        chr scalar - selected species (SHARED)
+#     setup_state$compound       chr scalar - selected treatment compound (SHARED)
+#     setup_state$marker_rows    data.frame(accession, gene) - marker table (SHARED)
 #
-#   PER-DATASET fields (5B) — NAMED LISTS keyed by dataset name (ome). Only the
+#   PER-DATASET fields (5B) - NAMED LISTS keyed by dataset name (ome). Only the
 #   checked datasets have entries; toggling a dataset adds/removes its entry:
-#     setup_state$condition_col[[ds]]   chr scalar — condition grouping column
-#     setup_state$replicate_col[[ds]]   chr scalar — replicate identifier column
-#     setup_state$condition_order[[ds]] chr — chosen order of that ds's conditions
-#     setup_state$replicate_order[[ds]][[cond]] chr — chosen sample order within
+#     setup_state$condition_col[[ds]]   chr scalar - condition grouping column
+#     setup_state$replicate_col[[ds]]   chr scalar - replicate identifier column
+#     setup_state$condition_order[[ds]] chr - chosen order of that ds's conditions
+#     setup_state$replicate_order[[ds]][[cond]] chr - chosen sample order within
 #                                            each condition (named by condition)
-#     setup_state$sample_order[[ds]]    chr — the CANONICAL ordered sample-name
+#     setup_state$sample_order[[ds]]    chr - the CANONICAL ordered sample-name
 #                                            vector (column order downstream
 #                                            plots respect), built by
 #                                            pelsa_build_sample_order().
@@ -177,7 +177,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # compound again is a no-op regardless of intervening clears.
     #
     # CHOSEN BEHAVIOR (documented): the tracker is NOT reset by "Clear all". This
-    # makes echo-safety robust — a same-value re-emit after a clear (a re-render
+    # makes echo-safety robust - a same-value re-emit after a clear (a re-render
     # echo, indistinguishable from a deliberate re-pick) will NOT resurrect the
     # cleared markers. To re-autofill the same compound, the user picks a
     # different compound and then re-picks it (a genuine change each time).
@@ -452,7 +452,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         # per-condition replicate observers so positions that became
         # multi-replicate under the new column get wired (the positional observers
         # already retarget to the live condition at their position; this only adds
-        # observers for newly-multi-replicate positions, deduped by the registry —
+        # observers for newly-multi-replicate positions, deduped by the registry -
         # no leak across repeated A->B->A switches).
         observeEvent(input[[id_condition_col(i_local)]], {
           set_ds("condition_col", ome_local, input[[id_condition_col(i_local)]])
@@ -500,7 +500,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # Per-condition replicate observers: ONE stable observer per (dataset i,
     # POSITION j). Keyed POSITIONALLY (ds_<i>_cond_<j>) on the SAME dedup registry
     # so re-rendering cards / switching the condition column never leaks (the
-    # positional orderInput input ids are reused across columns — re-registering
+    # positional orderInput input ids are reused across columns - re-registering
     # by-value would stack a second observer on the same input id).
     #
     # H1 FIX: the condition VALUE the observer writes to is resolved LIVE at
@@ -649,11 +649,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       # choices and the condition ORDER reference column NAMES + condition VALUES,
       # which are shared across datasets, so they copy faithfully. The per-
       # condition replicate ORDER, however, is keyed by condition value but holds
-      # the SOURCE's SAMPLE NAMES — targets have different sample names, so
+      # the SOURCE's SAMPLE NAMES - targets have different sample names, so
       # copying it would be dropped by pelsa_merge_ordering's intersection and
       # silently fall back to each target's default. We therefore do NOT copy it;
       # each target keeps its own default replicate ordering. The toast below says
-      # exactly this (honest apply-all — never claim a transfer that didn't happen).
+      # exactly this (honest apply-all - never claim a transfer that didn't happen).
       applied <- FALSE
       skipped <- character(0)
       for (ome in checked_datasets()) {
@@ -670,7 +670,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         updateSelectInput(session, id_condition_col(i), selected = src_cond)
         updateSelectInput(session, id_replicate_col(i), selected = src_rep)
         # Condition order copies (condition VALUES are shared); replicate order is
-        # NOT copied (source sample names don't exist in the target) — re-seed it
+        # NOT copied (source sample names don't exist in the target) - re-seed it
         # to the target's own default instead.
         set_ds("condition_order", ome, src_cond_order)
         set_ds("replicate_order", ome, NULL)
@@ -781,7 +781,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # UI + notifications, and drive the analyzed-datasets seam on success.
     #
     # DECISIONS (see the helper banner): cache-as-is feature annotation (no
-    # UniProt top-up on this path — refresh is 5C's job); compute ALL checked
+    # UniProt top-up on this path - refresh is 5C's job); compute ALL checked
     # datasets at Start (matches the analyzed-datasets semantics).
     #
     # The cache the sections read. Keyed by dataset; each value is the per-dataset
@@ -820,7 +820,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       last_validation(validation)
       if (!isTRUE(validation$ok)) {
         showNotification(
-          "Cannot start analysis — see the checklist below the button.",
+          "Cannot start analysis - see the checklist below the button.",
           type = "warning", duration = 4)
         return()
       }
@@ -920,7 +920,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     #   observe(pelsa_analyzed_datasets(ss$datasets))   # the analyzed-datasets seam
     #
     # ASYMMETRY (documented): Sections 2 & 3 still return the BARE exports
-    # reactiveVal — only Setup carries a setup_state companion, because only
+    # reactiveVal - only Setup carries a setup_state companion, because only
     # Setup owns shared run-configuration state. Revisit if 2/3 grow their own.
     #
     # $analysis (5D): the per-dataset analysis cache reactiveVal Start-Analysis

@@ -2,9 +2,9 @@
 # Module: PELSA peptide helpers
 #
 # Pure (non-reactive) per-peptide computations:
-#   pelsa_missed_cleavages() — tryptic missed-cleavage count (notebook parity)
-#   pelsa_peptide_length()   — residue count
-#   pelsa_build_multilabel() — canonical ;-joined gene_aa<pos> label builder
+#   pelsa_missed_cleavages() - tryptic missed-cleavage count (notebook parity)
+#   pelsa_peptide_length()   - residue count
+#   pelsa_build_multilabel() - canonical ;-joined gene_aa<pos> label builder
 #
 # Missed-cleavage MUST match the analysis notebook exactly. The notebook rule is
 #   core = peptide[:-1]; len(re.findall(r'[KR](?!P)', core))

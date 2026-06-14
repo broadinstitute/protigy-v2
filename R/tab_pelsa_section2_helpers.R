@@ -1,5 +1,5 @@
 ################################################################################
-# Module: PELSA Summary (Section 2) — pure plot-data / shaping helpers (Phase 6).
+# Module: PELSA Summary (Section 2) - pure plot-data / shaping helpers (Phase 6).
 #
 # The Summary section is a DASHBOARD that READS the per-dataset analysis cache
 # built by Setup's Start-Analysis (5D) and renders metrics + plots. It NEVER
@@ -51,7 +51,7 @@ pelsa_dodge_offsets <- function(n, y_top, y_range, frac = 0.08) {
 #
 # @param cv         the cache `cv` data.frame (row_id/condition/cv_pct/cv_status)
 #                   or NULL.
-# @param condition_order character — the user's confirmed condition order; may be
+# @param condition_order character - the user's confirmed condition order; may be
 #                   NULL/empty (then the cv table's natural condition order).
 # @param min_n      minimum finite ("ok") CVs for a KDE (default 20L).
 # @return list(eligible = character, skipped = data.frame(condition, n)). When cv
@@ -70,7 +70,7 @@ pelsa_cv_kde_eligibility <- function(cv, condition_order = NULL, min_n = 20L) {
   # invariant cv_status == "ok" => cv_pct is finite (2D / pelsa_within_
   # condition_cv). If a future contract change allows non-finite "ok" rows, this
   # would over-count and report a condition eligible whose plot (which re-filters
-  # is.finite(cv_pct)) then draws no curve — filter to finite here too at that
+  # is.finite(cv_pct)) then draws no curve - filter to finite here too at that
   # point.
   ok <- cv[!is.na(cv$cv_status) & cv$cv_status == "ok", , drop = FALSE]
   counts <- table(as.character(ok$condition))
@@ -120,8 +120,8 @@ pelsa_cv_kde_eligibility <- function(cv, condition_order = NULL, min_n = 20L) {
 # sample_order is NULL/empty, falls back to alphabetical. Pure.
 #
 # @param n_quantified NAMED integer vector (names = samples) from the cache.
-# @param sample_order character — canonical sample order, or NULL.
-# @return character — the sample names in render order (a permutation of
+# @param sample_order character - canonical sample order, or NULL.
+# @return character - the sample names in render order (a permutation of
 #         names(n_quantified)).
 # @noRd
 pelsa_sample_bar_order <- function(n_quantified, sample_order = NULL) {
@@ -144,7 +144,7 @@ pelsa_sample_bar_order <- function(n_quantified, sample_order = NULL) {
 # Shape the per-sample depth bar data from the cache (ordered, ready to plot).
 #
 # @param n_quantified NAMED integer vector from the cache.
-# @param sample_order character — canonical order, or NULL.
+# @param sample_order character - canonical order, or NULL.
 # @return data.frame(sample = ordered factor, n = integer). Empty when no
 #         samples. The `sample` column is a factor with levels in render order so
 #         the bar plot respects the ordering.
@@ -167,7 +167,7 @@ pelsa_depth_bar_data <- function(n_quantified, sample_order = NULL) {
 # Finite coverage FRACTIONS from the coverage cache (for the distribution plot).
 #
 # @param coverage the cache `coverage` data.frame (accession/coverage/...).
-# @return numeric — finite coverage values in [0,1]. Empty when none.
+# @return numeric - finite coverage values in [0,1]. Empty when none.
 # @noRd
 pelsa_coverage_values <- function(coverage) {
   if (is.null(coverage) || !is.data.frame(coverage) ||

@@ -1,8 +1,8 @@
 ################################################################################
-# Module: PELSA volcano data-frame builder (Task 3A) — pure, no Shiny.
+# Module: PELSA volcano data-frame builder (Task 3A) - pure, no Shiny.
 #
 # Produces ONE tidy data.frame that the Phase-7 plotly volcano renders. It does
-# NOT plot and does NOT compute statistics — the Statistics tab supplies
+# NOT plot and does NOT compute statistics - the Statistics tab supplies
 # logFC.<contrast> / adj.P.Val.<contrast> / P.Value.<contrast> upstream (PELSA
 # never recomputes BH).
 #
@@ -15,7 +15,7 @@
 #   2G pelsa_best_peptide_rollup() -> the best-peptide panel's one-dot-per-peptide
 #
 # Panels (opts$panel):
-#   "all_peptide" (default): NO explode — exactly ONE dot per SOURCE peptide
+#   "all_peptide" (default): NO explode - exactly ONE dot per SOURCE peptide
 #     row. The dot's color resolves across all ;-accession tokens (feature
 #     annotation runs on the ;-frame), and its label is the multilabel across
 #     all of the peptide's (gene, pep_start, accession) mappings from the
@@ -24,7 +24,7 @@
 #     exploded+stat frame, then the same sig/feature/marker columns attached.
 #
 # Two-sided significance coloring (Decision #4): a significant peptide is colored
-# whether it goes UP (darkred) or DOWN (a blue, #1f4e9c) — down is NOT a filter.
+# whether it goes UP (darkred) or DOWN (a blue, #1f4e9c) - down is NOT a filter.
 # Non-significant -> "gray". (The app's volcano marker overlay hex #FF00FF is a
 # Phase-7 plotting concern, not encoded here.)
 #
@@ -36,7 +36,7 @@
 #
 # Hardening: vectorized. The all-peptide multilabel builds each per-mapping
 # entry string ("<gene-or-accession>_aa<pos>") in ONE pass over the flat matched
-# column vectors, then collapses per peptide with a data.table group paste —
+# column vectors, then collapses per peptide with a data.table group paste -
 # the pelsa_build_multilabel R closure is NOT invoked per peptide (that 80k-call
 # group-op was the profiled hot spot; the inline form is byte-identical and ~10x
 # faster). annotation/marker matching are already vectorized on the ;-frame.

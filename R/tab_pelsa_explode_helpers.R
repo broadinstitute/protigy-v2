@@ -160,7 +160,7 @@ pelsa_explode_accessions <- function(df,
   out$gene <- .pelsa_align_tokens(gene_lists, n_acc, row_idx)
   out$pep_position_token <- .pelsa_align_tokens(pos_lists, n_acc, row_idx)
 
-  # Drop the original ;-delimited acc/gene/pos columns? No — carry originals
+  # Drop the original ;-delimited acc/gene/pos columns? No - carry originals
   # through unchanged per contract; the new columns are additive.
   out
 }

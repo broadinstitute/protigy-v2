@@ -1,5 +1,5 @@
 ################################################################################
-# Module: PELSA Section 3 (Volcano) — pure, testable plot-assembly helpers.
+# Module: PELSA Section 3 (Volcano) - pure, testable plot-assembly helpers.
 #
 # The Section-3 module server (R/tab_pelsa_section3.R) is intentionally thin:
 # every piece of logic that can be tested closed-form (contrast-key building,
@@ -32,7 +32,7 @@
 #
 # `contrast` is the STAT-COLUMN SUFFIX (e.g. "A_over_B"), not the display label,
 # so a registry slot maps 1:1 to the columns 3A reads. NULL/empty contrast
-# yields NULL (no key — the caller gates on this).
+# yields NULL (no key - the caller gates on this).
 #
 # @param ome      the dataset/ome name.
 # @param contrast the stat-column suffix, or NULL.
@@ -205,7 +205,7 @@ pelsa_volcano_color_column <- function(volcano_df, mode = "significance") {
 
 # Split a volcano frame into the marker rows (drawn magenta, on top, ALWAYS) and
 # the non-marker background rows. The split is run on the FULL frame the plot
-# consumes (every point — the volcano applies no background thinning).
+# consumes (every point - the volcano applies no background thinning).
 #
 # @param volcano_df a 3A frame carrying logical is_marker.
 # @return list(markers = <rows where is_marker>, background = <the rest>),
@@ -308,7 +308,7 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = "top_n", n_top = 3L) {
 # Build the human-readable background-thinning note from a 3B result.
 #
 # KEPT-BUT-UNWIRED: the volcano no longer thins its background (per user
-# decision — toWebGL renders all points), so this note is not shown in the UI.
+# decision - toWebGL renders all points), so this note is not shown in the UI.
 # Retained (alongside the 3B pelsa_thin_background helper) for callers that may
 # still thin, and covered by its own test.
 #
@@ -345,7 +345,7 @@ pelsa_volcano_thin_note <- function(thin) {
 # coordinate resolve to the FIRST df row (deterministic).
 #
 # Representative accession when a peptide maps to several: the volcano df's
-# `winning_accession` (the 2I feature-annotation winner — the leading/
+# `winning_accession` (the 2I feature-annotation winner - the leading/
 # representative accession for that peptide). Falls back to the first
 # ;-separated token of PG.ProteinAccessions when winning_accession is NA/empty.
 #
@@ -405,10 +405,10 @@ pelsa_volcano_resolve_click <- function(event, volcano_df) {
 # ---- 7E: sibling-peptide trace split (for the pinned-protein highlight) ------
 
 # Split a volcano frame into the PINNED protein's peptides (the pinned peptide +
-# its sibling peptides — every row whose winning_accession equals the pinned
+# its sibling peptides - every row whose winning_accession equals the pinned
 # accession) and the REST. On pin, the main volcano is NOT rebuilt; instead the
 # FADE is applied client-side via a plotlyProxy restyle (single mechanism) that
-# sets a per-point marker-opacity vector on the background trace — full opacity
+# sets a per-point marker-opacity vector on the background trace - full opacity
 # for the pinned protein's peptides, dimmed for the rest. This mask drives that
 # opacity vector (see pelsa_volcano_pin_opacity). It is also reused by the
 # static PDF export path's build.
@@ -546,17 +546,17 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # ---- shared plot-assembly (BOTH volcano panels reuse this) ------------------
 
 # Assemble the WebGL volcano plotly object from the FULL volcano frame (every
-# point — no thinning; toWebGL renders the whole cloud on the GPU). The
+# point - no thinning; toWebGL renders the whole cloud on the GPU). The
 # all-peptide AND best-peptide panels call this with the same arguments and a
 # distinct `source` id, so the plot code is written ONCE.
 #
 # Trace order is z-order only (later traces draw ON TOP):
-#   1. background (non-marker, non-sibling)  — the dense cloud
-#   2. siblings   (the pinned protein's peptides) — full opacity, drawn on top
+#   1. background (non-marker, non-sibling)  - the dense cloud
+#   2. siblings   (the pinned protein's peptides) - full opacity, drawn on top
 #   3. markers    (magenta overlay, on top, ALWAYS)
 #   (+ a geom_text label layer + an optional threshold hline)
 # IMPORTANT (perf): the MAIN volcano is built with sibling_acc = NULL, so the
-# fade is NOT done by rebuilding here — it is a client-side plotlyProxy "restyle"
+# fade is NOT done by rebuilding here - it is a client-side plotlyProxy "restyle"
 # of the background trace's marker.opacity (see pelsa_volcano_pin_opacity and the
 # plotly_click observer in tab_pelsa_section3.R). The sibling_acc != NULL path
 # (and bg_alpha dim) is retained ONLY for callers that DO want a static rebuild
@@ -655,7 +655,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       alpha = 1, size = 2
     )
   }
-  # Marker overlay (magenta, ON TOP, ALWAYS — drawn last).
+  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last).
   if (nrow(mk) > 0L) {
     mk$.tip <- tip(mk)
     gg <- gg + ggplot2::geom_point(
@@ -729,7 +729,7 @@ pelsa_volcano_empty_matched <- function() {
 # Assemble the per-protein intensity LINE ggplot from 3C line data (the pinned
 # panel's plot). One line per (peptide_seq, pep_occurrence_idx), colored by the
 # end-of-line aa_label; marker proteins facet sig/other (>1 panel value), a
-# non-marker single panel. Pure ggplot — the caller wraps it in ggplotly.
+# non-marker single panel. Pure ggplot - the caller wraps it in ggplotly.
 #
 # @param ld a pelsa_intensity_line_data() frame (condition factor, mean_log2,
 #   peptide_seq, pep_occurrence_idx, aa_label, panel).
@@ -836,7 +836,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 }
 
 # Build the static export ggplot (mirrors pelsa_volcano_build_plot's geom layout
-# but returns a plain ggplot for the PDF device — no plotly / WebGL / browser).
+# but returns a plain ggplot for the PDF device - no plotly / WebGL / browser).
 # @noRd
 .pelsa_export_ggplot <- function(df, full_df, color_mode = "significance") {
   split <- pelsa_volcano_marker_split(df)

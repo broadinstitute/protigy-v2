@@ -5,27 +5,27 @@
 # peptide x accession, already carrying per-contrast adj.P.Val / logFC for the
 # contrast the caller selected) into one dot per distinct best-peptide.
 #
-#   Step 1 — per-accession best peptide (the notebook's _rollup_to_proteins):
+#   Step 1 - per-accession best peptide (the notebook's _rollup_to_proteins):
 #     STABLE sort on [adj.P.Val, logFC, peptide_seq, accession], then keep the
 #     FIRST row per accession. The last two keys are a DETERMINISTIC total-order
 #     tiebreak so the chosen "best" peptide is fully reproducible even on exact
 #     (adj.P.Val, logFC) ties. data.table::setorder is a stable sort; the
 #     four-key total order makes the head(1)-per-accession pick deterministic.
 #
-#   Step 2 — regroup winners by peptide (Protigy refinement):
+#   Step 2 - regroup winners by peptide (Protigy refinement):
 #     A peptide has a SINGLE (adj.P.Val, logFC) coordinate, so a peptide that
 #     won multiple accessions must be ONE dot, not several overlapping ones.
 #     Group the step-1 winners by peptide_seq and emit one row per distinct
 #     best-peptide, carrying a ;-joined multi-label (one <gene>_aa<pos> per won
 #     accession) built via pelsa_build_multilabel() (the single source of truth
-#     for labels — reused, not reimplemented).
+#     for labels - reused, not reimplemented).
 #
 # NA handling: rows with NA adj.P.Val sort LAST (na.last = TRUE) so a peptide
 # with a real p-value is preferred over an NA one. An accession whose ONLY
 # peptide has all-NA stats still keeps that peptide (its adj_p / logFC are NA).
 #
 # The down-only (logFC < 0) PELSA signature is applied via the most-negative-
-# logFC tiebreak ONLY (ascending logFC), NOT as a filter — all peptides remain
+# logFC tiebreak ONLY (ascending logFC), NOT as a filter - all peptides remain
 # eligible. adj.P.Val / logFC are computed upstream (Statistics tab) and passed
 # in by the caller; this module does not compute stats.
 #

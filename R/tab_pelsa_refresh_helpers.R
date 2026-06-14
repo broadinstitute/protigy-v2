@@ -1,5 +1,5 @@
 ################################################################################
-# Module: PELSA per-species UniProt-annotation refresh — pure/orchestration
+# Module: PELSA per-species UniProt-annotation refresh - pure/orchestration
 # helpers (Task 5C).
 #
 # The Setup tab carries a MAINTENANCE control (a species checklist + a "Refresh
@@ -7,7 +7,7 @@
 # feature cache by wiring the 2H UniProt fetch + the 2I/parser classifier into
 # the on-disk cache that 2I reads. The derived caches
 # (inst/database/<species>/uniprot_features/uniprot_features.tsv + schema.json,
-# .parquet) are gitignored/regenerable — THIS control is exactly how a user
+# .parquet) are gitignored/regenerable - THIS control is exactly how a user
 # regenerates them.
 #
 # Everything network- or reactivity-bound is kept OUT of this file. The three
@@ -35,10 +35,10 @@
 #   FALLBACK: when no datasets are uploaded yet (gcts is empty/NULL), fall back
 #   to the FASTA accessions (fasta_map names) so a maintenance refresh on a
 #   fresh install still has a universe. The FASTA universe can be LARGE (whole
-#   proteome → a minutes-to-hours fetch); the caller WARNS + the observer caps
+#   proteome -> a minutes-to-hours fetch); the caller WARNS + the observer caps
 #   nothing automatically but surfaces the size before fetching.
 #
-# MEMBRANE TSV (scoped OUT — documented follow-up)
+# MEMBRANE TSV (scoped OUT - documented follow-up)
 #   inst/database/<species>/uniprot_membrane/*.tsv is a SEPARATE, differently
 #   sourced annotation (a *_membraneLoc.tsv export, NOT produced by
 #   pelsa_fetch_uniprot's feature classifier). 2I uses it only for a TM
@@ -50,7 +50,7 @@
 #   species_dir is resolved by the caller via
 #   file.path(system.file("database", package = "Protigy"), <species>). In
 #   dev/load_all that is the repo's inst/database/<species> (the .tsv there is
-#   gitignored — fine). In an INSTALLED package it is the installed library
+#   gitignored - fine). In an INSTALLED package it is the installed library
 #   location, which MAY be read-only; pelsa_write_feature_cache fails fast with
 #   a CLEAR error (never a crash) when the target dir is not writable.
 ################################################################################
@@ -270,7 +270,7 @@ pelsa_merge_feature_cache <- function(existing, fresh, unresolved = character(0)
 #
 # ATOMICITY: both files are written to TEMPFILES in the SAME directory, then
 # file.rename()'d into place (atomic on a same-filesystem POSIX rename). So an
-# interrupt mid-write — or between the .tsv and schema.json — leaves the PRIOR
+# interrupt mid-write - or between the .tsv and schema.json - leaves the PRIOR
 # good cache fully intact rather than a truncated/mismatched file. A failed
 # validation or a non-writable target therefore never destroys an existing
 # cache. The temp files are cleaned up on any failure.
@@ -334,7 +334,7 @@ pelsa_write_feature_cache <- function(feature_df, species_dir) {
   # ATOMIC write: stage BOTH files in the same dir, then rename into place. Any
   # failure before the renames leaves the prior cache untouched; the temp files
   # are removed. Renaming is last so a crash between the two renames is the only
-  # tiny window (and even then the .tsv — the file the app reads — is good).
+  # tiny window (and even then the .tsv - the file the app reads - is good).
   tmp_tsv    <- tempfile("uniprot_features_", tmpdir = feat_dir, fileext = ".tsv")
   tmp_schema <- tempfile("schema_", tmpdir = feat_dir, fileext = ".json")
   ok <- FALSE
@@ -368,7 +368,7 @@ pelsa_write_feature_cache <- function(feature_df, species_dir) {
 
 # Orchestrate one species' cache refresh: fetch the universe's UniProt features
 # (via the INJECTED `fetch_fn`), then write the resulting 8-col table to the
-# species cache. The injectable `fetch_fn` is the TESTABILITY SEAM — tests pass
+# species cache. The injectable `fetch_fn` is the TESTABILITY SEAM - tests pass
 # a stub returning a canned list(features=, unresolved=) so NO live network is
 # touched; the app passes the real pelsa_fetch_uniprot.
 #

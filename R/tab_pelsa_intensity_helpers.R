@@ -1,5 +1,5 @@
 ################################################################################
-# Module: PELSA per-protein intensity-line DATA builder (Task 3C) — pure, no
+# Module: PELSA per-protein intensity-line DATA builder (Task 3C) - pure, no
 # Shiny, no plotting.
 #
 # Produces the DATA the Phase-7 pinned left-click panel renders as a per-protein
@@ -22,7 +22,7 @@
 #        (a matched_cache row for this accession). For a MARKER protein, BOTH
 #        significant AND non-significant occurrences are included, tagged by
 #        `panel` in {"significant","other"} (Phase-7's two-panel facet: left =
-#        significantly-regulated peptides, right = its other peptides — dropping
+#        significantly-regulated peptides, right = its other peptides - dropping
 #        an empty side is Phase-7's concern; here we only TAG). For a NON-marker
 #        significant protein, ONLY its significant occurrences (panel all
 #        "significant").
@@ -30,7 +30,7 @@
 # y = MEAN PROCESSED-GCT log2 intensity, AS-IS: no delinearize, no z-score, no
 # re-normalize. For each (occurrence, condition) we average the processed_mat
 # values across that condition's replicate sample columns (na.rm). Contrast this
-# with CV (tab_pelsa_cv_helpers.R), which uses RAW sum-normalized intensities —
+# with CV (tab_pelsa_cv_helpers.R), which uses RAW sum-normalized intensities -
 # a deliberate difference.
 #
 # x = condition as a FACTOR with levels = the user-confirmed condition_order
@@ -39,7 +39,7 @@
 # order is stable.
 #
 # end-of-line LABEL = "aa<pos>" where pos = the FASTA-derived `pep_start` from
-# matched_cache (2B) — NOT PEP.PeptidePosition. One label per line (per
+# matched_cache (2B) - NOT PEP.PeptidePosition. One label per line (per
 # occurrence); a peptide occurring twice yields two distinct lines with distinct
 # pep_start / aa_label.
 #
@@ -228,7 +228,7 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
     return(match(as.character(matched_sub[["PEP.StrippedSequence"]]), rn))
   }
   stop("pelsa_intensity_line_data: cannot align matched_cache rows to ",
-       "processed_mat — provide `.row_id` (1-based row index) on matched_cache ",
+       "processed_mat - provide `.row_id` (1-based row index) on matched_cache ",
        "or peptide-id rownames on processed_mat", call. = FALSE)
 }
 

@@ -1,5 +1,5 @@
 ################################################################################
-# PELSA Setup section (Section 1) — pure, testable helpers (Task 5A).
+# PELSA Setup section (Section 1) - pure, testable helpers (Task 5A).
 #
 # These back the Setup tab's SHARED/app-wide controls + the reactive marker
 # table. They are deliberately free of Shiny reactivity so they unit-test in
@@ -14,7 +14,7 @@
 #   pelsa_merge_marker_rows(existing, new)      de-duplicated union by accession
 #   pelsa_empty_marker_rows()                   the canonical empty 2-col marker frame
 #
-# Section-1 ORDERING helpers (Task 5B) — also pure/testable:
+# Section-1 ORDERING helpers (Task 5B) - also pure/testable:
 #   pelsa_distinct_conditions(cdesc, col)          distinct condition values (occurrence order)
 #   pelsa_samples_for_condition(cdesc, ...)         sample names of one condition, replicate-sorted
 #   pelsa_default_replicate_order(cdesc, ...)        per-condition default replicate (sample) order
@@ -99,7 +99,7 @@ pelsa_list_species <- function(database_dir) {
 #       markers:  [ {accession: <chr REQUIRED>, gene: <chr optional>}, ... ]
 #
 # A MISSING file returns an empty result (list(compounds = list())) rather than
-# erroring — the Setup dropdown then simply shows no presets. A MALFORMED file
+# erroring - the Setup dropdown then simply shows no presets. A MALFORMED file
 # (unparseable YAML, or `compounds` not a named list) fails fast with a clear
 # error, because that is a developer/config mistake worth surfacing loudly.
 #
@@ -192,7 +192,7 @@ pelsa_read_compound_markers <- function(path) {
 #
 # @param compound_markers parsed list from pelsa_read_compound_markers().
 # @param compound_name    character scalar compound name (or alias).
-# @return data.frame(accession, gene) — one row per preset marker.
+# @return data.frame(accession, gene) - one row per preset marker.
 # @noRd
 pelsa_compound_marker_rows <- function(compound_markers, compound_name) {
   if (!is.list(compound_markers)) {
@@ -233,7 +233,7 @@ pelsa_compound_marker_rows <- function(compound_markers, compound_name) {
 # touching this signature.
 #
 # Tokens are de-duplicated preserving first-seen order; empty/NA tokens dropped.
-# De-dup is accession-EXACT here (the table key) — isoform-base awareness is
+# De-dup is accession-EXACT here (the table key) - isoform-base awareness is
 # reserved for the volcano MATCHING rule (pelsa_match_markers), not the table.
 #
 # @param tokens   character vector of accession tokens (e.g. from pelsa_parse_markers()).
@@ -278,13 +278,13 @@ pelsa_marker_rows_from_input <- function(tokens, resolver = NULL) {
 # Existing rows win on conflict (so a compound-autofill gene already in the
 # table is not clobbered by a later paste that has no gene). New accessions are
 # appended in their incoming order. Accession matching is exact (case- and
-# isoform-sensitive) — this is the TABLE identity; the looser isoform-base,
+# isoform-sensitive) - this is the TABLE identity; the looser isoform-base,
 # case-insensitive rule belongs to peptide MATCHING (pelsa_match_markers), and
 # is intentionally NOT applied here.
 #
-# @param existing data.frame(accession, gene) — current table.
-# @param new      data.frame(accession, gene) — rows to merge in.
-# @return data.frame(accession, gene) — the de-duplicated union.
+# @param existing data.frame(accession, gene) - current table.
+# @param new      data.frame(accession, gene) - rows to merge in.
+# @return data.frame(accession, gene) - the de-duplicated union.
 # @noRd
 pelsa_merge_marker_rows <- function(existing, new) {
   .check <- function(x, nm) {
@@ -402,9 +402,9 @@ pelsa_default_replicate_order <- function(cdesc, condition_col, replicate_col) {
 # available items (in their available order). Mirrors updateDatasetOrdering()
 # from the multi-ome heatmap (keep-saved / drop-removed / append-new).
 #
-# @param saved     character vector — a previously chosen order (may be NULL).
-# @param available character vector — items that currently exist.
-# @return character vector — the reconciled order (subset+superset of available).
+# @param saved     character vector - a previously chosen order (may be NULL).
+# @param available character vector - items that currently exist.
+# @return character vector - the reconciled order (subset+superset of available).
 # @noRd
 pelsa_merge_ordering <- function(saved, available) {
   available <- as.character(available)
@@ -432,12 +432,12 @@ pelsa_merge_ordering <- function(saved, available) {
 #
 # Pure and deterministic: identical inputs always yield the identical vector.
 #
-# @param condition_order              character vector — chosen condition order.
+# @param condition_order              character vector - chosen condition order.
 # @param replicate_order_by_condition named list condition -> sample-name order.
 # @param cdesc                        data.frame (rownames = sample names).
 # @param condition_col                condition grouping column name.
 # @param replicate_col                replicate identifier column name.
-# @return character vector of sample names — the canonical column order.
+# @return character vector of sample names - the canonical column order.
 # @noRd
 pelsa_build_sample_order <- function(condition_order,
                                      replicate_order_by_condition,
@@ -473,7 +473,7 @@ pelsa_build_sample_order <- function(condition_order,
 }
 
 ################################################################################
-# Section-1 per-dataset config UI builders (Task 5B) — pure tag constructors.
+# Section-1 per-dataset config UI builders (Task 5B) - pure tag constructors.
 #
 # These build the markup for the per-dataset config panel and the per-condition
 # replicate card. They are pure functions of their args (an `ns` namespacer,
@@ -582,7 +582,7 @@ pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids) {
 # Prune per-dataset setup_state lists down to the currently-checked datasets.
 #
 # Each field in `state_lists` is a named list keyed by dataset name; entries for
-# datasets not in `checked` are dropped (immutable — a NEW list per field is
+# datasets not in `checked` are dropped (immutable - a NEW list per field is
 # returned, the input is never mutated). Fields absent / NULL are returned as an
 # empty list so callers always get the full set of keys back.
 #
@@ -702,7 +702,7 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
       shiny::tags$hr(),
 
       # 7. MAINTENANCE: per-species UniProt-annotation refresh (5C).
-      #    Visually separated as a maintenance action — independent of
+      #    Visually separated as a maintenance action - independent of
       #    Start-Analysis. The species checklist is re-read LIVE each time the
       #    Setup box renders (the caller passes a fresh pelsa_list_species()).
       #    Clicking the button rebuilds the checked species' uniprot_features

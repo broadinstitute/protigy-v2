@@ -14,8 +14,8 @@
 #
 #   A navbarMenu only accepts tabPanels, so the switcher bar cannot live in one
 #   shared node above the tabset. Each PELSA tab therefore renders its OWN
-#   switcher-bar uiOutput (`pelsa_active_dataset_bar_<suffix>`) — distinct DOM
-#   ids, so no invalid duplicate-id HTML — but every bar is rendered from the
+#   switcher-bar uiOutput (`pelsa_active_dataset_bar_<suffix>`) - distinct DOM
+#   ids, so no invalid duplicate-id HTML - but every bar is rendered from the
 #   SAME `active_dataset` reactive and emits the SAME `pelsa_active_dataset`
 #   input id. That input is the single source of truth driving all sections.
 #
@@ -65,7 +65,7 @@ pelsa_switcher_bar_UI <- function(suffix) {
 # @param GCTs_and_params        reactiveVal data-flow contract object
 # @return a LIST:
 #   $active_dataset         reactive resolving to the active dataset name.
-#   $set_analyzed_datasets  function(datasets) — the Phase-4/5D SEAM SETTER. The
+#   $set_analyzed_datasets  function(datasets) - the Phase-4/5D SEAM SETTER. The
 #                           Setup tab's Start-Analysis calls this with the
 #                           checked subset so the switcher + sections then show
 #                           ONLY the analyzed datasets. Passing NULL / character(0)

@@ -65,6 +65,7 @@ Imports:
     furrr,
     data.table,
     httr2,
+    jsonlite,
     matrixStats,
     stringi
 Depends:

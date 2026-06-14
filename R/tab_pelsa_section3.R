@@ -7,18 +7,18 @@
 # and the 5D analysis cache (pelsa_analysis) + setup_state (markers + species).
 #
 # Layers (this pass, 7A-7C):
-#   7A  stat-source gate — grey out until a stat analysis is run for the active
+#   7A  stat-source gate - grey out until a stat analysis is run for the active
 #       dataset (mirrors tab_stat_plot.R's validate(need(stat_results(), ...))).
 #   7B  per-contrast registries (poi/top_n/label_mode), reused VERBATIM from
 #       tab_stat_plot.R, seeded with the Setup marker accessions; lazy contrast
-#       loading — only the ACTIVE contrast's heavy volcano df is held, the prior
+#       loading - only the ACTIVE contrast's heavy volcano df is held, the prior
 #       contrast's df is freed on switch (registries persist user settings).
 #   7C  the WebGL volcano: 3A pelsa_build_volcano_df() (cached per contrast) ->
 #       ggplot -> ggplotly + plotly::toWebGL, with a single color toggle
 #       (two-sided significance vs UniProt feature class), a magenta marker
 #       overlay always on top, label modes (all markers / best per marker /
 #       top-N=3), the empirical y-cutoff threshold line, and a metadata hover
-#       tooltip. The FULL df is rendered (every point) — toWebGL handles 100k+
+#       tooltip. The FULL df is rendered (every point) - toWebGL handles 100k+
 #       points on the GPU, so NO background downsampling is applied (per user
 #       decision: draw all points). The 3B pelsa_thin_background() helper remains
 #       in the package but is intentionally NOT wired into the volcano render.
@@ -26,7 +26,7 @@
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
 # 7E left-click PIN -> per-protein intensity line panel (3C) + a client-side
 # plotlyProxy-restyle sibling-protein FADE (the main volcano does NOT rebuild on
-# pin — only the background trace's marker.opacity is restyled); 7F per-ome
+# pin - only the background trace's marker.opacity is restyled); 7F per-ome
 # exports.
 #
 # Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
@@ -166,7 +166,7 @@ PELSASection3_Ome_Server <- function(id,
     ns <- session$ns
 
     ## ------------------------------------------------------------------------
-    ## 7A — STAT-SOURCE GATE
+    ## 7A - STAT-SOURCE GATE
     ## ------------------------------------------------------------------------
     # stat_results()[[ome]] must exist and be non-empty before any volcano. The
     # check reactive carries the validate() so dependent outputs grey out with a
@@ -264,7 +264,7 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     ## ------------------------------------------------------------------------
-    ## 7B — CONTRAST SELECTOR + PER-CONTRAST REGISTRIES + LAZY LOADING
+    ## 7B - CONTRAST SELECTOR + PER-CONTRAST REGISTRIES + LAZY LOADING
     ## ------------------------------------------------------------------------
     # Contrast choices: named vector label("A / B") -> suffix("A_over_B").
     contrast_choices <- reactive({
@@ -350,8 +350,8 @@ PELSASection3_Ome_Server <- function(id,
     ## --- LAZY per-active-contrast volcano df cache --------------------------
     # Holds ONLY the active contrast's heavy 3A df, keyed by contrast suffix.
     # On contrast switch the prior contrast's df is FREED (the list is replaced
-    # with a single-entry list for the new active contrast). The registries —
-    # not this cache — persist user-facing settings across switches.
+    # with a single-entry list for the new active contrast). The registries -
+    # not this cache - persist user-facing settings across switches.
     volcano_df_cache <- reactiveVal(list())
 
     active_volcano_df <- reactive({
@@ -405,9 +405,9 @@ PELSASection3_Ome_Server <- function(id,
     plot_df <- reactive(active_volcano_df())
 
     ## ------------------------------------------------------------------------
-    ## 7D — BEST-PEPTIDE SECOND PANEL (lazy: only when the checkbox is ON)
+    ## 7D - BEST-PEPTIDE SECOND PANEL (lazy: only when the checkbox is ON)
     ## ------------------------------------------------------------------------
-    # Same stat_df/cache/feat_df/markers/contrast as the all-peptide df — only
+    # Same stat_df/cache/feat_df/markers/contrast as the all-peptide df - only
     # opts$panel differs ("best_peptide" -> one dot per distinct best-peptide via
     # the 2G rollup). Cached per contrast like the all-peptide df, FREED on
     # switch. NEVER built when the checkbox is OFF (the reactive short-circuits).
@@ -456,7 +456,7 @@ PELSASection3_Ome_Server <- function(id,
       df
     })
 
-    # Best-peptide panel: also the FULL df (no thinning — toWebGL renders all).
+    # Best-peptide panel: also the FULL df (no thinning - toWebGL renders all).
     best_plot_df <- reactive(best_volcano_df())
 
     # Free the best-panel cache whenever the checkbox goes OFF.
@@ -465,7 +465,7 @@ PELSASection3_Ome_Server <- function(id,
     }, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
-    ## 7E — PINNED peptide selection (left-click). reactiveVal holds the resolved
+    ## 7E - PINNED peptide selection (left-click). reactiveVal holds the resolved
     ## click; HOVER never touches this path (the heavy intensity plot is a
     ## SEPARATE output computed only when this reactiveVal is set).
     ## ------------------------------------------------------------------------
@@ -563,7 +563,7 @@ PELSASection3_Ome_Server <- function(id,
           selected = isolate(active_contrast())
         ),
         hr(),
-        # SINGLE color toggle (one source of truth) — NOT two checkboxes.
+        # SINGLE color toggle (one source of truth) - NOT two checkboxes.
         radioButtons(
           ns("pelsa_color_mode"), "Color points by:",
           choices = c("Significance (two-sided)" = "significance",
@@ -595,13 +595,13 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     ## ------------------------------------------------------------------------
-    ## 7C — THE WEBGL VOLCANO PLOT (shared assembly; click registered)
+    ## 7C - THE WEBGL VOLCANO PLOT (shared assembly; click registered)
     ## ------------------------------------------------------------------------
     # The plot assembly is factored into pelsa_volcano_build_plot() so the
     # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
-    # is rendered (no thinning — toWebGL handles every point on the GPU).
+    # is rendered (no thinning - toWebGL handles every point on the GPU).
     #
-    # SIBLING FADE — ONE mechanism (a client-side plotlyProxy restyle, NOT a
+    # SIBLING FADE - ONE mechanism (a client-side plotlyProxy restyle, NOT a
     # rebuild): the base plot is built ONCE per (dataset, contrast, color-mode,
     # label-mode) with sibling_acc = NULL, so pinned() is ISOLATED out of this
     # render's reactive deps. A left-click pin then dims the background trace via
@@ -609,7 +609,7 @@ PELSASection3_Ome_Server <- function(id,
     # ~100k-point / ~15MB figure is NOT re-serialized on every pin (~1.1-1.5s
     # saved per pin; the ggplotly conversion was the cost, not the GPU draw).
     # The proxy restyle is the PRIMARY fade mechanism (see the plotly_click
-    # observeEvent below) — exactly ONE mechanism, not the old depends-on-pinned
+    # observeEvent below) - exactly ONE mechanism, not the old depends-on-pinned
     # redraw.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
@@ -628,7 +628,7 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     ## ------------------------------------------------------------------------
-    ## 7D — BEST-PEPTIDE PANEL PLOT (same shared assembly, own source id)
+    ## 7D - BEST-PEPTIDE PANEL PLOT (same shared assembly, own source id)
     ## ------------------------------------------------------------------------
     output$pelsa_volcano_best_plot <- plotly::renderPlotly({
       req(best_show())
@@ -648,7 +648,7 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     ## ------------------------------------------------------------------------
-    ## 7E — LEFT-CLICK PIN: resolve clicked peptide -> pinned() reactiveVal
+    ## 7E - LEFT-CLICK PIN: resolve clicked peptide -> pinned() reactiveVal
     ## ------------------------------------------------------------------------
     # event_data() returns the clicked point's (x, y) == (logFC, logP); the pure
     # resolver maps that to the volcano-df peptide + its representative accession
@@ -665,7 +665,7 @@ PELSASection3_Ome_Server <- function(id,
     # SIBLING FADE via plotlyProxy restyle (the ONE mechanism). The base volcano
     # is built once (sibling_acc = NULL), so the main render does NOT rebuild on
     # pin. Here, whenever pinned() changes (pin / unpin / contrast-switch clear),
-    # we restyle ONLY the background trace's per-point marker.opacity — full for
+    # we restyle ONLY the background trace's per-point marker.opacity - full for
     # the pinned protein's peptides, dimmed for the rest (or the base default
     # everywhere when unpinned). This is a small message, not a ~15MB rebuild.
     #
@@ -693,9 +693,9 @@ PELSASection3_Ome_Server <- function(id,
     }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
-    ## 7E — PINNED metadata table + per-protein intensity LINE plot (3C)
+    ## 7E - PINNED metadata table + per-protein intensity LINE plot (3C)
     ## ------------------------------------------------------------------------
-    # The 3C line data is computed ONLY here (on pin) — the hover path never
+    # The 3C line data is computed ONLY here (on pin) - the hover path never
     # reaches it. tryCatch around the whole render so a bad click is inert.
     pinned_line_data <- reactive({
       pin <- pinned()
@@ -743,7 +743,7 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     ## ------------------------------------------------------------------------
-    ## 7F — EXPORTS (per-ome export list; re-derive from cache + stat_results)
+    ## 7F - EXPORTS (per-ome export list; re-derive from cache + stat_results)
     ## ------------------------------------------------------------------------
     # Each export_fn writes ONE file into dir_name, recomputing from the cache +
     # the Statistics-tab results (NOT the on-screen objects). The all-peptide
@@ -770,8 +770,8 @@ PELSASection3_Ome_Server <- function(id,
       df <- isolate(build_export_df("all_peptide"))
       if (is.null(df) || nrow(df) == 0L) return(invisible(NULL))
       path <- file.path(dir_name, paste0("pelsa_volcano_", ome, ".pdf"))
-      # Static PDF: a plain re-derived ggplot via the grDevices pdf device — no
-      # browser/network. FULL df plotted (no thinning — matches on-screen).
+      # Static PDF: a plain re-derived ggplot via the grDevices pdf device - no
+      # browser/network. FULL df plotted (no thinning - matches on-screen).
       grDevices::pdf(path, width = 9, height = 7)
       on.exit(grDevices::dev.off(), add = TRUE)
       print(.pelsa_export_ggplot(

@@ -1,10 +1,10 @@
 ################################################################################
-# Module: PELSA volcano background thinning (Task 3B) — pure, no Shiny.
+# Module: PELSA volcano background thinning (Task 3B) - pure, no Shiny.
 #
 # The PELSA volcano can carry 100k+ points. plotly's toWebGL renders them, but
 # the dense, uninformative non-significant cloud is the part that costs the most
 # to draw and adds nothing the user can act on. This helper thins ONLY that
-# background — never points the user might want to click.
+# background - never points the user might want to click.
 #
 # Thinnable set (a point is thinnable IFF ALL of):
 #   1. NOT significant  (Significant == FALSE), AND
@@ -20,7 +20,7 @@
 # (logFC, logP) into an n_bins x n_bins grid spanning the thinnable points' own
 # range, then within EACH non-empty bin keep ceiling(keep_frac * n_bin_points)
 # points sampled WITHOUT replacement. A fixed fraction per bin means dense bins
-# stay dense and sparse bins stay sparse — the cloud's shape/spread is preserved.
+# stay dense and sparse bins stay sparse - the cloud's shape/spread is preserved.
 # Contrast with uniform "keep every Nth row", which flattens relative density.
 #
 # Cost: the only per-group work is over BINS (<= n_bins^2 <= 2500), via split();
@@ -46,7 +46,7 @@
 #   no-op (everything kept, no thinning). Default 0.3. Because each non-empty bin
 #   keeps ceiling(keep_frac * n) >= 1, a tiny keep_frac (e.g. 0.001) still keeps
 #   at least one point per non-empty bin, so the global n_thinnable_kept can
-#   exceed keep_frac * n_thinnable — this is intended, it preserves sparse
+#   exceed keep_frac * n_thinnable - this is intended, it preserves sparse
 #   structure rather than erasing whole regions.
 # @param logfc_thresh abs(logFC) threshold; points with abs(logFC) above it are
 #   ALWAYS retained. Default 0.5.
@@ -111,7 +111,7 @@ pelsa_thin_background <- function(volcano_df, keep_frac = 0.3,
   if (!is.null(seed)) set.seed(seed)
 
   # Row indices of the thinnable cloud, then split off rows whose coords cannot
-  # be binned — NA OR non-finite (Inf/-Inf, e.g. logP = -log10(0) when an
+  # be binned - NA OR non-finite (Inf/-Inf, e.g. logP = -log10(0) when an
   # upstream permutation/underflow P.Value is 0). is.finite() is FALSE for both
   # NA and +/-Inf, so it covers both cases. Those rows are RETAINED untouched.
   thin_idx <- which(thinnable)
@@ -141,7 +141,7 @@ pelsa_thin_background <- function(volcano_df, keep_frac = 0.3,
     by <- bin_axis(lp_b, n_bins)
     bin_id <- bx * n_bins + by  # unique per (bx, by) cell
 
-    # Per-BIN sampling via split() — split() itself is O(n) but cheap; the only
+    # Per-BIN sampling via split() - split() itself is O(n) but cheap; the only
     # GROUP work is over bins (<= n_bins^2 <= 2500), never a per-point loop.
     by_bin <- split(binnable_idx, bin_id)
     kept_per_bin <- lapply(by_bin, function(rows) {
