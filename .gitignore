@@ -22,16 +22,9 @@ pkg.lock
 # OS / editor / agent / tooling cruft
 # ──────────────────────────────────────────────────────────────────────────
 .DS_Store
-.claude/
 .cursor/
 .positai
-.worktrees/
 firebase-debug.log
-
-# ──────────────────────────────────────────────────────────────────────────
-# Local-only project instructions (not distributed)
-# ──────────────────────────────────────────────────────────────────────────
-CLAUDE.md
 
 # ──────────────────────────────────────────────────────────────────────────
 # PELSA reference databases (inst/database/<species>/)
