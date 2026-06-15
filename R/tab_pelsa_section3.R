@@ -775,7 +775,8 @@ PELSASection3_Ome_Server <- function(id,
         if (length(hit) > 0L) pinned_lab <- as.character(hit[[1]])
       }
       suppressWarnings(plotly::ggplotly(
-        pelsa_intensity_line_ggplot(ld, pinned_label = pinned_lab)))
+        pelsa_intensity_line_ggplot(ld, pinned_label = pinned_lab),
+        tooltip = "text"))
     })
 
     ## ------------------------------------------------------------------------

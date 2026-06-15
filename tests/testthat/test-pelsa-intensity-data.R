@@ -429,8 +429,9 @@ test_that("non-marker protein whose only peptide is non-sig -> zero rows, full c
 
   expect_equal(nrow(out), 0L)
   expect_identical(levels(out$condition), .cond_order)
-  expected <- c("accession", "peptide_seq", "pep_start", "pep_occurrence_idx",
-                "aa_label", "panel", "condition", "mean_log2", "n_rep_nonNA")
+  expected <- c("accession", "peptide_seq", "pep_start", "pep_end",
+                "pep_occurrence_idx", "aa_label", "panel", "condition",
+                "mean_log2", "n_rep_nonNA")
   expect_identical(colnames(out), expected)
   expect_s3_class(out$condition, "factor")
 })

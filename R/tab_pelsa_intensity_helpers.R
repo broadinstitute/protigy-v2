@@ -252,7 +252,7 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 # @param is_marker        TRUE -> include BOTH significant + non-significant
 #   occurrences (panel-tagged); FALSE -> only significant occurrences.
 # @return tidy long data.frame, one row per (occurrence, condition-with-samples),
-#   columns: accession, peptide_seq, pep_start, pep_occurrence_idx, aa_label,
+#   columns: accession, peptide_seq, pep_start, pep_end, pep_occurrence_idx, aa_label,
 #   panel ("Significant"/"Non-significant"), condition (factor = condition_order),
 #   mean_log2, n_rep_nonNA.
 # @noRd
@@ -350,10 +350,16 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
     means <- matrixStats::rowMeans2(block, na.rm = TRUE)
     means[n_nonNA == 0L] <- NA_real_                    # all-NA -> NA mean
 
+    pep_end_vec <- if ("pep_end" %in% colnames(m)) {
+      as.integer(m[["pep_end"]])
+    } else {
+      rep(NA_integer_, n_occ)
+    }
     parts[[i]] <- data.frame(
       accession          = rep(accession, n_occ),
       peptide_seq        = as.character(m[["PEP.StrippedSequence"]]),
       pep_start          = as.integer(m[["pep_start"]]),
+      pep_end            = pep_end_vec,
       pep_occurrence_idx = as.integer(m[["pep_occurrence_idx"]]),
       aa_label           = paste0("aa", as.integer(m[["pep_start"]])),
       panel              = panel,
@@ -379,6 +385,7 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
     accession          = character(0),
     peptide_seq        = character(0),
     pep_start          = integer(0),
+    pep_end            = integer(0),
     pep_occurrence_idx = integer(0),
     aa_label           = character(0),
     panel              = character(0),

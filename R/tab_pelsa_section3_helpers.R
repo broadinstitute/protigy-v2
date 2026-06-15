@@ -874,6 +874,20 @@ pelsa_volcano_empty_matched <- function() {
 # @return a ggplot object.
 # @noRd
 pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
+  # Clean per-point hover tooltip (built from the RAW columns before the pinned
+  # remap mangles aa_label): aa_label, position start->end, sequence, condition,
+  # mean intensity. pep_end may be NA (older caches) -> show only the start.
+  pos_txt <- ifelse(is.na(ld$pep_end %||% NA),
+                    as.character(ld$pep_start),
+                    paste0(ld$pep_start, " -> ", ld$pep_end))
+  ld$.tip <- paste0(
+    ld$aa_label, "<br>",
+    "Position: ", pos_txt, "<br>",
+    "Sequence: ", ld$peptide_seq, "<br>",
+    "Condition: ", as.character(ld$condition), "<br>",
+    "Mean log2 intensity: ", sprintf("%.2f", ld$mean_log2)
+  )
+
   # Order aa_labels by residue position so the legend reads ascending.
   pos <- suppressWarnings(as.integer(sub("^aa", "", ld$aa_label)))
   raw_lvl <- unique(ld$aa_label[order(pos, ld$aa_label)])
@@ -905,7 +919,7 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
     ggplot2::aes(x = .data$condition, y = .data$mean_log2,
                  group = interaction(.data$peptide_seq,
                                      .data$pep_occurrence_idx),
-                 color = .data$aa_label)
+                 color = .data$aa_label, text = .data$.tip)
   ) +
     ggplot2::geom_line(na.rm = TRUE) +
     ggplot2::geom_point(na.rm = TRUE, size = 1.4) +
