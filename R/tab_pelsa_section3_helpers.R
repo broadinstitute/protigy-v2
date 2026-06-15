@@ -25,12 +25,10 @@
 # Point sizing / opacity. Markers are only SLIGHTLY larger than the background
 # cloud (was 2.4 vs 1, which over-dominated), and the background cloud is fairly
 # opaque so non-marker peptides read in their real sig/feature colors (the volcano
-# is about ALL peptides, not just markers). The sibling-fade alpha (pin redraw)
-# is separate and stays low.
+# is about ALL peptides, not just markers).
 .PELSA_VOLCANO_MARKER_SIZE  <- 1.6
 .PELSA_VOLCANO_BG_SIZE      <- 1.1
 .PELSA_VOLCANO_BG_ALPHA     <- 0.8
-.PELSA_VOLCANO_FADE_ALPHA   <- 0.12   # background cloud when a pin dims siblings
 
 # Default per-contrast label mode and top-N. Default is "best peptide per marker"
 # (one label per marker protein - readable out of the box, vs top_n's clutter).
@@ -372,14 +370,6 @@ pelsa_volcano_thin_note <- function(thin) {
 # PASS 2 (7D-7F) pure, testable helpers
 ################################################################################
 
-# Default + dimmed background marker opacities. The default matches the build's
-# bg_alpha so the unpinned restyle restores the exact base look. The selection/
-# interaction helpers that consume these (pelsa_volcano_resolve_click,
-# pelsa_volcano_sibling_mask, pelsa_volcano_pin_opacity) live in
-# tab_pelsa_section3_recolor_helpers.R; R sources all package files so the
-# cross-file constant reference resolves.
-.PELSA_VOLCANO_BG_ALPHA_DIM  <- 0.12
-
 # ---- 7F: the 12-column volcano-labels sidecar CSV shaping --------------------
 
 # Shape a 3A volcano data.frame into the EXACT 12-column sidecar CSV the plan
@@ -448,17 +438,16 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # distinct `source` id, so the plot code is written ONCE.
 #
 # Trace order is z-order only (later traces draw ON TOP):
-#   1. background (non-marker, non-sibling)  - the dense cloud
-#   2. siblings   (the pinned protein's peptides) - full opacity, drawn on top
-#   3. markers    (magenta overlay, on top, ALWAYS)
+#   1. background (non-marker)  - the dense cloud
+#   2. markers    (magenta overlay, on top, ALWAYS)
 #   (+ a geom_text label layer + an optional threshold hline)
-# IMPORTANT (perf): the MAIN volcano is built with sibling_acc = NULL, so the
-# fade is NOT done by rebuilding here - it is a client-side plotlyProxy "restyle"
-# of the background trace's marker.opacity (see pelsa_volcano_pin_opacity and the
-# plotly_click observer in tab_pelsa_section3.R). The sibling_acc != NULL path
-# (and bg_alpha dim) is retained ONLY for callers that DO want a static rebuild
-# (e.g. tests / a one-shot non-interactive render); the interactive volcano does
-# not use it. There is exactly ONE interactive fade mechanism: the proxy restyle.
+# The build ALWAYS emits exactly TWO point traces (background + markers); the
+# bg + marker traces are meta-tagged ("pelsa_bg"/"pelsa_mk") so the selection
+# highlight can be applied client-side via a plotlyProxy "restyle" of their
+# fill/ring arrays (see pelsa_volcano_recolor + .pelsa_volcano_trace_index and
+# the plotly_click observer in tab_pelsa_section3.R) WITHOUT rebuilding the
+# ~100k-point figure. There is exactly ONE interactive highlight mechanism: the
+# proxy restyle.
 #
 # @param df          the FULL volcano frame the plot consumes (every point).
 # @param full_df     the same frame, used for the y_cutoff attr + label-row
@@ -468,8 +457,9 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # @param n_top       N for top_n label mode.
 # @param source_id   the plotly source id (ns("pelsa_volcano") /
 #   ns("pelsa_volcano_best")).
-# @param sibling_acc the pinned protein's representative accession, or NULL (no
-#   sibling highlight). Used to carve the sibling trace out of the background.
+# @param sibling_acc accepted for back-compat but IGNORED; selection highlights
+#   are a client-side proxy restyle, not a rebuild. To be removed once callers
+#   stop passing it.
 # @param register_click  TRUE -> event_register the plotly_click on this source.
 # @return a plotly object (toWebGL'd).
 # @noRd
@@ -503,11 +493,9 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   bg     <- split$background
   mk     <- split$markers
 
-  # Carve the pinned protein's siblings out of the BACKGROUND (markers stay on
-  # top regardless). The sibling trace is full-opacity; the rest is the cloud.
-  sib_mask <- pelsa_volcano_sibling_mask(bg, sibling_acc)$siblings
-  sib <- bg[sib_mask, , drop = FALSE]
-  bg  <- bg[!sib_mask, , drop = FALSE]
+  # NOTE: sibling_acc is accepted but ignored. Selection highlights are applied
+  # client-side via a plotlyProxy restyle (pelsa_volcano_recolor); the build
+  # always emits exactly TWO point traces (background + markers).
 
   tip <- function(d) {
     if (nrow(d) == 0L) return(character(0))
@@ -536,29 +524,15 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   }
 
   gg <- ggplot2::ggplot()
-  # Background cloud (dimmed on the pin redraw when sibling_acc is set). The
-  # non-faded cloud is fairly opaque (real sig/feature colors readable) - the
-  # volcano is about ALL peptides, not only markers.
-  bg_alpha <- if (!is.null(sibling_acc) && !is.na(sibling_acc) &&
-                  nzchar(sibling_acc)) .PELSA_VOLCANO_FADE_ALPHA
-              else .PELSA_VOLCANO_BG_ALPHA
+  # Background cloud. The cloud is fairly opaque (real sig/feature colors
+  # readable) - the volcano is about ALL peptides, not only markers.
   if (nrow(bg) > 0L) {
     bg$.tip <- tip(bg)
     gg <- gg + ggplot2::geom_point(
       data = bg,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
       color = pelsa_volcano_color_column(bg, color_mode),
-      alpha = bg_alpha, size = .PELSA_VOLCANO_BG_SIZE
-    )
-  }
-  # Pinned protein's sibling peptides (full opacity, drawn on top of the cloud).
-  if (nrow(sib) > 0L) {
-    sib$.tip <- tip(sib)
-    gg <- gg + ggplot2::geom_point(
-      data = sib,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      color = pelsa_volcano_color_column(sib, color_mode),
-      alpha = 1, size = .PELSA_VOLCANO_MARKER_SIZE + 0.4
+      alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE
     )
   }
   # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Only SLIGHTLY larger
@@ -610,6 +584,53 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # clean -- the attribute is benign and unused for scattergl.
   p <- .pelsa_strip_hoveron(p)
   p <- suppressWarnings(plotly::toWebGL(p))
+  # Tag the background + marker point traces so the recolor proxy restyle can find
+  # them by index regardless of how many optional traces (hline, labels) exist.
+  # The marker trace is the magenta-fill point trace. ggplotly stores the fill on
+  # marker$color but in plotly's own format (e.g. "rgba(255,0,255,1)"), NOT the
+  # source hex, so the match is done on parsed RGB channels (format-agnostic).
+  if (length(p$x$data) > 0L) {
+    mk_rgb <- as.integer(grDevices::col2rgb(.PELSA_VOLCANO_MARKER_COLOR)[, 1L])
+    parse_rgb <- function(x) {
+      x <- as.character(x)[1L]
+      if (is.na(x) || !nzchar(x)) return(NULL)
+      m <- regmatches(x, regexpr("rgba?\\(([^)]*)\\)", x))
+      if (length(m) == 1L && nzchar(m)) {
+        nums <- suppressWarnings(as.integer(
+          trimws(strsplit(gsub("rgba?\\(|\\)", "", m), ",")[[1]])))
+        if (length(nums) >= 3L && !any(is.na(nums[1:3]))) return(nums[1:3])
+      }
+      tryCatch(as.integer(grDevices::col2rgb(x)[, 1L]),
+               error = function(e) NULL)
+    }
+    # A constant fill may serialize as a scalar OR a repeated vector whose
+    # elements are all equal; treat both as the single marker color.
+    const_fill <- function(mc) {
+      if (is.null(mc) || length(mc) == 0L) return(NULL)
+      u <- unique(as.character(mc))
+      if (length(u) == 1L) u else NULL
+    }
+    tagged_bg <- FALSE
+    for (k in seq_along(p$x$data)) {
+      tr <- p$x$data[[k]]
+      mc <- tryCatch(tr$marker$color, error = function(e) NULL)
+      is_pts <- !is.null(tr$mode) && grepl("markers", tr$mode)
+      if (!is_pts) next
+      cf <- const_fill(mc)
+      rgb1 <- if (!is.null(cf)) parse_rgb(cf) else NULL
+      if (!is.null(rgb1) && identical(rgb1, mk_rgb)) {
+        p$x$data[[k]]$meta <- "pelsa_mk"
+      } else if (!tagged_bg) {
+        p$x$data[[k]]$meta <- "pelsa_bg"; tagged_bg <- TRUE
+      }
+    }
+    # Loud (not silent) if NEITHER trace got tagged - a missing marker trace is
+    # legitimate (no marker peptides), so only warn when nothing landed at all.
+    if (sum(vapply(p$x$data, function(tr)
+          isTRUE(tr$meta %in% c("pelsa_bg", "pelsa_mk")), logical(1))) < 1L) {
+      warning("pelsa_volcano_build_plot: could not tag bg/marker traces")
+    }
+  }
   # Boxed labels (white opaque-ish bg, border = labeled point's own color),
   # offset from the point + overlap-suppressed (Statistics-tab scheme).
   if (!is.null(lab_df)) {

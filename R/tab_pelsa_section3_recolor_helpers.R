@@ -84,12 +84,11 @@ pelsa_volcano_resolve_click <- function(event, volcano_df) {
 
 # Split a volcano frame into the PINNED protein's peptides (the pinned peptide +
 # its sibling peptides - every row whose winning_accession equals the pinned
-# accession) and the REST. On pin, the main volcano is NOT rebuilt; instead the
-# FADE is applied client-side via a plotlyProxy restyle (single mechanism) that
-# sets a per-point marker-opacity vector on the background trace - full opacity
-# for the pinned protein's peptides, dimmed for the rest. This mask drives that
-# opacity vector (see pelsa_volcano_pin_opacity). It is also reused by the
-# static PDF export path's build.
+# accession) and the REST. On selection, the main volcano is NOT rebuilt; instead
+# the highlight is applied client-side via a plotlyProxy restyle (single
+# mechanism) that sets per-point fill/ring arrays on the background + marker
+# traces (see pelsa_volcano_recolor). This mask identifies a protein's peptides
+# for callers that need the membership test.
 #
 # Matching is on `winning_accession` (the representative accession 3A resolves
 # per peptide), so a peptide pinned in a multi-protein group lights up its
@@ -116,42 +115,69 @@ pelsa_volcano_sibling_mask <- function(volcano_df, accession) {
   list(siblings = mask, n_siblings = sum(mask))
 }
 
-# Build the per-point marker-opacity vector for the BACKGROUND trace of the main
-# volcano, for a plotlyProxy "restyle" fade (the perf fix). The main volcano is
-# built ONCE (with sibling_acc = NULL) so its background trace contains EVERY
-# non-marker point in pelsa_volcano_marker_split(df)$background row order; this
-# restyle sets that trace's marker.opacity WITHOUT rebuilding the ~100k-point
-# figure (a small message, not a ~15MB redraw).
+# Compute the per-trace recolor arrays for the volcano proxy restyle under the
+# single-selection model. Returns fills + ring color/width for BOTH restyled
+# traces (background == pelsa_volcano_marker_split(df)$background row order,
+# markers == $markers row order).
 #
-# When `accession` is NULL/NA (unpin / contrast switch) -> every background point
-# returns to the default opacity (the base look). When set -> the pinned
-# protein's peptides get full opacity (1) and the rest are dimmed.
-#
-# The vector is aligned to the background-trace point order: it is computed over
-# `pelsa_volcano_marker_split(df)$background`, the SAME split the build applies,
-# so element j of this vector targets background point j of the rendered trace.
-#
-# @param df        the FULL volcano frame the base plot was built from.
-# @param accession the pinned protein's representative accession, or NULL/NA.
-# @return list(opacity = <numeric vector, length = #background points>,
-#   n_siblings = <integer>); opacity is the base default everywhere when no pin.
-# @noRd
-pelsa_volcano_pin_opacity <- function(df, accession) {
-  if (!is.data.frame(df)) {
-    stop("pelsa_volcano_pin_opacity: df must be a data.frame")
-  }
-  bg <- pelsa_volcano_marker_split(df)$background
-  nb <- nrow(bg)
-  if (nb == 0L) return(list(opacity = numeric(0), n_siblings = 0L))
+# selection: NULL, or list(origin="click"|"find", accession, peptide_seq).
+# find_mask: NULL, or a logical over df rows (the MULTI-accession find highlight;
+#            uniform gold fill, no dark ring). Ignored when selection is non-NULL.
+# color_mode: "significance" | "feature" -> the BASE fill column.
+# @return list(background=list(color,line.color,line.width),
+#              markers=list(color,line.color,line.width)). @noRd
+pelsa_volcano_recolor <- function(df, selection, find_mask = NULL,
+                                  color_mode = "significance") {
+  split <- pelsa_volcano_marker_split(df)
+  mk_one <- function(sub) {
+    n <- nrow(sub)
+    base <- if (identical(color_mode, "feature")) {
+      as.character(sub$feature_color)
+    } else {
+      as.character(sub$sig_color)
+    }
+    color <- base
+    line.color <- rep("rgba(0,0,0,0)", n)
+    line.width <- rep(0, n)
+    if (n == 0L) return(list(color = color, line.color = line.color,
+                             line.width = line.width))
+    ids <- as.character(sub$id)
+    wacc <- as.character(sub$winning_accession)
 
-  no_pin <- is.null(accession) || length(accession) != 1L || is.na(accession) ||
-    !nzchar(accession)
-  if (no_pin) {
-    return(list(opacity = rep(.PELSA_VOLCANO_BG_ALPHA, nb), n_siblings = 0L))
-  }
+    sel_seq <- if (!is.null(selection)) selection$peptide_seq else NA_character_
+    sel_acc <- if (!is.null(selection)) selection$accession   else NA_character_
 
-  sib <- pelsa_volcano_sibling_mask(bg, accession)$siblings
-  opacity <- rep(.PELSA_VOLCANO_BG_ALPHA_DIM, nb)
-  opacity[sib] <- 1
-  list(opacity = opacity, n_siblings = sum(sib))
+    if (!is.na(sel_acc) && nzchar(sel_acc)) {
+      sib <- !is.na(wacc) & wacc == sel_acc & (is.na(sel_seq) | ids != sel_seq)
+      line.color[sib] <- .PELSA_GOLD
+      line.width[sib] <- .PELSA_GOLD_RING_W
+    }
+    if (!is.na(sel_seq) && nzchar(sel_seq)) {
+      hit <- ids == sel_seq
+      color[hit] <- .PELSA_GOLD
+      line.color[hit] <- .PELSA_SEL_DARK_RING
+      line.width[hit] <- .PELSA_SEL_DARK_RING_W
+    }
+    if (!is.null(find_mask) && is.null(selection)) {
+      fm_sub <- find_mask[match(ids, as.character(df$id))]
+      fm_sub[is.na(fm_sub)] <- FALSE
+      color[fm_sub] <- .PELSA_GOLD
+    }
+    list(color = color, line.color = line.color, line.width = line.width)
+  }
+  list(background = mk_one(split$background), markers = mk_one(split$markers))
+}
+
+# Resolve the background / marker trace JS indices (0-based) of a built volcano
+# plotly by the `meta` tag the build stamps (pelsa_volcano_build_plot). Returns
+# list(background=<int|NA>, markers=<int|NA>). @noRd
+.pelsa_volcano_trace_index <- function(p) {
+  metas <- vapply(p$x$data, function(tr) {
+    m <- tr$meta
+    if (is.null(m) || length(m) != 1L) NA_character_ else as.character(m)
+  }, character(1))
+  bg <- which(metas == "pelsa_bg")
+  mk <- which(metas == "pelsa_mk")
+  list(background = if (length(bg)) bg[1L] - 1L else NA_integer_,
+       markers    = if (length(mk)) mk[1L] - 1L else NA_integer_)
 }
