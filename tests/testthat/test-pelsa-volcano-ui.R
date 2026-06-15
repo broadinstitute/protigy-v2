@@ -220,10 +220,46 @@ test_that("volcano build adds boxed annotations (white bg, point-colored border)
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   ann <- b$x$layout$annotations
+  # Both points are far apart -> both labeled (overlap suppressor keeps both).
   expect_equal(length(ann), 2L)
-  expect_equal(ann[[1]]$bgcolor, "rgba(255,255,255,0.85)")
-  # border colored to the point (down = blue sig_color).
-  expect_equal(ann[[1]]$bordercolor, "#1f4e9c")
+  expect_true(all(vapply(ann, function(a) a$bgcolor, "") ==
+                    "rgba(255,255,255,0.85)"))
+  # Offset from the point (Statistics-tab scheme): no arrow, shifted up-and-right.
+  expect_true(all(vapply(ann, function(a) isFALSE(a$showarrow), logical(1))))
+  expect_true(all(vapply(ann, function(a) a$xshift, 0) == 6))
+  # Each box's border = its point's own color (order-independent: both present).
+  borders <- vapply(ann, function(a) a$bordercolor, "")
+  expect_setequal(borders, c("#1f4e9c", "darkred"))
+})
+
+test_that("volcano label overlap-suppressor drops piled-up labels", {
+  # Two labeled points sit on top of each other RELATIVE TO the plot range (the
+  # spread points p3/p4 set a wide range so the two near-identical labeled points
+  # normalize to ~the same spot) -> only one label survives.
+  df <- data.frame(
+    id = c("p1", "p2", "p3", "p4"),
+    logFC = c(1.00, 1.02, -5, 5), logP = c(3.00, 3.02, 0.1, 9),
+    adj.P.Val = c(0.001, 0.002, 0.5, 0.5),
+    P.Value = c(0.001, 0.002, 0.5, 0.5),
+    Significant = c(TRUE, TRUE, FALSE, FALSE),
+    sig_direction = c("up", "up", "ns", "ns"),
+    sig_color = c("darkred", "darkred", "gray", "gray"),
+    feature_class_primary = "none", feature_color = "#d3d3d3",
+    winning_accession = c("A", "B", "C", "D"),
+    winning_gene = c("g1", "g2", "g3", "g4"),
+    label = c("g1_aa10", "g2_aa11", "", ""),
+    is_marker = c(TRUE, TRUE, FALSE, FALSE),
+    PG.ProteinAccessions = c("A", "B", "C", "D"),
+    PG.Genes = c("g1", "g2", "g3", "g4"),
+    pep_start = c(10L, 11L, 1L, 1L), pep_end = c(18L, 19L, 5L, 5L),
+    stringsAsFactors = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
+         label_mode = "all_markers", n_top = 3L, sibling_acc = NULL,
+         source_id = "x")
+  b <- suppressWarnings(plotly::plotly_build(p))
+  expect_equal(length(b$x$layout$annotations), 1L)   # piled-up -> 1 kept
 })
 
 test_that("thin note: NULL when nothing thinned, string otherwise", {

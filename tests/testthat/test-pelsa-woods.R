@@ -1,0 +1,151 @@
+################################################################################
+# Tests for the PELSA Volcano coverage + UniProt-feature + Woods panel helpers
+# (tab_pelsa_woods_helpers.R). Pure helpers - no Shiny, no network.
+################################################################################
+
+library(testthat)
+
+# ---- pelsa_woods_peptide_data ------------------------------------------------
+
+.woods_matched <- function() data.frame(
+  PEP.StrippedSequence = c("PEPA", "PEPB", "PEPC", "OTHER"),
+  accession = c("A", "A", "A", "B"),
+  pep_start = c(10L, 50L, 45L, 1L),
+  pep_end   = c(20L, 60L, 55L, 5L),
+  pep_occurrence_idx = 1L, stringsAsFactors = FALSE)
+
+.woods_stat <- function() data.frame(
+  PEP.StrippedSequence = c("PEPA", "PEPB", "PEPC"),
+  logFC.AvB = c(-2.1, 0.3, 1.8),
+  adj.P.Val.AvB = c(0.001, 0.40, 0.02),
+  stringsAsFactors = FALSE)
+
+test_that("woods_peptide_data joins spans to contrast stats, flags sig, sorts", {
+  out <- pelsa_woods_peptide_data("A", .woods_matched(), .woods_stat(),
+                                  "AvB", sig_cutoff = 0.05)
+  expect_equal(nrow(out), 3L)                         # only protein A
+  expect_identical(out$peptide_seq, c("PEPA", "PEPC", "PEPB"))  # sorted by start
+  expect_equal(out$pep_start, c(10L, 45L, 50L))
+  expect_equal(out$logFC[out$peptide_seq == "PEPA"], -2.1)
+  expect_equal(out$sig, c(TRUE, TRUE, FALSE))         # 0.001,0.02 sig; 0.40 not
+})
+
+test_that("woods_peptide_data: sig flag is strict < cutoff at the boundary", {
+  m <- data.frame(PEP.StrippedSequence = "P", accession = "A",
+                  pep_start = 1L, pep_end = 5L, pep_occurrence_idx = 1L,
+                  stringsAsFactors = FALSE)
+  s <- data.frame(PEP.StrippedSequence = "P", logFC.AvB = 1,
+                  adj.P.Val.AvB = 0.05, stringsAsFactors = FALSE)  # == cutoff
+  expect_false(pelsa_woods_peptide_data("A", m, s, "AvB", 0.05)$sig)
+})
+
+test_that("woods_peptide_data drops NA-span peptides + empty when no match", {
+  m <- data.frame(PEP.StrippedSequence = c("P", "Q"), accession = "A",
+                  pep_start = c(NA_integer_, 5L), pep_end = c(10L, 9L),
+                  pep_occurrence_idx = 1L, stringsAsFactors = FALSE)
+  s <- data.frame(PEP.StrippedSequence = c("P", "Q"), logFC.AvB = c(1, 2),
+                  adj.P.Val.AvB = c(0.01, 0.02), stringsAsFactors = FALSE)
+  out <- pelsa_woods_peptide_data("A", m, s, "AvB")
+  expect_equal(nrow(out), 1L)                         # NA-span P dropped
+  expect_identical(out$peptide_seq, "Q")
+  # missing contrast -> empty
+  expect_equal(nrow(pelsa_woods_peptide_data("A", m, s, "NOPE")), 0L)
+  # no accession match -> empty
+  expect_equal(nrow(pelsa_woods_peptide_data("Z", m, s, "AvB")), 0L)
+})
+
+# ---- pelsa_coverage_intervals (IRanges union) --------------------------------
+
+test_that("coverage_intervals merges overlapping + adjacent, sorts, drops bad", {
+  # 10-20, 45-55, 50-60 -> 10-20, 45-60
+  iv <- pelsa_coverage_intervals(c(10L, 45L, 50L), c(20L, 55L, 60L))
+  expect_equal(iv$start, c(10L, 45L))
+  expect_equal(iv$end, c(20L, 60L))
+  # adjacency: 1-5 and 6-10 are adjacent -> merged into 1-10 (IRanges reduce)
+  adj <- pelsa_coverage_intervals(c(1L, 6L), c(5L, 10L))
+  expect_equal(adj, data.frame(start = 1L, end = 10L))
+  # single residue
+  expect_equal(pelsa_coverage_intervals(7L, 7L),
+               data.frame(start = 7L, end = 7L))
+  # empty + NA + inverted dropped
+  expect_equal(nrow(pelsa_coverage_intervals(integer(0), integer(0))), 0L)
+  expect_equal(nrow(pelsa_coverage_intervals(c(NA, 9L), c(5L, 3L))), 0L)
+})
+
+# ---- pelsa_feature_lanes (IRanges disjointBins) ------------------------------
+
+test_that("feature_lanes packs overlapping features into distinct lanes", {
+  f <- data.frame(start = c(1L, 5L, 40L), end = c(30L, 12L, 60L),
+                  feature_class = c("catalytic_domain", "active_or_binding_site",
+                                    "region_or_motif"),
+                  stringsAsFactors = FALSE)
+  out <- pelsa_feature_lanes(f)
+  expect_true("lane" %in% colnames(out))
+  # 1-30 and 5-12 overlap -> different lanes; 40-60 disjoint -> reuses a lane.
+  expect_false(out$lane[1] == out$lane[2])
+  expect_equal(out$lane[3], 1L)
+})
+
+test_that("feature_lanes: empty / all-invalid -> 0-row with lane column", {
+  expect_equal(nrow(pelsa_feature_lanes(
+    data.frame(start = integer(0), end = integer(0)))), 0L)
+  bad <- data.frame(start = c(NA, 9L), end = c(5L, 3L),
+                    feature_class = c("x", "y"), stringsAsFactors = FALSE)
+  out <- pelsa_feature_lanes(bad)
+  expect_equal(nrow(out), 0L)
+  expect_true("lane" %in% colnames(out))
+})
+
+# ---- pelsa_woods_overlap_annotations (data.table foverlaps) ------------------
+
+test_that("overlap_annotations lists overlapping features per peptide", {
+  f <- data.frame(start = c(1L, 5L, 40L), end = c(30L, 12L, 60L),
+                  feature_class = c("catalytic_domain", "active_or_binding_site",
+                                    "region_or_motif"),
+                  stringsAsFactors = FALSE)
+  ann <- pelsa_woods_overlap_annotations(c(10L, 50L, 100L), c(20L, 60L, 110L), f)
+  expect_match(ann[1], "catalytic_domain@1-30")
+  expect_match(ann[1], "active_or_binding_site@5-12")
+  expect_match(ann[2], "region_or_motif@40-60")
+  expect_equal(ann[3], "")                            # peptide past all features
+})
+
+test_that("overlap_annotations: no features -> all empty; length preserved", {
+  ann <- pelsa_woods_overlap_annotations(c(1L, 2L), c(5L, 6L), data.frame())
+  expect_equal(ann, c("", ""))
+})
+
+# ---- plot builders smoke -----------------------------------------------------
+
+test_that("track + panel builders return plots and tolerate empty inputs", {
+  pep <- pelsa_woods_peptide_data("A", .woods_matched(), .woods_stat(), "AvB")
+  iv  <- pelsa_coverage_intervals(pep$pep_start, pep$pep_end)
+  fl  <- pelsa_feature_lanes(data.frame(
+    start = 1L, end = 30L, feature_class = "catalytic_domain",
+    feature_type = "Domain", stringsAsFactors = FALSE))
+
+  expect_s3_class(pelsa_coverage_track_ggplot(iv, 70L), "ggplot")
+  expect_s3_class(pelsa_feature_track_ggplot(fl, 70L), "ggplot")
+  expect_s3_class(pelsa_woods_track_ggplot(pep, 70L), "ggplot")
+
+  # empty-input variants still return a ggplot (placeholder), never error.
+  expect_s3_class(pelsa_feature_track_ggplot(pelsa_feature_lanes(data.frame()), 70L),
+                  "ggplot")
+  expect_s3_class(pelsa_woods_track_ggplot(pep[0, ], 70L), "ggplot")
+
+  p <- pelsa_woods_panel(pep, fl, iv, prot_len = 70L, source_id = "w")
+  expect_s3_class(p, "plotly")
+  expect_identical(p$x$source, "w")
+})
+
+test_that("woods builder uses the shared feature-class palette", {
+  fl <- pelsa_feature_lanes(data.frame(
+    start = c(1L, 40L), end = c(30L, 60L),
+    feature_class = c("catalytic_domain", "region_or_motif"),
+    feature_type = c("Domain", "Region"), stringsAsFactors = FALSE))
+  gg <- pelsa_feature_track_ggplot(fl, 70L)
+  b  <- suppressWarnings(ggplot2::ggplot_build(gg))
+  # the fill scale draws from PELSA_FEATURE_COLORS
+  used <- unique(b$data[[1]]$fill)
+  expect_true(all(used %in% unname(PELSA_FEATURE_COLORS)))
+})

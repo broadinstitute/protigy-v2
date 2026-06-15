@@ -668,10 +668,16 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
                      d$PG.ProteinAccessions, d$winning_accession)
     gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
                       d$PG.Genes, d$winning_gene)
+    # Effect-size lines: logFC + adj.P.Val for the active contrast (already on the
+    # 3A df). Formatted compactly; NA shows as "NA".
+    lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
+    adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
     paste0(
       "Accession: ", acc_fb, "<br>",
       "Gene: ", gene_fb, "<br>",
-      "Position: ", pos, len_line
+      "Position: ", pos, len_line, "<br>",
+      "logFC: ", lfc_chr, "<br>",
+      "adj.P: ", adjp_chr
     )
   }
 
@@ -750,9 +756,11 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # clean -- the attribute is benign and unused for scattergl.
   p <- .pelsa_strip_hoveron(p)
   p <- suppressWarnings(plotly::toWebGL(p))
-  # Boxed labels (white opaque-ish bg, border = labeled point's own color).
+  # Boxed labels (white opaque-ish bg, border = labeled point's own color),
+  # offset from the point + overlap-suppressed (Statistics-tab scheme).
   if (!is.null(lab_df)) {
-    p <- .pelsa_volcano_label_annotations(p, lab_df, color_mode)
+    p <- .pelsa_volcano_label_annotations(p, lab_df, color_mode,
+                                          full_df = full_df)
   }
   if (isTRUE(register_click)) {
     p <- plotly::event_register(p, "plotly_click")
@@ -761,42 +769,73 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
 }
 
 # Add boxed labels to a built volcano plotly as native annotations (so they
-# survive toWebGL, which a ggplot geom_text/ggrepel layer would not). Each label
-# is a white, slightly-transparent box (matching the Statistics > Volcano boxed
-# style) with a 1px border colored to that point's OWN color (sig_color or
-# feature_color for the active mode), tying the box to its point. A small
-# alternating vertical stagger reduces box-on-box overlap when several labels
-# cluster; the default best_per_marker / the new "none" mode keep counts low.
+# survive toWebGL, which a ggplot geom_text/ggrepel layer would not). Mirrors the
+# Statistics > Volcano interactive-label scheme (add_volcano_labels): each label
+# is OFFSET up-and-right of its point (xshift/yshift, so the box never covers the
+# point), a white slightly-transparent box with a 1px border colored to that
+# point's OWN color (sig_color/feature_color), and a greedy proximity suppressor
+# drops labels that would pile on top of an already-placed one (in normalized
+# [0,1] coordinate space). The default best_per_marker / "none" modes keep the
+# starting count low; the suppressor handles the rest.
 #
 # @param p          a built plotly (post-toWebGL) volcano.
 # @param lab_df     the labeled rows (logFC, logP, label, + color columns).
 # @param color_mode "significance" | "feature" (drives the border color).
+# @param full_df    the full volcano df (for the normalization x/y ranges).
+# @param min_dist   normalized-space proximity threshold to suppress overlaps.
 # @return p with annotations added.
 # @noRd
-.pelsa_volcano_label_annotations <- function(p, lab_df, color_mode) {
+.pelsa_volcano_label_annotations <- function(p, lab_df, color_mode,
+                                             full_df = lab_df, min_dist = 0.045) {
   if (is.null(lab_df) || nrow(lab_df) == 0L) return(p)
-  border <- pelsa_volcano_color_column(lab_df, color_mode)
-  # Alternating vertical offset (in pixels) so stacked boxes step apart.
-  n <- nrow(lab_df)
-  yshift <- ifelse(seq_len(n) %% 2L == 0L, 26, 14)
-  plotly::add_annotations(
-    p,
-    x          = lab_df$logFC,
-    y          = lab_df$logP,
-    text       = lab_df$label,
-    xref = "x", yref = "y",
-    showarrow  = TRUE,
-    arrowcolor = border,
-    arrowwidth = 0.8,
-    arrowhead  = 0,
-    ax = 0, ay = -yshift,             # leader points down to the marker
-    font       = list(size = 10, color = "#222222"),
-    bgcolor    = "rgba(255,255,255,0.85)",
-    bordercolor = border,
-    borderwidth = 1,
-    borderpad  = 2,
-    captureevents = FALSE
-  )
+
+  # Normalize to [0,1] using the full plot's ranges (so "close" means close
+  # on-screen, not in raw logFC/logP units).
+  xr <- range(full_df$logFC, na.rm = TRUE)
+  yr <- range(full_df$logP,  na.rm = TRUE)
+  xs <- diff(xr); ys <- diff(yr)
+  if (!is.finite(xs) || xs == 0) xs <- 1
+  if (!is.finite(ys) || ys == 0) ys <- 1
+
+  # Greedy placement: most-significant first (smallest adj.P.Val), drop any label
+  # within min_dist of an already-placed one. Mirrors add_volcano_labels.
+  adjp <- as.numeric(lab_df$adj.P.Val %||% rep(NA_real_, nrow(lab_df)))
+  ord  <- order(adjp, na.last = TRUE)
+  border_all <- pelsa_volcano_color_column(lab_df, color_mode)
+
+  placed <- list(); keep <- integer(0)
+  for (i in ord) {
+    nx <- (lab_df$logFC[i] - xr[1]) / xs
+    ny <- (lab_df$logP[i]  - yr[1]) / ys
+    too_close <- FALSE
+    for (pl in placed) {
+      if (sqrt((nx - pl$nx)^2 + (ny - pl$ny)^2) < min_dist) {
+        too_close <- TRUE; break
+      }
+    }
+    if (!too_close) {
+      placed <- c(placed, list(list(nx = nx, ny = ny)))
+      keep <- c(keep, i)
+    }
+  }
+  if (length(keep) == 0L) return(p)
+  kept   <- lab_df[keep, , drop = FALSE]
+  border <- border_all[keep]
+
+  anns <- lapply(seq_len(nrow(kept)), function(i) {
+    list(
+      x = kept$logFC[i], y = kept$logP[i], text = kept$label[i],
+      xref = "x", yref = "y",
+      showarrow = FALSE,                 # offset, not a leader line (Stats-tab)
+      xanchor = "left", yanchor = "bottom",
+      xshift = 6, yshift = 4,            # float up-and-right of the point
+      font = list(size = 10, color = "#222222", family = "Arial"),
+      bgcolor = "rgba(255,255,255,0.85)",
+      bordercolor = border[i], borderwidth = 1, borderpad = 2,
+      captureevents = FALSE
+    )
+  })
+  plotly::layout(p, annotations = anns)
 }
 
 # ---- 7F: the static export ggplot + the empty matched-cache frame -----------

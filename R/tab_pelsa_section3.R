@@ -509,45 +509,69 @@ PELSASection3_Ome_Server <- function(id,
         )))
       }
 
-      fluidRow(
-        # 7E LEFT-side pinned intensity panel: a metadata table + the per-protein
-        # 3C intensity LINE plot, populated on the left-click PIN of the volcano.
-        # The line plot lives in its OWN plotlyOutput so it is computed ONLY on
-        # click (the hover path never touches it).
-        column(3,
-          shinydashboardPlus::box(
-            uiOutput(ns("pelsa_pin_metadata")),
-            plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "320px"),
-            helpText("Click a point to pin its peptide profile."),
-            width = NULL, title = "Pinned Peptide", headerBorder = TRUE
-          )
-        ),
-        column(6,
-          tagList(
+      # L-SHAPED PINNED CARD: the pinned-peptide views form one continuous card -
+      # the upper-left arm (metadata + intensity line plot) is visually continuous
+      # with the full-width coverage/feature/Woods tracks along the bottom (the
+      # `pelsa-pin-card` class draws them as one bordered surface). The volcano +
+      # its controls are a SEPARATE card sitting in the top-right notch of the L.
+      # The bottom tracks render only once a peptide is pinned.
+      tagList(
+        fluidRow(
+          class = "pelsa-pin-card-top",
+          # Upper-LEFT arm of the L: pinned metadata + intensity line plot.
+          column(3,
             shinydashboardPlus::box(
-              plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "560px"),
-              status = "primary", width = NULL, title = "PELSA Volcano",
-              headerBorder = TRUE, solidHeader = TRUE
-            ),
-            # 7D best-peptide second panel, BELOW the all-peptide volcano, shown
-            # only when the sidebar checkbox is ON.
-            conditionalPanel(
-              condition = sprintf("input['%s']",
-                                  ns("pelsa_show_best_panel")),
+              uiOutput(ns("pelsa_pin_metadata")),
+              plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "320px"),
+              helpText("Click a point to pin its peptide profile."),
+              width = NULL, title = "Pinned Peptide", headerBorder = TRUE,
+              class = "pelsa-pin-arm"
+            )
+          ),
+          # Top-RIGHT notch: the volcano (+ best-peptide panel) - its own card.
+          column(6,
+            tagList(
               shinydashboardPlus::box(
-                plotly::plotlyOutput(ns("pelsa_volcano_best_plot"),
-                                     height = "560px"),
-                status = "primary", width = NULL,
-                title = "PELSA Volcano (best peptide per protein)",
+                plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "560px"),
+                status = "primary", width = NULL, title = "PELSA Volcano",
                 headerBorder = TRUE, solidHeader = TRUE
+              ),
+              conditionalPanel(
+                condition = sprintf("input['%s']",
+                                    ns("pelsa_show_best_panel")),
+                shinydashboardPlus::box(
+                  plotly::plotlyOutput(ns("pelsa_volcano_best_plot"),
+                                       height = "560px"),
+                  status = "primary", width = NULL,
+                  title = "PELSA Volcano (best peptide per protein)",
+                  headerBorder = TRUE, solidHeader = TRUE
+                )
               )
+            )
+          ),
+          column(3,
+            shinydashboardPlus::box(
+              uiOutput(ns("pelsa_volcano_sidebar")),
+              width = NULL, title = "Plot Controls", headerBorder = TRUE
             )
           )
         ),
-        column(3,
-          shinydashboardPlus::box(
-            uiOutput(ns("pelsa_volcano_sidebar")),
-            width = NULL, title = "Plot Controls", headerBorder = TRUE
+        # Bottom arm of the L: the full-width per-protein 3-track panel (coverage
+        # ruler + UniProt features + Woods), revealed on pin. Same `pelsa-pin-card`
+        # styling as the upper-left arm so they read as ONE card.
+        fluidRow(
+          class = "pelsa-pin-card-bottom",
+          column(12,
+            shinydashboardPlus::box(
+              plotly::plotlyOutput(ns("pelsa_woods_panel"), height = "420px"),
+              helpText(paste0("Coverage (gold = residues with peptide ",
+                              "evidence), UniProt features, and a Woods plot ",
+                              "(logFC per peptide; gold outline = significant). ",
+                              "Click a Woods peptide to highlight it on the ",
+                              "volcano in gold.")),
+              width = NULL, title = "Protein coverage & Woods plot",
+              headerBorder = TRUE, class = "pelsa-pin-arm"
+            )
           )
         )
       )
@@ -753,6 +777,105 @@ PELSASection3_Ome_Server <- function(id,
       suppressWarnings(plotly::ggplotly(
         pelsa_intensity_line_ggplot(ld, pinned_label = pinned_lab)))
     })
+
+    ## ------------------------------------------------------------------------
+    ## 7G - PINNED protein COVERAGE + FEATURE + WOODS panel (the L's bottom arm)
+    ## ------------------------------------------------------------------------
+    # Built ONLY on pin, off the same cache + stats the intensity plot uses. The
+    # protein length comes from the cache's coverage frame (no FASTA re-read);
+    # peptide spans + logFC/adj.P from matched + stat_df; UniProt features from
+    # feat_df. Woods peptides carry a .tip listing overlapping annotation regions.
+    pinned_woods <- reactive({
+      pin <- pinned()
+      req(pin, pin$accession, nzchar(pin$accession))
+      entry <- cache_entry(); req(entry)
+      contrast <- active_contrast(); req(contrast)
+      matched <- entry$matched %||% data.frame()
+      req(nrow(matched) > 0L)
+      acc <- pin$accession
+
+      stat_df <- pelsa_volcano_stat_df(stat_df_raw(), matched)
+      pep <- pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
+                                      sig_cutoff = 0.05)
+
+      # Protein length: prefer the cache coverage frame; fall back to the max
+      # mapped residue so the axis still spans the peptides.
+      cov <- entry$coverage %||% data.frame()
+      plen <- NA_integer_
+      if (is.data.frame(cov) && all(c("accession", "protein_length") %in%
+                                     colnames(cov))) {
+        hit <- cov$protein_length[as.character(cov$accession) == acc]
+        if (length(hit) > 0L) plen <- as.integer(hit[[1]])
+      }
+      if (is.na(plen) || plen < 1L) {
+        plen <- if (nrow(pep) > 0L) max(pep$pep_end, na.rm = TRUE) else 1L
+      }
+
+      # Per-accession UniProt features (raw rows) -> lane-packed.
+      fdf <- feat_df() %||% data.frame()
+      feats <- if (is.data.frame(fdf) && "accession" %in% colnames(fdf)) {
+        fdf[as.character(fdf$accession) == acc, , drop = FALSE]
+      } else {
+        fdf[0, , drop = FALSE]
+      }
+      lanes <- pelsa_feature_lanes(feats)
+
+      # Woods tooltip: append the overlapping annotation regions per peptide.
+      if (nrow(pep) > 0L) {
+        ann <- pelsa_woods_overlap_annotations(pep$pep_start, pep$pep_end, feats)
+        ann_line <- ifelse(nzchar(ann), paste0("\nAnnotations: ", ann), "")
+        pep$.tip <- sprintf(
+          "%s\naa %d-%d (len %d)\nlogFC: %.2f\nadj.P: %.2g%s",
+          pep$peptide_seq, pep$pep_start, pep$pep_end,
+          pep$pep_end - pep$pep_start + 1L, pep$logFC, pep$adj.P.Val, ann_line)
+      }
+
+      list(pep = pep, lanes = lanes,
+           intervals = pelsa_coverage_intervals(pep$pep_start, pep$pep_end),
+           prot_len = plen)
+    })
+
+    output$pelsa_woods_panel <- plotly::renderPlotly({
+      w <- tryCatch(pinned_woods(), error = function(e) NULL)
+      validate(need(!is.null(w),
+                    "Click a point to pin its protein's coverage & Woods plot."))
+      suppressWarnings(pelsa_woods_panel(
+        peptides = w$pep, features_lanes = w$lanes, intervals = w$intervals,
+        prot_len = w$prot_len, source_id = ns("pelsa_woods")))
+    })
+
+    # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> highlight it GOLD on the
+    # volcano (distinct from the magenta marker fill). The Woods data has explicit
+    # identity, so resolve the clicked segment to its peptide by coordinate (the
+    # x is within [pep_start, pep_end], y == logFC), then restyle a per-point gold
+    # marker outline on the volcano background trace via the existing proxy. No
+    # volcano rebuild.
+    observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_woods")), {
+      ev <- plotly::event_data("plotly_click", source = ns("pelsa_woods"))
+      w  <- tryCatch(pinned_woods(), error = function(e) NULL)
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(ev) || is.null(w) || is.null(df) || nrow(w$pep) == 0L) return()
+      # Resolve the clicked peptide: the segment whose span contains ev$x and
+      # whose logFC ~ ev$y (tolerant). Falls back to nearest by |logFC - y|.
+      pep <- w$pep
+      in_span <- !is.na(ev$x) & pep$pep_start <= ev$x & ev$x <= pep$pep_end
+      cand <- which(in_span)
+      if (length(cand) == 0L) cand <- seq_len(nrow(pep))
+      j <- cand[which.min(abs(pep$logFC[cand] - (ev$y %||% pep$logFC[cand])))]
+      sel_seq <- pep$peptide_seq[[j]]
+      # Per-point gold outline on the volcano background trace (0).
+      line_col <- ifelse(as.character(df$id) == sel_seq,
+                         .PELSA_VOLCANO_GOLD, "rgba(0,0,0,0)")
+      line_w   <- ifelse(as.character(df$id) == sel_seq, 2.5, 0)
+      split <- pelsa_volcano_marker_split(df)
+      bg_id <- as.character(split$background$id)
+      bg_line_col <- ifelse(bg_id == sel_seq, .PELSA_VOLCANO_GOLD, "rgba(0,0,0,0)")
+      bg_line_w   <- ifelse(bg_id == sel_seq, 2.5, 0)
+      plotly::plotlyProxyInvoke(
+        volcano_proxy, "restyle",
+        list(`marker.line.color` = list(bg_line_col),
+             `marker.line.width` = list(bg_line_w)), list(0L))
+    }, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
     ## 7F - EXPORTS (per-ome export list; re-derive from cache + stat_results)
