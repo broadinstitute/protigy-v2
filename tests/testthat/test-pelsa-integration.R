@@ -89,10 +89,33 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
   # P12345-2 (exercises the isoform-base marker rule end to end).
   markers <- c(syn$tie_accession, syn$isoform_accession)
 
+  # Run the assembled pipeline (NO network, cache-as-is) so the builder can
+  # ALSO surface the downstream artifacts (matched cache, stat_raw frame, and
+  # the 3A all-peptide volcano df) that the coherence tests assert against.
+  res <- pelsa_run_analysis(
+    gcts           = list(ds = gct),
+    gcts_original  = list(ds = gct),
+    setup_snapshot = snap,
+    fasta_map      = syn$fasta,
+    feat_df        = feat_df
+  )
+  matched <- res$ds$matched
+
+  # stat_raw is the peptide frame with the stable 1-based .row_id join key (the
+  # raw input pelsa_volcano_stat_df consumes). volcano_df is the 3A panel.
+  stat_raw <- syn$peptides
+  stat_raw$.row_id <- seq_len(nrow(stat_raw))
+  stat_df <- pelsa_volcano_stat_df(stat_raw, matched)
+  volcano_df <- pelsa_build_volcano_df(
+    stat_df, matched, feat_df, markers,
+    contrast = contrast, opts = list(panel = "all_peptide", sig_cutoff = 0.05)
+  )
+
   list(
     syn = syn, gct = gct, feat_df = feat_df, snap = snap,
     contrast = contrast, adjp_col = adjp_col, markers = markers,
-    sample_order = sample_order
+    sample_order = sample_order,
+    matched = matched, stat_raw = stat_raw, volcano_df = volcano_df
   )
 }
 
@@ -352,4 +375,35 @@ test_that("PELSA pipeline is DETERMINISTIC (run-twice identical artifacts)", {
   expect_identical(a$vdf, b$vdf)
   expect_identical(attr(a$vdf, "y_cutoff"), attr(b$vdf, "y_cutoff"))
   expect_identical(a$ld, b$ld)
+})
+
+# =============================================================================
+# SELECTION / FIND / METADATA coherence on synthetic ground truth.
+# =============================================================================
+
+test_that("selection/find/metadata coherent on synthetic ground truth", {
+  ib <- .int_build(seed = 7, n_extra = 200)   # existing integration builder
+  vdf <- ib$volcano_df                          # the 3A all-peptide df
+  # 1. Find the tie protein by accession -> both its peptides match.
+  fm <- pelsa_volcano_find_mask(vdf, ib$syn$tie_accession)  # "TIEPROT"
+  expect_gte(fm$count, 2L)
+  expect_true(ib$syn$tie_accession %in% fm$accessions)
+  # 2. Isoform base finds the isoform peptide.
+  fmi <- pelsa_volcano_find_mask(vdf, ib$syn$isoform_base_accession) # "P12345"
+  expect_gte(fmi$count, 1L)
+  # 3. recolor: clicking a TIEPROT peptide golds it + rings its sibling.
+  trow <- which(as.character(vdf$winning_accession) == ib$syn$tie_accession)[1]
+  sel <- list(origin = "click",
+              accession = as.character(vdf$winning_accession[trow]),
+              peptide_seq = as.character(vdf$id[trow]))
+  rc <- pelsa_volcano_recolor(vdf, sel, NULL, "significance")
+  expect_true(.PELSA_GOLD %in% rc$background$color ||
+              .PELSA_GOLD %in% rc$markers$color)
+  # 4. metadata count reconciles with the woods peptide set for that accession.
+  sdf <- pelsa_volcano_stat_df(ib$stat_raw, ib$matched)
+  wp <- pelsa_woods_peptide_data(sel$accession, ib$matched, sdf,
+                                 ib$syn$contrasts, sig_cutoff = 0.05)
+  rows <- pelsa_pin_metadata_rows(vdf, trow, length(unique(wp$peptide_seq)))
+  cnt <- as.integer(rows$value[rows$label == "Quantified peptides (this contrast)"])
+  expect_equal(cnt, length(unique(wp$peptide_seq)))
 })
