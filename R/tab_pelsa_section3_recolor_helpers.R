@@ -129,7 +129,16 @@ pelsa_volcano_sibling_mask <- function(volcano_df, accession) {
 pelsa_volcano_recolor <- function(df, selection, find_mask = NULL,
                                   color_mode = "significance") {
   split <- pelsa_volcano_marker_split(df)
-  mk_one <- function(sub) {
+  # Partition find_mask by the SAME is_marker split (NOT a positional match on
+  # df$id, which mis-assigns when a stripped sequence repeats across protein
+  # groups). pelsa_volcano_marker_split puts !is_marker rows (in order) in
+  # background and is_marker rows (in order) in markers; slice find_mask the same
+  # way so each sub-frame's find slice is exactly row-aligned.
+  fm <- if (is.null(find_mask) || !is.null(selection)) NULL else {
+    im <- df$is_marker; im[is.na(im)] <- FALSE
+    list(background = find_mask[!im], markers = find_mask[im])
+  }
+  mk_one <- function(sub, fm_sub = NULL) {
     n <- nrow(sub)
     base <- if (identical(color_mode, "feature")) {
       as.character(sub$feature_color)
@@ -158,14 +167,16 @@ pelsa_volcano_recolor <- function(df, selection, find_mask = NULL,
       line.color[hit] <- .PELSA_SEL_DARK_RING
       line.width[hit] <- .PELSA_SEL_DARK_RING_W
     }
-    if (!is.null(find_mask) && is.null(selection)) {
-      fm_sub <- find_mask[match(ids, as.character(df$id))]
+    if (!is.null(fm_sub)) {
       fm_sub[is.na(fm_sub)] <- FALSE
       color[fm_sub] <- .PELSA_GOLD
     }
     list(color = color, line.color = line.color, line.width = line.width)
   }
-  list(background = mk_one(split$background), markers = mk_one(split$markers))
+  list(background = mk_one(split$background,
+                           if (is.null(fm)) NULL else fm$background),
+       markers     = mk_one(split$markers,
+                           if (is.null(fm)) NULL else fm$markers))
 }
 
 # Resolve the background / marker trace JS indices (0-based) of a built volcano

@@ -95,7 +95,31 @@ test_that("trace_index: finds the meta-stamped bg/marker traces", {
     stringsAsFactors = FALSE, check.names = FALSE)
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
                                 label_mode = "none", source_id = "s")
+  # Resolve on the RAW build object AND on plotly_build(p) - the production path
+  # (apply_highlight) wraps in plotly_build, so the meta tag must survive it.
   idx <- .pelsa_volcano_trace_index(p)
   expect_equal(idx$background, 0L)
   expect_equal(idx$markers, 1L)
+  idx_built <- .pelsa_volcano_trace_index(plotly::plotly_build(p))
+  expect_equal(idx_built$background, 0L)
+  expect_equal(idx_built$markers, 1L)
+})
+
+test_that("recolor find_mask: duplicate ids across protein groups stay row-aligned", {
+  # Two rows share the stripped sequence "DUP" but different winning_accession.
+  # A find on ACCA must gold ONLY the ACCA row, not the ACCB row that shares id.
+  df <- data.frame(
+    id                = c("DUP", "DUP", "PEPB1"),
+    winning_accession = c("ACCA", "ACCB", "ACCB"),
+    is_marker         = c(FALSE, FALSE, FALSE),
+    sig_color         = c("gray70", "gray70", "gray70"),
+    feature_color     = c("#111", "#222", "#333"),
+    stringsAsFactors  = FALSE)
+  mask <- df$winning_accession == "ACCA"          # only row 1
+  out <- pelsa_volcano_recolor(df, selection = NULL, find_mask = mask,
+                               color_mode = "significance")
+  split <- pelsa_volcano_marker_split(df)
+  # background row order == df row order here (no markers): row1 gold, row2 not.
+  expect_equal(out$background$color[1], .PELSA_GOLD)
+  expect_equal(out$background$color[2], "gray70")
 })

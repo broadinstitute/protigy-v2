@@ -194,7 +194,7 @@ test_that("label-mode: none labels nothing; all_significant labels sig rows", {
   expect_equal(pelsa_volcano_label_rows(df, "all_significant"), c(1L, 3L))
 })
 
-test_that("label-mode: unknown mode errors; default is best_per_marker", {
+test_that("label-mode: unknown mode errors; default is none", {
   df <- data.frame(is_marker = TRUE, Significant = TRUE, adj.P.Val = 0.01,
                    winning_accession = "P1", label = "a",
                    stringsAsFactors = FALSE)

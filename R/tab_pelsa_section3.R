@@ -479,6 +479,10 @@ PELSASection3_Ome_Server <- function(id,
     # with the rest of the selection state so the render that WRITES it is never a
     # forward reference; apply_highlight() reads it for the live trace indices.
     volcano_built <- reactiveVal(NULL)
+    # Cached bg/marker trace indices for the CURRENT built plot. Recomputed once
+    # per build (in the render) so apply_highlight() does not plotly_build() the
+    # ~100k-point figure on every selection/find/color-mode change.
+    volcano_trace_idx <- reactiveVal(NULL)
 
     # ONE place to clear the whole transient selection + find highlight.
     clear_selection <- function() {
@@ -717,6 +721,10 @@ PELSASection3_Ome_Server <- function(id,
         label_mode = label_mode_for_contrast(), n_top = top_n_for_contrast(),
         source_id = ns("pelsa_volcano"), register_click = TRUE)
       volcano_built(p)
+      # Resolve + cache the meta-tagged trace indices ONCE per build.
+      volcano_trace_idx(tryCatch(
+        .pelsa_volcano_trace_index(plotly::plotly_build(p)),
+        error = function(e) NULL))
       p
     })
 
@@ -778,9 +786,8 @@ PELSASection3_Ome_Server <- function(id,
         df, selection = selection(),
         find_mask = if (is.null(fr)) NULL else fr$mask,
         color_mode = input$pelsa_color_mode %||% "significance")
-      built <- volcano_built()
-      idx <- if (is.null(built)) list(background = 0L, markers = NA_integer_)
-             else .pelsa_volcano_trace_index(plotly::plotly_build(built))
+      # Use the indices cached at build time (no per-restyle plotly_build).
+      idx <- volcano_trace_idx() %||% list(background = 0L, markers = NA_integer_)
       bg_i <- idx$background %||% 0L
       mk_i <- idx$markers
       plotly::plotlyProxyInvoke(volcano_proxy, "restyle",
