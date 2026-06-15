@@ -486,18 +486,16 @@ pelsa_build_sample_order <- function(condition_order,
 #
 # Single-replicate (<= 1 sample) conditions COLLAPSE to a static label (no drag
 # widget). Multi-replicate conditions get a shinyjqui orderInput inside a
-# scroll-capped card, plus a Reset button and a keyboard-accessible comma-rank
-# textInput fallback (orderInput drag has no keyboard path).
+# scroll-capped card plus a Reset button.
 #
 # @param cond        condition name (card header).
 # @param samples     character vector of this condition's sample names (default
 #                    order); length<=1 collapses to a static label.
 # @param order_id    ns()-namespaced inputId for the orderInput.
 # @param reset_id    ns()-namespaced inputId for the Reset actionButton.
-# @param rank_id     ns()-namespaced inputId for the keyboard-rank textInput.
 # @return a shiny tag (the card).
 # @noRd
-pelsa_replicate_card <- function(cond, samples, order_id, reset_id, rank_id) {
+pelsa_replicate_card <- function(cond, samples, order_id, reset_id) {
   header <- shiny::tags$div(style = "font-weight:600; margin-bottom:4px;", cond)
 
   if (length(samples) <= 1L) {
@@ -519,9 +517,7 @@ pelsa_replicate_card <- function(cond, samples, order_id, reset_id, rank_id) {
     header,
     orderInput(inputId = order_id, label = NULL, items = samples, width = "100%"),
     shiny::div(style = "margin-top:6px;",
-               shiny::actionButton(reset_id, "Reset", class = "btn-xs")),
-    shiny::textInput(rank_id, label = NULL, value = "",
-                     placeholder = "keyboard: comma-separated order")
+               shiny::actionButton(reset_id, "Reset", class = "btn-xs"))
   )
 }
 
@@ -535,10 +531,15 @@ pelsa_replicate_card <- function(cond, samples, order_id, reset_id, rank_id) {
 # @param sel_rep         currently-selected replicate column.
 # @param ids             named list of ns()-namespaced inputIds:
 #                        condition_col, replicate_col, condition_order,
-#                        condition_reset, condition_rank, replicate_cards.
+#                        condition_reset, replicate_cards.
+# @param cond_order      character vector of conditions in their initial order;
+#                        the condition orderInput is BORN with these items so the
+#                        drag blocks render immediately (no post-render
+#                        updateOrderInput message that can race the renderUI).
 # @return a shiny tag (the panel).
 # @noRd
-pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids) {
+pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids,
+                                       cond_order = character(0)) {
   border <- paste0("border:1px solid #dee2e6; border-radius:6px; ",
                    "padding:10px; margin-bottom:12px;")
 
@@ -559,19 +560,13 @@ pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids) {
                        choices = cols, selected = sel_rep),
 
     shiny::tags$label("Condition order (drag to reorder)"),
-    orderInput(inputId = ids$condition_order, label = NULL, items = list(),
-               width = "100%"),
+    orderInput(inputId = ids$condition_order, label = NULL,
+               items = as.list(cond_order), width = "100%"),
     shiny::div(
       style = "margin-top:6px;",
       shiny::actionButton(ids$condition_reset, "Reset to default order",
-                          class = "btn-xs"),
-      shiny::tags$span(
-        style = "margin-left:8px; font-size:12px; color:#6c757d;",
-        "Keyboard: type a comma-separated order then Enter"
-      )
+                          class = "btn-xs")
     ),
-    shiny::textInput(ids$condition_rank, label = NULL, value = "",
-                     placeholder = "e.g. CondB, CondA"),
 
     shiny::tags$hr(style = "margin:8px 0;"),
     shiny::tags$label("Replicate order within each condition"),
@@ -621,6 +616,119 @@ pelsa_prune_perdataset_state <- function(state_lists, checked) {
 # @return a shiny tag (the Setup box).
 # @noRd
 pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
+  # The Setup box is split into two equal columns:
+  #   LEFT  - the run configuration the user fills in top-to-bottom:
+  #           datasets, species, compound, markers, per-dataset condition/
+  #           replicate config + ordering.
+  #   RIGHT - the Maintenance: UniProt annotation library section (top, a
+  #           setup-independent maintenance action) followed by the Start
+  #           Analysis button + inline validation messages.
+  left_col <- shiny::tagList(
+    # 1. Datasets to analyze (FIRST control).
+    shiny::checkboxGroupInput(
+      ns("pelsa_datasets"),
+      label    = "Datasets to analyze",
+      choices  = datasets,
+      selected = datasets
+    ),
+
+    # 2. Species (live list of inst/database/ subfolders).
+    shiny::selectInput(
+      ns("pelsa_species"),
+      label   = "Species",
+      choices = species,
+      selected = if (length(species)) species[[1]] else NULL
+    ),
+
+    # 3. Treatment compound (presets from compound_markers.yaml).
+    #    Selecting a compound autofills the marker table (server observer).
+    shiny::selectInput(
+      ns("pelsa_compound"),
+      label   = "Treatment compound",
+      choices = c("(none)" = "", compounds)
+    ),
+
+    # 4. Marker paste box + add button.
+    shiny::textAreaInput(
+      ns("pelsa_marker_input"),
+      label       = "Add marker proteins (accessions)",
+      placeholder = "P12345 Q99999 ... (space/comma/semicolon/newline)",
+      rows        = 3
+    ),
+    shiny::actionButton(ns("pelsa_add_markers"), "Add markers"),
+
+    shiny::tags$hr(),
+
+    # 5. Marker reactive table + remove/clear.
+    shiny::tags$label("Marker proteins"),
+    DT::dataTableOutput(ns("pelsa_marker_table")),
+    shiny::div(
+      style = "margin-top: 8px;",
+      shiny::actionButton(ns("pelsa_remove_markers"), "Remove selected"),
+      shiny::actionButton(ns("pelsa_clear_markers"), "Clear all")
+    ),
+
+    shiny::tags$hr(),
+
+    # 6. PER-DATASET condition/replicate configuration + ordering (5B).
+    #    "Apply to all" copies one dataset's column+order config to every
+    #    checked dataset. The per-dataset panels are rendered server-side
+    #    (they depend on the checked-dataset set and each dataset's cdesc).
+    shiny::tags$label("Condition / replicate configuration"),
+    shiny::checkboxInput(
+      ns("pelsa_apply_all"),
+      label = "Apply the same setup to all datasets",
+      value = FALSE
+    ),
+    shiny::uiOutput(ns("pelsa_perdataset_config"))
+  )
+
+  right_col <- shiny::tagList(
+    # 7. MAINTENANCE: per-species UniProt-annotation refresh (5C). At the TOP of
+    #    the right column. Visually separated as a maintenance action -
+    #    independent of Start-Analysis. The species checklist is re-read LIVE
+    #    each time the Setup box renders (the caller passes a fresh
+    #    pelsa_list_species()). Clicking the button rebuilds the checked species'
+    #    uniprot_features cache off the reactive path, with a progress bar
+    #    (fetches take minutes) and a MERGE-over-cache + atomic write so a
+    #    partial/flaky refresh never loses prior coverage.
+    shiny::tags$div(
+      class = "pelsa-refresh-section",
+      style = paste0("border:1px dashed #b0b0b0; border-radius:6px; ",
+                     "padding:10px; margin-bottom:12px; background:#fafafa;"),
+      shiny::tags$strong("Maintenance: UniProt annotation library"),
+      shiny::helpText(
+        "Rebuild the per-species feature cache used for volcano feature ",
+        "annotation. This fetches from UniProt and can take several ",
+        "minutes per species. It is independent of Start Analysis."
+      ),
+      shiny::checkboxGroupInput(
+        ns("pelsa_refresh_species"),
+        label   = "Species to refresh",
+        choices = species
+      ),
+      shiny::actionButton(
+        ns("pelsa_refresh_btn"),
+        "Refresh per-species UniProt annotation library",
+        icon = shiny::icon("sync")
+      )
+    ),
+
+    shiny::tags$hr(),
+
+    # 7b. START ANALYSIS (5D). Gated by a pre-flight validation checklist; on
+    #     success it runs the compute pipeline (staged withProgress), drives the
+    #     container's analyzed-datasets seam, and redirects to the Summary tab.
+    #     Validation errors render inline below the button (never a crash / silent
+    #     no-op).
+    shiny::actionButton(
+      ns("pelsa_start"), "Start Analysis",
+      icon  = shiny::icon("play"),
+      class = "btn-primary"
+    ),
+    shiny::uiOutput(ns("pelsa_validation_msgs"))
+  )
+
   add_css_attributes(
     shinydashboardPlus::box(
       width = 12,
@@ -628,107 +736,9 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
       solidHeader = TRUE,
       status      = "primary",
 
-      # 1. Datasets to analyze (FIRST control).
-      shiny::checkboxGroupInput(
-        ns("pelsa_datasets"),
-        label    = "Datasets to analyze",
-        choices  = datasets,
-        selected = datasets
-      ),
-
-      # 2. Species (live list of inst/database/ subfolders).
-      shiny::selectInput(
-        ns("pelsa_species"),
-        label   = "Species",
-        choices = species,
-        selected = if (length(species)) species[[1]] else NULL
-      ),
-
-      # 3. Treatment compound (presets from compound_markers.yaml).
-      #    Selecting a compound autofills the marker table (server observer).
-      shiny::selectInput(
-        ns("pelsa_compound"),
-        label   = "Treatment compound",
-        choices = c("(none)" = "", compounds)
-      ),
-
-      # 4. Marker paste box + add button.
-      shiny::textAreaInput(
-        ns("pelsa_marker_input"),
-        label       = "Add marker proteins (accessions)",
-        placeholder = "P12345 Q99999 ... (space/comma/semicolon/newline)",
-        rows        = 3
-      ),
-      shiny::actionButton(ns("pelsa_add_markers"), "Add markers"),
-
-      shiny::tags$hr(),
-
-      # 5. Marker reactive table + remove/clear.
-      shiny::tags$label("Marker proteins"),
-      DT::dataTableOutput(ns("pelsa_marker_table")),
-      shiny::div(
-        style = "margin-top: 8px;",
-        shiny::actionButton(ns("pelsa_remove_markers"), "Remove selected"),
-        shiny::actionButton(ns("pelsa_clear_markers"), "Clear all")
-      ),
-
-      shiny::tags$hr(),
-
-      # 6. PER-DATASET condition/replicate configuration + ordering (5B).
-      #    "Apply to all" copies one dataset's column+order config to every
-      #    checked dataset. The per-dataset panels are rendered server-side
-      #    (they depend on the checked-dataset set and each dataset's cdesc).
-      shiny::tags$label("Condition / replicate configuration"),
-      shiny::checkboxInput(
-        ns("pelsa_apply_all"),
-        label = "Apply the same setup to all datasets",
-        value = FALSE
-      ),
-      shiny::uiOutput(ns("pelsa_perdataset_config")),
-
-      shiny::tags$hr(),
-
-      # 6b. START ANALYSIS (5D). Gated by a pre-flight validation checklist; on
-      #     success it runs the compute pipeline (staged withProgress) and drives
-      #     the container's analyzed-datasets seam. Validation errors render
-      #     inline below the button (never a crash / silent no-op).
-      shiny::actionButton(
-        ns("pelsa_start"), "Start Analysis",
-        icon  = shiny::icon("play"),
-        class = "btn-primary"
-      ),
-      shiny::uiOutput(ns("pelsa_validation_msgs")),
-
-      shiny::tags$hr(),
-
-      # 7. MAINTENANCE: per-species UniProt-annotation refresh (5C).
-      #    Visually separated as a maintenance action - independent of
-      #    Start-Analysis. The species checklist is re-read LIVE each time the
-      #    Setup box renders (the caller passes a fresh pelsa_list_species()).
-      #    Clicking the button rebuilds the checked species' uniprot_features
-      #    cache off the reactive path, with a progress bar (fetches take
-      #    minutes) and a MERGE-over-cache + atomic write so a partial/flaky
-      #    refresh never loses prior coverage.
-      shiny::tags$div(
-        class = "pelsa-refresh-section",
-        style = paste0("border:1px dashed #b0b0b0; border-radius:6px; ",
-                       "padding:10px; margin-top:6px; background:#fafafa;"),
-        shiny::tags$strong("Maintenance: UniProt annotation library"),
-        shiny::helpText(
-          "Rebuild the per-species feature cache used for volcano feature ",
-          "annotation. This fetches from UniProt and can take several ",
-          "minutes per species. It is independent of Start Analysis."
-        ),
-        shiny::checkboxGroupInput(
-          ns("pelsa_refresh_species"),
-          label   = "Species to refresh",
-          choices = species
-        ),
-        shiny::actionButton(
-          ns("pelsa_refresh_btn"),
-          "Refresh per-species UniProt annotation library",
-          icon = shiny::icon("sync")
-        )
+      shiny::fluidRow(
+        shiny::column(6, left_col),
+        shiny::column(6, right_col)
       )
     ),
     classes = c("box-no-header", "box-with-tabs")
@@ -747,10 +757,8 @@ pelsa_setup_ids <- function() {
     replicate_col   = function(i)    sprintf("pelsa_replicate_col_d%d", i),
     condition_order = function(i)    sprintf("pelsa_condition_order_d%d", i),
     condition_reset = function(i)    sprintf("pelsa_condition_reset_d%d", i),
-    condition_rank  = function(i)    sprintf("pelsa_condition_rank_d%d", i),
     replicate_cards = function(i)    sprintf("pelsa_replicate_cards_d%d", i),
     replicate_order = function(i, j) sprintf("pelsa_replicate_order_d%d_c%d", i, j),
-    replicate_reset = function(i, j) sprintf("pelsa_replicate_reset_d%d_c%d", i, j),
-    replicate_rank  = function(i, j) sprintf("pelsa_replicate_rank_d%d_c%d", i, j)
+    replicate_reset = function(i, j) sprintf("pelsa_replicate_reset_d%d_c%d", i, j)
   )
 }

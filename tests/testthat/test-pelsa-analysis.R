@@ -185,6 +185,38 @@ test_that("peptide frame = cbind(rdesc, mat) for a GCT; df passes through", {
   expect_identical(pelsa_dataset_peptide_frame(syn$peptides), syn$peptides)
 })
 
+test_that("peptide frame synthesizes PEP.StrippedSequence from the rid when absent", {
+  # A peptide GCT whose stripped sequence sits in the id column (rid) and has NO
+  # PEP.StrippedSequence column. pelsa_dataset_peptide_frame() must backfill it
+  # from the rid so downstream position-mapping has a sequence to match.
+  syn <- pelsa_make_synthetic(seed = 5, n_extra_peptides = 2)
+  peptides <- syn$peptides
+  peptides$PEP.StrippedSequence <- NULL          # drop it (PELSA-style id-as-seq)
+  sc   <- syn$sample_cols
+  rids <- peptides$PG.ProteinAccessions          # any per-row identifier; here accessions
+  rids <- make.unique(as.character(rids))        # rid must be unique
+  mat  <- as.matrix(peptides[, sc]); rownames(mat) <- rids
+  rdesc <- peptides[, setdiff(colnames(peptides), sc), drop = FALSE]
+  rownames(rdesc) <- rids
+  cdesc <- data.frame(condition = sub("_R[0-9]+$", "", sc),
+                      row.names = sc, stringsAsFactors = FALSE)
+  gct <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+
+  pf <- pelsa_dataset_peptide_frame(gct)
+  expect_true("PEP.StrippedSequence" %in% colnames(pf))
+  expect_identical(pf$PEP.StrippedSequence, rids)  # copied from the rid, row-aligned
+})
+
+test_that("peptide frame keeps a real PEP.StrippedSequence over the rid", {
+  # When PEP.StrippedSequence already exists it is authoritative - the rid must
+  # NOT overwrite it.
+  syn <- pelsa_make_synthetic(seed = 6, n_extra_peptides = 1)
+  gct <- .mk_gct(syn)                              # rids are "pep1","pep2",...
+  pf  <- pelsa_dataset_peptide_frame(gct)
+  expect_identical(pf$PEP.StrippedSequence, syn$peptides$PEP.StrippedSequence)
+  expect_false(any(grepl("^pep[0-9]+$", pf$PEP.StrippedSequence)))
+})
+
 # ---- pelsa_delinearize (closed-form: recover raw linear from log) ------------
 
 test_that("pelsa_delinearize inverts log2 (2^x) and log10 (10^x)", {

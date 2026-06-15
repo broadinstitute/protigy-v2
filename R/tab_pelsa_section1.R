@@ -78,7 +78,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                                      globals,
                                      GCTs_original,
                                      active_dataset,
-                                     set_analyzed_datasets = NULL) {
+                                     set_analyzed_datasets = NULL,
+                                     parent_session = NULL) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -254,10 +255,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     id_replicate_col   <- .ids$replicate_col
     id_condition_order <- .ids$condition_order
     id_condition_reset <- .ids$condition_reset
-    id_condition_rank  <- .ids$condition_rank
     id_replicate_order <- .ids$replicate_order
     id_replicate_reset <- .ids$replicate_reset
-    id_replicate_rank  <- .ids$replicate_rank
 
     # cdesc data.frame for a dataset (rownames = sample names) or NULL.
     cdesc_for <- function(ome) {
@@ -326,6 +325,21 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         if (length(cols) && !(sel_cond %in% cols)) sel_cond <- cols[[1]]
         if (length(cols) && !(sel_rep  %in% cols)) sel_rep  <- cols[[1]]
 
+        # Born-populated condition orderInput: compute the initial order HERE so
+        # the drag blocks render with their items already present. Seeding the
+        # widget post-render via updateOrderInput races this renderUI (the
+        # message can arrive before the orderInput element exists, so the blocks
+        # would stay empty until some later input forced a reseed).
+        available_conds <- if (!is.null(cdesc) && !is.null(sel_cond) &&
+                                sel_cond %in% names(cdesc)) {
+          pelsa_distinct_conditions(cdesc, sel_cond)
+        } else {
+          character(0)
+        }
+        cond_order <- pelsa_merge_ordering(
+          setup_state$condition_order[[ome]], available_conds
+        )
+
         pelsa_dataset_config_panel(
           ome = ome, cols = cols, sel_cond = sel_cond, sel_rep = sel_rep,
           ids = list(
@@ -333,9 +347,9 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
             replicate_col   = ns(id_replicate_col(i)),
             condition_order = ns(id_condition_order(i)),
             condition_reset = ns(id_condition_reset(i)),
-            condition_rank  = ns(id_condition_rank(i)),
             replicate_cards = ns(sprintf("pelsa_replicate_cards_d%d", i))
-          )
+          ),
+          cond_order = cond_order
         )
       })
 
@@ -385,8 +399,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
               cond     = cond,
               samples  = samples,
               order_id = ns(id_replicate_order(i_local, j)),
-              reset_id = ns(id_replicate_reset(i_local, j)),
-              rank_id  = ns(id_replicate_rank(i_local, j))
+              reset_id = ns(id_replicate_reset(i_local, j))
             )
           })
           do.call(tagList, cards)
@@ -479,18 +492,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           set_ds("condition_order", ome_local, NULL)
           seed_condition_order(ome_local)
         }, ignoreNULL = TRUE)
-
-        # Condition keyboard rank (comma-separated) -> reorder.
-        observeEvent(input[[id_condition_rank(i_local)]], {
-          txt <- input[[id_condition_rank(i_local)]]
-          if (is.null(txt) || !nzchar(trimws(txt))) return()
-          requested <- trimws(strsplit(txt, ",", fixed = TRUE)[[1]])
-          requested <- requested[nzchar(requested)]
-          available <- distinct_conditions_for(ome_local)
-          order <- pelsa_merge_ordering(requested, available)
-          updateOrderInput(session, inputId = id_condition_order(i_local), items = order)
-          set_ds("condition_order", ome_local, order)
-        }, ignoreNULL = TRUE)
       })
 
       setup_observer_registry(unique(c(reg, key)))
@@ -577,19 +578,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                              items = default_samples)
             set_ds_rep(ome_local, cond, default_samples)
           }, ignoreNULL = TRUE)
-
-          # Replicate keyboard rank -> reorder (keyed by the LIVE condition at j).
-          observeEvent(input[[id_replicate_rank(i_local, j_local)]], {
-            cond <- cond_at_j()
-            if (is.null(cond)) return()
-            txt <- input[[id_replicate_rank(i_local, j_local)]]
-            if (is.null(txt) || !nzchar(trimws(txt))) return()
-            requested <- trimws(strsplit(txt, ",", fixed = TRUE)[[1]])
-            requested <- requested[nzchar(requested)]
-            order <- pelsa_merge_ordering(requested, default_samples_local())
-            updateOrderInput(session, inputId = id_replicate_order(i_local, j_local), items = order)
-            set_ds_rep(ome_local, cond, order)
-          }, ignoreNULL = TRUE)
         })
         new_keys <- c(new_keys, key)
       }
@@ -631,6 +619,16 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # Copy the SOURCE dataset's condition/replicate columns + ordering to every
     # checked dataset whose cdesc has both columns. Species/compound/markers stay
     # shared and untouched.
+    #
+    # "Apply to all" is meaningless with a single uploaded dataset (there is no
+    # other dataset to copy the setup TO), so grey the checkbox out in a
+    # single-ome session. The checkbox lives inside the server-rendered setup box,
+    # so re-toggle on every (re)render; updateOrderInput-style races don't apply
+    # to shinyjs::toggleState because shinyjs re-applies disabled state on bind.
+    observe({
+      shinyjs::toggleState("pelsa_apply_all", condition = length(all_omes()) > 1L)
+    })
+
     observeEvent(input$pelsa_apply_all, {
       if (!isTRUE(input$pelsa_apply_all)) return()
       src <- apply_all_source()
@@ -885,6 +883,18 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       } else {
         showNotification(sprintf("Analysis complete for %d dataset(s).",
                                  length(result)), type = "message", duration = 5)
+      }
+
+      # Redirect to the PELSA Summary tab so the user lands on the results (the
+      # Summary surfaces per-dataset failures too, so we navigate even when some
+      # datasets errored). The navbar lives in app_ui's navbarPage(id =
+      # "navbar-tabs"); the Summary tabPanel's value is "PELSA-Summary". We need
+      # the PARENT (app) session for the navbar - the module session can't reach
+      # it. Guarded so the module still works if invoked without a parent session
+      # (e.g. an isolated test harness).
+      if (!is.null(parent_session)) {
+        updateTabsetPanel(session = parent_session, inputId = "navbar-tabs",
+                          selected = "PELSA-Summary")
       }
     }, ignoreInit = TRUE)
 

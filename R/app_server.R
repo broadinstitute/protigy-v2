@@ -141,7 +141,8 @@ app_server <- function(input, output, session) {
     globals = globals,
     GCTs_original = GCTs_original,
     active_dataset = pelsa_active_dataset,
-    set_analyzed_datasets = pelsa_container$set_analyzed_datasets
+    set_analyzed_datasets = pelsa_container$set_analyzed_datasets,
+    parent_session = session
   )
   all_PELSASection1_exports <- all_PELSASection1$exports
   pelsa_setup_state <- all_PELSASection1$setup_state  # consumed by Phases 5B-7

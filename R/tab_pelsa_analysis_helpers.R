@@ -308,21 +308,55 @@ pelsa_delinearize <- function(mat, log_base) {
 # plain data.frame is passed straight through (the test seam: the synthetic
 # generator already yields a peptide frame).
 #
+# Peptide-result exports key on PEP.StrippedSequence, so a peptide GCT normally
+# carries that column. Some PELSA peptide datasets, however, were uploaded with
+# the stripped sequence AS the id column (the rid / rownames) and so have no
+# PEP.StrippedSequence column. To keep position-mapping working for them, when
+# PEP.StrippedSequence is absent we synthesize it from the dataset's id column
+# (rid). This is additive: a real PEP.StrippedSequence column is always kept.
+#
 # @param gct a cmapR GCT, or a plain data.frame (returned unchanged).
-# @return a peptide-level data.frame.
+# @return a peptide-level data.frame (guaranteed to have PEP.StrippedSequence
+#         whenever a sequence-bearing id column is available).
 # @noRd
 pelsa_dataset_peptide_frame <- function(gct) {
-  if (is.data.frame(gct)) return(gct)
+  if (is.data.frame(gct)) {
+    return(.pelsa_ensure_stripped_sequence(gct, id_values = rownames(gct)))
+  }
   if (!methods::is(gct, "GCT")) {
     stop("pelsa_dataset_peptide_frame: expected a cmapR GCT or a data.frame.",
          call. = FALSE)
   }
   rdesc <- methods::slot(gct, "rdesc")
   mat   <- methods::slot(gct, "mat")
+  rid   <- methods::slot(gct, "rid")
   mat_df <- as.data.frame(mat, check.names = FALSE, stringsAsFactors = FALSE)
   out <- cbind(rdesc, mat_df)
+  out <- .pelsa_ensure_stripped_sequence(out, id_values = rid)
   rownames(out) <- NULL
   out
+}
+
+# Guarantee a PEP.StrippedSequence column on a peptide frame.
+#
+# Peptide results normally use PEP.StrippedSequence as their id column, so for
+# PELSA datasets that column may be absent (the stripped sequence sits in the id
+# column / rid instead). When PEP.StrippedSequence is missing we copy it from
+# the supplied id values so downstream position-mapping has a sequence to match.
+# A frame that already has PEP.StrippedSequence is returned unchanged.
+#
+# @param df         a peptide-level data.frame.
+# @param id_values  character vector of per-row id values (the rid / rownames),
+#                   used as the stripped sequence when the column is absent. May
+#                   be NULL (then the frame is returned unchanged).
+# @return df, with a PEP.StrippedSequence column added when it was missing and
+#         id_values supplies one per row.
+# @noRd
+.pelsa_ensure_stripped_sequence <- function(df, id_values = NULL) {
+  if ("PEP.StrippedSequence" %in% colnames(df)) return(df)
+  if (is.null(id_values) || length(id_values) != nrow(df)) return(df)
+  df[["PEP.StrippedSequence"]] <- as.character(id_values)
+  df
 }
 
 # Numeric sample matrix from a GCT (or the intensity block of a data.frame).
