@@ -159,3 +159,26 @@ test_that("woods builder uses the shared feature-class palette", {
   used <- unique(b$data[[1]]$fill)
   expect_true(all(used %in% unname(PELSA_FEATURE_COLORS)))
 })
+
+test_that("feature_overlap_peptides: lists overlapping peptide aa-labels", {
+  # feature [10,20]; peptides at starts 5(end 12), 30(end 40), 15(end 25)
+  out <- pelsa_feature_overlap_peptides(
+    feat_starts = c(10L), feat_ends = c(20L),
+    pep_starts = c(5L, 30L, 15L), pep_ends = c(12L, 40L, 25L))
+  expect_equal(out, "aa5;aa15")     # sorted by position, deduped; 30 excluded
+})
+
+test_that("feature_overlap_peptides: no overlap -> 'none'", {
+  out <- pelsa_feature_overlap_peptides(c(100L), c(110L), c(5L), c(12L))
+  expect_equal(out, "none")
+})
+
+test_that("woods track: -log10(adj.P) coloring, no gold-outline segment, builds", {
+  pep <- data.frame(
+    peptide_seq = c("A","B"), pep_start = c(1L,5L), pep_end = c(4L,9L),
+    logFC = c(-2, 1.5), adj.P.Val = c(1e-9, 0.4), sig = c(TRUE, FALSE),
+    stringsAsFactors = FALSE)
+  gg <- pelsa_woods_track_ggplot(pep, prot_len = 20L)
+  expect_s3_class(gg, "ggplot")
+  # The -log10 column is clamped (1e-9 -> -log10 = 9 -> clamp 5); just assert build.
+})

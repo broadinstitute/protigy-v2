@@ -351,32 +351,25 @@ test_that("labels_sidecar emits the exact 12 columns in order", {
   expect_equal(nrow(empty), 0L)
 })
 
-test_that("tooltip falls back PER ROW to PG.* when winning_accession is NA", {
-  # A per-row NA winning_accession/gene must fall back to that row's PG.* value
-  # (element-wise), NOT render the literal "NA". The OLD `%||%`-on-the-whole-
-  # vector logic only triggered when the ENTIRE column was NULL, so a single NA
-  # row leaked "NA" into its tooltip.
+test_that("volcano tooltip is the compact 4-line Peptide/Position/logFC/adj.P", {
   df <- data.frame(
-    id = c("p1", "p2"), logFC = c(1, 2), logP = c(1, 2),
-    winning_accession = c(NA_character_, "ACC2"),
-    winning_gene      = c(NA_character_, "G2"),
-    PG.ProteinAccessions = c("PGACC1", "PGACC2"),
-    PG.Genes             = c("PGGENE1", "PGGENE2"),
-    sig_color = rep("gray", 2), feature_color = rep("#d3d3d3", 2),
-    pep_start = c(10L, 20L), pep_end = c(14L, 24L), is_marker = c(FALSE, FALSE),
-    label = c("x", "y"), feature_class_primary = rep("none", 2),
-    stringsAsFactors = FALSE, check.names = FALSE
-  )
-  p <- pelsa_volcano_build_plot(df, full_df = df, source_id = "tip")
-  pb <- suppressWarnings(plotly::plotly_build(p))
-  txt <- pb$x$data[[1]]$text  # background trace, both non-marker rows
-  # Row 1's NA winner falls back to PGACC1 (its own PG value), NOT "NA".
-  expect_match(txt[1], "Accession: PGACC1", fixed = TRUE)
-  expect_match(txt[1], "Gene: PGGENE1", fixed = TRUE)
-  expect_false(grepl("Accession: NA", txt[1], fixed = TRUE))
-  # Row 2 keeps its real winning accession/gene.
-  expect_match(txt[2], "Accession: ACC2", fixed = TRUE)
-  expect_match(txt[2], "Gene: G2", fixed = TRUE)
+    id = "PEPX", logFC = 1.23, logP = 3, adj.P.Val = 0.004, P.Value = 0.001,
+    Significant = TRUE, sig_color = "darkred", feature_color = "#111",
+    feature_class_primary = "none", winning_accession = "ACCX",
+    winning_gene = "GX", PG.Genes = "GX", PG.ProteinAccessions = "ACCX",
+    pep_start = 7L, pep_end = 17L, is_marker = FALSE, label = "GX_aa7",
+    stringsAsFactors = FALSE, check.names = FALSE)
+  p <- pelsa_volcano_build_plot(df, full_df = df, label_mode = "none",
+                                source_id = "s")
+  b <- plotly::plotly_build(p)
+  txt <- unlist(lapply(b$x$data, function(t) t$text))
+  txt <- txt[!is.na(txt) & nzchar(txt)]
+  expect_true(any(grepl("Peptide: GX_aa7", txt, fixed = TRUE)))
+  expect_true(any(grepl("Position: 7-17", txt, fixed = TRUE)))
+  expect_true(any(grepl("logFC: 1.23", txt)))
+  expect_true(any(grepl("adj.P: 0.004", txt)))
+  # compact: the old Accession:/Gene:/Sequence: lines are NOT in the hover
+  expect_false(any(grepl("Accession:", txt, fixed = TRUE)))
 })
 
 test_that("build_plot returns a plotly object for both source ids", {

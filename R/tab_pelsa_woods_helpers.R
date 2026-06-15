@@ -35,6 +35,8 @@
 # (Shared intent with .PELSA_VOLCANO_GOLD in tab_pelsa_section3_helpers.R.)
 .PELSA_WOODS_GOLD <- .PELSA_GOLD
 
+.PELSA_WOODS_NEGLOG_CAP <- 5  # clamp -log10(adj.P) so tiny p-values don't flatten
+
 # ---- Helper 1: per-peptide Woods data ----------------------------------------
 
 # Build the per-peptide Woods frame for ONE protein (accession).
@@ -194,6 +196,36 @@ pelsa_woods_overlap_annotations <- function(starts, ends, features) {
   out
 }
 
+# For each feature span, the DISTINCT overlapping peptide aa-labels ("aa12;aa45"),
+# sorted by position; "none" when a feature overlaps no peptide. data.table
+# foverlaps. @noRd
+pelsa_feature_overlap_peptides <- function(feat_starts, feat_ends,
+                                           pep_starts, pep_ends) {
+  nf <- length(feat_starts)
+  out <- rep("none", nf)
+  if (nf == 0L) return(out)
+  if (length(pep_starts) == 0L) return(out)
+  fe <- data.table::data.table(
+    .fid = seq_len(nf),
+    start = suppressWarnings(as.integer(feat_starts)),
+    end   = suppressWarnings(as.integer(feat_ends)))
+  fe <- fe[!is.na(fe$start) & !is.na(fe$end)]
+  if (nrow(fe) == 0L) return(out)
+  pep <- data.table::data.table(
+    start = suppressWarnings(as.integer(pep_starts)),
+    end   = suppressWarnings(as.integer(pep_ends)))
+  pep <- pep[!is.na(pep$start) & !is.na(pep$end) & pep$end >= pep$start]
+  if (nrow(pep) == 0L) return(out)
+  data.table::setkey(pep, start, end)
+  ov <- data.table::foverlaps(fe, pep, type = "any", nomatch = NULL)
+  if (nrow(ov) == 0L) return(out)
+  agg <- tapply(ov$start, ov$.fid, function(s) {
+    paste(paste0("aa", sort(unique(as.integer(s)))), collapse = ";")
+  })
+  out[as.integer(names(agg))] <- as.character(agg)
+  out
+}
+
 # ---- Helper 5: plot builders -------------------------------------------------
 
 # Coverage ruler track: grey backbone + gold covered intervals, residue ticks.
@@ -259,7 +291,9 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
   }
   f <- features_lanes
   ftype <- if ("feature_type" %in% colnames(f)) f$feature_type else f$feature_class
-  f$.tip <- sprintf("%s\n%s\n%d-%d", ftype, f$feature_class, f$start, f$end)
+  ov <- if (".overlap_peps" %in% colnames(f)) f$.overlap_peps else "none"
+  f$.tip <- sprintf("%s\n%d-%d\nOverlapping peptides: %s",
+                    ftype, f$start, f$end, ov)
   ggplot2::ggplot(f) +
     ggplot2::geom_rect(
       ggplot2::aes(xmin = .data$start, xmax = .data$end,
@@ -309,24 +343,18 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
                        pk$pep_end - pk$pep_start + 1L, pk$logFC, pk$adj.P.Val)
   }
   pk$y <- pk$logFC
+  pk$neglogp <- pmin(-log10(pmax(pk$adj.P.Val, .Machine$double.xmin)),
+                     .PELSA_WOODS_NEGLOG_CAP)
+  pk$neglogp[is.na(pk$adj.P.Val)] <- 0
   gg <- ggplot2::ggplot(pk, ggplot2::aes(text = .data$.tip)) +
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.3, color = "grey70")
-  # Significant peptides get a thick gold "outline" segment drawn underneath.
-  sig <- pk[pk$sig %in% TRUE, , drop = FALSE]
-  if (nrow(sig) > 0L) {
-    gg <- gg + ggplot2::geom_segment(
-      data = sig,
-      ggplot2::aes(x = .data$pep_start, xend = .data$pep_end,
-                   y = .data$y, yend = .data$y),
-      color = .PELSA_WOODS_GOLD, linewidth = 3.2, lineend = "round")
-  }
   gg +
     ggplot2::geom_segment(
       ggplot2::aes(x = .data$pep_start, xend = .data$pep_end,
-                   y = .data$y, yend = .data$y, color = .data$logFC),
-      linewidth = 1.6, lineend = "round", alpha = 0.9) +
-    ggplot2::scale_color_gradient2(low = "#2166AC", mid = "grey80",
-                                   high = "#B2182B", midpoint = 0, name = "logFC") +
+                   y = .data$y, yend = .data$y, color = .data$neglogp),
+      linewidth = 1.8, lineend = "round", alpha = 0.95) +
+    ggplot2::scale_color_gradient(low = "grey92", high = "#B2182B",
+      limits = c(0, .PELSA_WOODS_NEGLOG_CAP), name = "-log10(adj.P)") +
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::labs(x = "Residue position", y = "logFC") +
     ggplot2::theme_minimal(base_size = 10) +

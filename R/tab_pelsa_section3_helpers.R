@@ -501,26 +501,18 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
     if (nrow(d) == 0L) return(character(0))
     no_span <- is.na(d$pep_start) | is.na(d$pep_end)
     pos <- ifelse(no_span, "unknown", paste0(d$pep_start, "-", d$pep_end))
-    len_chr <- ifelse(no_span, "", as.character(d$pep_end - d$pep_start + 1L))
-    len_line <- ifelse(no_span, "", paste0("<br>Length: ", len_chr))
-    # Element-wise fallback (NOT %||% on the whole vector): a per-ROW NA/empty
-    # winning_accession/gene must fall back to that row's PG.* value, otherwise a
-    # single NA row would render the literal "NA" in its tooltip.
-    acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
-                     d$PG.ProteinAccessions, d$winning_accession)
     gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
                       d$PG.Genes, d$winning_gene)
-    # Effect-size lines: logFC + adj.P.Val for the active contrast (already on the
-    # 3A df). Formatted compactly; NA shows as "NA".
+    acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
+                     d$PG.ProteinAccessions, d$winning_accession)
+    stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
+    pep_lab <- paste0(stem, "_aa", d$pep_start)
     lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
     adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
-    paste0(
-      "Accession: ", acc_fb, "<br>",
-      "Gene: ", gene_fb, "<br>",
-      "Position: ", pos, len_line, "<br>",
-      "logFC: ", lfc_chr, "<br>",
-      "adj.P: ", adjp_chr
-    )
+    paste0("Peptide: ", pep_lab, "<br>",
+           "Position: ", pos, "<br>",
+           "logFC: ", lfc_chr, "<br>",
+           "adj.P: ", adjp_chr)
   }
 
   gg <- ggplot2::ggplot()
