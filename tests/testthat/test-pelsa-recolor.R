@@ -13,6 +13,22 @@ library(testthat)
   )
 }
 
+test_that("highlight_mask: selected peptide + same-protein + find, uniform", {
+  df <- .mk_df()
+  # selection on ACCA peptide PEPA1 -> PEPA1 + sibling PEPA2 highlighted.
+  sel <- list(accession = "ACCA", peptide_seq = "PEPA1")
+  m <- pelsa_volcano_highlight_mask(df, selection = sel, find_mask = NULL)
+  expect_equal(which(m), c(1L, 2L))
+  # NULL selection + NULL find -> nothing.
+  expect_false(any(pelsa_volcano_highlight_mask(df, NULL, NULL)))
+  # find mask alone (ACCB) -> row 3.
+  fm <- df$winning_accession == "ACCB"
+  expect_equal(which(pelsa_volcano_highlight_mask(df, NULL, fm)), 3L)
+  # selection with NA peptide_seq -> all same-accession rows (accession only).
+  sel2 <- list(accession = "ACCA", peptide_seq = NA_character_)
+  expect_equal(which(pelsa_volcano_highlight_mask(df, sel2, NULL)), c(1L, 2L))
+})
+
 test_that("recolor: NULL selection + no find -> base fills, no rings", {
   df <- .mk_df()
   out <- pelsa_volcano_recolor(df, selection = NULL, find_mask = NULL,

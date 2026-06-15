@@ -115,6 +115,36 @@ pelsa_volcano_sibling_mask <- function(volcano_df, accession) {
   list(siblings = mask, n_siblings = sum(mask))
 }
 
+# Logical mask (over df rows) of the points to gold-highlight: the selected
+# peptide, every same-protein peptide (winning_accession == selection$accession),
+# and every find-matched peptide. ALL highlighted points are styled identically
+# (gold fill + black outline) - there is no selected-vs-sibling visual split.
+#
+# selection: NULL, or list(accession, peptide_seq, ...).
+# find_mask: NULL, or a logical over df rows (the typed-accession match set).
+# @return a logical vector length nrow(df). @noRd
+pelsa_volcano_highlight_mask <- function(df, selection = NULL, find_mask = NULL) {
+  n <- if (is.data.frame(df)) nrow(df) else 0L
+  mask <- rep(FALSE, n)
+  if (n == 0L) return(mask)
+  if (!is.null(selection)) {
+    acc <- selection$accession
+    seq <- selection$peptide_seq
+    wacc <- as.character(df$winning_accession)
+    if (!is.null(acc) && !is.na(acc) && nzchar(acc)) {
+      mask <- mask | (!is.na(wacc) & wacc == acc)
+    }
+    if (!is.null(seq) && !is.na(seq) && nzchar(seq)) {
+      mask <- mask | (as.character(df$id) == seq)
+    }
+  }
+  if (!is.null(find_mask)) {
+    fm <- as.logical(find_mask); fm[is.na(fm)] <- FALSE
+    if (length(fm) == n) mask <- mask | fm
+  }
+  mask
+}
+
 # Compute the per-trace recolor arrays for the volcano proxy restyle under the
 # single-selection model. Returns fills + ring color/width for BOTH restyled
 # traces (background == pelsa_volcano_marker_split(df)$background row order,

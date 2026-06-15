@@ -494,13 +494,9 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   bg     <- split$background
   mk     <- split$markers
 
-  # Bake the selection/find highlight into the point colors (rebuild-on-select:
+  # The selection/find highlight is baked into the build (rebuild-on-select:
   # per-point marker.color restyle is unreliable on WebGL scattergl, so the gold
-  # is drawn into the figure itself). Reuses the tested pelsa_volcano_recolor.
-  hl <- if (!is.null(selection) || !is.null(find_mask)) {
-    pelsa_volcano_recolor(df, selection = selection, find_mask = find_mask,
-                          color_mode = color_mode)
-  } else NULL
+  # is drawn into the figure itself). See the highlight-overlay geoms below.
 
   tip <- function(d) {
     if (nrow(d) == 0L) return(character(0))
@@ -522,60 +518,55 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
            "adj.P: ", adjp_chr)
   }
 
+  # Highlight mask over the FULL df (selected + same-protein + find-matched). All
+  # highlighted points are styled IDENTICALLY: gold fill + black outline, SAME
+  # size as their base point (no selected-vs-sibling split, no size bump).
+  hl_mask <- pelsa_volcano_highlight_mask(df, selection, find_mask)
+  bg_hl <- if (nrow(bg) > 0L)
+    pelsa_volcano_highlight_mask(bg, selection, find_mask) else logical(0)
+  mk_hl <- if (nrow(mk) > 0L)
+    pelsa_volcano_highlight_mask(mk, selection, find_mask) else logical(0)
+
   gg <- ggplot2::ggplot()
-  # Background cloud. The cloud is fairly opaque (real sig/feature colors
-  # readable) - the volcano is about ALL peptides, not only markers.
+  # Background cloud in its real sig/feature colors (highlighted ones are redrawn
+  # gold on top below, so their base draw underneath is harmless).
   if (nrow(bg) > 0L) {
     bg$.tip <- tip(bg)
-    if (is.null(hl)) {
-      gg <- gg + ggplot2::geom_point(
-        data = bg,
-        ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-        color = pelsa_volcano_color_column(bg, color_mode),
-        alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE)
-    } else {
-      # Baked highlight: fill = hl$background$color, ring via a second point layer.
-      bg$.fill <- hl$background$color
-      bg$.ring <- hl$background$line.color
-      bg$.rw   <- hl$background$line.width
-      gg <- gg + ggplot2::geom_point(
-        data = bg,
-        ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-        color = bg$.fill, alpha = .PELSA_VOLCANO_BG_ALPHA,
-        size = .PELSA_VOLCANO_BG_SIZE)
-      # Ring overlay: only the rows with a visible ring (line.width > 0).
-      ring_bg <- bg[bg$.rw > 0, , drop = FALSE]
-      if (nrow(ring_bg) > 0L) {
-        gg <- gg + ggplot2::geom_point(
-          data = ring_bg,
-          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-          color = ring_bg$.ring, fill = ring_bg$.fill, shape = 21,
-          size = .PELSA_VOLCANO_BG_SIZE + 1.6, stroke = 1.1, alpha = 1)
-      }
-    }
+    gg <- gg + ggplot2::geom_point(
+      data = bg,
+      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+      color = pelsa_volcano_color_column(bg, color_mode),
+      alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE)
   }
-  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Only SLIGHTLY larger
-  # than the cloud so it does not visually dominate the other peptides.
+  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Non-highlighted markers
+  # ALWAYS keep their magenta fill, even when a selection/find is active (the gold
+  # overlay below only covers the highlighted ones).
   if (nrow(mk) > 0L) {
     mk$.tip <- tip(mk)
-    mk_fill <- if (is.null(hl)) rep(.PELSA_VOLCANO_MARKER_COLOR, nrow(mk)) else hl$markers$color
     gg <- gg + ggplot2::geom_point(
       data = mk,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      fill = mk_fill, color = .PELSA_VOLCANO_MARKER_EDGE,
+      fill = .PELSA_VOLCANO_MARKER_COLOR, color = .PELSA_VOLCANO_MARKER_EDGE,
       shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
-    if (!is.null(hl)) {
-      ring_mk <- mk[hl$markers$line.width > 0, , drop = FALSE]
-      ring_fill <- hl$markers$color[hl$markers$line.width > 0]
-      ring_col  <- hl$markers$line.color[hl$markers$line.width > 0]
-      if (nrow(ring_mk) > 0L) {
-        gg <- gg + ggplot2::geom_point(
-          data = ring_mk,
-          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-          color = ring_col, fill = ring_fill, shape = 21,
-          size = .PELSA_VOLCANO_MARKER_SIZE + 1.6, stroke = 1.1)
-      }
-    }
+  }
+  # Gold highlight overlay (drawn on top of EVERYTHING): gold fill + black outline,
+  # background-highlighted at the bg size, marker-highlighted at the marker size,
+  # so highlighted points stay the same size as their unhighlighted peers.
+  if (length(bg_hl) > 0L && any(bg_hl)) {
+    hb <- bg[bg_hl, , drop = FALSE]
+    gg <- gg + ggplot2::geom_point(
+      data = hb,
+      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+      fill = .PELSA_GOLD, color = .PELSA_VOLCANO_MARKER_EDGE,
+      shape = 21, size = .PELSA_VOLCANO_BG_SIZE, stroke = 0.4)
+  }
+  if (length(mk_hl) > 0L && any(mk_hl)) {
+    hm <- mk[mk_hl, , drop = FALSE]
+    gg <- gg + ggplot2::geom_point(
+      data = hm,
+      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+      fill = .PELSA_GOLD, color = .PELSA_VOLCANO_MARKER_EDGE,
+      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
   }
 
   y_cut <- attr(full_df, "y_cutoff")
@@ -849,7 +840,8 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
     ggplot2::labs(x = NULL, y = "mean log2 intensity", color = NULL) +
     ggplot2::theme_bw() +
     ggplot2::theme(
-      legend.position = "right",
+      # Legend removed: the floating hover tooltip identifies each peptide line.
+      legend.position = "none",
       axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
       strip.text = ggplot2::element_text(face = "bold"),
       strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
@@ -872,9 +864,13 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
 pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
   panels <- unique(as.character(ld$panel))
   if (length(panels) <= 1L) {
-    return(suppressWarnings(plotly::ggplotly(
-      pelsa_intensity_line_ggplot(ld, pinned_label = pinned_label),
-      tooltip = "text")))
+    # showlegend = FALSE: ggplotly does not always honor legend.position="none";
+    # the floating hover tooltip identifies each peptide line.
+    return(suppressWarnings(plotly::layout(
+      plotly::ggplotly(
+        pelsa_intensity_line_ggplot(ld, pinned_label = pinned_label),
+        tooltip = "text"),
+      showlegend = FALSE)))
   }
   # Stable order: Significant on top, Non-significant below.
   ord <- c("Significant", "Non-significant")
@@ -890,14 +886,19 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
     # Only the bottom panel keeps the x tick labels (shared axis).
     suppressWarnings(plotly::ggplotly(gg, tooltip = "text"))
   })
+  # titleY = FALSE so plotly does NOT render the per-panel y-axis titles (they
+  # were stripped via labs(y = NULL) but titleY = TRUE would re-add them and they
+  # overlap). We add exactly ONE shared, vertically-centered y-title annotation.
   p <- plotly::subplot(parts, nrows = length(parts), shareX = TRUE,
-                       titleY = TRUE, margin = 0.06)
-  # Per-panel y-titles were stripped (labs(y = NULL)); add ONE shared,
-  # vertically-centered y-axis title for the whole subplot.
-  p <- plotly::layout(p, annotations = list(list(
-    text = "mean log2 intensity", x = -0.08, y = 0.5,
-    xref = "paper", yref = "paper", textangle = -90,
-    showarrow = FALSE, font = list(size = 12))))
+                       titleY = FALSE, margin = 0.06)
+  p <- plotly::layout(
+    p,
+    showlegend = FALSE,       # tooltip identifies each line; no legend needed
+    margin = list(l = 70),    # room so the single y-title clears the tick labels
+    annotations = list(list(
+      text = "mean log2 intensity", x = -0.12, y = 0.5,
+      xref = "paper", yref = "paper", textangle = -90,
+      showarrow = FALSE, font = list(size = 12))))
   suppressWarnings(p)
 }
 
