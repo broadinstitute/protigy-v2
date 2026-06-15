@@ -199,7 +199,7 @@ test_that("label-mode: unknown mode errors; default is best_per_marker", {
                    winning_accession = "P1", label = "a",
                    stringsAsFactors = FALSE)
   expect_error(pelsa_volcano_label_rows(df, "bogus"), "must be one of")
-  expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, "best_per_marker")
+  expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, "none")
 })
 
 test_that("volcano build adds boxed annotations (white bg, point-colored border)", {

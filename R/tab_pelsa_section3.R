@@ -24,10 +24,11 @@
 #       in the package but is intentionally NOT wired into the volcano render.
 #
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
-# 7E left-click PIN -> per-protein intensity line panel (3C) + a client-side
-# plotlyProxy-restyle sibling-protein FADE (the main volcano does NOT rebuild on
-# pin - only the background trace's marker.opacity is restyled); 7F per-ome
-# exports.
+# 7E a single selection() (a left-click or a Find-accession) drives a composite
+# client-side plotlyProxy restyle of marker.color + marker.line.color/width on
+# the background + marker traces (gold fill for the selected peptide, gold ring
+# for same-protein peptides; no opacity dimming) AND opens the per-protein
+# intensity line panel (3C); 7F per-ome exports.
 #
 # Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
 ################################################################################
@@ -469,14 +470,28 @@ PELSASection3_Ome_Server <- function(id,
     ## click; HOVER never touches this path (the heavy intensity plot is a
     ## SEPARATE output computed only when this reactiveVal is set).
     ## ------------------------------------------------------------------------
-    pinned <- reactiveVal(NULL)  # list(peptide_seq, accession, label, row)
+    selection <- reactiveVal(NULL)  # list(origin, peptide_seq, accession, label, row)
 
-    # CLEAR the pin on contrast switch: a pin made under contrast A would
-    # otherwise survive into contrast B, where its highlighted siblings /
+    find_query  <- reactiveVal(NULL)   # last submitted Find text (or NULL)
+    find_result <- reactiveVal(NULL)   # list(mask, accessions, count) or NULL
+
+    # The last BUILT volcano plotly (captured by the render below). Declared here
+    # with the rest of the selection state so the render that WRITES it is never a
+    # forward reference; apply_highlight() reads it for the live trace indices.
+    volcano_built <- reactiveVal(NULL)
+
+    # ONE place to clear the whole transient selection + find highlight.
+    clear_selection <- function() {
+      selection(NULL); find_query(NULL); find_result(NULL)
+      updateTextInput(session, "pelsa_find_acc", value = "")
+    }
+
+    # CLEAR the selection on contrast switch: a selection made under contrast A
+    # would otherwise survive into contrast B, where its highlighted siblings /
     # metadata / intensity panel describe a peptide selected under the OLD
     # contrast's coordinates (misleading). The contrast key changes on switch.
     observeEvent(current_contrast_key(), {
-      pinned(NULL)
+      clear_selection()
     }, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
@@ -533,6 +548,7 @@ PELSASection3_Ome_Server <- function(id,
             tagList(
               shinydashboardPlus::box(
                 plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "560px"),
+                helpText(textOutput(ns("pelsa_marker_count"))),
                 status = "primary", width = NULL, title = "PELSA Volcano",
                 headerBorder = TRUE, solidHeader = TRUE
               ),
@@ -564,11 +580,11 @@ PELSASection3_Ome_Server <- function(id,
           column(12,
             shinydashboardPlus::box(
               plotly::plotlyOutput(ns("pelsa_woods_panel"), height = "420px"),
-              helpText(paste0("Coverage (gold = residues with peptide ",
-                              "evidence), UniProt features, and a Woods plot ",
-                              "(logFC per peptide; gold outline = significant). ",
-                              "Click a Woods peptide to highlight it on the ",
-                              "volcano in gold.")),
+              helpText(paste0("Coverage (gold = residues with peptide evidence); ",
+                              "UniProt features (hover for overlapping peptides); ",
+                              "Woods plot (y = logFC direction; color = significance ",
+                              "magnitude, -log10 adj.P). Click a Woods peptide to ",
+                              "select it.")),
               width = NULL, title = "Protein coverage & Woods plot",
               headerBorder = TRUE, class = "pelsa-pin-arm"
             )
@@ -586,6 +602,14 @@ PELSASection3_Ome_Server <- function(id,
           choices  = choices,                 # named: label -> suffix
           selected = isolate(active_contrast())
         ),
+        hr(),
+        tags$strong("Find / highlight a protein:"),
+        textInput(ns("pelsa_find_acc"), label = NULL,
+                  placeholder = "accession e.g. P12345"),
+        actionButton(ns("pelsa_find_go"), "Highlight", class = "btn-sm"),
+        actionButton(ns("pelsa_clear_sel"), "Clear selection & highlight",
+                     class = "btn-sm"),
+        uiOutput(ns("pelsa_find_notice")),
         hr(),
         # SINGLE color toggle (one source of truth) - NOT two checkboxes.
         radioButtons(
@@ -616,8 +640,59 @@ PELSASection3_Ome_Server <- function(id,
         # only while this is ON; freed when toggled off).
         checkboxInput(ns("pelsa_show_best_panel"),
                       "Show best peptide per protein", value = FALSE),
-        helpText("Marker-protein peptides are always drawn in magenta on top.")
+        helpText("Marker-protein peptides are always drawn in magenta on top."),
+        hr(),
+        tags$strong("Color key"),
+        tags$ul(class = "pelsa-color-key",
+          tags$li(tags$span(style="color:#FF00FF;","\u25cf"), " marker protein"),
+          tags$li(tags$span(style=sprintf("color:%s;", .PELSA_GOLD),"\u25cf"),
+                  " selected peptide (gold), same protein = gold ring"),
+          tags$li(tags$span(style="color:darkred;","\u25cf"), " significant up"),
+          tags$li(tags$span(style="color:#1f4e9c;","\u25cf"), " significant down"),
+          tags$li(tags$span(style="color:gray;","\u25cf"), " not significant")
+        )
       )
+    })
+
+    ## ------------------------------------------------------------------------
+    ## FIND / CLEAR + notice. Find resolves an accession to a single peptide
+    ## selection (origin="find") when unambiguous, else lights up a find_result
+    ## highlight (mask) over all matching peptides.
+    ## ------------------------------------------------------------------------
+    observeEvent(input$pelsa_find_go, {
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(df)) return()
+      fm <- pelsa_volcano_find_mask(df, input$pelsa_find_acc)
+      find_query(input$pelsa_find_acc)
+      if (fm$count == 0L) { find_result(fm); selection(NULL); return() }
+      if (length(fm$accessions) == 1L) {
+        rows <- which(fm$mask)
+        best_j <- which.min(as.numeric(df$adj.P.Val[rows]))
+        if (length(best_j) == 0L) best_j <- 1L  # all-NA adj.P -> first matched row
+        best <- rows[best_j]
+        selection(list(origin = "find",
+                       accession = as.character(df$winning_accession[best]),
+                       peptide_seq = as.character(df$id[best]),
+                       label = as.character(df$label[best]), row = best))
+        find_result(NULL)
+      } else {
+        selection(NULL)
+        find_result(fm)
+      }
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$pelsa_clear_sel, { clear_selection() }, ignoreInit = TRUE)
+
+    output$pelsa_find_notice <- renderUI({
+      fr <- find_result(); sel <- selection()
+      if (!is.null(sel) && identical(sel$origin, "find")) {
+        return(helpText(sprintf("Opened %s below.", sel$accession)))
+      }
+      if (is.null(fr)) return(NULL)
+      if (fr$count == 0L)
+        return(helpText(sprintf("No peptides found for '%s'.", find_query())))
+      helpText(sprintf("%d proteins / %d peptides highlighted - type one accession to open it.",
+                       length(fr$accessions), fr$count))
     })
 
     ## ------------------------------------------------------------------------
@@ -627,30 +702,29 @@ PELSASection3_Ome_Server <- function(id,
     # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
     # is rendered (no thinning - toWebGL handles every point on the GPU).
     #
-    # SIBLING FADE - ONE mechanism (a client-side plotlyProxy restyle, NOT a
-    # rebuild): the base plot is built ONCE per (dataset, contrast, color-mode,
-    # label-mode) with sibling_acc = NULL, so pinned() is ISOLATED out of this
-    # render's reactive deps. A left-click pin then dims the background trace via
-    # plotlyProxyInvoke("restyle", ...) (a small marker.opacity message), so the
-    # ~100k-point / ~15MB figure is NOT re-serialized on every pin (~1.1-1.5s
-    # saved per pin; the ggplotly conversion was the cost, not the GPU draw).
-    # The proxy restyle is the PRIMARY fade mechanism (see the plotly_click
-    # observeEvent below) - exactly ONE mechanism, not the old depends-on-pinned
-    # redraw.
+    # SELECTION HIGHLIGHT - ONE mechanism (a client-side plotlyProxy restyle, NOT
+    # a rebuild): the base plot is built ONCE per (dataset, contrast, color-mode,
+    # label-mode), so selection()/find_result() are ISOLATED out of this render's
+    # reactive deps. apply_highlight() then restyles the per-point marker color /
+    # outline (see the composite recolor observer below), so the ~100k-point /
+    # ~15MB figure is NOT re-serialized on every selection.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
-      # sibling_acc = NULL on purpose: the fade is a proxy restyle, not a rebuild.
-      pelsa_volcano_build_plot(
-        df             = df,
-        full_df        = df,
-        color_mode     = input$pelsa_color_mode %||% "significance",
-        label_mode     = label_mode_for_contrast(),
-        n_top          = top_n_for_contrast(),
-        source_id      = ns("pelsa_volcano"),
-        sibling_acc    = NULL,
-        register_click = TRUE
-      )
+      p <- pelsa_volcano_build_plot(
+        df = df, full_df = df,
+        color_mode = input$pelsa_color_mode %||% "significance",
+        label_mode = label_mode_for_contrast(), n_top = top_n_for_contrast(),
+        source_id = ns("pelsa_volcano"), register_click = TRUE)
+      volcano_built(p)
+      p
+    })
+
+    output$pelsa_marker_count <- renderText({
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(df)) return("")
+      n <- length(unique(df$winning_accession[df$is_marker %in% TRUE]))
+      sprintf("%d marker protein(s) shown in magenta.", n)
     })
 
     ## ------------------------------------------------------------------------
@@ -668,54 +742,61 @@ PELSASection3_Ome_Server <- function(id,
         label_mode     = label_mode_for_contrast(),
         n_top          = top_n_for_contrast(),
         source_id      = ns("pelsa_volcano_best"),
-        sibling_acc    = NULL,
         register_click = FALSE
       )
     })
 
     ## ------------------------------------------------------------------------
-    ## 7E - LEFT-CLICK PIN: resolve clicked peptide -> pinned() reactiveVal
+    ## 7E - LEFT-CLICK SELECT: resolve clicked peptide -> selection() reactiveVal
     ## ------------------------------------------------------------------------
     # event_data() returns the clicked point's (x, y) == (logFC, logP); the pure
     # resolver maps that to the volcano-df peptide + its representative accession
     # (winning_accession). tryCatch so a bad click never crashes the session.
     observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_volcano")), {
       ev <- plotly::event_data("plotly_click", source = ns("pelsa_volcano"))
-      res <- tryCatch(
-        pelsa_volcano_resolve_click(ev, active_volcano_df()),
-        error = function(e) NULL
-      )
-      pinned(res)
+      res <- tryCatch(pelsa_volcano_resolve_click(ev, active_volcano_df()),
+                      error = function(e) NULL)
+      find_result(NULL)            # a click replaces any find highlight
+      if (is.null(res)) { selection(NULL); return() }
+      selection(c(res, list(origin = "click")))  # new list, no in-place mutation
     }, ignoreInit = TRUE)
 
-    # SIBLING FADE via plotlyProxy restyle (the ONE mechanism). The base volcano
-    # is built once (sibling_acc = NULL), so the main render does NOT rebuild on
-    # pin. Here, whenever pinned() changes (pin / unpin / contrast-switch clear),
-    # we restyle ONLY the background trace's per-point marker.opacity - full for
-    # the pinned protein's peptides, dimmed for the rest (or the base default
-    # everywhere when unpinned). This is a small message, not a ~15MB rebuild.
-    #
-    # Trace order in pelsa_volcano_build_plot is fixed: trace 0 = background
-    # (every non-marker point, in marker-split background order), trace 1 =
-    # markers, trace 2 = labels. We restyle ONLY trace 0 (JS index 0). The
-    # opacity vector is computed over the SAME background split, so element j
-    # targets background point j. pelsa_volcano_pin_opacity is ~0.001s.
-    # NB: plotlyProxy targets the plotlyOutput's OUTPUT id ("pelsa_volcano_plot"),
-    # not the plotly SOURCE id ("pelsa_volcano"). plotlyProxy auto-namespaces it
-    # via session$ns, so pass the bare output id.
+    # COMPOSITE RECOLOR (the ONE mechanism). The base volcano is built once per
+    # (dataset, contrast, color-mode, label-mode); selection()/find_result() are
+    # ISOLATED out of that render. A selection or find highlight is applied here
+    # as a client-side plotlyProxy restyle of the background (+ marker) trace's
+    # per-point marker.color / marker.line.color / marker.line.width, so the
+    # ~100k-point figure is NOT re-serialized on every selection. Trace indices
+    # are read from the BUILT plot's meta tags (pelsa_bg / pelsa_mk), not assumed.
     volcano_proxy <- plotly::plotlyProxy("pelsa_volcano_plot", session)
-    observeEvent(pinned(), {
+
+    apply_highlight <- function() {
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
       if (is.null(df) || nrow(df) == 0L) return()
-      pin <- pinned()
-      acc <- if (is.null(pin)) NULL else pin$accession
-      op <- pelsa_volcano_pin_opacity(df, acc)
-      if (length(op$opacity) == 0L) return()
-      # restyle: marker.opacity as a per-point array on the background trace (0).
-      plotly::plotlyProxyInvoke(
-        volcano_proxy, "restyle",
-        list(`marker.opacity` = list(op$opacity)), list(0L)
-      )
+      fr <- find_result()
+      rc <- pelsa_volcano_recolor(
+        df, selection = selection(),
+        find_mask = if (is.null(fr)) NULL else fr$mask,
+        color_mode = input$pelsa_color_mode %||% "significance")
+      built <- volcano_built()
+      idx <- if (is.null(built)) list(background = 0L, markers = NA_integer_)
+             else .pelsa_volcano_trace_index(plotly::plotly_build(built))
+      bg_i <- idx$background %||% 0L
+      mk_i <- idx$markers
+      plotly::plotlyProxyInvoke(volcano_proxy, "restyle",
+        list(`marker.color` = list(rc$background$color),
+             `marker.line.color` = list(rc$background$line.color),
+             `marker.line.width` = list(rc$background$line.width)), list(bg_i))
+      if (!is.na(mk_i)) {
+        plotly::plotlyProxyInvoke(volcano_proxy, "restyle",
+          list(`marker.color` = list(rc$markers$color),
+               `marker.line.color` = list(rc$markers$line.color),
+               `marker.line.width` = list(rc$markers$line.width)), list(mk_i))
+      }
+    }
+
+    observeEvent(list(selection(), find_result(), input$pelsa_color_mode), {
+      session$onFlushed(function() apply_highlight(), once = TRUE)
     }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
@@ -724,7 +805,7 @@ PELSASection3_Ome_Server <- function(id,
     # The 3C line data is computed ONLY here (on pin) - the hover path never
     # reaches it. tryCatch around the whole render so a bad click is inert.
     pinned_line_data <- reactive({
-      pin <- pinned()
+      pin <- selection()
       req(pin, pin$accession, nzchar(pin$accession))
       entry <- cache_entry()
       req(entry)
@@ -749,17 +830,22 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     output$pelsa_pin_metadata <- renderUI({
-      pin <- pinned()
-      if (is.null(pin)) {
-        return(helpText("No peptide pinned yet."))
+      sel <- selection()
+      if (is.null(sel)) return(helpText("No peptide selected yet."))
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(df)) return(helpText("No peptide selected yet."))
+      row <- sel$row
+      if (is.null(row) || is.na(row)) {
+        row <- match(sel$peptide_seq, as.character(df$id))
       }
+      if (is.na(row)) return(helpText("No peptide selected yet."))
+      w  <- tryCatch(pinned_woods(), error = function(e) NULL)
+      n_pep <- if (!is.null(w) && is.data.frame(w$pep))
+        length(unique(w$pep$peptide_seq)) else NA_integer_
+      rows <- pelsa_pin_metadata_rows(df, row, n_pep)
       tags$table(class = "table table-condensed",
-        tags$tbody(
-          tags$tr(tags$td(strong("Peptide")), tags$td(pin$peptide_seq %||% "")),
-          tags$tr(tags$td(strong("Protein")), tags$td(pin$accession %||% "")),
-          tags$tr(tags$td(strong("Label")),   tags$td(pin$label %||% ""))
-        )
-      )
+        tags$tbody(lapply(seq_len(nrow(rows)), function(i)
+          tags$tr(tags$td(tags$strong(rows$label[i])), tags$td(rows$value[i])))))
     })
 
     output$pelsa_intensity_plot <- plotly::renderPlotly({
@@ -769,7 +855,7 @@ PELSASection3_Ome_Server <- function(id,
       # Highlight the clicked peptide's line/legend in gold: resolve its aa_label
       # from the pinned peptide sequence (the line data carries peptide_seq +
       # aa_label). NULL when the pinned peptide is not among the plotted lines.
-      pin <- pinned()
+      pin <- selection()
       pinned_lab <- NULL
       if (!is.null(pin) && !is.null(pin$peptide_seq)) {
         hit <- ld$aa_label[ld$peptide_seq == pin$peptide_seq]
@@ -786,7 +872,7 @@ PELSASection3_Ome_Server <- function(id,
     # peptide spans + logFC/adj.P from matched + stat_df; UniProt features from
     # feat_df. Woods peptides carry a .tip listing overlapping annotation regions.
     pinned_woods <- reactive({
-      pin <- pinned()
+      pin <- selection()
       req(pin, pin$accession, nzchar(pin$accession))
       entry <- cache_entry(); req(entry)
       contrast <- active_contrast(); req(contrast)
@@ -830,6 +916,12 @@ PELSASection3_Ome_Server <- function(id,
           pep$pep_end - pep$pep_start + 1L, pep$logFC, pep$adj.P.Val, ann_line)
       }
 
+      # Per-feature overlapping peptides (for the feature-lane hover).
+      if (is.data.frame(lanes) && nrow(lanes) > 0L && nrow(pep) > 0L) {
+        lanes$.overlap_peps <- pelsa_feature_overlap_peptides(
+          lanes$start, lanes$end, pep$pep_start, pep$pep_end)
+      }
+
       list(pep = pep, lanes = lanes,
            intervals = pelsa_coverage_intervals(pep$pep_start, pep$pep_end),
            prot_len = plen)
@@ -844,37 +936,23 @@ PELSASection3_Ome_Server <- function(id,
         prot_len = w$prot_len, source_id = ns("pelsa_woods")))
     })
 
-    # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> highlight it GOLD on the
-    # volcano (distinct from the magenta marker fill). The Woods data has explicit
-    # identity, so resolve the clicked segment to its peptide by coordinate (the
-    # x is within [pep_start, pep_end], y == logFC), then restyle a per-point gold
-    # marker outline on the volcano background trace via the existing proxy. No
-    # volcano rebuild.
+    # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> resolve it to a peptide and
+    # set selection(origin="click"). The highlight flows through apply_highlight
+    # (the ONE composite recolor observer) - NO inline restyle here. The clicked
+    # segment is resolved by coordinate (x within [pep_start, pep_end], y ~ logFC).
     observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_woods")), {
       ev <- plotly::event_data("plotly_click", source = ns("pelsa_woods"))
       w  <- tryCatch(pinned_woods(), error = function(e) NULL)
-      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
-      if (is.null(ev) || is.null(w) || is.null(df) || nrow(w$pep) == 0L) return()
-      # Resolve the clicked peptide: the segment whose span contains ev$x and
-      # whose logFC ~ ev$y (tolerant). Falls back to nearest by |logFC - y|.
+      if (is.null(ev) || is.null(w) || nrow(w$pep) == 0L) return()
       pep <- w$pep
       in_span <- !is.na(ev$x) & pep$pep_start <= ev$x & ev$x <= pep$pep_end
-      cand <- which(in_span)
-      if (length(cand) == 0L) cand <- seq_len(nrow(pep))
+      cand <- which(in_span); if (!length(cand)) cand <- seq_len(nrow(pep))
       j <- cand[which.min(abs(pep$logFC[cand] - (ev$y %||% pep$logFC[cand])))]
       sel_seq <- pep$peptide_seq[[j]]
-      # Per-point gold outline on the volcano background trace (0).
-      line_col <- ifelse(as.character(df$id) == sel_seq,
-                         .PELSA_VOLCANO_GOLD, "rgba(0,0,0,0)")
-      line_w   <- ifelse(as.character(df$id) == sel_seq, 2.5, 0)
-      split <- pelsa_volcano_marker_split(df)
-      bg_id <- as.character(split$background$id)
-      bg_line_col <- ifelse(bg_id == sel_seq, .PELSA_VOLCANO_GOLD, "rgba(0,0,0,0)")
-      bg_line_w   <- ifelse(bg_id == sel_seq, 2.5, 0)
-      plotly::plotlyProxyInvoke(
-        volcano_proxy, "restyle",
-        list(`marker.line.color` = list(bg_line_col),
-             `marker.line.width` = list(bg_line_w)), list(0L))
+      cur <- selection()
+      selection(list(origin = "click",
+                     accession = if (is.null(cur)) NA_character_ else cur$accession,
+                     peptide_seq = sel_seq, label = sel_seq, row = NA_integer_))
     }, ignoreInit = TRUE)
 
     ## ------------------------------------------------------------------------
