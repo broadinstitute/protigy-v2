@@ -1,35 +1,44 @@
-# R package files
-.DS_Store
+# ──────────────────────────────────────────────────────────────────────────
+# R / package build artifacts
+# ──────────────────────────────────────────────────────────────────────────
 .Rhistory
-.RData
-Rplots.pdf
-.Rproj.user
 .Rapp.history
+.RData
+.Ruserdata
+.Renviron
+.Rproj.user/
+*.Rcheck/
+*.tar.gz
+Rplots.pdf
 
-# RStudio Connect
+# RStudio Connect / shinyapps.io deploy metadata
 rsconnect/
-
-# Documentation images
-# inst/doc_images/workflow_diagram.png  # Commented out so image appears on GitHub
-.claude/
-.cursor/
-
-CLAUDE.md
 
 # Pak lockfiles (optional, platform-specific)
 pkg.lock
 .github/pkg.lock
 
+# ──────────────────────────────────────────────────────────────────────────
+# OS / editor / agent / tooling cruft
+# ──────────────────────────────────────────────────────────────────────────
+.DS_Store
+.claude/
+.cursor/
+.positai
 .worktrees/
-
 firebase-debug.log
 
-docs/
-.positai
+# ──────────────────────────────────────────────────────────────────────────
+# Local-only project instructions (not distributed)
+# ──────────────────────────────────────────────────────────────────────────
+CLAUDE.md
 
-# PELSA: regenerable UniProt annotation outputs (users rebuild via Setup page refresh).
-# FASTA search databases + schema.json ARE tracked; the derived caches are not.
+# ──────────────────────────────────────────────────────────────────────────
+# PELSA reference databases (inst/database/<species>/)
+#   TRACKED (inputs users need):   fasta/*.fasta, uniprot_features/schema.json
+#   IGNORED (regenerable outputs): the derived feature/membrane caches below,
+#   which users rebuild from the FASTA via the Setup page "refresh".
+# ──────────────────────────────────────────────────────────────────────────
 inst/database/*/uniprot_features/*.tsv
 inst/database/*/uniprot_features/*.parquet
 inst/database/*/uniprot_membrane/*.tsv
-inst/database/**/.DS_Store
