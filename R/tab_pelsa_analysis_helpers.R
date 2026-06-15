@@ -88,8 +88,11 @@ pelsa_validation_msg_ui <- function(validation) {
     style = paste0("border:1px solid #d9534f; border-radius:6px; ",
                    "padding:10px; margin-top:8px; background:#fdf3f2; ",
                    "color:#a94442;"),
-    shiny::tags$strong("Cannot start analysis:"),
+    shiny::tags$strong(
+      shiny::icon("circle-exclamation"), " Cannot start analysis:"
+    ),
     shiny::tags$ul(
+      style = "margin:6px 0 0 0;",
       lapply(validation$errors, function(e) shiny::tags$li(e))
     )
   )

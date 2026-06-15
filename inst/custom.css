@@ -714,3 +714,171 @@ a[download] {
   background-color: #0d1419;  /* Even darker when clicked */
   border-color: #000000;
 }
+
+/* ============================================================================
+   PELSA Setup
+   ----------------------------------------------------------------------------
+   Color-coded by LOGIC LAYER so the two-column Setup form reads as separate
+   concerns at a glance. Each layer pairs a distinct left-border accent + a
+   header "chip" + a subtle background tint (color is never the ONLY signal -
+   every section also carries an icon + a text header). Palette is tuned for
+   WCAG AA text contrast on its tint.
+
+     LAYER                 ACCENT    USED BY
+     data-input (blue)     #2c7fb8   datasets, species, compound, markers
+     ordering/config(purp) #6f42c1   condition / replicate config + reorder
+     action (green)        #2e7d32   Start Analysis (primary, dominant)
+     maintenance (slate)   #6c757d   UniProt refresh (secondary)
+
+   The refresh progress/result panels keep their inline status hex colors
+   (#5cb85c / #f0ad4e / #d9534f) for parity with their unit tests; only the
+   shared structural styling lives here.
+   ============================================================================ */
+
+/* Shared section shell: a left-accent card with consistent inner rhythm. The
+   accent color is supplied per-layer by the modifier classes below. */
+.pelsa-section {
+  border: 1px solid #e3e7eb;
+  border-left: 4px solid var(--pelsa-accent, #adb5bd);
+  border-radius: 8px;
+  padding: 14px 16px 16px;
+  margin-bottom: 18px;
+  background: var(--pelsa-tint, #ffffff);
+}
+
+/* Section header: a small uppercase eyebrow + icon chip. Scale/weight contrast
+   gives hierarchy without shouting. */
+.pelsa-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pelsa-accent, #495057);
+  margin-bottom: 10px;
+}
+.pelsa-section-head .fa,
+.pelsa-section-head .fas,
+.pelsa-section-head .far,
+.pelsa-section-head svg {
+  font-size: 13px;
+}
+.pelsa-section-subhead {
+  font-size: 13px;
+  font-weight: 600;
+  color: #343a40;
+  margin: 4px 0 6px;
+}
+
+/* ---- Layer accents -------------------------------------------------------- */
+.pelsa-layer-data    { --pelsa-accent: #2c7fb8; --pelsa-tint: #f5fafd; }
+.pelsa-layer-config  { --pelsa-accent: #6f42c1; --pelsa-tint: #f8f6fd; }
+.pelsa-layer-action  { --pelsa-accent: #2e7d32; --pelsa-tint: #f4fbf5; }
+.pelsa-layer-maint   { --pelsa-accent: #6c757d; --pelsa-tint: #f8f9fa; }
+
+/* Maintenance reads as clearly SECONDARY: dashed edge + muted surface. */
+.pelsa-layer-maint {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+/* ---- Per-dataset config card (ordering layer) ----------------------------- */
+.pelsa-ds-config {
+  border: 1px solid #e3dcf3;
+  border-left: 3px solid #6f42c1;
+  border-radius: 6px;
+  padding: 12px 12px 10px;
+  margin-bottom: 12px;
+  background: #ffffff;
+}
+.pelsa-ds-config > strong {
+  display: block;
+  font-size: 14px;
+  color: #4b2e83;
+  margin-bottom: 8px;
+}
+.pelsa-ds-config hr {
+  margin: 12px 0 8px;
+  border-top: 1px solid #ece8f6;
+}
+
+/* One condition's replicate-order card. */
+.pelsa-rep-card {
+  border: 1px solid #e6e0f2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: #fcfbfe;
+}
+.pelsa-rep-card--multi {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.pelsa-rep-card__head {
+  font-weight: 600;
+  color: #4b2e83;
+  margin-bottom: 4px;
+}
+.pelsa-rep-card__single {
+  font-size: 12px;
+  color: #495057;
+}
+.pelsa-rep-card__reset { margin-top: 6px; }
+
+/* ---- Primary action: Start Analysis -------------------------------------- */
+/* Make the primary action visually dominant: larger, full-width, weighty. */
+.pelsa-start-btn.btn,
+.pelsa-start-btn.btn-primary {
+  display: block;
+  width: 100%;
+  background: #2e7d32;
+  border-color: #256528;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 11px 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.pelsa-start-btn.btn:hover,
+.pelsa-start-btn.btn-primary:hover {
+  background: #256528;
+  border-color: #1d4f20;
+  color: #ffffff;
+}
+.pelsa-start-btn.btn:active,
+.pelsa-start-btn.btn-primary:active {
+  background: #1d4f20;
+}
+
+/* ---- Secondary / maintenance action: Refresh ----------------------------- */
+/* The long, destructive-ish refresh reads quieter than Start Analysis. */
+.pelsa-refresh-btn.btn {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #6c757d;
+  color: #495057;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.pelsa-refresh-btn.btn:hover {
+  background: #eef0f2;
+  border-color: #5a6268;
+  color: #343a40;
+}
+
+/* ---- Accessible focus: never rely on color alone ------------------------- */
+.pelsa-start-btn.btn:focus-visible,
+.pelsa-refresh-btn.btn:focus-visible,
+.pelsa-ds-config .btn:focus-visible {
+  outline: 3px solid #1b4f72;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ---- Spacing rhythm between stacked inputs inside a section -------------- */
+.pelsa-section .form-group { margin-bottom: 12px; }
+.pelsa-section .shiny-input-container + .shiny-input-container { margin-top: 4px; }
+.pelsa-section hr { margin: 14px 0; border-top: 1px solid #e3e7eb; }
