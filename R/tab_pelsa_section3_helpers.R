@@ -125,6 +125,14 @@ pelsa_volcano_has_contrast <- function(stat_df, contrast) {
 # representative coordinate. Peptides absent from the matched cache get NA span
 # (3A's feature annotation tolerates NA -> "none").
 #
+# ID-COLUMN FALLBACK: peptide-result datasets key on PEP.StrippedSequence, so a
+# PELSA dataset that used the stripped sequence AS its id column (rid) has no
+# PEP.StrippedSequence in stat_results() - stat.testing carries that rid in the
+# `id` column instead. When PEP.StrippedSequence is absent we synthesize it from
+# `id`, exactly as the analysis pipeline does for the matched cache (both come
+# from the same rid), so the join key lines up end-to-end. We only error when
+# neither column is present (a genuinely malformed stat frame).
+#
 # Pure: a function of its two data.frame args; no Shiny.
 #
 # @param stat_df       stat_results()[[ome]] (per-peptide, contrast-suffixed).
@@ -139,7 +147,15 @@ pelsa_volcano_stat_df <- function(stat_df, matched_cache) {
     stop("pelsa_volcano_stat_df: matched_cache must be a data.frame")
   }
   if (!"PEP.StrippedSequence" %in% colnames(stat_df)) {
-    stop("pelsa_volcano_stat_df: stat_df must have PEP.StrippedSequence")
+    # Fall back to the id column (the rid) the matched cache also keyed on.
+    if ("id" %in% colnames(stat_df)) {
+      stat_df <- .pelsa_ensure_stripped_sequence(
+        stat_df, id_values = stat_df[["id"]])
+    }
+    if (!"PEP.StrippedSequence" %in% colnames(stat_df)) {
+      stop("pelsa_volcano_stat_df: stat_df must have PEP.StrippedSequence ",
+           "(or an 'id' column to derive it from)")
+    }
   }
   out <- stat_df
   if (!"PG.Genes" %in% colnames(out)) out$PG.Genes <- NA_character_

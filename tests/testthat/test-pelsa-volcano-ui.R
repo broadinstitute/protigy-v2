@@ -79,6 +79,47 @@ test_that("stat_df tolerates an empty matched cache (NA span)", {
   expect_true(is.na(out$pep_end))
 })
 
+test_that("stat_df derives PEP.StrippedSequence from the id column when absent", {
+  # PELSA dataset that keyed on the id column (rid): stat_results carries `id`
+  # (the stripped sequence) but NO PEP.StrippedSequence. The volcano must derive
+  # it from id so the join key matches the cache (whose matched$PEP.StrippedSequence
+  # came from the SAME rid), instead of erroring.
+  stat <- data.frame(
+    id                   = c("PEPA", "PEPB"),
+    PG.ProteinAccessions = c("ACC1", "ACC2"),
+    stringsAsFactors     = FALSE
+  )
+  matched <- data.frame(
+    PEP.StrippedSequence = c("PEPA", "PEPB"),
+    pep_start            = c(5L, 100L),
+    pep_end              = c(9L, 108L),
+    stringsAsFactors     = FALSE
+  )
+  out <- pelsa_volcano_stat_df(stat, matched)
+  expect_true("PEP.StrippedSequence" %in% colnames(out))
+  expect_equal(out$PEP.StrippedSequence, c("PEPA", "PEPB"))   # copied from id
+  expect_equal(out$pep_start, c(5L, 100L))                    # span joined by it
+  expect_equal(out$pep_end, c(9L, 108L))
+})
+
+test_that("stat_df keeps a real PEP.StrippedSequence over the id column", {
+  stat <- data.frame(
+    id                   = c("rid1", "rid2"),
+    PEP.StrippedSequence = c("PEPA", "PEPB"),   # authoritative
+    PG.ProteinAccessions = c("ACC1", "ACC2"),
+    stringsAsFactors     = FALSE
+  )
+  out <- pelsa_volcano_stat_df(stat, pelsa_volcano_empty_matched())
+  expect_equal(out$PEP.StrippedSequence, c("PEPA", "PEPB"))  # NOT the id values
+})
+
+test_that("stat_df errors only when neither PEP.StrippedSequence nor id exists", {
+  stat <- data.frame(PG.ProteinAccessions = "ACC1", stringsAsFactors = FALSE)
+  expect_error(
+    pelsa_volcano_stat_df(stat, pelsa_volcano_empty_matched()),
+    "must have PEP.StrippedSequence")
+})
+
 test_that("color-mode picks sig_color (significance) vs feature_color (feature)", {
   df <- data.frame(sig_color = c("darkred", "gray"),
                    feature_color = c("#1f77b4", "#d3d3d3"),
