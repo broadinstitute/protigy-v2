@@ -27,6 +27,7 @@ and deferring the speculative server-side volcano work behind `toWebGL`.
 | **3** | **matrixStats numerics** (Cluster C) | dp-norm, dp-sd, dp-1b | ~250ms/ome + crash bugfix | None/Low | filtered-row-set diff; NA/Inf parity; 1-row test |
 | **4** | **Package attach trim** (Cluster D) | START-01, START-02 | ~1–1.4s cold open | None | re-grep + `check()` clean |
 | **5** | **Deep-copy + setup I/O + observer hygiene** | dp-1a, START-04, START-03 | smaller per-copy + long-session stability | Low | list-column guard; cold-cache bench; add/remove test |
+| **5b** | **CSV/Excel → GCT conversion (post-"Start" build)** | INPUT-1, INPUT-2 | faster GCT build after exp-design upload | Low | byte-identical classification + cdesc on fixture |
 | **6** | **Export CSV + hygiene** (Cluster E, CSV half) | EXP-2, EXP-4 cleanup, EXP-5 | ~1–3s export | Low (caveat) | confirm CSVs terminal; release-note byte change |
 | **7 (conditional)** | **Server-side volcano refactor** (Cluster F, deferred) | STAT-03, STAT-05, STAT-01, STAT-08, EXP-6 | per-render ms on 34k rows | Low–Med (unverified) | only if Phase 1 `toWebGL` insufficient; per-item byte-diff |
 | **Blocked** | **dp-double** (gene-symbol runs twice/ome) | dp-double | halves dominant processing cost | Risky | repackage fallback-branch test (Open Q #3) |
@@ -71,6 +72,36 @@ START-01 (lazy-load vsn/mixtools/mclust/preprocessCore via `pkg::fn()`, keep in 
 dp-1a (`as.data.frame` deep copy with list-column guard), START-04 (bound the second `.gct` read to the header
 region), START-03 (fix observer accumulation on file add/remove). Gate: dp-1a list-column guard; START-04
 warm/cold bench + byte-identical cdesc incl. `'001'`; START-03 add/remove/re-add/clear shinytest2.
+
+## Phase 5b — CSV/Excel → GCT conversion (post-"Start" build)
+**New finding (2026-06-14), not in the original review.** User reported that GCT generation is slow
+*immediately after clicking "Start"* once data + experimental design are uploaded — i.e. the CSV/Excel →
+GCT conversion path, distinct from the `.gct`-upload and Submit/processing paths the original review covered.
+Path: `processCSVExcelWorkflow*` → `convertToGCT` → `classifyColumns` / `createCdesc`
+(`R/sidebar_setup_helpers_csv-excel-processing.R`).
+
+- **INPUT-1 — vectorize `classifyColumns` (L392–434).** Currently loops over every sample column and runs
+  `experimentalDesign[experimentalDesign$columnName == col_name, ]` — a full O(rows) table scan + subset
+  **per column** (O(samples × design_rows); ~77 scans on the BRCA design, ×N for multi-omic). Also recomputes
+  `metadata_columns <- setdiff(...)` inside the loop and grows `rdesc_columns`/`sample_columns` with
+  quadratic `c(...)`. **Fix:** replace with a single vectorized `match(sample_ids, experimentalDesign$columnName)`
+  lookup + a vectorized all-blank test over the matched block, hoisting `metadata_columns`. The sibling
+  functions `filterExperimentalColumns` (L439) and `createCdesc` (L501) **already use this `match()` pattern**,
+  so this only makes `classifyColumns` consistent with its neighbors. **Result-preserving:** same
+  sample/rdesc partition, computed set-wise. *Gate: assert identical `sample_columns`/`rdesc_columns` on a
+  fixture before/after, incl. columns missing from the design, all-blank-metadata columns, and the
+  no-metadata-column case.*
+- **INPUT-2 — hoist `yaml::read_yaml(system.file("setup_parameters/setupDefaults.yaml"))`.** Currently parsed
+  **once per uploaded file** inside the loop (L185–187) and again in `createCdesc` (L545–546). The file is
+  static/read-only. **Fix:** read once before the loop (or memoize at package scope) and reuse. **Result-preserving:**
+  identical parsed list. (Same class of fix as the prior review's START-01/follow-up YAML-hoist note.)
+- **INPUT-3 (needs-benchmark, lower priority).** `readr::read_csv`/`read_excel` do column-type guessing on wide
+  matrices; passing `col_types` and `show_col_types = FALSE` could trim it. Measure before bothering — inherent
+  I/O may dominate.
+
+**Risk:** Low. The dominant win (INPUT-1) is algorithmic with a same-file precedent; INPUT-2 is a pure hoist.
+Gate the whole phase on a byte-identical `@rdesc`/`@cdesc`/`@mat` diff of the resulting GCT on a CSV+design
+fixture before/after.
 
 ## Phase 6 — Export CSV + hygiene
 EXP-2 (`readr::write_csv` at 5 terminal sites) + EXP-4 temp-dir `on.exit(unlink)` cleanup + EXP-5 snapshot style
