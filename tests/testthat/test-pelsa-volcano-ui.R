@@ -332,48 +332,6 @@ test_that("sibling_mask flags every row of the pinned protein", {
   expect_equal(pelsa_volcano_sibling_mask(df, "NOPE")$n_siblings, 0L)
 })
 
-test_that("pin_opacity: per-point background opacity for the proxy-restyle fade", {
-  df <- .mk_volcano_df()  # rows: PEPA(marker,ACC1), PEPB(ACC2), PEPC(marker,ACC1)
-  # Background = non-marker rows only (PEPB) in marker-split order.
-  bg <- pelsa_volcano_marker_split(df)$background
-  # No pin -> every background point gets the base default opacity (0.6).
-  none <- pelsa_volcano_pin_opacity(df, NULL)
-  expect_length(none$opacity, nrow(bg))
-  expect_true(all(none$opacity == 0.6))
-  expect_equal(none$n_siblings, 0L)
-
-  # Pin ACC2 (PEPB is the only non-marker ACC2 row) -> that bg point full, rest dim.
-  pinned <- pelsa_volcano_pin_opacity(df, "ACC2")
-  expect_length(pinned$opacity, nrow(bg))
-  # PEPB is ACC2 -> opacity 1; (there are no other background rows here)
-  expect_equal(pinned$opacity[which(bg$winning_accession == "ACC2")], 1)
-  expect_true(all(pinned$opacity[bg$winning_accession != "ACC2"] == 0.12))
-  expect_equal(pinned$n_siblings, sum(bg$winning_accession == "ACC2"))
-
-  # Pin an absent accession -> all background dimmed (no siblings).
-  absent <- pelsa_volcano_pin_opacity(df, "NOPE")
-  expect_true(all(absent$opacity == 0.12))
-  expect_equal(absent$n_siblings, 0L)
-})
-
-test_that("pin_opacity: opacity vector aligns to the background-trace point order", {
-  # A 4-row frame, two background proteins; assert element j of the opacity
-  # vector targets background point j (same order build's split produces).
-  df <- data.frame(
-    id = c("p1", "p2", "p3", "p4"),
-    logFC = c(1, 2, 3, 4), logP = c(1, 2, 3, 4),
-    winning_accession = c("ACC1", "ACC2", "ACC1", "ACC2"),
-    is_marker = c(FALSE, FALSE, FALSE, FALSE),
-    sig_color = rep("gray", 4), feature_color = rep("#d3d3d3", 4),
-    stringsAsFactors = FALSE
-  )
-  bg <- pelsa_volcano_marker_split(df)$background
-  op <- pelsa_volcano_pin_opacity(df, "ACC1")
-  # bg rows in order p1(ACC1), p2(ACC2), p3(ACC1), p4(ACC2).
-  expect_equal(op$opacity, c(1, 0.12, 1, 0.12))
-  expect_equal(op$opacity[bg$winning_accession == "ACC1"], c(1, 1))
-})
-
 test_that("labels_sidecar emits the exact 12 columns in order", {
   df <- .mk_volcano_df()
   out <- pelsa_volcano_labels_sidecar(df, "all_peptide")

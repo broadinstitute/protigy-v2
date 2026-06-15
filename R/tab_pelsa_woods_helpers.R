@@ -33,7 +33,7 @@
 
 # The gold used for coverage highlight + the significant-peptide Woods outline.
 # (Shared intent with .PELSA_VOLCANO_GOLD in tab_pelsa_section3_helpers.R.)
-.PELSA_WOODS_GOLD <- "#D4AF37"
+.PELSA_WOODS_GOLD <- .PELSA_GOLD
 
 # ---- Helper 1: per-peptide Woods data ----------------------------------------
 
