@@ -457,9 +457,10 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # @param n_top       N for top_n label mode.
 # @param source_id   the plotly source id (ns("pelsa_volcano") /
 #   ns("pelsa_volcano_best")).
-# @param sibling_acc accepted for back-compat but IGNORED; selection highlights
-#   are a client-side proxy restyle, not a rebuild. To be removed once callers
-#   stop passing it.
+# @param selection   NULL, or a list(origin, accession, peptide_seq) - the
+#   active selection whose gold highlight is BAKED into the build.
+# @param find_mask   NULL, or a logical over df rows - the multi-accession Find
+#   highlight (uniform gold fill), baked into the build.
 # @param register_click  TRUE -> event_register the plotly_click on this source.
 # @return a plotly object (toWebGL'd).
 # @noRd
@@ -482,7 +483,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
                                      label_mode = "top_n", n_top = 3L,
                                      source_id = "pelsa_volcano",
-                                     sibling_acc = NULL,
+                                     selection = NULL, find_mask = NULL,
                                      register_click = FALSE) {
   if (!is.data.frame(df)) {
     stop("pelsa_volcano_build_plot: df must be a data.frame")
@@ -493,9 +494,13 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   bg     <- split$background
   mk     <- split$markers
 
-  # NOTE: sibling_acc is accepted but ignored. Selection highlights are applied
-  # client-side via a plotlyProxy restyle (pelsa_volcano_recolor); the build
-  # always emits exactly TWO point traces (background + markers).
+  # Bake the selection/find highlight into the point colors (rebuild-on-select:
+  # per-point marker.color restyle is unreliable on WebGL scattergl, so the gold
+  # is drawn into the figure itself). Reuses the tested pelsa_volcano_recolor.
+  hl <- if (!is.null(selection) || !is.null(find_mask)) {
+    pelsa_volcano_recolor(df, selection = selection, find_mask = find_mask,
+                          color_mode = color_mode)
+  } else NULL
 
   tip <- function(d) {
     if (nrow(d) == 0L) return(character(0))
@@ -510,6 +515,8 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
     lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
     adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
     paste0("Peptide: ", pep_lab, "<br>",
+           "Accession: ", acc_fb, "<br>",
+           "Gene: ", ifelse(is.na(gene_fb) | !nzchar(gene_fb), "NA", gene_fb), "<br>",
            "Position: ", pos, "<br>",
            "logFC: ", lfc_chr, "<br>",
            "adj.P: ", adjp_chr)
@@ -520,24 +527,55 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # readable) - the volcano is about ALL peptides, not only markers.
   if (nrow(bg) > 0L) {
     bg$.tip <- tip(bg)
-    gg <- gg + ggplot2::geom_point(
-      data = bg,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      color = pelsa_volcano_color_column(bg, color_mode),
-      alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE
-    )
+    if (is.null(hl)) {
+      gg <- gg + ggplot2::geom_point(
+        data = bg,
+        ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+        color = pelsa_volcano_color_column(bg, color_mode),
+        alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE)
+    } else {
+      # Baked highlight: fill = hl$background$color, ring via a second point layer.
+      bg$.fill <- hl$background$color
+      bg$.ring <- hl$background$line.color
+      bg$.rw   <- hl$background$line.width
+      gg <- gg + ggplot2::geom_point(
+        data = bg,
+        ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+        color = bg$.fill, alpha = .PELSA_VOLCANO_BG_ALPHA,
+        size = .PELSA_VOLCANO_BG_SIZE)
+      # Ring overlay: only the rows with a visible ring (line.width > 0).
+      ring_bg <- bg[bg$.rw > 0, , drop = FALSE]
+      if (nrow(ring_bg) > 0L) {
+        gg <- gg + ggplot2::geom_point(
+          data = ring_bg,
+          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+          color = ring_bg$.ring, fill = ring_bg$.fill, shape = 21,
+          size = .PELSA_VOLCANO_BG_SIZE + 1.6, stroke = 1.1, alpha = 1)
+      }
+    }
   }
   # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Only SLIGHTLY larger
   # than the cloud so it does not visually dominate the other peptides.
   if (nrow(mk) > 0L) {
     mk$.tip <- tip(mk)
+    mk_fill <- if (is.null(hl)) rep(.PELSA_VOLCANO_MARKER_COLOR, nrow(mk)) else hl$markers$color
     gg <- gg + ggplot2::geom_point(
       data = mk,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      fill = .PELSA_VOLCANO_MARKER_COLOR,
-      color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4
-    )
+      fill = mk_fill, color = .PELSA_VOLCANO_MARKER_EDGE,
+      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
+    if (!is.null(hl)) {
+      ring_mk <- mk[hl$markers$line.width > 0, , drop = FALSE]
+      ring_fill <- hl$markers$color[hl$markers$line.width > 0]
+      ring_col  <- hl$markers$line.color[hl$markers$line.width > 0]
+      if (nrow(ring_mk) > 0L) {
+        gg <- gg + ggplot2::geom_point(
+          data = ring_mk,
+          ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+          color = ring_col, fill = ring_fill, shape = 21,
+          size = .PELSA_VOLCANO_MARKER_SIZE + 1.6, stroke = 1.1)
+      }
+    }
   }
 
   y_cut <- attr(full_df, "y_cutoff")
@@ -846,6 +884,7 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
     sub <- ld[as.character(ld$panel) == pn, , drop = FALSE]
     gg  <- pelsa_intensity_line_ggplot(sub, pinned_label = pinned_label) +
       ggplot2::ggtitle(pn) +
+      ggplot2::labs(y = NULL) +           # one shared y-title added below
       ggplot2::theme(plot.title = ggplot2::element_text(
         face = "bold", size = 11, hjust = 0.5))
     # Only the bottom panel keeps the x tick labels (shared axis).
@@ -853,6 +892,12 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
   })
   p <- plotly::subplot(parts, nrows = length(parts), shareX = TRUE,
                        titleY = TRUE, margin = 0.06)
+  # Per-panel y-titles were stripped (labs(y = NULL)); add ONE shared,
+  # vertically-centered y-axis title for the whole subplot.
+  p <- plotly::layout(p, annotations = list(list(
+    text = "mean log2 intensity", x = -0.08, y = 0.5,
+    xref = "paper", yref = "paper", textangle = -90,
+    showarrow = FALSE, font = list(size = 12))))
   suppressWarnings(p)
 }
 

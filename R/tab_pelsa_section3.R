@@ -541,7 +541,7 @@ PELSASection3_Ome_Server <- function(id,
           column(3,
             shinydashboardPlus::box(
               uiOutput(ns("pelsa_pin_metadata")),
-              plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "320px"),
+              plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "440px"),
               helpText("Click a point to pin its peptide profile."),
               width = NULL, title = "Pinned Peptide", headerBorder = TRUE,
               class = "pelsa-pin-arm"
@@ -551,7 +551,7 @@ PELSASection3_Ome_Server <- function(id,
           column(6,
             tagList(
               shinydashboardPlus::box(
-                plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "560px"),
+                plotly::plotlyOutput(ns("pelsa_volcano_plot"), height = "680px"),
                 helpText(textOutput(ns("pelsa_marker_count"))),
                 status = "primary", width = NULL, title = "PELSA Volcano",
                 headerBorder = TRUE, solidHeader = TRUE
@@ -648,6 +648,7 @@ PELSASection3_Ome_Server <- function(id,
         hr(),
         tags$strong("Color key"),
         tags$ul(class = "pelsa-color-key",
+          style = "list-style:none; padding-left:0; margin:0;",
           tags$li(tags$span(style="color:#FF00FF;","\u25cf"), " marker protein"),
           tags$li(tags$span(style=sprintf("color:%s;", .PELSA_GOLD),"\u25cf"),
                   " selected peptide (gold), same protein = gold ring"),
@@ -715,11 +716,15 @@ PELSASection3_Ome_Server <- function(id,
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
+      fr <- find_result()
       p <- pelsa_volcano_build_plot(
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
         label_mode = label_mode_for_contrast(), n_top = top_n_for_contrast(),
-        source_id = ns("pelsa_volcano"), register_click = TRUE)
+        source_id = ns("pelsa_volcano"),
+        selection = selection(),
+        find_mask = if (is.null(fr)) NULL else fr$mask,
+        register_click = TRUE)
       volcano_built(p)
       # Resolve + cache the meta-tagged trace indices ONCE per build.
       volcano_trace_idx(tryCatch(
@@ -769,42 +774,12 @@ PELSASection3_Ome_Server <- function(id,
       selection(c(res, list(origin = "click")))  # new list, no in-place mutation
     }, ignoreInit = TRUE)
 
-    # COMPOSITE RECOLOR (the ONE mechanism). The base volcano is built once per
-    # (dataset, contrast, color-mode, label-mode); selection()/find_result() are
-    # ISOLATED out of that render. A selection or find highlight is applied here
-    # as a client-side plotlyProxy restyle of the background (+ marker) trace's
-    # per-point marker.color / marker.line.color / marker.line.width, so the
-    # ~100k-point figure is NOT re-serialized on every selection. Trace indices
-    # are read from the BUILT plot's meta tags (pelsa_bg / pelsa_mk), not assumed.
-    volcano_proxy <- plotly::plotlyProxy("pelsa_volcano_plot", session)
-
-    apply_highlight <- function() {
-      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
-      if (is.null(df) || nrow(df) == 0L) return()
-      fr <- find_result()
-      rc <- pelsa_volcano_recolor(
-        df, selection = selection(),
-        find_mask = if (is.null(fr)) NULL else fr$mask,
-        color_mode = input$pelsa_color_mode %||% "significance")
-      # Use the indices cached at build time (no per-restyle plotly_build).
-      idx <- volcano_trace_idx() %||% list(background = 0L, markers = NA_integer_)
-      bg_i <- idx$background %||% 0L
-      mk_i <- idx$markers
-      plotly::plotlyProxyInvoke(volcano_proxy, "restyle",
-        list(`marker.color` = list(rc$background$color),
-             `marker.line.color` = list(rc$background$line.color),
-             `marker.line.width` = list(rc$background$line.width)), list(bg_i))
-      if (!is.na(mk_i)) {
-        plotly::plotlyProxyInvoke(volcano_proxy, "restyle",
-          list(`marker.color` = list(rc$markers$color),
-               `marker.line.color` = list(rc$markers$line.color),
-               `marker.line.width` = list(rc$markers$line.width)), list(mk_i))
-      }
-    }
-
-    observeEvent(list(selection(), find_result(), input$pelsa_color_mode), {
-      session$onFlushed(function() apply_highlight(), once = TRUE)
-    }, ignoreNULL = FALSE, ignoreInit = TRUE)
+    # SELECTION/FIND HIGHLIGHT - baked into the build (rebuild-on-select). The
+    # gold fill + rings are drawn into the figure by pelsa_volcano_build_plot
+    # (which reuses pelsa_volcano_recolor), because a per-point marker.color proxy
+    # restyle is unreliable on WebGL scattergl. The render above depends on
+    # selection()/find_result(), so a selection/find change rebuilds the figure
+    # with the highlight already in it - no proxy restyle is used.
 
     ## ------------------------------------------------------------------------
     ## 7E - PINNED metadata table + per-protein intensity LINE plot (3C)

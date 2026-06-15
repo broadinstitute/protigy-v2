@@ -216,7 +216,7 @@ test_that("volcano build adds boxed annotations (white bg, point-colored border)
   )
   attr(df, "y_cutoff") <- 1.0
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
-         label_mode = "all_markers", n_top = 3L, sibling_acc = NULL,
+         label_mode = "all_markers", n_top = 3L,
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   ann <- b$x$layout$annotations
@@ -256,7 +256,7 @@ test_that("volcano label overlap-suppressor drops piled-up labels", {
   )
   attr(df, "y_cutoff") <- 1.0
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
-         label_mode = "all_markers", n_top = 3L, sibling_acc = NULL,
+         label_mode = "all_markers", n_top = 3L,
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   expect_equal(length(b$x$layout$annotations), 1L)   # piled-up -> 1 kept
@@ -351,7 +351,7 @@ test_that("labels_sidecar emits the exact 12 columns in order", {
   expect_equal(nrow(empty), 0L)
 })
 
-test_that("volcano tooltip is the compact 4-line Peptide/Position/logFC/adj.P", {
+test_that("volcano tooltip is Peptide/Accession/Gene/Position/logFC/adj.P", {
   df <- data.frame(
     id = "PEPX", logFC = 1.23, logP = 3, adj.P.Val = 0.004, P.Value = 0.001,
     Significant = TRUE, sig_color = "darkred", feature_color = "#111",
@@ -368,17 +368,20 @@ test_that("volcano tooltip is the compact 4-line Peptide/Position/logFC/adj.P", 
   expect_true(any(grepl("Position: 7-17", txt, fixed = TRUE)))
   expect_true(any(grepl("logFC: 1.23", txt)))
   expect_true(any(grepl("adj.P: 0.004", txt)))
-  # compact: the old Accession:/Gene:/Sequence: lines are NOT in the hover
-  expect_false(any(grepl("Accession:", txt, fixed = TRUE)))
+  expect_true(any(grepl("Accession: ACCX", txt, fixed = TRUE)))
+  expect_true(any(grepl("Gene: GX", txt, fixed = TRUE)))
 })
 
 test_that("build_plot returns a plotly object for both source ids", {
   df <- .mk_volcano_df()
   p <- pelsa_volcano_build_plot(df, full_df = df, source_id = "s1")
   expect_s3_class(p, "plotly")
-  # With a pinned sibling accession (the fade path) it still builds.
-  p2 <- pelsa_volcano_build_plot(df, full_df = df, source_id = "s2",
-                                 sibling_acc = "ACC1", register_click = TRUE)
+  # With a baked selection (the gold-highlight path) it still builds.
+  p2 <- pelsa_volcano_build_plot(
+    df, full_df = df, source_id = "s2",
+    selection = list(origin = "click", accession = "ACC1",
+                     peptide_seq = "PEPA"),
+    register_click = TRUE)
   expect_s3_class(p2, "plotly")
 })
 
@@ -389,8 +392,10 @@ test_that("sibling_mask: single-peptide protein -> exactly one TRUE; builds", {
   expect_equal(which(m$siblings), 2L)
   # End-to-end: pinning a single-peptide protein builds without error.
   expect_s3_class(
-    pelsa_volcano_build_plot(df, full_df = df, source_id = "single",
-                             sibling_acc = "ACC2"),
+    pelsa_volcano_build_plot(
+      df, full_df = df, source_id = "single",
+      selection = list(origin = "click", accession = "ACC2",
+                       peptide_seq = "PEPB")),
     "plotly")
 })
 
