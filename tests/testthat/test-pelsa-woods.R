@@ -182,3 +182,29 @@ test_that("woods track: -log10(adj.P) coloring, no gold-outline segment, builds"
   expect_s3_class(gg, "ggplot")
   # The -log10 column is clamped (1e-9 -> -log10 = 9 -> clamp 5); just assert build.
 })
+
+test_that("feature tooltip uses real feature_type + description, not feature_class", {
+  f <- data.frame(start = 10L, end = 20L, feature_class = "region_or_motif",
+                  feature_type = "Region", description = "Disordered",
+                  lane = 1L, stringsAsFactors = FALSE, check.names = FALSE)
+  gg <- pelsa_feature_track_ggplot(f, prot_len = 100L)
+  # Assert on the .tip column the geom carries (the hover NAME line) - it must use
+  # the real UniProt feature_type + description, not the 9-bucket feature_class.
+  tip <- gg$data$.tip
+  expect_true(any(grepl("Region: Disordered", tip, fixed = TRUE)))
+  expect_false(any(grepl("region_or_motif", tip, fixed = TRUE)))
+})
+
+test_that("feature legend UI lists every PELSA_FEATURE_COLORS class", {
+  html <- as.character(.pelsa_feature_legend_ui())
+  # one entry per palette class, including ones absent from any given protein
+  expect_true(grepl("transmembrane / signal", html, fixed = TRUE))
+  expect_true(grepl("none / unannotated", html, fixed = TRUE))
+  # one <li> entry per palette class (every class shown, present or not)
+  n_li <- length(gregexpr("<li", html, fixed = TRUE)[[1]])
+  expect_equal(n_li, length(PELSA_FEATURE_COLORS))
+  # every palette HEX color appears as a swatch
+  for (col in unname(PELSA_FEATURE_COLORS)) {
+    expect_true(grepl(col, html, fixed = TRUE))
+  }
+})

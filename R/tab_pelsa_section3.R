@@ -638,15 +638,31 @@ PELSASection3_Ome_Server <- function(id,
                       "Show best peptide per protein", value = FALSE),
         helpText("Marker-protein peptides are always drawn in magenta on top."),
         hr(),
-        tags$strong("Color key"),
-        tags$ul(class = "pelsa-color-key",
-          style = "list-style:none; padding-left:0; margin:0;",
-          tags$li(tags$span(style="color:#FF00FF;","\u25cf"), " marker protein"),
-          tags$li(tags$span(style=sprintf("color:%s;", .PELSA_GOLD),"\u25cf"),
-                  " selected peptide (gold), same protein = gold ring"),
-          tags$li(tags$span(style="color:darkred;","\u25cf"), " significant up"),
-          tags$li(tags$span(style="color:#1f4e9c;","\u25cf"), " significant down"),
-          tags$li(tags$span(style="color:gray;","\u25cf"), " not significant")
+        fluidRow(
+          # LEFT column: the volcano point color key.
+          column(6,
+            tags$strong("Color key"),
+            tags$ul(class = "pelsa-color-key",
+              style = "list-style:none; padding-left:0; margin:0;",
+              tags$li(tags$span(style = "color:#FF00FF;", "\u25cf"),
+                      " marker protein"),
+              tags$li(tags$span(style = sprintf("color:%s;", .PELSA_GOLD),
+                                "\u25cf"), " selected / highlighted"),
+              tags$li(tags$span(style = "color:darkred;", "\u25cf"),
+                      " significant up"),
+              tags$li(tags$span(style = "color:#1f4e9c;", "\u25cf"),
+                      " significant down"),
+              tags$li(tags$span(style = "color:gray;", "\u25cf"),
+                      " not significant")
+            )
+          ),
+          # RIGHT column: the COMPLETE UniProt feature color reference - every
+          # class in the palette, shown even when absent from this protein, so the
+          # user has a full key to the Woods feature track.
+          column(6,
+            tags$strong("UniProt feature colors"),
+            .pelsa_feature_legend_ui()
+          )
         )
       )
     })

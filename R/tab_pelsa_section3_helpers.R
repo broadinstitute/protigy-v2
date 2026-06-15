@@ -550,15 +550,15 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
   }
   # Gold highlight overlay (drawn on top of EVERYTHING): gold fill + black outline,
-  # background-highlighted at the bg size, marker-highlighted at the marker size,
-  # so highlighted points stay the same size as their unhighlighted peers.
+  # ALL at the marker size (the user wants gold points the same size as the magenta
+  # marker peptides), so highlighted points read as one consistent size.
   if (length(bg_hl) > 0L && any(bg_hl)) {
     hb <- bg[bg_hl, , drop = FALSE]
     gg <- gg + ggplot2::geom_point(
       data = hb,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
       fill = .PELSA_GOLD, color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = .PELSA_VOLCANO_BG_SIZE, stroke = 0.4)
+      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
   }
   if (length(mk_hl) > 0L && any(mk_hl)) {
     hm <- mk[mk_hl, , drop = FALSE]
@@ -825,6 +825,22 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
     ggplot2::geom_line(na.rm = TRUE) +
     ggplot2::geom_point(na.rm = TRUE, size = 1.4) +
     ggplot2::scale_color_manual(values = pal, drop = FALSE)
+  # The legend is removed (the hover tooltip identifies each line), so mark the
+  # SELECTED peptide's line with black-outlined points (gold fill + black ring) so
+  # the user can still tell which line is the clicked one.
+  if (any(is_pinned_lvl)) {
+    sel_rows <- ld[ld$aa_label %in% lvl[is_pinned_lvl], , drop = FALSE]
+    if (nrow(sel_rows) > 0L) {
+      gg <- gg + ggplot2::geom_point(
+        data = sel_rows, na.rm = TRUE, shape = 21, size = 2.2, stroke = 0.9,
+        fill = .PELSA_VOLCANO_GOLD, color = "black",
+        ggplot2::aes(x = .data$condition, y = .data$mean_log2,
+                     group = interaction(.data$peptide_seq,
+                                         .data$pep_occurrence_idx),
+                     text = .data$.tip),
+        inherit.aes = FALSE, show.legend = FALSE)
+    }
+  }
   # Marker proteins: facet Significant/Non-significant; non-marker -> single.
   # Extra TOP headroom (mult upper = 0.22) so the facet strip sits in blank space
   # above the data instead of overlapping the lines (ggplotly renders facet strips

@@ -37,6 +37,38 @@
 
 .PELSA_WOODS_NEGLOG_CAP <- 5  # clamp -log10(adj.P) so tiny p-values don't flatten
 
+# Human-readable labels for the PELSA_FEATURE_COLORS class keys (the feature-track
+# legend). Keyed by the palette names so a complete reference can be rendered. @noRd
+.PELSA_FEATURE_LABELS <- c(
+  active_or_binding_site     = "active / binding site",
+  catalytic_domain           = "catalytic domain",
+  folded_domain              = "folded domain",
+  region_or_motif            = "region / motif",
+  transmembrane_or_signal    = "transmembrane / signal",
+  repeat_or_coiled_coil      = "repeat / coiled coil",
+  low_complexity_or_disorder = "low complexity / disorder",
+  other                      = "other",
+  none                       = "none / unannotated"
+)
+
+# Build the static UniProt-feature color legend UI: one swatch + label per class
+# in PELSA_FEATURE_COLORS, shown ALWAYS (even classes absent from the current
+# protein) so the user has a complete reference to the Woods feature-track colors.
+# A pure tagList builder (no Shiny reactivity). @noRd
+.pelsa_feature_legend_ui <- function() {
+  classes <- names(PELSA_FEATURE_COLORS)
+  items <- lapply(classes, function(cl) {
+    lab <- .PELSA_FEATURE_LABELS[[cl]]
+    if (is.null(lab)) lab <- cl
+    shiny::tags$li(
+      shiny::tags$span(style = sprintf("color:%s;", PELSA_FEATURE_COLORS[[cl]]),
+                       "\u25cf"),
+      paste0(" ", lab))
+  })
+  shiny::tags$ul(class = "pelsa-feature-key",
+                 style = "list-style:none; padding-left:0; margin:0;", items)
+}
+
 # ---- Helper 1: per-peptide Woods data ----------------------------------------
 
 # Build the per-peptide Woods frame for ONE protein (accession).
@@ -290,16 +322,30 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
     )
   }
   f <- features_lanes
-  ftype <- if ("feature_type" %in% colnames(f)) f$feature_type else f$feature_class
+  # Tooltip NAME = the real UniProt feature_type (e.g. "Active site", "Domain",
+  # "Transmembrane") - NOT the 9-bucket feature_class (which read as a generic
+  # "region_or_motif" etc). For generic types ("Region", "Site"), append the
+  # free-text `description` (e.g. "Disordered") which carries the specifics.
+  ftype <- if ("feature_type" %in% colnames(f)) as.character(f$feature_type) else
+    as.character(f$feature_class)
+  desc <- if ("description" %in% colnames(f)) as.character(f$description) else
+    rep(NA_character_, nrow(f))
+  name_line <- ifelse(!is.na(desc) & nzchar(desc) &
+                        tolower(desc) != tolower(ftype),
+                      paste0(ftype, ": ", desc), ftype)
   ov <- if (".overlap_peps" %in% colnames(f)) f$.overlap_peps else "none"
   f$.tip <- sprintf("%s\n%d-%d\nOverlapping peptides: %s",
-                    ftype, f$start, f$end, ov)
+                    name_line, f$start, f$end, ov)
+  # No per-plot fill legend: the sidebar carries a complete static UniProt feature
+  # color key (every class, present or not), so a second dynamic legend here is
+  # redundant and crowds the track.
   ggplot2::ggplot(f) +
     ggplot2::geom_rect(
       ggplot2::aes(xmin = .data$start, xmax = .data$end,
                    ymin = .data$lane - 0.4, ymax = .data$lane + 0.4,
                    fill = .data$feature_class, text = .data$.tip)) +
-    ggplot2::scale_fill_manual(values = palette, drop = TRUE, name = NULL) +
+    ggplot2::scale_fill_manual(values = palette, drop = TRUE, name = NULL,
+                               guide = "none") +
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::scale_y_reverse(expand = ggplot2::expansion(add = 0.6)) +
     ggplot2::labs(x = NULL, y = "Feature") +
@@ -310,7 +356,7 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
                    panel.grid = ggplot2::element_blank(),
                    panel.border = ggplot2::element_rect(color = "grey60",
                                                         fill = NA, linewidth = 0.4),
-                   legend.position = "right")
+                   legend.position = "none")
 }
 
 # Woods plot: each peptide a horizontal segment (start..end) at y = logFC;
