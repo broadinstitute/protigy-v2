@@ -181,3 +181,62 @@ pelsa_volcano_recolor <- function(df, selection, find_mask = NULL,
   list(background = if (length(bg)) bg[1L] - 1L else NA_integer_,
        markers    = if (length(mk)) mk[1L] - 1L else NA_integer_)
 }
+
+# Strip a trailing UniProt isoform suffix ("-2") to the base accession. @noRd
+.pelsa_iso_base <- function(x) sub("-[0-9]+$", "", as.character(x))
+
+# Match a typed accession against the volcano df. A peptide matches when its
+# winning_accession OR any PG.ProteinAccessions token equals the input, OR shares
+# its isoform base. Case-insensitive, trimmed.
+# @return list(mask=<logical over df rows>, accessions=<distinct matched
+#   winning_accession>, count=<# matched rows>). @noRd
+pelsa_volcano_find_mask <- function(df, accession) {
+  n <- if (is.data.frame(df)) nrow(df) else 0L
+  empty <- list(mask = rep(FALSE, n), accessions = character(0), count = 0L)
+  if (n == 0L) return(empty)
+  q <- toupper(trimws(as.character(accession)[1L] %||% ""))
+  if (is.na(q) || !nzchar(q)) return(empty)
+  qbase <- .pelsa_iso_base(q)
+
+  wacc <- toupper(as.character(df$winning_accession %||% rep(NA, n)))
+  wbase <- .pelsa_iso_base(wacc)
+  pg <- toupper(as.character(df$PG.ProteinAccessions %||% rep(NA, n)))
+
+  hit <- (!is.na(wacc) & (wacc == q | wbase == qbase))
+  pg_hit <- vapply(seq_len(n), function(i) {
+    if (is.na(pg[i]) || !nzchar(pg[i])) return(FALSE)
+    toks <- trimws(strsplit(pg[i], ";", fixed = TRUE)[[1]])
+    any(toks == q | .pelsa_iso_base(toks) == qbase)
+  }, logical(1))
+  mask <- hit | pg_hit
+  mask[is.na(mask)] <- FALSE
+  accs <- unique(as.character(df$winning_accession)[mask])
+  list(mask = mask, accessions = accs[!is.na(accs) & nzchar(accs)],
+       count = sum(mask))
+}
+
+# Build the pinned-panel metadata as a 2-column (label, value) data.frame from a
+# volcano-df row. The Peptide label is the winning-accession label
+# "<winning_gene>_aa<pep_start>" (gene->accession fallback when gene is empty).
+# n_peptides is the count the caller computed (distinct peptides PLOTTED for this
+# accession in the active contrast). @noRd
+pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides) {
+  r <- volcano_df[row, , drop = FALSE]
+  acc_fb <- if (!is.na(r$winning_accession) && nzchar(r$winning_accession))
+    r$winning_accession else as.character(r$PG.ProteinAccessions)[1L]
+  gene <- if (!is.na(r$winning_gene) && nzchar(r$winning_gene))
+    r$winning_gene else as.character(r$PG.Genes)[1L]
+  gene_disp <- if (is.na(gene) || !nzchar(gene)) "NA" else gene
+  label_stem <- if (gene_disp == "NA") acc_fb else gene_disp
+  pep_label <- paste0(label_stem, "_aa", r$pep_start)
+  data.frame(
+    label = c("Peptide", "Accession", "Gene",
+              "Quantified peptides (this contrast)", "Sequence", "Position",
+              "adj.P", "logFC"),
+    value = c(pep_label, acc_fb, gene_disp, as.character(as.integer(n_peptides)),
+              as.character(r$id),
+              paste0(r$pep_start, "-", r$pep_end),
+              sprintf("%.2g", r$adj.P.Val), sprintf("%.2g", r$logFC)),
+    stringsAsFactors = FALSE
+  )
+}
