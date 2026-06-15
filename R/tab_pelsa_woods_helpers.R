@@ -150,10 +150,11 @@ pelsa_feature_lanes <- function(features) {
 
 # ---- Helper 4: peptide <-> feature overlap annotations (data.table) ----------
 
-# For each peptide span, the list of overlapping UniProt feature regions (for the
-# Woods tooltip). Uses data.table::foverlaps (closed intervals). Returns a
-# character vector (one per peptide row, in order) like
-# "catalytic_domain@10-260; region_or_motif@5-30", or "" when none overlap.
+# For each peptide span, the DISTINCT overlapping UniProt feature names (for the
+# Woods tooltip). Uses data.table::foverlaps (closed intervals). Collapsed by
+# feature name (no per-occurrence start-end) and de-duplicated, so the tooltip
+# reads "catalytic_domain;region_or_motif" rather than listing the same feature
+# class once per overlapping region. Returns "" when a peptide overlaps nothing.
 #
 # @param starts   integer peptide starts.
 # @param ends     integer peptide ends.
@@ -186,8 +187,9 @@ pelsa_woods_overlap_annotations <- function(starts, ends, features) {
   data.table::setkey(fe, start, end)
   ov <- data.table::foverlaps(pep, fe, type = "any", nomatch = NULL)
   if (nrow(ov) == 0L) return(out)
-  ov$.txt <- paste0(ov$feature_class, "@", ov$start, "-", ov$end)
-  agg <- tapply(ov$.txt, ov$.pid, function(x) paste(x, collapse = "; "))
+  # Collapse by DISTINCT feature name per peptide (keep first-seen order).
+  agg <- tapply(ov$feature_class, ov$.pid,
+                function(x) paste(unique(x), collapse = ";"))
   out[as.integer(names(agg))] <- as.character(agg)
   out
 }
@@ -218,11 +220,13 @@ pelsa_coverage_track_ggplot <- function(intervals, prot_len) {
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0),
                                 breaks = brks) +
     ggplot2::scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
-    ggplot2::labs(x = NULL, y = "cov") +
+    ggplot2::labs(x = NULL, y = "Peptide coverage") +
     ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                    axis.ticks.y = ggplot2::element_blank(),
-                   panel.grid = ggplot2::element_blank())
+                   panel.grid = ggplot2::element_blank(),
+                   panel.border = ggplot2::element_rect(color = "grey60",
+                                                        fill = NA, linewidth = 0.4))
 }
 
 # UniProt feature track: colored lane-packed segments.
@@ -241,11 +245,13 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
                           label = "no UniProt features", size = 3,
                           color = "grey50") +
         ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
-        ggplot2::labs(x = NULL, y = "features") +
+        ggplot2::labs(x = NULL, y = "UniProt features") +
         ggplot2::theme_minimal(base_size = 10) +
         ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                        axis.ticks.y = ggplot2::element_blank(),
-                       panel.grid = ggplot2::element_blank())
+                       panel.grid = ggplot2::element_blank(),
+                       panel.border = ggplot2::element_rect(
+                         color = "grey60", fill = NA, linewidth = 0.4))
     )
   }
   f <- features_lanes
@@ -259,11 +265,13 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
     ggplot2::scale_fill_manual(values = palette, drop = TRUE, name = NULL) +
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::scale_y_reverse(expand = ggplot2::expansion(add = 0.6)) +
-    ggplot2::labs(x = NULL, y = "features") +
+    ggplot2::labs(x = NULL, y = "UniProt features") +
     ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                    axis.ticks.y = ggplot2::element_blank(),
                    panel.grid = ggplot2::element_blank(),
+                   panel.border = ggplot2::element_rect(color = "grey60",
+                                                        fill = NA, linewidth = 0.4),
                    legend.position = "right")
 }
 
@@ -283,7 +291,9 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
                           color = "grey50") +
         ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
         ggplot2::labs(x = "Residue position", y = "logFC") +
-        ggplot2::theme_minimal(base_size = 10)
+        ggplot2::theme_minimal(base_size = 10) +
+        ggplot2::theme(panel.border = ggplot2::element_rect(
+          color = "grey60", fill = NA, linewidth = 0.4))
     )
   }
   pk <- peptides
@@ -314,7 +324,9 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::labs(x = "Residue position", y = "logFC") +
     ggplot2::theme_minimal(base_size = 10) +
-    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
+                   panel.border = ggplot2::element_rect(color = "grey60",
+                                                        fill = NA, linewidth = 0.4))
 }
 
 # Assemble the 3 tracks into one shared-x plotly (coverage / features / Woods,
@@ -341,7 +353,7 @@ pelsa_woods_panel <- function(peptides, features_lanes, intervals, prot_len,
   pf <- suppressWarnings(plotly::ggplotly(g_feat, tooltip = "text"))
   pw <- suppressWarnings(plotly::ggplotly(g_woods, tooltip = "text"))
   p <- plotly::subplot(pc, pf, pw, nrows = 3, shareX = TRUE, titleY = TRUE,
-                       heights = c(0.14, 0.30, 0.56), margin = 0.02)
+                       heights = c(0.08, 0.32, 0.60), margin = 0.02)
   p$x$source <- source_id
   plotly::event_register(p, "plotly_click")
 }

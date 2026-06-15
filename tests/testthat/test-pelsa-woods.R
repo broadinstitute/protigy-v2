@@ -98,16 +98,26 @@ test_that("feature_lanes: empty / all-invalid -> 0-row with lane column", {
 
 # ---- pelsa_woods_overlap_annotations (data.table foverlaps) ------------------
 
-test_that("overlap_annotations lists overlapping features per peptide", {
+test_that("overlap_annotations lists DISTINCT feature names (no coords) per peptide", {
   f <- data.frame(start = c(1L, 5L, 40L), end = c(30L, 12L, 60L),
                   feature_class = c("catalytic_domain", "active_or_binding_site",
                                     "region_or_motif"),
                   stringsAsFactors = FALSE)
   ann <- pelsa_woods_overlap_annotations(c(10L, 50L, 100L), c(20L, 60L, 110L), f)
-  expect_match(ann[1], "catalytic_domain@1-30")
-  expect_match(ann[1], "active_or_binding_site@5-12")
-  expect_match(ann[2], "region_or_motif@40-60")
+  # Names only (no @start-end), ";"-joined.
+  expect_equal(ann[1], "catalytic_domain;active_or_binding_site")
+  expect_equal(ann[2], "region_or_motif")
   expect_equal(ann[3], "")                            # peptide past all features
+  expect_false(grepl("@", ann[1]))                    # no coordinates
+})
+
+test_that("overlap_annotations collapses repeated feature names to one", {
+  # Two separate region_or_motif features both overlap the peptide -> listed ONCE.
+  f <- data.frame(start = c(1L, 40L), end = c(30L, 60L),
+                  feature_class = c("region_or_motif", "region_or_motif"),
+                  stringsAsFactors = FALSE)
+  ann <- pelsa_woods_overlap_annotations(10L, 55L, f)
+  expect_equal(ann, "region_or_motif")               # de-duplicated
 })
 
 test_that("overlap_annotations: no features -> all empty; length preserved", {
