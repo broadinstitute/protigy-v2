@@ -743,7 +743,8 @@ PELSASection3_Ome_Server <- function(id,
         pelsa_intensity_line_data(
           accession = acc, stat_df = stat_df, matched_cache = matched,
           processed_mat = pm, condition_map = cmap, condition_order = corder,
-          contrast = contrast, sig_cutoff = 0.05, is_marker = is_mk),
+          contrast = contrast, sig_cutoff = 0.05, is_marker = is_mk,
+          show_all = TRUE),   # pinned panel shows ALL peptides of the protein
         error = function(e) NULL)
     })
 
@@ -774,9 +775,7 @@ PELSASection3_Ome_Server <- function(id,
         hit <- ld$aa_label[ld$peptide_seq == pin$peptide_seq]
         if (length(hit) > 0L) pinned_lab <- as.character(hit[[1]])
       }
-      suppressWarnings(plotly::ggplotly(
-        pelsa_intensity_line_ggplot(ld, pinned_label = pinned_lab),
-        tooltip = "text"))
+      pelsa_intensity_line_plot(ld, pinned_label = pinned_lab)
     })
 
     ## ------------------------------------------------------------------------

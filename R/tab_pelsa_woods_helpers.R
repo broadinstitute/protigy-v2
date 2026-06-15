@@ -220,10 +220,11 @@ pelsa_coverage_track_ggplot <- function(intervals, prot_len) {
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0),
                                 breaks = brks) +
     ggplot2::scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
-    ggplot2::labs(x = NULL, y = "Peptide coverage") +
+    ggplot2::labs(x = NULL, y = "Coverage") +
     ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                    axis.ticks.y = ggplot2::element_blank(),
+                   axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5),
                    panel.grid = ggplot2::element_blank(),
                    panel.border = ggplot2::element_rect(color = "grey60",
                                                         fill = NA, linewidth = 0.4))
@@ -245,10 +246,12 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
                           label = "no UniProt features", size = 3,
                           color = "grey50") +
         ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
-        ggplot2::labs(x = NULL, y = "UniProt features") +
+        ggplot2::labs(x = NULL, y = "Feature") +
         ggplot2::theme_minimal(base_size = 10) +
         ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                        axis.ticks.y = ggplot2::element_blank(),
+                       axis.title.y = ggplot2::element_text(angle = 0,
+                                                            vjust = 0.5),
                        panel.grid = ggplot2::element_blank(),
                        panel.border = ggplot2::element_rect(
                          color = "grey60", fill = NA, linewidth = 0.4))
@@ -265,10 +268,11 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
     ggplot2::scale_fill_manual(values = palette, drop = TRUE, name = NULL) +
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::scale_y_reverse(expand = ggplot2::expansion(add = 0.6)) +
-    ggplot2::labs(x = NULL, y = "UniProt features") +
+    ggplot2::labs(x = NULL, y = "Feature") +
     ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(axis.text.y = ggplot2::element_blank(),
                    axis.ticks.y = ggplot2::element_blank(),
+                   axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5),
                    panel.grid = ggplot2::element_blank(),
                    panel.border = ggplot2::element_rect(color = "grey60",
                                                         fill = NA, linewidth = 0.4),
@@ -292,8 +296,10 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
         ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
         ggplot2::labs(x = "Residue position", y = "logFC") +
         ggplot2::theme_minimal(base_size = 10) +
-        ggplot2::theme(panel.border = ggplot2::element_rect(
-          color = "grey60", fill = NA, linewidth = 0.4))
+        ggplot2::theme(axis.title.y = ggplot2::element_text(angle = 0,
+                                                            vjust = 0.5),
+                       panel.border = ggplot2::element_rect(
+                         color = "grey60", fill = NA, linewidth = 0.4))
     )
   }
   pk <- peptides
@@ -325,6 +331,7 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
     ggplot2::labs(x = "Residue position", y = "logFC") +
     ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
+                   axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5),
                    panel.border = ggplot2::element_rect(color = "grey60",
                                                         fill = NA, linewidth = 0.4))
 }

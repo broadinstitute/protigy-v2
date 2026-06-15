@@ -256,6 +256,30 @@ test_that("non-marker significant protein -> ONLY the significant peptide", {
   expect_true(all(out$panel == "Significant"))
 })
 
+test_that("show_all = TRUE shows ALL peptides of a non-marker protein", {
+  # The pinned panel wants every peptide mapping to the clicked protein, not just
+  # the significant ones. With show_all=TRUE a non-marker protein returns BOTH
+  # its significant and non-significant peptides, panel-tagged.
+  proc <- .mk_proc()
+  stat <- .mk_stat(seq = c("pSIG", "pOTHER"), acc = c("PROT", "PROT"),
+                   adjp = c(0.001, 0.40), row_id = 1:2)
+  matched <- .mk_matched(seq = c("pSIG", "pOTHER"),
+                         accession = c("PROT", "PROT"),
+                         pep_start = c(100L, 250L), row_id = 1:2)
+  out <- pelsa_intensity_line_data(
+    accession = "PROT", stat_df = stat, matched_cache = matched,
+    processed_mat = proc, condition_map = .cond_map,
+    condition_order = .cond_order, contrast = "C1", is_marker = FALSE,
+    show_all = TRUE
+  )
+  expect_setequal(unique(out$peptide_seq), c("pSIG", "pOTHER"))   # BOTH shown
+  panel_by_pep <- unique(out[, c("peptide_seq", "panel")])
+  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pSIG"],
+               "Significant")
+  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pOTHER"],
+               "Non-significant")
+})
+
 test_that("a peptide with 2 occurrences -> 2 distinct lines (distinct pep_start/aa_label)", {
   # ONE significant peptide that occurs TWICE in the protein (two matched rows,
   # same .row_id, distinct pep_start / pep_occurrence_idx). Both share the SAME

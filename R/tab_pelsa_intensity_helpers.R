@@ -259,7 +259,8 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
                                       processed_mat, condition_map,
                                       condition_order, contrast,
-                                      sig_cutoff = 0.05, is_marker = FALSE) {
+                                      sig_cutoff = 0.05, is_marker = FALSE,
+                                      show_all = FALSE) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (length(accession) != 1L || is.na(accession) || !nzchar(accession)) {
     stop("pelsa_intensity_line_data: accession must be a single non-empty string",
@@ -321,9 +322,16 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
   adjp <- as.numeric(stat_df[[adjp_col]])[match(key_m, key_s)]
   occ_sig <- !is.na(adjp) & adjp < sig_cutoff
 
-  # ---- Choose occurrences to plot per the marker rule ----------------------
-  # Marker -> both sig + non-sig (panel-tagged). Non-marker -> sig only.
-  keep <- if (isTRUE(is_marker)) rep(TRUE, nrow(m)) else occ_sig
+  # ---- Choose occurrences to plot -----------------------------------------
+  # show_all -> EVERY peptide mapping to this protein (the pinned-panel view:
+  # the user wants the full peptide set for the clicked protein, not just the
+  # significant ones). Otherwise the legacy rule: marker -> all (panel-tagged),
+  # non-marker -> significant only.
+  keep <- if (isTRUE(show_all) || isTRUE(is_marker)) {
+    rep(TRUE, nrow(m))
+  } else {
+    occ_sig
+  }
   if (!any(keep)) {
     return(.pelsa_intensity_empty(condition_order))
   }

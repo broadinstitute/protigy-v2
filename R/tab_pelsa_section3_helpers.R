@@ -925,8 +925,15 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
     ggplot2::geom_point(na.rm = TRUE, size = 1.4) +
     ggplot2::scale_color_manual(values = pal, drop = FALSE)
   # Marker proteins: facet Significant/Non-significant; non-marker -> single.
+  # Extra TOP headroom (mult upper = 0.22) so the facet strip sits in blank space
+  # above the data instead of overlapping the lines (ggplotly renders facet strips
+  # as overlaid annotations; with scales="free_y" the panel can otherwise extend
+  # right under the strip). panel.spacing keeps the two panels apart.
   if (length(unique(ld$panel)) > 1L) {
-    gg <- gg + ggplot2::facet_wrap(~ .data$panel, ncol = 1, scales = "free_y")
+    gg <- gg +
+      ggplot2::facet_wrap(~ .data$panel, ncol = 1, scales = "free_y") +
+      ggplot2::scale_y_continuous(
+        expand = ggplot2::expansion(mult = c(0.05, 0.22)))
   }
   gg +
     ggplot2::labs(x = NULL, y = "mean log2 intensity", color = NULL) +
@@ -936,8 +943,45 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
       axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
       strip.text = ggplot2::element_text(face = "bold"),
       strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
-      panel.spacing = ggplot2::unit(0.8, "lines")
+      panel.spacing = ggplot2::unit(1.2, "lines")
     )
+}
+
+# Build the pinned intensity line PLOTLY (the render path).
+#
+# When a marker protein has BOTH significance groups, ggplot faceting through
+# ggplotly mispositions the facet strip so it overlaps the data. To avoid that
+# entirely, we render the two groups as a vertical plotly::subplot of two
+# single-panel ggplots (each gets a bold title annotation in clear space, no
+# strip). The single-group case is a plain ggplotly. Tooltip = the .tip column.
+#
+# @param ld           a pelsa_intensity_line_data() frame.
+# @param pinned_label the pinned peptide's aa_label to highlight (or NULL).
+# @return a plotly object.
+# @noRd
+pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
+  panels <- unique(as.character(ld$panel))
+  if (length(panels) <= 1L) {
+    return(suppressWarnings(plotly::ggplotly(
+      pelsa_intensity_line_ggplot(ld, pinned_label = pinned_label),
+      tooltip = "text")))
+  }
+  # Stable order: Significant on top, Non-significant below.
+  ord <- c("Significant", "Non-significant")
+  panels <- c(intersect(ord, panels), setdiff(panels, ord))
+
+  parts <- lapply(panels, function(pn) {
+    sub <- ld[as.character(ld$panel) == pn, , drop = FALSE]
+    gg  <- pelsa_intensity_line_ggplot(sub, pinned_label = pinned_label) +
+      ggplot2::ggtitle(pn) +
+      ggplot2::theme(plot.title = ggplot2::element_text(
+        face = "bold", size = 11, hjust = 0.5))
+    # Only the bottom panel keeps the x tick labels (shared axis).
+    suppressWarnings(plotly::ggplotly(gg, tooltip = "text"))
+  })
+  p <- plotly::subplot(parts, nrows = length(parts), shareX = TRUE,
+                       titleY = TRUE, margin = 0.06)
+  suppressWarnings(p)
 }
 
 # Re-derive a volcano df for export (all_peptide / best_peptide), from plain

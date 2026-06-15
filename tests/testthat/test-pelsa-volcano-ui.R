@@ -458,14 +458,37 @@ test_that("resolve_click: two near-identical points -> first df row (which.min t
 test_that("intensity_line_ggplot: single vs faceted panel both build", {
   # Non-marker (single panel value) -> no facet; marker (two values) -> facet.
   one <- data.frame(
-    accession = "ACC1", peptide_seq = "PEPA", pep_occurrence_idx = 1L,
-    aa_label = "aa10", panel = "significant",
+    accession = "ACC1", peptide_seq = "PEPA", pep_start = 10L, pep_end = 18L,
+    pep_occurrence_idx = 1L, aa_label = "aa10", panel = "Significant",
     condition = factor(c("A", "B"), levels = c("A", "B")),
     mean_log2 = c(1, 2), n_rep_nonNA = c(2L, 2L), stringsAsFactors = FALSE)
   expect_s3_class(pelsa_intensity_line_ggplot(one), "ggplot")
-  two <- rbind(one, transform(one, panel = "other", mean_log2 = c(3, 4)))
+  two <- rbind(one, transform(one, panel = "Non-significant", mean_log2 = c(3, 4)))
   g <- pelsa_intensity_line_ggplot(two)
   expect_s3_class(g, "ggplot")
+
+  # Clean hover tooltip (.tip): aa_label, position start->end, sequence,
+  # condition, mean intensity - surfaced via the text aesthetic.
+  b <- suppressWarnings(plotly::plotly_build(
+    plotly::ggplotly(pelsa_intensity_line_ggplot(one), tooltip = "text")))
+  tt <- unlist(lapply(b$x$data, function(tr) tr$text))
+  tt <- tt[!is.na(tt) & nzchar(tt)]
+  expect_true(any(grepl("Position: 10 -> 18", tt, fixed = TRUE)))
+  expect_true(any(grepl("Sequence: PEPA", tt, fixed = TRUE)))
+  expect_false(any(grepl("interaction", tt)))   # no raw aesthetic leakage
+})
+
+test_that("intensity_line_plot: two panels render as a subplot (no facet strip)", {
+  two <- data.frame(
+    accession = "ACC1",
+    peptide_seq = c("PEPA", "PEPA", "PEPB", "PEPB"),
+    pep_start = c(10L, 10L, 50L, 50L), pep_end = c(18L, 18L, 58L, 58L),
+    pep_occurrence_idx = 1L, aa_label = c("aa10", "aa10", "aa50", "aa50"),
+    panel = c("Significant", "Significant", "Non-significant", "Non-significant"),
+    condition = factor(rep(c("A", "B"), 2), levels = c("A", "B")),
+    mean_log2 = c(1, 2, 3, 4), n_rep_nonNA = 2L, stringsAsFactors = FALSE)
+  p <- pelsa_intensity_line_plot(two, pinned_label = "aa10")
+  expect_s3_class(p, "plotly")
 })
 
 # ---------------------------------------------------------------------------
