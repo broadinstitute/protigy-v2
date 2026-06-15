@@ -813,10 +813,10 @@ test_that("7E: a simulated pin populates metadata + computes 3C line data", {
                       pelsa_volcano_contrast = "A_over_B")
     force(active_volcano_df())
 
-    # Simulate the resolved click by setting the pinned reactiveVal directly
+    # Simulate the resolved click by setting the selection reactiveVal directly
     # (event_data() needs a live browser; the resolver itself is unit-tested).
-    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
-                label = "G1_aa10", row = 1L))
+    selection(list(origin = "click", peptide_seq = "PEPA", accession = "ACC1",
+                   label = "G1_aa10", row = 1L))
 
     # 3C line data computes for the pinned protein (ACC1 -> marker -> both panels).
     ld <- pinned_line_data()
@@ -834,11 +834,11 @@ test_that("7E: a simulated pin populates metadata + computes 3C line data", {
 })
 
 test_that("PERF: a pin does NOT rebuild the main volcano (build_plot not re-called)", {
-  # The fade is a client-side plotlyProxy restyle, so output$pelsa_volcano_plot
-  # must NOT depend on pinned() — pinning must not re-invoke the heavy
+  # The highlight is a client-side plotlyProxy restyle, so output$pelsa_volcano_plot
+  # must NOT depend on selection() - selecting must not re-invoke the heavy
   # pelsa_volcano_build_plot (the ~1.1-1.5s / ~15MB cost). We trace build_plot
   # and assert its call count for the MAIN volcano source does not increase when
-  # only pinned() changes.
+  # only selection() changes.
   build_calls <- new.env(parent = emptyenv())
   build_calls$n_main <- 0L
   trace(
@@ -865,35 +865,35 @@ test_that("PERF: a pin does NOT rebuild the main volcano (build_plot not re-call
     n_before <- getOption(".pelsa_build_counter_env")$n_main
     expect_gte(n_before, 1L)  # built at least once
 
-    # Pin a peptide. The fade is a proxy restyle; the render must NOT re-run.
-    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
-                label = "G1_aa10", row = 1L))
+    # Select a peptide. The highlight is a proxy restyle; the render must NOT re-run.
+    selection(list(origin = "click", peptide_seq = "PEPA", accession = "ACC1",
+                   label = "G1_aa10", row = 1L))
     force(output$pelsa_volcano_plot)
     n_after <- getOption(".pelsa_build_counter_env")$n_main
-    expect_equal(n_after, n_before)  # NO rebuild on pin
+    expect_equal(n_after, n_before)  # NO rebuild on select
 
-    # Unpin -> still no rebuild of the main volcano.
-    pinned(NULL)
+    # Clear -> still no rebuild of the main volcano.
+    selection(NULL)
     force(output$pelsa_volcano_plot)
     expect_equal(getOption(".pelsa_build_counter_env")$n_main, n_before)
   })
 })
 
-test_that("7E: switching contrast CLEARS a stale pin", {
+test_that("7E: switching contrast CLEARS a stale selection", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
                       pelsa_label_mode = "top_n", pelsa_top_n = 3,
                       pelsa_volcano_contrast = "A_over_B")
     force(active_volcano_df())
-    pinned(list(peptide_seq = "PEPA", accession = "ACC1",
-                label = "G1_aa10", row = 1L))
-    expect_false(is.null(pinned()))
+    selection(list(origin = "click", peptide_seq = "PEPA", accession = "ACC1",
+                   label = "G1_aa10", row = 1L))
+    expect_false(is.null(selection()))
 
-    # Switch to the other contrast -> the pin (made under A_over_B coords) clears.
+    # Switch to the other contrast -> the selection (made under A_over_B coords) clears.
     session$setInputs(pelsa_volcano_contrast = "A_over_C")
     expect_equal(active_contrast(), "A_over_C")
-    expect_null(pinned())
-    # The intensity line data is gated on a pin, so it no longer computes.
+    expect_null(selection())
+    # The intensity line data is gated on a selection, so it no longer computes.
     expect_error(pinned_line_data(), class = "shiny.silent.error")
   })
 })
