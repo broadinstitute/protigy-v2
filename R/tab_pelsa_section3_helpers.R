@@ -753,8 +753,13 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
   pinned_disp <- if (!is.null(pinned_label) && nzchar(pinned_label)) {
     paste0("<b>", pinned_label, " (selected)</b>")
   } else NA_character_
-  remap <- function(x) ifelse(!is.na(pinned_disp) & x == pinned_label,
-                              pinned_disp, x)
+  # Guard the no-pin case: with pinned_label NULL, `x == pinned_label` is
+  # length-0 and collapses ifelse() to a 0-row result (breaks the column
+  # assignment). Return x unchanged when there is nothing to remap.
+  remap <- function(x) {
+    if (is.null(pinned_label) || is.na(pinned_disp)) return(x)
+    ifelse(x == pinned_label, pinned_disp, x)
+  }
   ld$aa_label <- remap(ld$aa_label)
   lvl <- remap(raw_lvl)
   ld$aa_label <- factor(ld$aa_label, levels = lvl)
