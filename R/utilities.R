@@ -172,7 +172,10 @@ is.discrete <- function(annot_col, nfactor_cutoff = 20) {
   if (is.factor(annot_col)) {
     annot_vals <- levels(annot_col)
   } else {
-    annot_vals <- sort(unique(annot_col))
+    # INT-3: sort() is unnecessary here — the result depends only on the COUNT of
+    # unique values and whether they are all numeric, both order-independent.
+    # Dropping it avoids sorting up to ~34k strings on every row-filter rebuild.
+    annot_vals <- unique(annot_col)
   }
   annot_vals[is.na(annot_vals)] <- "NA"
   
@@ -200,7 +203,8 @@ is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$"
   if (is.factor(annot_col)) {
     annot_vals <- levels(annot_col)
   } else {
-    annot_vals <- sort(unique(annot_col))
+    # INT-3: see is.discrete() — sort() is order-independent dead work here too.
+    annot_vals <- unique(annot_col)
   }
   annot_vals[is.na(annot_vals)] <- "NA"
   
