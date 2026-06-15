@@ -232,16 +232,17 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
     processed_mat = proc_mat, condition_map = cmap, condition_order = corder,
     contrast = fx$contrast, sig_cutoff = 0.05, is_marker = TRUE
   )
-  # Marker -> BOTH panels (significant + other), because we pinned one sig + one
-  # non-sig TIE peptide.
-  expect_setequal(unique(as.character(ld$panel)), c("significant", "other"))
+  # Marker -> BOTH panels (Significant + Non-significant), because we pinned one
+  # sig + one non-sig TIE peptide.
+  expect_setequal(unique(as.character(ld$panel)),
+                  c("Significant", "Non-significant"))
   # aa<pos> labels come from the FASTA-derived pep_start (TIEPROT: TIEPEPONEK@3,
   # TIEPEPTWOK@15) — NOT PEP.PeptidePosition.
   expect_setequal(unique(ld$aa_label), c("aa3", "aa15"))
   # condition factor levels = the requested condition_order (stable x-axis).
   expect_identical(levels(ld$condition), corder)
   # One line per significant peptide-occurrence (TIEPEPONEK once -> 1 sig line).
-  sig_lines <- unique(ld[ld$panel == "significant",
+  sig_lines <- unique(ld[ld$panel == "Significant",
                          c("peptide_seq", "pep_occurrence_idx")])
   expect_equal(nrow(sig_lines), 1L)
   expect_identical(unique(sig_lines$peptide_seq), syn$tie_peptides[[1]])

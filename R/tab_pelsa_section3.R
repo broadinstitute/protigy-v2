@@ -574,7 +574,9 @@ PELSASection3_Ome_Server <- function(id,
         strong("Label peptides:"),
         radioButtons(
           ns("pelsa_label_mode"), label = NULL,
-          choices = c("All marker peptides"          = "all_markers",
+          choices = c("None"                          = "none",
+                      "All marker peptides"           = "all_markers",
+                      "All significant peptides"      = "all_significant",
                       "Best peptide per marker"       = "best_per_marker",
                       "Top-N per protein"             = "top_n"),
           selected = isolate(label_mode_for_contrast())
@@ -739,7 +741,17 @@ PELSASection3_Ome_Server <- function(id,
       ld <- tryCatch(pinned_line_data(), error = function(e) NULL)
       validate(need(!is.null(ld) && nrow(ld) > 0L,
                     "Click a point to pin its peptide profile."))
-      suppressWarnings(plotly::ggplotly(pelsa_intensity_line_ggplot(ld)))
+      # Highlight the clicked peptide's line/legend in gold: resolve its aa_label
+      # from the pinned peptide sequence (the line data carries peptide_seq +
+      # aa_label). NULL when the pinned peptide is not among the plotted lines.
+      pin <- pinned()
+      pinned_lab <- NULL
+      if (!is.null(pin) && !is.null(pin$peptide_seq)) {
+        hit <- ld$aa_label[ld$peptide_seq == pin$peptide_seq]
+        if (length(hit) > 0L) pinned_lab <- as.character(hit[[1]])
+      }
+      suppressWarnings(plotly::ggplotly(
+        pelsa_intensity_line_ggplot(ld, pinned_label = pinned_lab)))
     })
 
     ## ------------------------------------------------------------------------

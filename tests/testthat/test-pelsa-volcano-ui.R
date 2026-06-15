@@ -180,6 +180,52 @@ test_that("label-mode: top_n keeps N smallest adj.P.Val per protein", {
   expect_equal(pelsa_volcano_label_rows(df, "top_n", n_top = 1L), c(2L, 5L))
 })
 
+test_that("label-mode: none labels nothing; all_significant labels sig rows", {
+  df <- data.frame(
+    is_marker         = c(TRUE, FALSE, FALSE, TRUE),
+    Significant       = c(TRUE, FALSE, TRUE, NA),
+    adj.P.Val         = c(0.01, 0.5, 0.02, 0.2),
+    winning_accession = c("P1", "P2", "P3", "P4"),
+    label             = c("a", "b", "c", "d"),
+    stringsAsFactors  = FALSE
+  )
+  expect_equal(pelsa_volcano_label_rows(df, "none"), integer(0))
+  # all_significant: rows where Significant == TRUE (NA -> FALSE).
+  expect_equal(pelsa_volcano_label_rows(df, "all_significant"), c(1L, 3L))
+})
+
+test_that("label-mode: unknown mode errors; default is best_per_marker", {
+  df <- data.frame(is_marker = TRUE, Significant = TRUE, adj.P.Val = 0.01,
+                   winning_accession = "P1", label = "a",
+                   stringsAsFactors = FALSE)
+  expect_error(pelsa_volcano_label_rows(df, "bogus"), "must be one of")
+  expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, "best_per_marker")
+})
+
+test_that("volcano build adds boxed annotations (white bg, point-colored border)", {
+  df <- data.frame(
+    id = c("p1", "p2"), logFC = c(-2, 2), logP = c(3, 4),
+    adj.P.Val = c(0.001, 0.0001), P.Value = c(0.001, 0.0001),
+    Significant = c(TRUE, TRUE), sig_direction = c("down", "up"),
+    sig_color = c("#1f4e9c", "darkred"),
+    feature_class_primary = "none", feature_color = "#d3d3d3",
+    winning_accession = c("A", "B"), winning_gene = c("g1", "g2"),
+    label = c("g1_aa10", "g2_aa50"), is_marker = c(TRUE, TRUE),
+    PG.ProteinAccessions = c("A", "B"), PG.Genes = c("g1", "g2"),
+    pep_start = c(10L, 50L), pep_end = c(18L, 58L), stringsAsFactors = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
+         label_mode = "all_markers", n_top = 3L, sibling_acc = NULL,
+         source_id = "x")
+  b <- suppressWarnings(plotly::plotly_build(p))
+  ann <- b$x$layout$annotations
+  expect_equal(length(ann), 2L)
+  expect_equal(ann[[1]]$bgcolor, "rgba(255,255,255,0.85)")
+  # border colored to the point (down = blue sig_color).
+  expect_equal(ann[[1]]$bordercolor, "#1f4e9c")
+})
+
 test_that("thin note: NULL when nothing thinned, string otherwise", {
   expect_null(pelsa_volcano_thin_note(list(n_shown = 100, n_total = 100)))
   note <- pelsa_volcano_thin_note(list(n_shown = 30, n_total = 100))

@@ -13,7 +13,7 @@
 #                             sig_cutoff, is_marker)
 #     -> tidy long line data for ONE protein. One line per peptide-OCCURRENCE
 #        (matched_cache row for this accession). Marker -> BOTH sig + non-sig
-#        peptides tagged by `panel` {"significant","other"}; non-marker sig
+#        peptides tagged by `panel` {"Significant","Non-significant"}; non-marker sig
 #        protein -> only its significant peptide-occurrences.
 #        y = MEAN processed-GCT log2 intensity AS-IS (no delinearize/z/renorm),
 #        averaged over a condition's replicate columns (na.rm). aa<pos> label =
@@ -202,10 +202,10 @@ test_that("marker protein -> BOTH peptides present, panel tags correct, y closed
   expect_equal(nrow(out), 4L)
   expect_setequal(unique(out$peptide_seq), c("pSIG", "pOTHER"))
 
-  # panel tags: pSIG significant, pOTHER other
+  # panel tags: pSIG Significant, pOTHER Non-significant
   panel_by_pep <- unique(out[, c("peptide_seq", "panel")])
-  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pSIG"], "significant")
-  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pOTHER"], "other")
+  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pSIG"], "Significant")
+  expect_equal(panel_by_pep$panel[panel_by_pep$peptide_seq == "pOTHER"], "Non-significant")
 
   # y closed-form (mean processed log2 AS-IS, na.rm)
   ysig_A <- out$mean_log2[out$peptide_seq == "pSIG" & out$condition == "A"]
@@ -250,10 +250,10 @@ test_that("non-marker significant protein -> ONLY the significant peptide", {
     condition_order = .cond_order, contrast = "C1", is_marker = FALSE
   )
 
-  # ONLY pSIG, both conditions -> 2 rows; all panel == "significant"
+  # ONLY pSIG, both conditions -> 2 rows; all panel == "Significant"
   expect_equal(nrow(out), 2L)
   expect_setequal(unique(out$peptide_seq), "pSIG")
-  expect_true(all(out$panel == "significant"))
+  expect_true(all(out$panel == "Significant"))
 })
 
 test_that("a peptide with 2 occurrences -> 2 distinct lines (distinct pep_start/aa_label)", {

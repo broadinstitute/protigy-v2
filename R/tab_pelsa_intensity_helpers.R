@@ -21,11 +21,11 @@
 #     -> tidy long line data for ONE protein. One line per peptide-OCCURRENCE
 #        (a matched_cache row for this accession). For a MARKER protein, BOTH
 #        significant AND non-significant occurrences are included, tagged by
-#        `panel` in {"significant","other"} (Phase-7's two-panel facet: left =
-#        significantly-regulated peptides, right = its other peptides - dropping
-#        an empty side is Phase-7's concern; here we only TAG). For a NON-marker
-#        significant protein, ONLY its significant occurrences (panel all
-#        "significant").
+#        `panel` in {"Significant","Non-significant"} (Phase-7's two-panel facet:
+#        left = significantly-regulated peptides, right = its other peptides -
+#        dropping an empty side is Phase-7's concern; here we only TAG). For a
+#        NON-marker significant protein, ONLY its significant occurrences (panel
+#        all "Significant").
 #
 # y = MEAN PROCESSED-GCT log2 intensity, AS-IS: no delinearize, no z-score, no
 # re-normalize. For each (occurrence, condition) we average the processed_mat
@@ -253,7 +253,7 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 #   occurrences (panel-tagged); FALSE -> only significant occurrences.
 # @return tidy long data.frame, one row per (occurrence, condition-with-samples),
 #   columns: accession, peptide_seq, pep_start, pep_occurrence_idx, aa_label,
-#   panel ("significant"/"other"), condition (factor levels = condition_order),
+#   panel ("Significant"/"Non-significant"), condition (factor = condition_order),
 #   mean_log2, n_rep_nonNA.
 # @noRd
 pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
@@ -328,7 +328,8 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
     return(.pelsa_intensity_empty(condition_order))
   }
   m <- m[keep, , drop = FALSE]
-  panel <- ifelse(occ_sig[keep], "significant", "other")
+  # Display-friendly panel labels (capitalized; "other" -> "Non-significant").
+  panel <- ifelse(occ_sig[keep], "Significant", "Non-significant")
 
   # ---- Resolve each occurrence's processed_mat row -------------------------
   row_idx <- .pelsa_intensity_row_index(m, processed_mat)

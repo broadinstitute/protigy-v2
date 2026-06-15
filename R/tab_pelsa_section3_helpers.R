@@ -22,9 +22,24 @@
 .PELSA_VOLCANO_MARKER_COLOR <- "#FF00FF"
 .PELSA_VOLCANO_MARKER_EDGE  <- "black"
 
-# Default per-contrast label mode and top-N.
-.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "top_n"
+# Point sizing / opacity. Markers are only SLIGHTLY larger than the background
+# cloud (was 2.4 vs 1, which over-dominated), and the background cloud is fairly
+# opaque so non-marker peptides read in their real sig/feature colors (the volcano
+# is about ALL peptides, not just markers). The sibling-fade alpha (pin redraw)
+# is separate and stays low.
+.PELSA_VOLCANO_MARKER_SIZE  <- 1.6
+.PELSA_VOLCANO_BG_SIZE      <- 1.1
+.PELSA_VOLCANO_BG_ALPHA     <- 0.8
+.PELSA_VOLCANO_FADE_ALPHA   <- 0.12   # background cloud when a pin dims siblings
+
+# Default per-contrast label mode and top-N. Default is "best peptide per marker"
+# (one label per marker protein - readable out of the box, vs top_n's clutter).
+.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "best_per_marker"
 .PELSA_VOLCANO_DEFAULT_TOP_N      <- 3L
+
+# The gold used to highlight a selected/pinned peptide (legend entry, Woods
+# cross-highlight). Distinct from the magenta marker fill.
+.PELSA_VOLCANO_GOLD <- "#D4AF37"
 
 # ---- contrast key + label/suffix mapping ------------------------------------
 
@@ -250,7 +265,9 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # <gene>_aa<pos>); only WHICH rows are labeled varies.
 #
 # Modes:
+#   "none"            no labels (integer(0)).
 #   "all_markers"     every marker-protein peptide (is_marker == TRUE).
+#   "all_significant" every significant peptide (Significant == TRUE).
 #   "best_per_marker" one peptide per marker PROTEIN (winning_accession): the
 #                     smallest adj.P.Val within each marker protein.
 #   "top_n"           the N peptides with the smallest adj.P.Val per PROTEIN
@@ -259,29 +276,39 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # Returns the 1-based row indices to label (sorted, unique). Ties in adj.P.Val
 # break by row order (stable). NA adj.P.Val sorts last.
 #
-# @param volcano_df a 3A frame (label, is_marker, adj.P.Val, winning_accession).
-# @param mode       one of the three modes above.
+# @param volcano_df a 3A frame (label, is_marker, Significant, adj.P.Val,
+#                   winning_accession).
+# @param mode       one of the five modes above.
 # @param n_top      N for "top_n" (default 3, coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
+.PELSA_VOLCANO_LABEL_MODES <- c("none", "all_markers", "all_significant",
+                                "best_per_marker", "top_n")
+
 pelsa_volcano_label_rows <- function(volcano_df, mode = "top_n", n_top = 3L) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
   }
   mode <- mode %||% "top_n"
   if (length(mode) != 1L || is.na(mode) ||
-      !mode %in% c("all_markers", "best_per_marker", "top_n")) {
-    stop("pelsa_volcano_label_rows: mode must be 'all_markers', ",
-         "'best_per_marker', or 'top_n'")
+      !mode %in% .PELSA_VOLCANO_LABEL_MODES) {
+    stop("pelsa_volcano_label_rows: mode must be one of ",
+         paste(sprintf("'%s'", .PELSA_VOLCANO_LABEL_MODES), collapse = ", "))
   }
   n <- nrow(volcano_df)
-  if (n == 0L) return(integer(0))
+  if (n == 0L || mode == "none") return(integer(0))
 
   is_m <- volcano_df$is_marker %||% rep(FALSE, n)
   is_m[is.na(is_m)] <- FALSE
 
   if (mode == "all_markers") {
     return(which(is_m))
+  }
+
+  if (mode == "all_significant") {
+    sig <- volcano_df$Significant %||% rep(FALSE, n)
+    sig[is.na(sig)] <- FALSE
+    return(which(sig))
   }
 
   adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
@@ -649,16 +676,19 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   }
 
   gg <- ggplot2::ggplot()
-  # Background cloud (dimmed on the pin redraw when sibling_acc is set).
+  # Background cloud (dimmed on the pin redraw when sibling_acc is set). The
+  # non-faded cloud is fairly opaque (real sig/feature colors readable) - the
+  # volcano is about ALL peptides, not only markers.
   bg_alpha <- if (!is.null(sibling_acc) && !is.na(sibling_acc) &&
-                  nzchar(sibling_acc)) 0.12 else 0.6
+                  nzchar(sibling_acc)) .PELSA_VOLCANO_FADE_ALPHA
+              else .PELSA_VOLCANO_BG_ALPHA
   if (nrow(bg) > 0L) {
     bg$.tip <- tip(bg)
     gg <- gg + ggplot2::geom_point(
       data = bg,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
       color = pelsa_volcano_color_column(bg, color_mode),
-      alpha = bg_alpha, size = 1
+      alpha = bg_alpha, size = .PELSA_VOLCANO_BG_SIZE
     )
   }
   # Pinned protein's sibling peptides (full opacity, drawn on top of the cloud).
@@ -668,10 +698,11 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       data = sib,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
       color = pelsa_volcano_color_column(sib, color_mode),
-      alpha = 1, size = 2
+      alpha = 1, size = .PELSA_VOLCANO_MARKER_SIZE + 0.4
     )
   }
-  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last).
+  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Only SLIGHTLY larger
+  # than the cloud so it does not visually dominate the other peptides.
   if (nrow(mk) > 0L) {
     mk$.tip <- tip(mk)
     gg <- gg + ggplot2::geom_point(
@@ -679,7 +710,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
       fill = .PELSA_VOLCANO_MARKER_COLOR,
       color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = 2.4, stroke = 0.5
+      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4
     )
   }
 
@@ -689,20 +720,20 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
                                    color = "grey40")
   }
 
+  # Labels are NOT drawn as a ggplot geom_text (that renders ON the point, hard
+  # to read, and ggrepel does not survive ggplotly+toWebGL). Instead we collect
+  # the labeled rows here and add them as native plotly boxed annotations AFTER
+  # the build (white opaque-ish bg + a border colored to the labeled point), so
+  # they survive toWebGL and read as clear callouts. See add_annotations below.
   lab_idx <- tryCatch(
     pelsa_volcano_label_rows(full_df, mode = label_mode, n_top = n_top),
     error = function(e) integer(0)
   )
+  lab_df <- NULL
   if (length(lab_idx) > 0L) {
     lab_df <- full_df[lab_idx, , drop = FALSE]
     lab_df <- lab_df[!is.na(lab_df$label) & nzchar(lab_df$label), , drop = FALSE]
-    if (nrow(lab_df) > 0L) {
-      gg <- gg + ggplot2::geom_text(
-        data = lab_df,
-        ggplot2::aes(x = .data$logFC, y = .data$logP, label = .data$label),
-        size = 2.6, vjust = -0.8, check_overlap = TRUE
-      )
-    }
+    if (nrow(lab_df) == 0L) lab_df <- NULL
   }
 
   gg <- gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") +
@@ -719,10 +750,53 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # clean -- the attribute is benign and unused for scattergl.
   p <- .pelsa_strip_hoveron(p)
   p <- suppressWarnings(plotly::toWebGL(p))
+  # Boxed labels (white opaque-ish bg, border = labeled point's own color).
+  if (!is.null(lab_df)) {
+    p <- .pelsa_volcano_label_annotations(p, lab_df, color_mode)
+  }
   if (isTRUE(register_click)) {
     p <- plotly::event_register(p, "plotly_click")
   }
   p
+}
+
+# Add boxed labels to a built volcano plotly as native annotations (so they
+# survive toWebGL, which a ggplot geom_text/ggrepel layer would not). Each label
+# is a white, slightly-transparent box (matching the Statistics > Volcano boxed
+# style) with a 1px border colored to that point's OWN color (sig_color or
+# feature_color for the active mode), tying the box to its point. A small
+# alternating vertical stagger reduces box-on-box overlap when several labels
+# cluster; the default best_per_marker / the new "none" mode keep counts low.
+#
+# @param p          a built plotly (post-toWebGL) volcano.
+# @param lab_df     the labeled rows (logFC, logP, label, + color columns).
+# @param color_mode "significance" | "feature" (drives the border color).
+# @return p with annotations added.
+# @noRd
+.pelsa_volcano_label_annotations <- function(p, lab_df, color_mode) {
+  if (is.null(lab_df) || nrow(lab_df) == 0L) return(p)
+  border <- pelsa_volcano_color_column(lab_df, color_mode)
+  # Alternating vertical offset (in pixels) so stacked boxes step apart.
+  n <- nrow(lab_df)
+  yshift <- ifelse(seq_len(n) %% 2L == 0L, 26, 14)
+  plotly::add_annotations(
+    p,
+    x          = lab_df$logFC,
+    y          = lab_df$logP,
+    text       = lab_df$label,
+    xref = "x", yref = "y",
+    showarrow  = TRUE,
+    arrowcolor = border,
+    arrowwidth = 0.8,
+    arrowhead  = 0,
+    ax = 0, ay = -yshift,             # leader points down to the marker
+    font       = list(size = 10, color = "#222222"),
+    bgcolor    = "rgba(255,255,255,0.85)",
+    bordercolor = border,
+    borderwidth = 1,
+    borderpad  = 2,
+    captureevents = FALSE
+  )
 }
 
 # ---- 7F: the static export ggplot + the empty matched-cache frame -----------
@@ -744,14 +818,49 @@ pelsa_volcano_empty_matched <- function() {
 
 # Assemble the per-protein intensity LINE ggplot from 3C line data (the pinned
 # panel's plot). One line per (peptide_seq, pep_occurrence_idx), colored by the
-# end-of-line aa_label; marker proteins facet sig/other (>1 panel value), a
-# non-marker single panel. Pure ggplot - the caller wraps it in ggplotly.
+# end-of-line aa_label; marker proteins facet Significant/Non-significant (>1
+# panel value), a non-marker single panel. Pure ggplot - the caller wraps it in
+# ggplotly.
+#
+# The PINNED peptide (the one the user clicked) is highlighted: its line/points
+# are drawn in GOLD and its legend entry is bolded + suffixed " (selected)", so
+# it is easy to tell the clicked peptide apart from the other peptides mapped to
+# the same protein. The facet strip labels are bold + sit ABOVE the panel (so
+# the band never overlaps the lines).
 #
 # @param ld a pelsa_intensity_line_data() frame (condition factor, mean_log2,
 #   peptide_seq, pep_occurrence_idx, aa_label, panel).
+# @param pinned_label the pinned peptide's aa_label (e.g. "aa462") to highlight,
+#   or NULL for no highlight.
 # @return a ggplot object.
 # @noRd
-pelsa_intensity_line_ggplot <- function(ld) {
+pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
+  # Order aa_labels by residue position so the legend reads ascending.
+  pos <- suppressWarnings(as.integer(sub("^aa", "", ld$aa_label)))
+  raw_lvl <- unique(ld$aa_label[order(pos, ld$aa_label)])
+
+  # Relabel the pinned key in the DATA + the factor levels (so ggplotly carries
+  # the bold "(selected)" text into the trace name - ggplotly uses the factor
+  # level as the legend/trace name, not scale_*'s `labels=` arg). Bold via plotly
+  # HTML (<b>); harmless plain text in a static ggplot.
+  pinned_disp <- if (!is.null(pinned_label) && nzchar(pinned_label)) {
+    paste0("<b>", pinned_label, " (selected)</b>")
+  } else NA_character_
+  remap <- function(x) ifelse(!is.na(pinned_disp) & x == pinned_label,
+                              pinned_disp, x)
+  ld$aa_label <- remap(ld$aa_label)
+  lvl <- remap(raw_lvl)
+  ld$aa_label <- factor(ld$aa_label, levels = lvl)
+
+  # Per-key colors: the pinned peptide gold, the rest from the default hue
+  # palette.
+  is_pinned_lvl <- !is.na(pinned_disp) & lvl == pinned_disp
+  others <- lvl[!is_pinned_lvl]
+  hues <- scales::hue_pal()(max(length(others), 1L))
+  pal <- stats::setNames(rep(NA_character_, length(lvl)), lvl)
+  pal[others] <- hues[seq_along(others)]
+  if (any(is_pinned_lvl)) pal[lvl[is_pinned_lvl]] <- .PELSA_VOLCANO_GOLD
+
   gg <- ggplot2::ggplot(
     ld,
     ggplot2::aes(x = .data$condition, y = .data$mean_log2,
@@ -760,16 +869,22 @@ pelsa_intensity_line_ggplot <- function(ld) {
                  color = .data$aa_label)
   ) +
     ggplot2::geom_line(na.rm = TRUE) +
-    ggplot2::geom_point(na.rm = TRUE, size = 1.4)
-  # Marker proteins: facet sig/other; non-marker -> single panel.
+    ggplot2::geom_point(na.rm = TRUE, size = 1.4) +
+    ggplot2::scale_color_manual(values = pal, drop = FALSE)
+  # Marker proteins: facet Significant/Non-significant; non-marker -> single.
   if (length(unique(ld$panel)) > 1L) {
     gg <- gg + ggplot2::facet_wrap(~ .data$panel, ncol = 1, scales = "free_y")
   }
   gg +
     ggplot2::labs(x = NULL, y = "mean log2 intensity", color = NULL) +
     ggplot2::theme_bw() +
-    ggplot2::theme(legend.position = "right",
-                   axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
+    ggplot2::theme(
+      legend.position = "right",
+      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+      strip.text = ggplot2::element_text(face = "bold"),
+      strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
+      panel.spacing = ggplot2::unit(0.8, "lines")
+    )
 }
 
 # Re-derive a volcano df for export (all_peptide / best_peptide), from plain
