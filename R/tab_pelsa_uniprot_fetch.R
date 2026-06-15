@@ -239,14 +239,30 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 
 # ---- (B) httr2 fetch ---------------------------------------------------------
 
-# UniProt REST base; per-accession `.json` GET. The notebook batches <=500 via
-# the search endpoint, but per-accession is simpler and adequate for the app's
-# top-up (a handful of cache misses); each request is independently retryable
-# and a single 404 only drops one accession.
-.PELSA_UNIPROT_BASE <- "https://rest.uniprot.org/uniprotkb"
-.PELSA_UNIPROT_UA   <- "pelsa_qc/0.1 (PELSA data pipeline)"
-# circuit breaker: stop after this many CONSECUTIVE server (5xx/network) errors
+# UniProt REST. We fetch in BATCHES via the /search endpoint
+# (?query=accession:(P1 OR P2 OR ...)) rather than one {accession}.json GET per
+# accession. A full species rebuild has tens of thousands of accessions; at the
+# old serial ~10 req/s that was hours. Batching turns N requests into
+# ceil(N / batch_size) page requests (each /search "page" returns up to `size`
+# entries; UniProt paginates the remainder via a Link: rel="next" cursor header),
+# an order-of-magnitude fewer requests for the SAME parsed output.
+#
+# IMPORTANT (accuracy): we do NOT pass a feature `fields=` projection. A
+# projection would have to enumerate every UniProt feature type the classifier
+# reads, and any omission would SILENTLY drop features. Omitting `fields` returns
+# full entries (all feature types), so the batched parse is byte-identical to the
+# per-accession parse. The win here is purely the request count, not payload
+# trimming.
+.PELSA_UNIPROT_BASE        <- "https://rest.uniprot.org/uniprotkb"
+.PELSA_UNIPROT_SEARCH_PATH <- "search"
+.PELSA_UNIPROT_UA          <- "pelsa_qc/0.1 (PELSA data pipeline)"
+# circuit breaker: stop after this many CONSECUTIVE failed BATCHES (network/5xx
+# after retries) so a UniProt outage surfaces a clear error instead of grinding.
 .PELSA_BREAKER_LIMIT <- 5L
+# Accessions OR'd into one /search query. Kept modest so the query string stays
+# well within URL limits; the per-page `size` matches it so one page usually
+# covers a whole batch (the cursor handles any spillover).
+.PELSA_BATCH_SIZE <- 200L
 
 # Transient predicate for req_retry: UniProt rate limit + gateway errors.
 # @noRd
@@ -254,29 +270,104 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
   httr2::resp_status(resp) %in% c(429L, 500L, 502L, 503L, 504L)
 }
 
-# Fetch + parse UniProt features for a set of accessions.
+# Build the /search query value for ONE batch of accessions:
+#   accession:(P1 OR P2 OR ... )
+# req_url_query() URL-encodes it, so spaces/colons/parens are safe.
+# @noRd
+.pelsa_accession_query <- function(accs) {
+  paste0("accession:(", paste(accs, collapse = " OR "), ")")
+}
+
+# Pull the `results` list out of one parsed /search page (the JSON shape is
+# {"results": [ <entry>, ... ]}). Returns list() for an empty/odd page.
+# @noRd
+.pelsa_search_results <- function(parsed) {
+  if (is.null(parsed) || !is.list(parsed)) return(list())
+  res <- parsed$results
+  if (is.null(res) || !is.list(res)) return(list())
+  res
+}
+
+# Fetch ALL pages for ONE batch's query, following UniProt's Link: rel="next"
+# cursor. Returns the accumulated list of entry objects (each an entry as
+# resp_body_json() yields). Throws on retry-exhausted network/5xx so the caller's
+# breaker can count consecutive batch failures. A 4xx (e.g. malformed query)
+# yields zero entries for the batch (its accessions become unresolved).
+# @noRd
+.pelsa_fetch_one_batch <- function(base_req, accs, size) {
+  page_req <- httr2::req_url_path_append(base_req, .PELSA_UNIPROT_SEARCH_PATH)
+  page_req <- httr2::req_url_query(
+    page_req,
+    query  = .pelsa_accession_query(accs),
+    format = "json",
+    size   = size
+  )
+
+  # req_perform_iterative + iterate_with_link_url("next") walks the cursor pages
+  # until no rel="next" Link remains. on_error = "return" stops paginating on a
+  # failed page but keeps the good pages collected so far.
+  resps <- httr2::req_perform_iterative(
+    page_req,
+    next_req = httr2::iterate_with_link_url(rel = "next"),
+    max_reqs = Inf,
+    on_error = "return"
+  )
+
+  # A retry-exhausted transient/5xx (or network) error surfaces as the LAST
+  # element being an error condition; re-throw so the batch counts as failed.
+  failed <- Filter(function(r) inherits(r, "error") || inherits(r, "condition"),
+                   resps)
+  if (length(failed) > 0L) {
+    # Only treat SERVER/network failures as batch failures; a 4xx is a healthy
+    # server rejecting the query -> zero entries, not a breaker trip.
+    last <- failed[[length(failed)]]
+    status <- tryCatch(httr2::resp_status(last$resp), error = function(e) NA_integer_)
+    if (is.na(status) || status >= 500L) {
+      stop(last)
+    }
+  }
+
+  ok <- Filter(function(r) inherits(r, "httr2_response"), resps)
+  entries <- list()
+  for (resp in ok) {
+    if (httr2::resp_status(resp) >= 400L) next
+    parsed <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
+    entries <- c(entries, .pelsa_search_results(parsed))
+  }
+  entries
+}
+
+# Fetch + parse UniProt features for a set of accessions (BATCHED /search).
 #
-# Off the reactive path (runs once at Start-Analysis / species refresh). Each
-# accession is fetched as `{accession}.json`, parsed by the pure parser above,
-# and accumulated. Accessions that 404, error, or return no usable features go
-# into `unresolved` (feeds the Summary "proteins failed annotation fetch" QC
-# metric). A simple consecutive-server-error circuit breaker aborts the whole
-# run with a clear error so the app can surface "UniProt unavailable".
+# Off the reactive path (runs once at Start-Analysis / species refresh). The
+# accessions are chunked (batch_size each), every chunk fetched as a single
+# /search query (paginated by cursor), and all returned entries parsed by the
+# pure parser above. Accessions NOT returned by any page (404-equivalent: not in
+# UniProt, or returned with no usable features) go into `unresolved` (feeds the
+# Summary "proteins failed annotation fetch" QC metric). A consecutive-failed-
+# BATCH circuit breaker aborts with a clear error so the app can surface "UniProt
+# unavailable".
+#
+# CONTRACT (unchanged): returns list(features = <8-col data.frame>, unresolved =
+# <character vector>), identical in shape + content to the prior per-accession
+# fetcher for the same accessions.
 #
 # Network calls use req_retry (exponential backoff, transient 429/5xx, native
-# Retry-After) + req_throttle (~10 req/s) + a User-Agent header. DO NOT call
-# against the live network in tests.
+# Retry-After) + req_throttle + a User-Agent header. DO NOT call against the live
+# network in tests.
 #
 # @param accessions character vector of UniProt accessions
 # @param base       UniProt REST base URL (override for testing)
 # @param max_tries  per-request retry attempts (default 5)
 # @param rate       throttle capacity per second (default 10)
+# @param batch_size accessions per /search query (default 200)
 # @return list(features = <8-col data.frame>, unresolved = <character vector>)
 # @noRd
 pelsa_fetch_uniprot <- function(accessions,
                                 base = .PELSA_UNIPROT_BASE,
                                 max_tries = 5L,
-                                rate = 10L) {
+                                rate = 10L,
+                                batch_size = .PELSA_BATCH_SIZE) {
   if (!is.character(accessions)) {
     stop("pelsa_fetch_uniprot: `accessions` must be a character vector")
   }
@@ -285,6 +376,7 @@ pelsa_fetch_uniprot <- function(accessions,
     return(list(features = pelsa_empty_feature_frame(),
                 unresolved = character(0)))
   }
+  batch_size <- max(1L, as.integer(batch_size))
 
   base_req <- httr2::request(base)
   base_req <- httr2::req_user_agent(base_req, .PELSA_UNIPROT_UA)
@@ -294,56 +386,55 @@ pelsa_fetch_uniprot <- function(accessions,
     max_tries    = max_tries,
     is_transient = .pelsa_is_transient
   )
-  # Do not raise on 404 -- a missing accession is "unresolved", not fatal.
+  # Do not raise on 4xx -- a query that matches nothing is "unresolved", not
+  # fatal; only 5xx/network are errors (counted by the breaker).
   base_req <- httr2::req_error(
     base_req,
     is_error = function(resp) httr2::resp_status(resp) >= 500
   )
 
-  entries    <- list()
-  unresolved <- character(0)
-  consecutive_server_errors <- 0L
+  # Chunk the accessions into batches.
+  n <- length(accessions)
+  n_batches <- ceiling(n / batch_size)
+  batches <- split(accessions, rep(seq_len(n_batches),
+                                   each = batch_size, length.out = n))
 
-  for (acc in accessions) {
-    req <- httr2::req_url_path_append(base_req, paste0(acc, ".json"))
+  entries <- list()
+  consecutive_batch_failures <- 0L
 
-    resp <- tryCatch(
-      httr2::req_perform(req),
+  for (b in batches) {
+    fetched <- tryCatch(
+      .pelsa_fetch_one_batch(base_req, b, size = batch_size),
       error = function(e) e
     )
 
-    # network / 5xx error (after retries exhausted) -> trip breaker
-    if (inherits(resp, "error") || inherits(resp, "condition")) {
-      consecutive_server_errors <- consecutive_server_errors + 1L
-      unresolved <- c(unresolved, acc)
-      if (consecutive_server_errors >= .PELSA_BREAKER_LIMIT) {
+    if (inherits(fetched, "error") || inherits(fetched, "condition")) {
+      consecutive_batch_failures <- consecutive_batch_failures + 1L
+      # accessions in this failed batch are (for now) unresolved; the merge in
+      # the caller retains any previously-cached rows for them.
+      if (consecutive_batch_failures >= .PELSA_BREAKER_LIMIT) {
         stop(sprintf(
-          "pelsa_fetch_uniprot: UniProt unavailable -- %d consecutive errors (last: %s)",
-          consecutive_server_errors,
-          conditionMessage(resp)
-        ))
+          paste0("pelsa_fetch_uniprot: UniProt unavailable -- %d consecutive ",
+                 "batch failures (last: %s)"),
+          consecutive_batch_failures, conditionMessage(fetched)))
       }
       next
     }
-
-    status <- httr2::resp_status(resp)
-    if (status >= 400L) {
-      # 404 / other client error: unresolved, but server is healthy -> reset
-      consecutive_server_errors <- 0L
-      unresolved <- c(unresolved, acc)
-      next
-    }
-    consecutive_server_errors <- 0L
-
-    parsed <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
-    df <- pelsa_parse_uniprot_json(parsed)
-    if (nrow(df) == 0L) {
-      unresolved <- c(unresolved, acc)
-    } else {
-      entries[[length(entries) + 1L]] <- parsed
-    }
+    consecutive_batch_failures <- 0L
+    entries <- c(entries, fetched)
   }
 
   features <- pelsa_parse_uniprot_json_batch(entries)
-  list(features = features, unresolved = unique(unresolved))
+
+  # unresolved = the input accessions NOT present in any returned entry. This
+  # covers 404-equivalents (absent from UniProt), accessions in a failed batch,
+  # and entries that parsed to zero usable features.
+  resolved <- if (nrow(features) > 0L) {
+    unique(as.character(features$accession))
+  } else {
+    character(0)
+  }
+  unresolved <- setdiff(accessions, resolved)
+
+  list(features = features, unresolved = unresolved)
 }

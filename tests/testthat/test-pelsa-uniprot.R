@@ -289,9 +289,45 @@ test_that("pelsa_fetch_uniprot returns empty result for empty input (no network)
   expect_equal(length(res$unresolved), 0L)
 })
 
+# ---- batched /search parse parity (no network) ------------------------------
+# The batched fetcher pulls a {"results": [ <entry>, ... ]} page and parses the
+# `results` array with pelsa_parse_uniprot_json_batch. This must yield EXACTLY
+# the same 8-col rows as parsing each entry alone (the per-accession design's
+# output) - batching is a transport change, never a parsing change.
+
+test_that("a /search results array parses identically to per-accession entries", {
+  mk_entry <- function(acc, type, desc, s, e) list(
+    primaryAccession = acc,
+    features = list(list(
+      type = type, description = desc,
+      location = list(start = list(value = s, modifier = "EXACT"),
+                      end   = list(value = e, modifier = "EXACT"))
+    ))
+  )
+  entries <- list(
+    mk_entry("P00001", "Active site", "Charge relay system", 48L, 48L),
+    mk_entry("P00002", "Domain", "Protein kinase domain", 10L, 260L),
+    mk_entry("P00003", "Transmembrane", "Helical", 35L, 55L)
+  )
+  # The /search page shape the batched fetcher consumes.
+  search_page <- list(results = entries)
+
+  per_accession <- do.call(rbind, lapply(entries, pelsa_parse_uniprot_json))
+  rownames(per_accession) <- NULL
+  batched <- pelsa_parse_uniprot_json_batch(search_page$results)
+
+  expect_identical(batched, per_accession)
+  # Spot-check the classifier on the batched rows (content, not just shape).
+  expect_identical(
+    batched$feature_class,
+    c("active_or_binding_site", "catalytic_domain", "transmembrane_or_signal")
+  )
+  expect_identical(batched$class_score, c(5L, 3L, 0L))
+})
+
 # ---- optional live smoke test (guarded) -------------------------------------
 
-test_that("pelsa_fetch_uniprot live smoke test", {
+test_that("pelsa_fetch_uniprot live smoke test (batched)", {
   testthat::skip_on_cran()
   testthat::skip_on_ci()
   testthat::skip_if_offline()
@@ -303,4 +339,70 @@ test_that("pelsa_fetch_uniprot live smoke test", {
   expect_true(all(
     res$features$feature_class %in% names(pelsa_feature_class_scores())
   ))
+})
+
+# ---- live correctness: batched fetch == manual ground truth -----------------
+# Verifies the BATCHED fetcher returns the SAME annotations as fetching each
+# accession alone (the independent per-accession .json path = ground truth), AND
+# that specific, hand-verified features match the real UniProt entry. Guarded:
+# only runs with a live network, off CI/CRAN.
+
+test_that("batched fetch matches per-accession ground truth for known accessions", {
+  testthat::skip_on_cran()
+  testthat::skip_on_ci()
+  testthat::skip_if_offline()
+
+  accs <- c("P04637", "P00533", "P38398", "P00761")  # TP53, EGFR, BRCA1, Trypsin
+
+  # (A) batched (one /search query, cursor-paginated)
+  batched <- pelsa_fetch_uniprot(accs, batch_size = 200L)$features
+
+  # (B) ground truth: per-accession .json, parsed by the same pure parser
+  manual_one <- function(acc) {
+    parsed <- jsonlite::fromJSON(
+      sprintf("https://rest.uniprot.org/uniprotkb/%s.json", acc),
+      simplifyVector = FALSE)
+    pelsa_parse_uniprot_json(parsed)
+  }
+  manual <- do.call(rbind, lapply(accs, manual_one))
+  rownames(manual) <- NULL
+
+  ord <- function(df) {
+    df[order(df$accession, df$feature_type, df$start, df$end, df$description),
+       , drop = FALSE]
+  }
+  b <- ord(batched); rownames(b) <- NULL
+  m <- ord(manual);  rownames(m) <- NULL
+
+  expect_equal(b, m)                                   # byte-identical content
+  expect_setequal(unique(batched$accession), accs)     # all 4 resolved
+})
+
+test_that("batched fetch returns hand-verified P00761 (trypsin) features", {
+  testthat::skip_on_cran()
+  testthat::skip_on_ci()
+  testthat::skip_if_offline()
+
+  # Ground truth read MANUALLY off the UniProt P00761 entry:
+  #   Active site   48,  92, 185  ("Charge relay system")
+  #   Binding site  60,  62,  65, 70  (Ca2+ ligand)
+  #   Site         179  ("Required for specificity")
+  #   (no Signal / Transmembrane feature on this entry)
+  p <- pelsa_fetch_uniprot("P00761")$features
+  p <- p[p$accession == "P00761", , drop = FALSE]
+
+  act <- p[p$feature_type == "Active site", ]
+  expect_setequal(act$start, c(48L, 92L, 185L))
+  expect_true(all(act$feature_class == "active_or_binding_site"))
+  expect_true(all(act$class_score == 5L))
+
+  bind <- p[p$feature_type == "Binding site", ]
+  expect_setequal(bind$start, c(60L, 62L, 65L, 70L))
+
+  site <- p[p$feature_type == "Site" & p$start == 179L, ]
+  expect_equal(nrow(site), 1L)
+  expect_equal(site$description, "Required for specificity")
+
+  # Correctly NO transmembrane/signal feature on trypsin.
+  expect_equal(nrow(p[p$feature_class == "transmembrane_or_signal", ]), 0L)
 })
