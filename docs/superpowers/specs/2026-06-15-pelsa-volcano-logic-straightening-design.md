@@ -3,17 +3,114 @@
 **Date:** 2026-06-15 - **Branch:** feat/pelsa-integration - **Module:** PELSA Section 3 (Volcano + pinned panel)
 
 A behavior-correction pass over the already-built volcano + pinned-panel + Woods
-panel. Nothing is net-new architecture; each item below straightens the *logic*
-of an existing feature to match the agreed interaction model. Grouped by the
-three surfaces: the **volcano**, the **fixed (pinned) panel**, and the **Woods
-panel**.
+panel, plus a new **Find-accession** control. Reviewed by a 4-lens Opus team
+(backend, software, UI/UX, product); their findings and the user's decisions are
+folded in below.
+
+**The central model (decision 2026-06-15): ONE selection.** Protein identity
+enters the *plot* in exactly one transient way at a time - a `selection` whose
+origin is either a **click** (pin a peptide) or a **Find** (type an accession).
+A new selection of either kind REPLACES the prior one (click replaces a find;
+find replaces a click). There is never a "both active" state, which dissolves the
+found-vs-clicked color collision the reviewers flagged. The persistent identity
+sets (Setup markers = magenta overlay; POI registry/export) are unchanged and
+orthogonal to `selection`.
 
 Key files:
-- `R/tab_pelsa_section3.R` - module server (click -> pin, proxy restyle, metadata UI, renders).
-- `R/tab_pelsa_section3_helpers.R` - volcano build, tooltip, pin-opacity/recolor, intensity ggplot.
+- `R/tab_pelsa_section3.R` - module server (click/find -> selection, restyle, metadata UI, renders).
+- `R/tab_pelsa_section3_helpers.R` - volcano build, tooltip, label modes, intensity ggplot.
+- `R/tab_pelsa_section3_recolor_helpers.R` - **NEW** file: the interaction/selection pure helpers (recolor, find-mask, metadata-rows) - see "File split" below.
 - `R/tab_pelsa_volcano_helpers.R` - `pelsa_build_volcano_df` (df columns: `id`, `logFC`, `logP`, `adj.P.Val`, `P.Value`, `Significant`, `sig_direction`, `sig_color`, `feature_class_primary`, `feature_color`, `winning_accession`, `winning_gene`, `PG.Genes`, `PG.ProteinAccessions`, `pep_start`, `pep_end`, `label`, `is_marker`).
 - `R/tab_pelsa_woods_helpers.R` - coverage/feature/Woods builders + tooltip joins.
 - `R/tab_pelsa_intensity_helpers.R` - intensity line data (already `show_all`).
+
+---
+
+## The selection model (replaces the old pin/dim model)
+
+A single `selection()` reactiveVal: `NULL`, or
+`list(origin = "click"|"find", accession, peptide_seq, label, row)`.
+- A **click** resolves (via `pelsa_volcano_resolve_click`) to a peptide -> sets
+  `selection(list(origin="click", peptide_seq=<clicked>, accession=<winning_acc>, ...))`.
+- A **Find** that resolves to exactly ONE accession auto-pins that accession's
+  BEST peptide (smallest adj.P.Val among its peptides in the active df) ->
+  `selection(list(origin="find", accession=<acc>, peptide_seq=<best>, ...))`.
+  A Find that matches MULTIPLE accessions highlights all matched peptides gold but
+  does NOT pin (no single protein to focus); the panel stays on the prior
+  selection or empty, and the match notice says "K accessions / N peptides - type
+  a single accession to open its panel."
+- Setting either replaces the other (one reactiveVal).
+- Cleared on contrast switch and by the **Clear selection** button.
+
+`selection()` drives BOTH (a) the gold highlight on the volcano and (b) the fixed
+panel (metadata + intensity + Woods). One source of truth.
+
+### Volcano gold highlight (proxy restyle, no rebuild)
+On `selection()` change the volcano is recolored via a single
+`plotlyProxyInvoke("restyle", ...)` (NOT a rebuild):
+- the **selected peptide** (`peptide_seq`) -> GOLD FILL `#D4AF37` + a thin DARK
+  ring + slightly larger size (so the one driving the panel stays identifiable);
+- **same-accession peptides** (`winning_accession == selection$accession`, minus
+  the selected one) -> original fill + GOLD RING (`marker.line.color = gold`,
+  `marker.line.width ~ 2`) - a shape channel, CVD-safe;
+- for a **multi-accession Find** (no pin): every matched peptide -> GOLD FILL
+  (uniform), nothing dark-ringed (no single "the one");
+- **every other point** -> ORIGINAL fill (`sig_color`/`feature_color`; magenta for
+  non-selected markers), no ring, full opacity (NO desaturation).
+- GOLD FILL wins over magenta for the selected peptide; a same-accession marker
+  keeps magenta fill + gains the gold ring; non-selected markers stay plain magenta.
+
+The recolor pure helper:
+`pelsa_volcano_recolor(df, selection, find_mask = NULL, color_mode)` returns, keyed
+to the two restyled traces from `pelsa_volcano_marker_split(df)`:
+```
+list(
+  background = list(color = <chr[nrow(split$background)]>,
+                    line.color = <chr...>, line.width = <num...>),
+  markers    = list(color = <chr[nrow(split$markers)]>,
+                    line.color = <chr...>, line.width = <num...>)
+)
+```
+- `color`: gold for selected/found, else the point's original color (from
+  `color_mode`); `line.color`/`line.width`: gold ring for siblings + dark ring for
+  the selected peptide, else `"rgba(0,0,0,0)"` / `0`.
+- `find_mask` (a logical over df rows, from `pelsa_volcano_find_mask`) is the
+  multi-accession highlight set; when `selection$origin == "find"` and single, the
+  pin path is used instead (mask == that accession). When `selection` is NULL and
+  no find, the helper returns base fills + no rings (full restore).
+- Unit-tested: array LENGTHS equal `nrow(split$background)` / `nrow(split$markers)`;
+  selected -> gold; sibling -> gold line; others -> original; NULL -> base.
+
+> **CRITICAL wiring notes (from the review - correctness, not polish):**
+> - **Deterministic trace identity (BE#2/#3, SW#5):** `pelsa_volcano_build_plot`
+>   emits a VARIABLE number of traces (background only if `nrow(bg)>0`, markers
+>   only if `nrow(mk)>0`, plus the hline + label annotations), and ggplotly gives
+>   them no usable name. STAMP an identifiable tag at build time: set
+>   `p$x$data[[k]]$meta <- "pelsa_bg"` / `"pelsa_mk"` on the background/marker
+>   traces right after the build, and resolve indices via a small
+>   `.pelsa_volcano_trace_index(p)` that scans `meta`. The Woods cross-highlight's
+>   hard-coded `list(0L)` is fixed the same way. (Confirmed: ggplotly serializes a
+>   `shape=21` point's `fill=` as scattergl `marker.color`, so a `marker.color`
+>   restyle DOES recolor the magenta markers.)
+> - **Main plot built with `sibling_acc = NULL`** so there are exactly TWO point
+>   traces (background == `split$background` row order; markers == `split$markers`).
+>   The recolor arrays key to those two. The `sibling_acc != NULL` rebuild branch
+>   in `pelsa_volcano_build_plot` is retired (no remaining caller) along with
+>   `pelsa_volcano_pin_opacity` and the dim constants.
+> - **ONE composite restyle observer (C3):** a single observer reads `selection()`
+>   + the find mask, computes `pelsa_volcano_recolor`, and emits ONE restyle per
+>   trace covering `marker.color` + `marker.line.color` + `marker.line.width`. No
+>   separate Woods-outline observer (the Woods click now just sets `selection()`
+>   of origin "click", going through the same recolor - so Woods cross-highlight
+>   and pin are the SAME mechanism; the prior inline Woods restyle is removed).
+> - **Re-apply after a color-mode rebuild (A3):** the base plot rebuilds when
+>   `input$pelsa_color_mode` / label mode change, dropping the proxy restyle.
+>   Re-apply via `session$onFlushed(function() <restyle>, once = TRUE)` scheduled
+>   from the render (or a `plotly_afterplot` JS hook) so the highlight is
+>   re-drawn after the new figure registers client-side. The composite observer
+>   also depends on `input$pelsa_color_mode`. (Mechanism decided: `onFlushed`;
+>   if it proves flaky in the running app, fall back to folding the highlight into
+>   the build on color-mode change only.)
 
 ---
 
@@ -21,314 +118,239 @@ Key files:
 
 ### V1. Default label mode = "None"
 **Now:** `.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "best_per_marker"`.
-**Change:** `<- "none"`. The `none` mode already exists in
-`pelsa_volcano_label_rows` (returns `integer(0)`) and the radio control already
-lists "None". One-constant change; the per-contrast label-mode registry default
-follows it. No labels drawn until the user opts in.
+**Change:** `<- "none"`. PM#5 flagged the loss of the at-a-glance "which markers"
+cue; mitigate with an always-on caption "N marker proteins (magenta)" in the
+volcano (cheap, preserves the cue without label clutter). The `none` mode + radio
+option already exist.
 
-### V2. Point coloring is correct; the CLICK must NOT desaturate others
-**Now (correct):** marker peptides magenta (`#FF00FF`, `shape=21`, on top), sig
-up = `sig_color` darkred, sig down = blue `#1f4e9c`, ns = grey - via
-`pelsa_volcano_color_column` (significance mode) or `feature_color` (feature
-mode). Background cloud at `bg_alpha`.
-**Now (WRONG per spec):** on pin, `pelsa_volcano_pin_opacity` dims every
-non-sibling background point to `0.12` (the "wash to faint" the user rejects) and
-lifts siblings to opacity 1. That is a *desaturation/dim* model.
-**Change - replace the dim model with a RECOLOR model (decision: recolor via
-proxy restyle, gold wins even for markers):**
+### V2. Click recolors via the selection model (no desaturation)
+Replaces the old `pin_opacity` dim model entirely - see "The selection model"
+above. Clicking sets `selection(origin="click")`; the composite observer recolors.
 
-> **CRITICAL wiring notes (from UI/UX review - these are correctness, not polish):**
-> - **Dynamic trace indices (C1):** `pelsa_volcano_build_plot` emits a VARIABLE
->   number of traces - background only if `nrow(bg)>0`, markers only if
->   `nrow(mk)>0`, plus the threshold hline + label annotations. Do NOT hard-code
->   trace 0 = background / trace 1 = markers. Discover the indices at build time
->   by inspecting `p$x$data` trace names (the background/marker geoms carry
->   distinguishable legend/trace metadata) and thread them to the observer (e.g.
->   store on the plot or recompute via a small `.pelsa_volcano_trace_index(p)`
->   helper). The Woods cross-highlight currently hard-codes `list(0L)` - fix it
->   the same way.
-> - **ONE composite restyle owner (C3):** pin-recolor, Find-highlight, AND the
->   Woods->volcano outline ALL restyle the same volcano. Route them through a
->   SINGLE observer that reads `pinned()`, `find_accession()`, and
->   `woods_selected()` (a new reactiveVal replacing the inline Woods restyle) and
->   emits ONE restyle covering `marker.color` + `marker.line.color` +
->   `marker.line.width` for every relevant trace. Independent observers race and
->   leave stale highlights.
-> - **Re-apply after rebuild (A3):** the base plot REBUILDS when
->   `input$pelsa_color_mode` (or label mode) changes, which drops any proxy
->   restyle. The composite restyle observer MUST also depend on
->   `input$pelsa_color_mode` (and re-fire after the render) so an active
->   pin/find highlight survives a color-mode toggle.
-
-- New pure helper `pelsa_volcano_pin_recolor(df, accession, clicked_seq,
-  find_accession = NULL, color_mode = "significance")` returns per-point **color**
-  arrays for BOTH restyled traces (background + markers), each aligned to that
-  trace's point order from `pelsa_volcano_marker_split` (background ==
-  `split$background` row order, markers == `split$markers` row order). MUST be
-  unit-tested for `length(bg_colors) == nrow(split$background)` and
-  `length(mk_colors) == nrow(split$markers)` (C2):
-  - the **clicked peptide** (`id == clicked_seq`) -> GOLD FILL `#D4AF37`
-    (`marker.color`);
-  - **same-accession siblings** (`winning_accession == accession`, excluding the
-    clicked one) -> ORIGINAL fill + a GOLD RING (`marker.line.color = #D4AF37`,
-    `marker.line.width ~ 2`). DECISION: gold ring, not a second yellow fill -
-    shape/stroke is a second channel (CVD-safe, readable at small size, no
-    collision with the grey ns cloud). So siblings keep their sig/feature fill and
-    gain an outline.
-  - **every other point** -> its ORIGINAL color (`sig_color`/`feature_color` for
-    the background; magenta for non-selected markers), NO ring. No opacity change -
-    all points stay fully visible.
-  - Gold FILL wins over magenta: a clicked marker is recolored gold in the marker
-    trace too (decision: gold wins). A sibling marker keeps magenta fill + gains
-    the gold ring. Non-selected markers stay plain magenta.
-- The helper returns, per restyled trace, BOTH a `marker.color` array (fills:
-  gold for clicked/found, else original) AND `marker.line.color` /
-  `marker.line.width` arrays (gold ring for siblings + the Woods-clicked peptide,
-  else transparent / 0). The composite observer emits these in ONE restyle per
-  trace. Color-mode-aware (the "original" fills come from the active color mode).
-  On unpin / clear / contrast-switch the helper returns base fills + no rings
-  (full restore).
-- **Retire** `pelsa_volcano_pin_opacity` from the wired path (keep the function +
-  its test, marked KEPT-BUT-UNWIRED like `pelsa_volcano_thin_note`, OR delete if
-  no caller remains - decide at implementation; prefer delete if truly orphaned).
-- The Woods->volcano cross-highlight (gold marker.line outline) is unaffected
-  *mechanically* but now coexists with a gold FILL; keep it (outline still marks
-  the Woods-clicked peptide). It already restyles `marker.line.*` on trace 0 only;
-  extend to trace 1 for consistency if the clicked Woods peptide is a marker.
-
-### V3. Floating tooltip - compact identity + effect size
+### V3. Floating tooltip - compact identity + effect size (DECIDED: 4 lines)
 **Now:** `tip()` shows Accession, Gene, Position, logFC, adj.P (5 lines).
-The user's spec lists 7 fields for the hover tooltip, but the UI/UX review (T1)
-flags a 7-line transient hover over a dense plot as too much to read. **Decision:
-keep the hover tooltip COMPACT (the full field set lives in the persistent
-pinned panel, P2).** Floating tooltip lines (order):
-1. `Peptide: <winning_gene>_aa<pep_start>` (gene->accession fallback when gene
-   empty; winning-accession label only - derived from `winning_gene`/
-   `winning_accession` + `pep_start`, NOT the full multilabel `label`).
-2. `Accession: <winning_accession or PG fallback>`
-3. `Gene: <winning_gene or PG.Genes fallback; "NA" when none>`
-4. `Sequence: <id>` (the peptide stripped sequence)
-5. `Position: <start>-<end>`
-6. `logFC: <..>`
-7. `adj.P: <..>`
-The user explicitly enumerated these 7 fields for the tooltip, so we honor the
-full set here; if it reads too long in practice we trim to (Peptide, Position,
-logFC, adj.P) and rely on the panel for the rest. Pure change inside `tip()` in
-`pelsa_volcano_build_plot`. "NA gene": when both `winning_gene` and `PG.Genes`
-are empty/NA, render the literal `NA`.
+**Change (UI/UX T1 + SW#12 - decide now, not "trim later"):** the persistent
+panel (P2) carries the FULL field set, so the hover stays COMPACT:
+1. `Peptide: <winning_gene>_aa<pep_start>` (winning-accession label; gene->acc
+   fallback when gene empty; NOT the full multilabel).
+2. `Position: <start>-<end>`
+3. `logFC: <..>`
+4. `adj.P: <..>`
+Pure change inside `tip()`. (If, in the running app, 4 lines feels too sparse, the
+Accession/Gene/Sequence lines are one-line adds - but we ship 4.)
 
-### V4. "Find accession" highlight control (new, in the Plot Controls panel)
-**New:** a Find module in `pelsa_volcano_sidebar`: a `textInput` where the user
-types an accession; on submit (an adjacent "Highlight" `actionButton`, or
-debounced text), ALL peptides whose `winning_accession == <entered>` are colored
-GOLD on the volcano. A small `helpText`/notice reports the count
-("N peptides highlighted" / "No peptides found for <acc>").
-**Mechanism (reuses V2's recolor, ONE restyle path):** the recolor helper is
-generalized to take an optional `find_accession` in addition to the pinned
-`(accession, clicked_seq)`:
-- `pelsa_volcano_pin_recolor(df, accession, clicked_seq, find_accession = NULL,
-  color_mode)` returns the per-point fill + ring arrays where:
-  - pinned clicked peptide -> GOLD FILL; pinned siblings -> original fill + GOLD
-    RING;
-  - peptides of `find_accession` -> GOLD FILL (uniform; no clicked/sibling split -
-    a Find has no clicked peptide);
-  - PRECEDENCE when a peptide is both pinned and found: a clicked peptide is
-    already gold fill (wins); a pinned SIBLING that is ALSO in `find_accession`
-    is promoted from ring-only to GOLD FILL (Find wants the whole accession solid
-    gold). Everything else original fill, no ring.
-- The Find accession lives in a `reactiveVal` (`find_accession()`), set by the
-  button/text observer and CLEARED on contrast switch (like `pinned()`); an empty
-  input clears it. The pin observer and the Find observer BOTH call the same
-  restyle, reading both `pinned()` and `find_accession()` so the two highlights
-  compose in one message (no fighting restyles).
-- The Find highlight is independent of pinning: a user can Find without clicking.
-  It does NOT open the fixed panel / Woods (those stay click-pin driven) - Find is
-  purely a volcano-highlight aid. **Discoverability (review I3):** the match
-  notice teaches the model, e.g. "12 peptides highlighted - click one to pin its
-  protein view."
-- **Control shape (review F1):** a `textInput` + a "Highlight" `actionButton`
-  (submit on Enter), NOT debounce-only - a debounced field fires partial-match
-  restyles mid-typing on a ~100k-point figure. The Clear button (see cross-cutting)
-  also clears this box.
-- **Matching (review F2 - make definite, not "optional"):** trim + uppercase the
-  input; match a peptide when its `winning_accession` OR any `PG.ProteinAccessions`
-  token equals the input OR shares its isoform base (strip a trailing `-\d+`).
-  The reported count is the union (so "N highlighted" == the points actually gold).
-  Multi-accession input (comma/space list) is a documented nice-to-have, deferred.
-- **Placement (review F3):** near the TOP of Plot Controls (it is an action, not a
-  display toggle), grouped with an `hr()`.
-- New pure helper `pelsa_volcano_find_mask(df, accession)` -> list(mask, count),
-  unit-tested: exact match, isoform-base match, PG-token match, empty/NA input,
-  accession present in cache but absent from the active df -> count 0 (review A2).
+### V4. "Find accession" control (new; in Plot Controls)
+A `textInput` + a **"Highlight"** `actionButton` (submit on Enter), placed in a
+**Highlight** section near the TOP of Plot Controls (review F3). On submit:
+- `pelsa_volcano_find_mask(df, input)` -> `list(mask, accessions, count)`:
+  trim + uppercase; a peptide matches when its `winning_accession` OR any
+  `PG.ProteinAccessions` token equals the input OR shares its isoform base (strip
+  trailing `-\d+`). `accessions` = the distinct matched `winning_accession` set.
+- **If exactly ONE accession matches:** auto-pin its BEST peptide ->
+  `selection(origin="find", accession=<acc>, peptide_seq=<best>)`. The panel opens.
+  Notice: "GENE (P12345): N peptides - panel opened below."
+- **If MULTIPLE accessions match:** highlight all matched peptides gold (no pin);
+  notice: "K proteins / N peptides highlighted - type one accession to open it."
+- **No match:** notice "No peptides found for <input>." Empty input: clear notice
+  + clear any find highlight.
+- Multi-accession list input (comma/space) is a documented nice-to-have, deferred.
+- Find membership uses the SAME widened rule the count reports, so "N highlighted"
+  == the gold points (review F2/BE#5). For consistency, pin-sibling membership
+  also widens to this rule so click and find agree on "same protein" (BE#5).
 
 ---
 
 ## SURFACE 2 - Fixed (pinned) panel
 
-### P1. Gold highlight on click (same mechanism as V2)
-Driven by V2's recolor restyle - the pinned peptide is GOLD FILL on the volcano,
-its same-accession peptides get a GOLD RING (original fill kept), all others
-untouched. No separate work beyond V2; the composite observer fires on `pinned()`.
+### P1. Gold highlight on selection (same mechanism as V2)
+Driven by the selection model: the selected peptide is gold-fill + dark-ring, its
+same-accession peptides gold-ring, all others untouched.
 
 ### P2. Expand the metadata panel
-**Now:** `pelsa_pin_metadata` shows 3 rows (Peptide=peptide_seq, Protein=accession,
-Label). The "Peptide" row currently shows the raw sequence and "Label" the
-multilabel - confusing overlap.
-**Change:** show these rows (mirrors the floating tooltip, plus the count), in
-order, built from the pinned volcano-df row (looked up by `pin$row`) + a matched-
-cache count:
-- **Peptide:** `<winning_gene>_aa<pep_start>` (winning-accession label; gene->acc
-  fallback).
+**Now:** 3 rows (Peptide=peptide_seq, Protein=accession, Label) - confusing overlap.
+**Change:** rows built by a pure `pelsa_pin_metadata_rows(volcano_df, row, n_peptides)`
+returning a **2-column data.frame `(label, value)`** (SW#3) the UI loops into a
+`<table>`; order:
+- **Peptide:** `<winning_gene>_aa<pep_start>` (gene->acc fallback).
 - **Accession:** `winning_accession` (PG fallback).
 - **Gene:** `winning_gene` (PG.Genes fallback; "NA" when none).
-- **# peptides in protein:** count of DISTINCT `PEP.StrippedSequence` in the
-  matched cache whose `accession == pin$accession` (decision: distinct sequences).
-- **Sequence:** `pin$peptide_seq` (the stripped sequence).
+- **Quantified peptides (this contrast):** `n_peptides` - see the count decision
+  below.
+- **Sequence:** the selected stripped sequence.
 - **Position:** `<pep_start>-<pep_end>`.
-- **adj.P:** formatted `%.2g`.
-- **logFC:** formatted `%.2f`.
-New pure helper `pelsa_pin_metadata_rows(volcano_df, row, n_peptides)` -> a small
-named-list/data.frame of (label, value) pairs, so the UI render is a thin table
-loop and the field logic is unit-tested. `n_peptides` is computed in the server
-(needs the matched cache) and passed in.
+- **adj.P:** `%.2g`.
+- **logFC:** `%.2f`.
 
-### P3. Intensity line plot - all peptides, two significance panels
-**Now (correct):** `pinned_line_data` calls `pelsa_intensity_line_data(..., show_all
-= TRUE)` -> every peptide of the pinned accession; `pelsa_intensity_line_plot`
-renders a vertical `plotly::subplot` of "Significant" (top) / "Non-significant"
-(bottom) single-panel ggplots; each line labeled `aa<pos>`; pinned line gold.
-**Change:** NONE expected - this already matches the spec. Verify at
-implementation that (a) both panels appear when both groups are non-empty, (b) a
-single-group protein still renders, (c) each line's end label is `aa<pos>`.
-If a discrepancy is found, fix minimally; otherwise no code change.
+**Peptide-count semantics (DECIDED - reconcile with what's drawn, BE#4/PM#4):**
+count = distinct `peptide_seq` actually PLOTTED for this accession in the active
+contrast (i.e. the rows `pelsa_woods_peptide_data` / the intensity builder draw),
+NOT the raw matched-cache total - so the number matches the Woods/intensity
+panels. Label it "Quantified peptides (this contrast)" so it is unambiguous.
+Computed in the server (it already has the Woods peptide frame) and passed in.
+
+### P3. Intensity line plot - all peptides, two significance panels (VERIFY ONLY)
+Already correct: `pinned_line_data` -> `pelsa_intensity_line_data(..., show_all=TRUE)`;
+`pelsa_intensity_line_plot` (the plotly wrapper - distinct from the
+`_ggplot` builder, SW#7) renders the vertical Significant/Non-significant subplot;
+selected line gold. Verify (a) both panels when both groups non-empty, (b)
+single-group renders, (c) single-CONDITION data renders a lone point with a note
+(UX#8), (d) the selected line highlight still resolves under the selection model.
+No code change unless a discrepancy surfaces.
 
 ---
 
 ## SURFACE 3 - Woods panel (3 tracks)
 
 ### W1. Coverage track - unchanged
-Grey backbone + gold covered intervals via `pelsa_coverage_intervals`
-(IRanges::reduce). No change.
+Grey backbone + gold covered intervals (`pelsa_coverage_intervals`, IRanges::reduce).
 
-### W2. Feature track - overlap resolution + tooltip rewrite
-**Now (lane packing):** `pelsa_feature_lanes` uses `IRanges::disjointBins`
-(greedy min-lane first-fit). This already realizes "sort overlapping by start,
-push later-start features to a lower sub-track": disjointBins assigns lane 1 to
-the earliest-start feature in an overlap cluster and bumps each subsequent
-overlapping feature to the next free lane. Confirm at implementation that the
-first lane renders on TOP (the track uses `scale_y_reverse`, so lane 1 is top -
-correct). No code change to packing.
-**Now (tooltip - WRONG per spec):** feature tooltip shows
-`feature_type / feature_class / start-end` - it does NOT list the overlapping
-peptides.
-**Change:** rewrite the feature tooltip to:
-- Feature name (`feature_type` when present else `feature_class`).
-- `start-end`.
-- **Overlapping peptides:** `aa<startA>;aa<startB>;...` - the peptides (by
-  `pep_start`) that overlap this feature's `[start,end]`. No gene name (single
-  protein). De-duplicate + sort by position; "none" when no peptide overlaps.
-- New pure helper `pelsa_feature_overlap_peptides(feat_starts, feat_ends, pep_starts,
-  pep_ends)` -> character per feature (the REVERSE of
-  `pelsa_woods_overlap_annotations`; same `data.table::foverlaps`, peptide labels
-  `aa<pep_start>`). The feature-track builder takes the peptide spans (or the
-  precomputed per-feature string) so the `.tip` includes the overlap list.
-  Wiring: `pinned_woods()` already has `pep` + `feats`; compute the per-feature
-  overlap string there and attach to `lanes` before `pelsa_feature_track_ggplot`.
+### W2. Feature track - tooltip lists overlapping peptides
+**Lane packing:** `pelsa_feature_lanes` (IRanges::disjointBins) already realizes
+"earliest-start on top, later-start pushed down" (lane 1 top via `scale_y_reverse`).
+No change.
+**Tooltip rewrite:** show Feature name (`feature_type` else `feature_class`),
+`start-end`, and **Overlapping peptides** `aa<startA>;aa<startB>;...` (de-duplicated,
+sorted by position; "none" when no overlap). New pure helper
+`pelsa_feature_overlap_peptides(feat_starts, feat_ends, pep_starts, pep_ends)` ->
+character per feature (reverse of `pelsa_woods_overlap_annotations`, same
+`data.table::foverlaps`). Computed in `pinned_woods()` and attached to the lanes
+frame before `pelsa_feature_track_ggplot`.
 
-### W3. Woods track - color by adj.P [0,1], drop gold sig outline
-**Now:** `pelsa_woods_track_ggplot` colors segments by `logFC`
-(`scale_color_gradient2` blue/grey/red, midpoint 0) AND draws a thick gold
-underline for `sig` peptides.
-**Change (DECISION 2026-06-15: color by -log10(adj.P), white->red; drop gold
-outline):**
-- Color the segment by `-log10(adj.P.Val)` on a `scale_color_gradient(low =
-  "white"/very-light-grey, high = red "#B2182B", name = "-log10(adj.P)")`, so
-  RED = significant - MATCHING the volcano's red=significant convention and
-  spreading the significant range (vs the original raw-[0,1] blue->red, which
-  reads backwards and crowds all significant peptides into one color).
-- Optionally clamp `-log10(adj.P)` at a ceiling (e.g. 5) so a handful of tiny
-  p-values don't flatten the rest; document the clamp in the legend if used.
-- NA adj.P -> -log10 undefined: map to the low (non-significant) end / grey.
-- REMOVE the gold significance underline segment + the `sig`-subset draw.
-- `sig` column stays on the data (still used by the intensity panel / exports);
-  only the Woods *outline* is dropped.
-- Tooltip keeps seq / span / logFC / adj.P / annotations (shows the RAW adj.P,
-  not the -log10, so the number is human-readable).
+### W3. Woods track - color by -log10(adj.P) white->red; drop gold outline
+**DECISION (user, 2026-06-15):** color segments by `-log10(adj.P.Val)`,
+`scale_color_gradient(low = near-white, high = red "#B2182B", name = "-log10(adj.P)")`,
+so red = most significant (magnitude). REMOVE the gold significance underline.
+- **Inf/NA guard (BE#6):** `adj.P == 0` (or below machine precision) -> `-log10`
+  is `Inf`; CLAMP `-log10(adj.P)` to a ceiling constant `.PELSA_WOODS_NEGLOG_CAP`
+  (default 5) so the most-significant peptides map to RED, not Inf->grey. NA adj.P
+  -> the low (white/grey) end.
+- **Direction caveat (BE#6c, UX#3):** this is a SIGNIFICANCE-MAGNITUDE scale, so a
+  significant DOWN peptide reads RED here while it is BLUE on the volcano. To
+  prevent the cross-track misread, label the legend "-log10(adj.P)" AND add a
+  one-line caption under the Woods box: "Color = significance magnitude (not
+  direction); logFC sign is on the y-axis." (The y-axis already carries direction.)
+- `sig` column stays on the data (intensity panel / exports); only the Woods
+  outline is dropped. Tooltip shows RAW adj.P (human-readable), not the -log10.
 
 ---
 
-## Cross-cutting: a latent bug to fix while here
+## Cross-cutting / cleanup
 
-`.PELSA_VOLCANO_BG_ALPHA` is **defined twice** in `tab_pelsa_section3_helpers.R`
-(line ~32 `<- 0.8`, line ~486 `<- 0.6`). The second wins, so the documented "fairly
-opaque 0.8" background is actually 0.6. Collapse to ONE definition (keep 0.8, the
-intended value per the A4 comment) and delete the duplicate. **Also update the
-static export ggplot** (`.pelsa_export_ggplot`, hard-coded `alpha = 0.6`) to the
-same shared constant so the on-screen cloud and the exported PDF match (review C4).
-Verify the dim constant `.PELSA_VOLCANO_BG_ALPHA_DIM` is only needed if
-`pin_opacity` survives; if `pin_opacity` is retired, the dim constant may become
-orphaned (remove if so).
+### File split (DECIDED: split in this pass)
+Both `tab_pelsa_section3.R` (~970) and `tab_pelsa_section3_helpers.R` (~1091)
+already exceed 800. Create `R/tab_pelsa_section3_recolor_helpers.R` for the new
+interaction cluster: `pelsa_volcano_recolor`, `pelsa_volcano_find_mask`,
+`pelsa_pin_metadata_rows`, `.pelsa_volcano_trace_index`, plus the shared gold
+constants. Move the EXISTING `pelsa_volcano_resolve_click` / `_sibling_mask` there
+too (they are the same interaction concern) to pull the helpers file back under
+800. Re-run `devtools::document()` (all `@noRd`, no NAMESPACE change). If the
+server file can't reach <800 by extraction alone, note it and keep the split to
+helpers (server-side Shiny wiring is harder to extract cleanly) - flag, don't
+force a fragile UI split.
 
-### Clear / unpin affordance (review I2)
-Add an explicit **"Clear selection"** `actionButton` in Plot Controls that resets
-`pinned()` (collapsing the bottom Woods card) and clears the Find box +
-`find_accession()`. Today the only way to drop a pin is a contrast switch.
-Specify the gesture clearly in helpText.
+### Gold constants (SW#6/UX#10)
+Consolidate `.PELSA_VOLCANO_GOLD` + `.PELSA_WOODS_GOLD` (both `#D4AF37`) into ONE
+`.PELSA_GOLD` in the recolor-helpers file; add `.PELSA_GOLD_RING_WIDTH` (2) and
+`.PELSA_SEL_DARK_RING` (selected peptide's dark outline). Note for the legend:
+coverage-interval gold AND selection gold are the same hue - the color key
+disambiguates by context (coverage = a track fill; selection = point fill/ring).
 
-### Color-mode switch must re-apply the highlight (review A3)
-See the CRITICAL wiring note under V2 - the composite restyle observer depends on
-`input$pelsa_color_mode` so a pin/find highlight is re-drawn after the
-color-mode-driven rebuild instead of silently vanishing.
+### BG_ALPHA duplicate + export parity (BE#9, SW#7)
+`.PELSA_VOLCANO_BG_ALPHA` is defined twice (`0.8` then `0.6`; the `0.6` wins, so
+the live cloud is currently 0.6). Collapse to ONE `0.8` and update the static
+export ggplot (`.pelsa_export_ggplot`, hard-coded `alpha = 0.6`) to the shared
+constant so screen and PDF match. (This DARKENS the live cloud slightly - intended.)
+Retire the now-orphaned `.PELSA_VOLCANO_BG_ALPHA_DIM` / `.PELSA_VOLCANO_FADE_ALPHA`
+with `pin_opacity` and the `sibling_acc` rebuild branch.
 
-### Update the stale Woods helpText (review A4)
-The layout helpText under the Woods box still says "gold outline = significant".
-W3 drops that outline; rewrite the helpText to describe the adj.P color encoding
-(including the blue=significant caveat, pending the W3 color decision below).
+### Clear selection button (review I2)
+An `actionButton("Clear selection")` in the Highlight section resets `selection()`
+(collapsing the Woods card) AND clears the Find box + find highlight, via ONE
+shared `clear_selection()` helper (not duplicated). Both Clear and contrast-switch
+route through it (SW#8).
+
+### Plot Controls grouping (UX#5)
+The box is overcrowded. Section it with headers: **Data** (contrast) /
+**Highlight** (Find input + Highlight button + match notice + Clear selection) /
+**Display** (color mode, label mode, top-N, best-peptide checkbox). Find/Clear in
+the Highlight group; Clear labeled "Clear selection & highlight" so it doesn't read
+as Find-only.
+
+### Color key (UX#1 - the biggest visual gap)
+plotly renders NO legend (colors are set outside `aes()`). Add a small static
+**Color key** block in Plot Controls listing: magenta = marker protein; gold fill =
+selected peptide; gold ring = same-protein peptide; red = significant up; blue =
+significant down; grey = not significant. (Feature-color mode shows the UniProt
+class palette instead of the sig three.)
+
+### Stale Woods helpText (review A4)
+The layout helpText still says "gold outline = significant" + "highlight ... in
+gold". Rewrite: "Coverage (gold = residues with peptide evidence); UniProt
+features (hover for overlapping peptides); Woods plot (y = logFC direction, color
+= significance magnitude -log10 adj.P). Click a Woods peptide to select it."
 
 ---
 
-## Sequencing
+## Sequencing (TDD)
 
-1. **Pure helpers + their tests first (TDD):**
-   `pelsa_volcano_pin_recolor` (incl. `find_accession`), `pelsa_volcano_find_mask`,
-   `pelsa_pin_metadata_rows`, `pelsa_feature_overlap_peptides`; tooltip-line change
-   covered by a build-smoke assertion; Woods adj.P color (smoke: returns ggplot,
-   no gold outline trace). Fix the `BG_ALPHA` duplicate.
-2. **Wire into the module:** swap the pin observer from `pin_opacity` to
-   `pin_recolor` (restyle traces 0 + 1, reading pinned() + find_accession());
-   add the Find textInput/button + `find_accession()` reactiveVal + count notice;
-   expand `pelsa_pin_metadata`; attach the per-feature overlap string in
-   `pinned_woods` + pass to the feature track; default label mode -> none.
-3. **Verify:** `devtools::document()` (no roxygen surface change expected),
-   `devtools::load_all`, full PELSA testthat suite 0-fail, ASCII-clean, files
-   <800 lines (note: both section3 files are already >800; this pass adds little
-   - keep an eye, split deferred unless a file crosses materially).
-4. Render smoke in the running app (manual) for the click recolor + tooltip +
-   panel + Woods color.
+1. **Pure helpers + tests first**, in the new recolor-helpers file:
+   `pelsa_volcano_recolor` (length + gold/sibling/other/NULL cases; trace-array
+   shape), `pelsa_volcano_find_mask` (exact / isoform-base / PG-token / empty /
+   present-in-cache-absent-from-df -> count 0), `pelsa_pin_metadata_rows`
+   (2-col df, field values, NA-gene -> "NA"), `pelsa_feature_overlap_peptides`,
+   `.pelsa_volcano_trace_index`. Tooltip 4-line change via a build-smoke assert.
+   Woods -log10 color (smoke: ggplot, no gold-outline segment, Inf clamp). Fix the
+   `BG_ALPHA` duplicate + export parity.
+2. **Update EXISTING tests that the changes turn red (enumerated, SW#4):**
+   - `test-pelsa-volcano-ui.R`: `DEFAULT_LABEL_MODE == "best_per_marker"` assertion
+     -> `"none"`; the two `pin_opacity` tests -> delete (model retired) or rewrite
+     against `pelsa_volcano_recolor`; the tooltip line-format test -> new 4-line set.
+   - Confirm `test-pelsa-woods.R` (smoke + `sig` only) needs no change for W3.
+3. **Wire the module:** selection() reactiveVal (replaces pinned()); click + Find +
+   Woods-click all set selection(); composite restyle observer (onFlushed re-apply);
+   Find control + match notice; Clear button + shared clear; expand metadata;
+   per-feature overlap in `pinned_woods`; default label mode none; Plot Controls
+   sectioning + Color key + caption; file split + `devtools::document()`.
+4. **Verify:** `devtools::load_all`, full PELSA testthat suite 0-fail, ASCII-clean,
+   files <800 (helpers; server best-effort). Manual render smoke: click recolor,
+   single/multi Find, Clear, color-mode toggle survives highlight, Woods color +
+   caption, tooltip, metadata count reconciles with drawn peptides.
+
+## Acceptance criteria (PM-proposed, ratified)
+1. With a selection active and a color-mode toggle, the gold highlight is correct
+   and SURVIVES the toggle (no stale/lost highlight).
+2. Typing a single known accession opens its panel in one action (auto-pin);
+   typing a multi-match highlights + tells the user how to open one.
+3. The panel's "Quantified peptides (this contrast)" equals the number of peptides
+   drawn in that pin's Woods/intensity panels.
+4. "Clear selection & highlight" resets selection + Find + collapses the Woods card
+   in one click and is discoverable (not "switch contrast to clear").
+5. A first-time viewer can tell which proteins are markers (magenta + the always-on
+   "N marker proteins" caption) without extra clicks.
 
 ## DECISIONS (locked 2026-06-15)
-1. **Click highlight:** recolor via proxy restyle (no rebuild). Clicked = solid
-   GOLD FILL; same-accession siblings = original fill + GOLD RING (not a second
-   yellow fill - CVD-safe second channel); all others keep original color + full
-   opacity (NO desaturation). Restyle BOTH background AND marker traces; resolve
-   trace indices DYNAMICALLY (do not hard-code 0/1).
-2. **Marker vs gold:** clicked marker -> gold fill (gold wins); sibling marker ->
-   magenta fill + gold ring; non-selected markers stay plain magenta; revert on
-   unpin/clear.
-3. **Woods 3rd track:** color by `-log10(adj.P)` white->red (red = significant,
-   matches the volcano); DROP the gold significance outline. (Supersedes the
-   earlier raw-[0,1] blue->red idea - reversed convention + low dynamic range.)
-4. **Single-peptide label** (tooltip + panel): winning-accession label only
-   (`<winning_gene>_aa<pos>`), not the full multilabel.
-5. **Peptide count** in panel: distinct PEP.StrippedSequence mapped to the
-   accession.
-6. **Find control:** textInput + "Highlight" button (not debounce-only); typed
-   accession highlights all its peptides GOLD FILL via the SAME composite restyle
-   as the click-pin; matches winning_accession OR PG token OR isoform-base, count
-   = union; composes with an active pin (a sibling that is also found -> promoted
-   to gold fill); Find does NOT open the fixed/Woods panel (notice teaches "click
-   to pin"); cleared on contrast switch + by the Clear button; reports matched count.
-7. **One composite restyle observer** owns pin + find + Woods highlight, depends
-   on `input$pelsa_color_mode` so the highlight survives a color-mode rebuild.
-8. **Clear selection** button resets pinned() + find_accession().
-9. **BG_ALPHA** duplicate collapsed to 0.8; export ggplot alpha unified to match.
+1. **ONE selection** (origin click|find), mutually exclusive - a new selection of
+   either kind replaces the prior. No found-vs-clicked color collision.
+2. **Highlight:** selected peptide = gold fill + dark ring + slightly larger;
+   same-accession peptides = gold ring; others keep original color, full opacity
+   (no desaturation). Restyle background + marker traces; trace indices resolved
+   via a build-time `meta` stamp (not hard-coded).
+3. **Find:** textInput + Highlight button; single-accession match AUTO-PINS its
+   best peptide (opens panel); multi-match highlights only (+notice). Matching =
+   winning_accession OR PG token OR isoform-base; pin-sibling membership widened to
+   match. Cleared on contrast switch + Clear button.
+4. **Woods 3rd track:** `-log10(adj.P)` white->red (magnitude), clamp Inf at cap 5,
+   NA->low end; DROP gold outline; legend + caption note "magnitude not direction,
+   logFC sign on y-axis".
+5. **Single-peptide label** (tooltip + panel): winning-accession label only
+   (`<winning_gene>_aa<pos>`).
+6. **Peptide count:** distinct peptides PLOTTED in the active contrast (reconciles
+   with the Woods/intensity panels), labeled "Quantified peptides (this contrast)".
+7. **Tooltip:** compact 4 lines (Peptide, Position, logFC, adj.P); full set in the panel.
+8. **Composite restyle observer** owns the highlight, depends on `pelsa_color_mode`,
+   re-applies after rebuild via `session$onFlushed(once=TRUE)`.
+9. **File split** in this pass: new `tab_pelsa_section3_recolor_helpers.R`.
+10. **BG_ALPHA** collapsed to 0.8; export alpha unified; dim/fade constants +
+    `pin_opacity` + `sibling_acc` rebuild branch retired.
+11. **Color key** static block + "N marker proteins" caption added (plotly has no legend).
+12. **Default label mode** = None.
