@@ -206,6 +206,17 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     GCTs_unprocessed_internal_reactive <- reactiveVal()
     accumulated_files <- reactiveVal(NULL)  # Store accumulated file uploads
 
+    # INT-2: memoized per-ome discrete-column map for the setup panel's dropdowns.
+    # Depends ONLY on the GCTs reactiveVal, so it recomputes exactly when the GCTs
+    # change (any upload / removal / reprocess via either upload path, since both
+    # write GCTs_unprocessed_internal_reactive). gctSetupUI consumes this instead
+    # of re-scanning is.discrete() over every annotation column on every rebuild
+    # (e.g. on every Intensity-data toggle). Recompute-on-change preserves the
+    # original "always fresh" guarantee; it only skips redundant re-scans.
+    discrete_columns_map <- reactive({
+      build_discrete_columns_map(GCTs_unprocessed_internal_reactive())
+    })
+
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
     backNextLogic <- reactiveValues(placeChanged = 0)
@@ -727,7 +738,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_unprocessed_internal_reactive())})
+                                                   GCTs = GCTs_unprocessed_internal_reactive(),
+                                                   discrete_columns = discrete_columns_map())})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {

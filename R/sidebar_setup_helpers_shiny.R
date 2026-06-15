@@ -43,20 +43,25 @@ intensity_data_param_is_yes <- function(intensity_data) {
 # function containing setup elements for a single GCT file
 # NOTE: make sure that the same naming convention is used as in in the 
 # setupDefaults.yaml!
-gctSetupUI <- function(ns, 
-                       label, 
-                       parameter_choices, 
-                       parameters, 
-                       current_place, 
+gctSetupUI <- function(ns,
+                       label,
+                       parameter_choices,
+                       parameters,
+                       current_place,
                        max_place,
-                       GCTs) {
+                       GCTs,
+                       discrete_columns = NULL) {
   # groups column choices pulled from cdesc
   all_cdesc_columns <- names(GCTs[[label]]@cdesc)
-  
+
   # Filter to only discrete columns for analysis annotation (exclude continuous columns)
   # NOTE: We allow ALL discrete columns regardless of number of categories (even if <2)
   # Statistical testing will be disabled in the statistics tab if there are <2 categories
-  groups_choices <- all_cdesc_columns[vapply(GCTs[[label]]@cdesc[all_cdesc_columns], function(col) is.discrete(col), logical(1))]
+  # INT-2: use the precomputed discrete-column map when available; falls back to
+  # an inline scan of the live cdesc so behavior is identical with or without it.
+  groups_choices <- resolve_discrete_columns(
+    discrete_columns, label, "cdesc", GCTs[[label]]@cdesc
+  )
   
   # If no suitable annotation columns remain, use Sample.ID as fallback
   if (length(groups_choices) == 0) {
@@ -105,12 +110,12 @@ gctSetupUI <- function(ns,
   }
 
   # row-filter column choices pulled from rdesc (discrete columns preferred)
+  # INT-2: this scan is the expensive one (rdesc can be ~34k high-cardinality
+  # rows); use the precomputed map when available, else scan the live rdesc.
   all_rdesc_columns <- names(GCTs[[label]]@rdesc)
-  row_filter_columns_choices <- all_rdesc_columns[vapply(
-    GCTs[[label]]@rdesc[all_rdesc_columns],
-    function(col) is.discrete(col),
-    logical(1)
-  )]
+  row_filter_columns_choices <- resolve_discrete_columns(
+    discrete_columns, label, "rdesc", GCTs[[label]]@rdesc
+  )
   if (length(row_filter_columns_choices) == 0) {
     row_filter_columns_choices <- all_rdesc_columns
   }
