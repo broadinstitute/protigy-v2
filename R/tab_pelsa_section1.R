@@ -720,15 +720,60 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # multi-species loop, universe resolution, fetch + MERGE + atomic write, and
     # error capture all live in pelsa_run_species_refresh()
     # (tab_pelsa_refresh_helpers.R) so this observer stays thin: gather inputs,
-    # drive withProgress, surface the results as notifications. fetch_fn is the
-    # real pelsa_fetch_uniprot here; tests inject a stub into the helper directly
-    # (no network).
+    # (optionally) confirm a large fetch, drive a live progress bar, and surface
+    # the result INLINE under the button. fetch_fn is the real pelsa_fetch_uniprot
+    # here; tests inject a stub into the helper directly (no network).
+    #
+    # WHY CONFIRM: with no datasets uploaded the universe falls back to the WHOLE
+    # FASTA proteome (~70k accessions for human). That is a multi-minute fetch a
+    # user can trigger by accident, so above a threshold we show the count + a
+    # rough ETA and require confirmation first.
+    #
+    # WHY INLINE STATUS: the per-page progress bar renders LIVE in the modal
+    # (Shiny flushes setProgress mid-loop), and the final result renders in a
+    # PERSISTENT inline panel under the button (pelsa_refresh_result_ui) instead
+    # of a dismissible toast - so the outcome can never be cleared off-screen.
     #
     # RE-CLICK GUARD: an in-flight reactiveVal + a disabled button prevent a
     # second click mid-fetch from starting an overlapping write (which would
-    # race the atomic rename). Hard to unit-test (needs a live session); the
-    # guard is belt-and-suspenders alongside the atomic write.
-    refresh_in_flight <- reactiveVal(FALSE)
+    # race the atomic rename).
+    refresh_in_flight  <- reactiveVal(FALSE)
+    refresh_result     <- reactiveVal(NULL)   # last run's results (inline panel)
+    # Above this universe size we confirm before fetching (the proteome-fallback
+    # foot-gun guard). A normal dataset-driven refresh is well under this.
+    REFRESH_CONFIRM_THRESHOLD <- 5000L
+
+    output$pelsa_refresh_status <- renderUI({
+      pelsa_refresh_result_ui(refresh_result())
+    })
+
+    # The actual run (shared by the direct + confirmed paths). Drives the live
+    # progress modal, runs the orchestrator, and stores the results for the
+    # inline panel. `selected` + `uploaded_gcts` are captured by the callers.
+    run_refresh <- function(selected, uploaded_gcts) {
+      refresh_in_flight(TRUE)
+      shinyjs::disable("pelsa_refresh_btn")
+      on.exit({
+        shinyjs::enable("pelsa_refresh_btn")
+        refresh_in_flight(FALSE)
+      }, add = TRUE)
+
+      results <- withProgress(
+        message = "Refreshing UniProt annotation library", value = 0, {
+          pelsa_run_species_refresh(
+            species       = selected,
+            database_dir  = pelsa_database_dir(),
+            uploaded_gcts = uploaded_gcts,
+            fetch_fn      = pelsa_fetch_uniprot,
+            set_progress  = function(value, detail) {
+              setProgress(value = value, detail = detail)
+            }
+          )
+        }
+      )
+      refresh_result(results)
+    }
+
     observeEvent(input$pelsa_refresh_btn, {
       if (isTRUE(refresh_in_flight())) return()   # ignore overlapping clicks
 
@@ -740,33 +785,36 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       }
       gp <- GCTs_and_params()
       uploaded_gcts <- if (is.null(gp)) NULL else gp$GCTs
+      database_dir  <- pelsa_database_dir()
 
-      refresh_in_flight(TRUE)
-      shinyjs::disable("pelsa_refresh_btn")
-      on.exit({
-        shinyjs::enable("pelsa_refresh_btn")
-        refresh_in_flight(FALSE)
-      }, add = TRUE)
+      # Size the universe up front; confirm before a large (proteome) fetch.
+      size <- tryCatch(
+        pelsa_refresh_universe_size(selected, database_dir, uploaded_gcts),
+        error = function(e) list(total = NA_integer_, per_species = integer(0)))
 
-      withProgress(
-        message = "Refreshing UniProt annotation library", value = 0, {
-          results <- pelsa_run_species_refresh(
-            species        = selected,
-            database_dir   = pelsa_database_dir(),
-            uploaded_gcts  = uploaded_gcts,
-            fetch_fn       = pelsa_fetch_uniprot,
-            set_progress   = function(value, detail) {
-              setProgress(value = value, detail = detail)
-            }
-          )
-        }
-      )
-
-      # Per-result error/warning/success notifications are FORMATTED by a pure
-      # helper (tested without a session); here we just emit them.
-      for (note in pelsa_refresh_notifications(results)) {
-        showNotification(note$message, type = note$type, duration = note$duration)
+      if (!is.na(size$total) && size$total > REFRESH_CONFIRM_THRESHOLD) {
+        per <- paste(sprintf("%s: %s", names(size$per_species),
+                             vapply(size$per_species, pelsa_refresh_eta_text,
+                                    character(1))),
+                     collapse = "<br/>")
+        shinyalert::shinyalert(
+          title = "Refresh a large annotation set?",
+          text = sprintf(
+            paste0("About to fetch <b>%s</b> total.<br/><br/>%s<br/><br/>",
+                   "This runs against UniProt and cannot be stopped once ",
+                   "started. Continue?"),
+            pelsa_refresh_eta_text(size$total), per),
+          html = TRUE, type = "warning",
+          showCancelButton = TRUE, confirmButtonText = "Fetch",
+          cancelButtonText = "Cancel",
+          callbackR = function(confirmed) {
+            if (isTRUE(confirmed)) run_refresh(selected, uploaded_gcts)
+          }
+        )
+        return()
       }
+
+      run_refresh(selected, uploaded_gcts)
     }, ignoreInit = TRUE)
 
     ## START ANALYSIS (5D) ##

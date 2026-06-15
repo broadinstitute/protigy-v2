@@ -356,27 +356,48 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 # Retry-After) + req_throttle + a User-Agent header. DO NOT call against the live
 # network in tests.
 #
+# PROGRESS + COOPERATIVE CANCEL: the fetch loops over batches (one /search query
+# per batch). `on_batch(done, total)` (optional) is called after EACH batch with
+# the number of batches done / the total, so a caller can drive a page-level
+# progress bar. `should_cancel()` (optional) is checked BEFORE each batch; when
+# it returns TRUE the fetch stops at that batch boundary (no batch is left
+# half-done) and returns with `canceled = TRUE`. Neither callback fires on the
+# empty-input fast path. Both default to NULL (no behavior change; the helpers
+# remain pure + network-free in tests).
+#
 # @param accessions character vector of UniProt accessions
 # @param base       UniProt REST base URL (override for testing)
 # @param max_tries  per-request retry attempts (default 5)
 # @param rate       throttle capacity per second (default 10)
 # @param batch_size accessions per /search query (default 200)
-# @return list(features = <8-col data.frame>, unresolved = <character vector>)
+# @param on_batch   optional function(done, total) called after each batch.
+# @param should_cancel optional function() -> logical; TRUE stops at the next
+#                   batch boundary.
+# @return list(features = <8-col data.frame>, unresolved = <character vector>,
+#              canceled = <logical scalar>).
 # @noRd
 pelsa_fetch_uniprot <- function(accessions,
                                 base = .PELSA_UNIPROT_BASE,
                                 max_tries = 5L,
                                 rate = 10L,
-                                batch_size = .PELSA_BATCH_SIZE) {
+                                batch_size = .PELSA_BATCH_SIZE,
+                                on_batch = NULL,
+                                should_cancel = NULL) {
   if (!is.character(accessions)) {
     stop("pelsa_fetch_uniprot: `accessions` must be a character vector")
   }
   accessions <- unique(accessions[!is.na(accessions) & nzchar(accessions)])
   if (length(accessions) == 0L) {
     return(list(features = pelsa_empty_feature_frame(),
-                unresolved = character(0)))
+                unresolved = character(0), canceled = FALSE))
   }
   batch_size <- max(1L, as.integer(batch_size))
+  .cancel <- function() {
+    is.function(should_cancel) && isTRUE(should_cancel())
+  }
+  .report <- function(done, total) {
+    if (is.function(on_batch)) on_batch(done, total)
+  }
 
   base_req <- httr2::request(base)
   base_req <- httr2::req_user_agent(base_req, .PELSA_UNIPROT_UA)
@@ -401,8 +422,17 @@ pelsa_fetch_uniprot <- function(accessions,
 
   entries <- list()
   consecutive_batch_failures <- 0L
+  canceled <- FALSE
 
-  for (b in batches) {
+  for (k in seq_along(batches)) {
+    # Cooperative cancel: honor a stop request at the batch boundary (before any
+    # network for this batch), so a batch is never left half-fetched.
+    if (.cancel()) {
+      canceled <- TRUE
+      break
+    }
+    b <- batches[[k]]
+
     fetched <- tryCatch(
       .pelsa_fetch_one_batch(base_req, b, size = batch_size),
       error = function(e) e
@@ -418,17 +448,20 @@ pelsa_fetch_uniprot <- function(accessions,
                  "batch failures (last: %s)"),
           consecutive_batch_failures, conditionMessage(fetched)))
       }
+      .report(k, n_batches)
       next
     }
     consecutive_batch_failures <- 0L
     entries <- c(entries, fetched)
+    .report(k, n_batches)
   }
 
   features <- pelsa_parse_uniprot_json_batch(entries)
 
   # unresolved = the input accessions NOT present in any returned entry. This
   # covers 404-equivalents (absent from UniProt), accessions in a failed batch,
-  # and entries that parsed to zero usable features.
+  # and (on cancel) the not-yet-fetched accessions. The caller retains their
+  # cached rows and does NOT write a partial cache on cancel.
   resolved <- if (nrow(features) > 0L) {
     unique(as.character(features$accession))
   } else {
@@ -436,5 +469,5 @@ pelsa_fetch_uniprot <- function(accessions,
   }
   unresolved <- setdiff(accessions, resolved)
 
-  list(features = features, unresolved = unresolved)
+  list(features = features, unresolved = unresolved, canceled = canceled)
 }

@@ -166,8 +166,23 @@ features (active sites 48/92/185, Ca2+ binding 60/62/65/70, site 179, no TM).
 An offline test proves a `/search` `results` array parses identically to
 per-accession entries.
 
-Remaining (4: confirm-before-fetch on the fallback; 3: bounded parallel pages;
-5: incremental top-up; 6: per-page progress + cancel) are still open.
+**Strategy 4 (confirm-before-fetch) implemented (2026-06-15):** the refresh
+observer sizes the universe up front (`pelsa_refresh_universe_size`) and, above a
+5,000-accession threshold, shows a shinyalert confirm with the count + a coarse
+ETA (`pelsa_refresh_eta_text`) before fetching - so the whole-proteome fallback
+can't be triggered by accident.
+
+**Strategy 6 (per-page progress) implemented (2026-06-15):** the fetcher reports
+per-batch progress (`on_batch(done, total)`) which the orchestrator maps onto a
+live progress bar; the final result renders in a PERSISTENT inline panel under
+the Refresh button (`pelsa_refresh_result_ui`, color-coded ok/warn/error) instead
+of a dismissible toast, so the outcome can't be cleared off-screen. The fetcher
+also accepts `should_cancel()` (checked at each page boundary; returns
+`canceled = TRUE`, no partial cache written) - the plumbing is in place and
+unit-tested, wired for a future ExtendedTask-based responsive Cancel button.
+
+Remaining (3: bounded parallel pages; 5: incremental top-up; 6b: true mid-fetch
+Cancel via ExtendedTask) are still open.
 
 ## Recommended sequencing
 

@@ -470,3 +470,139 @@ test_that("Setup UI exposes the refresh species checklist + button ids", {
   expect_true(exists("pelsa_write_feature_cache"))
   expect_true(exists("pelsa_refresh_species_cache"))
 })
+
+# ---- confirm-gate: universe size + ETA text (pure) ---------------------------
+
+test_that("universe_size sums per-species universes (datasets union cache)", {
+  db <- withr::local_tempdir()
+  dir.create(file.path(db, "human")); dir.create(file.path(db, "mouse"))
+  gcts <- list(
+    d = data.frame(PG.ProteinAccessions = c("P1;P2", "P3"),
+                   stringsAsFactors = FALSE)
+  )
+  sz <- pelsa_refresh_universe_size(c("human", "mouse"), db, gcts)
+  # Both species share the same dataset universe (3 accessions); no caches yet.
+  expect_equal(unname(sz$per_species[["human"]]), 3L)
+  expect_equal(unname(sz$per_species[["mouse"]]), 3L)
+  expect_equal(sz$total, 6L)
+})
+
+test_that("eta_text formats count + a coarse ETA (sec vs min)", {
+  expect_match(pelsa_refresh_eta_text(200L), "^200 accessions \\(~\\d+ sec\\)$")
+  expect_match(pelsa_refresh_eta_text(1L), "^1 accession \\(~\\d+ sec\\)$")
+  big <- pelsa_refresh_eta_text(69845L)
+  expect_match(big, "^69,845 accessions \\(~\\d+ min\\)$")  # thousands sep + min
+})
+
+# ---- cooperative cancel propagation (no network; stub fetch) -----------------
+
+test_that("species_cache honors a pre-fetch cancel: no write, cache intact", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "human")
+  dir.create(species_dir)
+  existing <- .fake_feature_df()
+
+  # should_cancel TRUE before fetch -> fetch_fn must NOT be called, no write.
+  called <- FALSE
+  fake_fetch <- function(accessions, ...) { called <<- TRUE
+    list(features = .fake_feature_df(), unresolved = character(0)) }
+
+  res <- pelsa_refresh_species_cache(
+    species = "human", universe = c("P1", "P2"), species_dir = species_dir,
+    fetch_fn = fake_fetch, existing = existing,
+    should_cancel = function() TRUE
+  )
+  expect_true(isTRUE(res$canceled))
+  expect_false(called)                                   # never fetched
+  expect_false(file.exists(file.path(species_dir, "uniprot_features",
+                                     "uniprot_features.tsv")))  # no write
+})
+
+test_that("species_cache honors a mid-fetch cancel flag from the fetcher", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "human")
+  dir.create(species_dir)
+
+  # Fetcher reports canceled = TRUE (as the real one does when stopped at a page
+  # boundary) -> orchestrator must NOT write a partial cache.
+  canceling_fetch <- function(accessions, ...) {
+    list(features = pelsa_empty_feature_frame(), unresolved = accessions,
+         canceled = TRUE)
+  }
+  res <- pelsa_refresh_species_cache(
+    species = "human", universe = c("P1", "P2"), species_dir = species_dir,
+    fetch_fn = canceling_fetch, existing = NULL
+  )
+  expect_true(isTRUE(res$canceled))
+  expect_false(file.exists(file.path(species_dir, "uniprot_features",
+                                     "uniprot_features.tsv")))
+})
+
+test_that("call_fetch_fn forwards callbacks only to a fetcher that declares them", {
+  # Minimal stub (no extra args) must still work.
+  simple <- function(accessions) list(features = .fake_feature_df(),
+                                       unresolved = character(0))
+  expect_silent(
+    out <- .pelsa_call_fetch_fn(simple, c("P1"), on_batch = function(...) {},
+                                should_cancel = function() FALSE))
+  expect_equal(nrow(out$features), 3L)
+
+  # A fetcher that DOES declare them receives them.
+  seen <- new.env(); seen$ob <- FALSE; seen$sc <- FALSE
+  rich <- function(accessions, on_batch = NULL, should_cancel = NULL) {
+    seen$ob <- is.function(on_batch); seen$sc <- is.function(should_cancel)
+    list(features = .fake_feature_df(), unresolved = character(0))
+  }
+  .pelsa_call_fetch_fn(rich, c("P1"), on_batch = function(...) {},
+                       should_cancel = function() FALSE)
+  expect_true(seen$ob); expect_true(seen$sc)
+})
+
+# ---- inline progress + result UI (pure tag constructors) ---------------------
+
+test_that("progress_ui clamps + shows percent and detail", {
+  html <- as.character(pelsa_refresh_progress_ui(0.62, "(1/2) human . page 88/140"))
+  expect_match(html, "62%")
+  expect_match(html, "page 88/140")
+  # Clamp out-of-range fractions.
+  expect_match(as.character(pelsa_refresh_progress_ui(1.5)), "100%")
+  expect_match(as.character(pelsa_refresh_progress_ui(-1)), "0%")
+})
+
+test_that("result_ui colors by worst status (ok / warn / error)", {
+  ok <- list(list(species = "human", n_features = 100L, n_unresolved = 0L,
+                  n_retained_from_cache = 0L, had_existing = TRUE,
+                  canceled = FALSE, error = NULL))
+  warn <- list(list(species = "human", n_features = 100L, n_unresolved = 3L,
+                    n_retained_from_cache = 5L, had_existing = TRUE,
+                    canceled = FALSE, error = NULL))
+  err <- list(list(species = "human", error = "boom"))
+  cancel <- list(list(species = "human", canceled = TRUE, error = NULL))
+
+  expect_match(as.character(pelsa_refresh_result_ui(ok)), "#5cb85c")     # green
+  expect_match(as.character(pelsa_refresh_result_ui(warn)), "#f0ad4e")   # amber
+  expect_match(as.character(pelsa_refresh_result_ui(err)), "#d9534f")    # red
+  expect_match(as.character(pelsa_refresh_result_ui(cancel)), "#f0ad4e") # amber
+  expect_match(as.character(pelsa_refresh_result_ui(cancel)),
+               "left unchanged")
+  expect_null(pelsa_refresh_result_ui(NULL))
+})
+
+# ---- notifications: canceled species surfaced honestly -----------------------
+
+test_that("notifications report a canceled species + exclude it from 'complete'", {
+  results <- list(
+    list(species = "human", n_features = 100L, n_unresolved = 0L,
+         n_retained_from_cache = 0L, had_existing = TRUE, canceled = FALSE,
+         error = NULL),
+    list(species = "mouse", canceled = TRUE, not_run = TRUE, error = NULL)
+  )
+  notes <- pelsa_refresh_notifications(results)
+  msgs <- vapply(notes, function(n) n$message, character(1))
+  expect_true(any(grepl("canceled", msgs, ignore.case = TRUE)))
+  # The success summary mentions human but NOT mouse.
+  complete <- msgs[grepl("refresh complete", msgs, ignore.case = TRUE)]
+  expect_length(complete, 1L)
+  expect_match(complete, "human")
+  expect_false(grepl("mouse", complete))
+})

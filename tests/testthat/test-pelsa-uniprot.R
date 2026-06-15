@@ -284,9 +284,20 @@ test_that("pelsa_fetch_uniprot validates accessions input", {
 
 test_that("pelsa_fetch_uniprot returns empty result for empty input (no network)", {
   res <- pelsa_fetch_uniprot(character(0))
-  expect_named(res, c("features", "unresolved"))
+  expect_named(res, c("features", "unresolved", "canceled"))
   expect_equal(nrow(res$features), 0L)
   expect_equal(length(res$unresolved), 0L)
+  expect_false(res$canceled)
+})
+
+test_that("pelsa_fetch_uniprot cancels before the first batch (no network)", {
+  # should_cancel TRUE -> the loop breaks at the first boundary before any
+  # request, so NO network is touched. All accessions are unresolved, canceled.
+  res <- pelsa_fetch_uniprot(c("P1", "P2", "P3"),
+                             should_cancel = function() TRUE)
+  expect_true(res$canceled)
+  expect_equal(nrow(res$features), 0L)
+  expect_setequal(res$unresolved, c("P1", "P2", "P3"))
 })
 
 # ---- batched /search parse parity (no network) ------------------------------

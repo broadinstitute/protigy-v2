@@ -711,7 +711,12 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
         ns("pelsa_refresh_btn"),
         "Refresh per-species UniProt annotation library",
         icon = shiny::icon("sync")
-      )
+      ),
+      # Inline progress + result, rendered DIRECTLY under the button. Unlike a
+      # showNotification() toast (which the user can dismiss / which auto-clears),
+      # this status persists for the life of the fetch and stays put afterward, so
+      # the live progress bar + the final summary can never be cleared off-screen.
+      shiny::uiOutput(ns("pelsa_refresh_status"))
     ),
 
     shiny::tags$hr(),

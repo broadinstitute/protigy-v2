@@ -366,6 +366,21 @@ pelsa_write_feature_cache <- function(feature_df, species_dir) {
 
 # ---- Helper 3: orchestration (fetch -> write), fetcher INJECTED --------------
 
+# Call an injected `fetch_fn`, forwarding the optional on_batch/should_cancel
+# callbacks ONLY when fetch_fn declares them (or `...`). The real
+# pelsa_fetch_uniprot declares both; a minimal test stub `function(accessions)`
+# does not -- this keeps both working without forcing every stub to add the args.
+# @noRd
+.pelsa_call_fetch_fn <- function(fetch_fn, accessions, on_batch, should_cancel) {
+  fmls <- names(formals(fetch_fn))
+  extra <- list()
+  if ("..." %in% fmls || "on_batch" %in% fmls) extra$on_batch <- on_batch
+  if ("..." %in% fmls || "should_cancel" %in% fmls) {
+    extra$should_cancel <- should_cancel
+  }
+  do.call(fetch_fn, c(list(accessions), extra))
+}
+
 # Orchestrate one species' cache refresh: fetch the universe's UniProt features
 # (via the INJECTED `fetch_fn`), then write the resulting 8-col table to the
 # species cache. The injectable `fetch_fn` is the TESTABILITY SEAM - tests pass
@@ -397,7 +412,8 @@ pelsa_write_feature_cache <- function(feature_df, species_dir) {
 pelsa_refresh_species_cache <- function(species, universe, species_dir,
                                         fetch_fn = pelsa_fetch_uniprot,
                                         existing = NULL,
-                                        progress = NULL) {
+                                        progress = NULL,
+                                        should_cancel = NULL) {
   if (!is.character(species) || length(species) != 1L || !nzchar(species)) {
     stop("pelsa_refresh_species_cache: `species` must be a single non-empty ",
          "string", call. = FALSE)
@@ -417,6 +433,13 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
       progress$set(value = value, message = message, detail = detail)
     }
   }
+  .canceled_result <- function(reason) {
+    # No write on cancel: the prior cache is left fully intact.
+    list(features = existing, unresolved = universe, path = NA_character_,
+         n_features = if (is.data.frame(existing)) nrow(existing) else 0L,
+         n_unresolved = length(universe), n_accessions = length(universe),
+         n_retained_from_cache = 0L, canceled = TRUE)
+  }
 
   if (length(universe) == 0L) {
     stop("pelsa_refresh_species_cache: empty accession universe for species '",
@@ -424,12 +447,33 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
          "FASTA).", call. = FALSE)
   }
 
+  # Bail before any network if already canceled.
+  if (is.function(should_cancel) && isTRUE(should_cancel())) {
+    return(.canceled_result("pre-fetch"))
+  }
+
   .progress(0.05, sprintf("Fetching UniProt for %s", species),
             sprintf("%d accessions", length(universe)))
-  fetched <- fetch_fn(universe)
+
+  # Page-level progress: map the fetcher's batch 0..1 onto the 0.05..0.80 band
+  # so the bar moves smoothly across the (slow) network, not in two big jumps.
+  on_batch <- function(done, total) {
+    if (!is.numeric(total) || total <= 0L) return(invisible())
+    frac <- 0.05 + 0.75 * (done / total)
+    .progress(frac, sprintf("Fetching UniProt for %s", species),
+              sprintf("page %d/%d", done, total))
+  }
+  # Call fetch_fn forwarding only the optional callbacks it actually declares,
+  # so a simple test stub `function(accessions)` still works (the real
+  # pelsa_fetch_uniprot declares on_batch + should_cancel).
+  fetched <- .pelsa_call_fetch_fn(fetch_fn, universe, on_batch, should_cancel)
   if (!is.list(fetched) || is.null(fetched$features)) {
     stop("pelsa_refresh_species_cache: `fetch_fn` must return a list with a ",
          "`features` data.frame", call. = FALSE)
+  }
+  # Honor a mid-fetch cancel: do NOT write a partial cache.
+  if (isTRUE(fetched$canceled)) {
+    return(.canceled_result("mid-fetch"))
   }
   fresh      <- fetched$features
   unresolved <- fetched$unresolved %||% character(0)
@@ -450,7 +494,8 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     n_features            = nrow(merged),
     n_unresolved          = length(unresolved),
     n_accessions          = length(universe),
-    n_retained_from_cache = n_retained
+    n_retained_from_cache = n_retained,
+    canceled              = FALSE
   )
 }
 
@@ -497,14 +542,19 @@ pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
 # @param uploaded_gcts named list of uploaded datasets, or NULL.
 # @param fetch_fn      function(accessions) -> list(features=, unresolved=).
 # @param set_progress  function(value, detail) or NULL.
+# @param should_cancel optional function() -> logical; checked before each
+#                      species and forwarded into the fetcher (page-boundary
+#                      cancel). A canceled species writes NO cache and is marked
+#                      canceled = TRUE; remaining species are skipped.
 # @return list (one element per species) of either
 #         list(species=, n_features=, n_unresolved=, n_accessions=,
-#              n_retained_from_cache=, had_existing=, path=, error=NULL) or
-#         list(species=, error=<message>).
+#              n_retained_from_cache=, had_existing=, path=, canceled=, error=NULL)
+#         or list(species=, error=<message>).
 # @noRd
 pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
                                       fetch_fn = pelsa_fetch_uniprot,
-                                      set_progress = NULL) {
+                                      set_progress = NULL,
+                                      should_cancel = NULL) {
   if (!is.character(species) || length(species) == 0L) {
     stop("pelsa_run_species_refresh: `species` must be a non-empty character ",
          "vector", call. = FALSE)
@@ -516,6 +566,15 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
     sp <- species[[k]]
     species_dir <- file.path(database_dir, sp)
     base_frac <- (k - 1L) / n
+
+    # Stop launching new species once canceled (the in-flight species already
+    # honored cancel at its own page boundary). Remaining species are recorded
+    # as canceled-not-run so the summary is honest.
+    if (is.function(should_cancel) && isTRUE(should_cancel())) {
+      results[[k]] <- list(species = sp, canceled = TRUE, not_run = TRUE,
+                           error = NULL)
+      next
+    }
 
     results[[k]] <- tryCatch({
       io <- pelsa_species_refresh_inputs(species_dir, uploaded_gcts)
@@ -536,12 +595,14 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
 
       res <- pelsa_refresh_species_cache(
         species = sp, universe = universe, species_dir = species_dir,
-        fetch_fn = fetch_fn, existing = io$existing, progress = sub_progress
+        fetch_fn = fetch_fn, existing = io$existing, progress = sub_progress,
+        should_cancel = should_cancel
       )
       list(species = sp, n_features = res$n_features,
            n_unresolved = res$n_unresolved, n_accessions = res$n_accessions,
            n_retained_from_cache = res$n_retained_from_cache,
-           had_existing = had_existing, path = res$path, error = NULL)
+           had_existing = had_existing, path = res$path,
+           canceled = isTRUE(res$canceled), error = NULL)
     }, error = function(e) {
       list(species = sp, error = conditionMessage(e))
     })
@@ -579,8 +640,17 @@ pelsa_refresh_notifications <- function(results) {
     }
   }
   ok <- Filter(function(r) is.null(r$error), results)
-  for (r in ok) {
-    if (isTRUE(r$had_existing) && r$n_unresolved > 0L) {
+  # Canceled species (mid-fetch or not-run): no cache written, prior cache intact.
+  canceled <- Filter(function(r) isTRUE(r$canceled), ok)
+  if (length(canceled) > 0L) {
+    add(sprintf("Refresh canceled (%s); existing cache(s) left unchanged.",
+                paste(vapply(canceled, function(r) r$species, character(1)),
+                      collapse = ", ")),
+        "warning", 8)
+  }
+  done <- Filter(function(r) !isTRUE(r$canceled), ok)
+  for (r in done) {
+    if (isTRUE(r$had_existing) && isTRUE(r$n_unresolved > 0L)) {
       add(sprintf(paste0("%s refreshed with %d unresolved accession(s); %d ",
                          "previously-cached row(s) retained. Re-run when ",
                          "UniProt is reachable for full coverage."),
@@ -588,12 +658,154 @@ pelsa_refresh_notifications <- function(results) {
           "warning", NULL)
     }
   }
-  if (length(ok) > 0L) {
-    summaries <- vapply(ok, function(r) sprintf(
+  if (length(done) > 0L) {
+    summaries <- vapply(done, function(r) sprintf(
       "%s: %d features, %d unresolved, %d retained", r$species,
       r$n_features, r$n_unresolved, r$n_retained_from_cache), character(1))
     add(paste0("UniProt annotation refresh complete. ",
                paste(summaries, collapse = "; ")), "message", 10)
   }
   notes
+}
+
+# ---- Helper 5: confirm-gate universe size (pure, observer-facing) -------------
+
+# Estimate the TOTAL accession universe a refresh of `species` would fetch, so
+# the observer can WARN + confirm before a large (whole-proteome) fetch. Reads
+# each species' existing cache + (no-datasets) FASTA exactly as the real run
+# does, then sums the per-species universe sizes. Pure-ish (reads files only;
+# never fetches/writes), so the observer can call it synchronously pre-fetch.
+#
+# @param species       character vector of species names.
+# @param database_dir  the PELSA database dir.
+# @param uploaded_gcts named list of uploaded datasets, or NULL.
+# @return list(total = <int>, per_species = <named int vector>).
+# @noRd
+pelsa_refresh_universe_size <- function(species, database_dir, uploaded_gcts) {
+  per <- vapply(species, function(sp) {
+    species_dir <- file.path(database_dir, sp)
+    io <- pelsa_species_refresh_inputs(species_dir, uploaded_gcts)
+    universe <- pelsa_refresh_accession_universe(
+      uploaded_gcts, io$existing, fasta_map = io$fasta_map
+    )
+    length(universe)
+  }, integer(1))
+  names(per) <- species
+  list(total = sum(per), per_species = per)
+}
+
+# Format a one-line human estimate for the confirm dialog: count + a rough ETA
+# under the batched fetcher (~batch_size accessions per ~RTT-bound page request).
+#
+# @param total       total accessions across the selected species.
+# @param batch_size  accessions per /search page (default matches the fetcher).
+# @param page_secs   modelled seconds per page request (RTT-bound).
+# @return a single character string, e.g. "69,845 accessions (~2 min)".
+# @noRd
+pelsa_refresh_eta_text <- function(total, batch_size = 200L, page_secs = 0.9) {
+  total <- as.integer(total)
+  n_pages <- ceiling(max(total, 0L) / batch_size)
+  secs <- n_pages * page_secs
+  eta <- if (secs < 90) {
+    sprintf("~%d sec", max(1L, as.integer(round(secs))))
+  } else {
+    sprintf("~%d min", as.integer(ceiling(secs / 60)))
+  }
+  sprintf("%s accession%s (%s)",
+          formatC(total, big.mark = ",", format = "d"),
+          if (total == 1L) "" else "s", eta)
+}
+
+# ---- Helper 6: inline progress + result UI (pure tag constructors) ------------
+
+# Build the INLINE progress block shown under the Refresh button while a fetch is
+# in flight (replaces the dismissible withProgress modal / toast). A labelled
+# determinate bar + a status line (the live "(k/n) species . page X/Y" detail).
+# Pure (a function of its args) so it tests without a session.
+#
+# @param fraction numeric 0..1 overall progress (clamped).
+# @param detail   status line text (e.g. "(1/2) human . page 88/140"), or NULL.
+# @return a shiny tag (the progress block).
+# @noRd
+pelsa_refresh_progress_ui <- function(fraction, detail = NULL) {
+  pct <- max(0, min(100, round(100 * (fraction %||% 0))))
+  shiny::tags$div(
+    class = "pelsa-refresh-progress",
+    style = paste0("margin-top:10px; padding:10px; border:1px solid #5bc0de; ",
+                   "border-radius:6px; background:#eef7fb;"),
+    shiny::tags$div(
+      style = "font-weight:600; color:#31708f; margin-bottom:6px;",
+      shiny::icon("sync"), " Refreshing UniProt annotation library..."
+    ),
+    # Determinate bar (styled div, no extra dependency).
+    shiny::tags$div(
+      style = paste0("height:14px; background:#d6eaf3; border-radius:7px; ",
+                     "overflow:hidden;"),
+      shiny::tags$div(
+        style = sprintf(paste0("height:100%%; width:%d%%; background:#31708f; ",
+                               "transition:width .2s ease;"), pct)
+      )
+    ),
+    shiny::tags$div(
+      style = "margin-top:6px; font-size:12px; color:#31708f;",
+      sprintf("%d%%%s", pct,
+              if (!is.null(detail) && nzchar(detail)) paste0(" . ", detail) else "")
+    )
+  )
+}
+
+# Build the INLINE result block shown under the Refresh button after a fetch.
+# Pure: given pelsa_run_species_refresh() results, returns a colored summary
+# (green success / amber partial-or-canceled / red error) that PERSISTS in place
+# (it is not a toast, so it cannot be cleared off-screen). Mirrors the content of
+# pelsa_refresh_notifications but as a stable inline panel.
+#
+# @param results the pelsa_run_species_refresh() return value (or NULL -> NULL).
+# @return NULL or a shiny tag (the result block).
+# @noRd
+pelsa_refresh_result_ui <- function(results) {
+  if (is.null(results) || length(results) == 0L) return(NULL)
+
+  errs     <- Filter(function(r) !is.null(r$error), results)
+  ok       <- Filter(function(r) is.null(r$error), results)
+  canceled <- Filter(function(r) isTRUE(r$canceled), ok)
+  done     <- Filter(function(r) !isTRUE(r$canceled), ok)
+
+  # Worst status drives the panel color.
+  status <- if (length(errs) > 0L) "error"
+            else if (length(canceled) > 0L ||
+                     any(vapply(done, function(r) isTRUE(r$n_unresolved > 0L),
+                                logical(1)))) "warn"
+            else "ok"
+  pal <- switch(status,
+    error = list(border = "#d9534f", bg = "#fdf3f2", fg = "#a94442",
+                 icon = "circle-exclamation", head = "Refresh finished with errors"),
+    warn  = list(border = "#f0ad4e", bg = "#fcf8e3", fg = "#8a6d3b",
+                 icon = "triangle-exclamation", head = "Refresh finished"),
+    list(border = "#5cb85c", bg = "#f0f9f0", fg = "#3c763d",
+         icon = "circle-check", head = "Refresh complete"))
+
+  items <- list()
+  for (r in errs) {
+    items <- c(items, list(shiny::tags$li(sprintf("%s: %s", r$species, r$error))))
+  }
+  for (r in canceled) {
+    items <- c(items, list(shiny::tags$li(
+      sprintf("%s: canceled - existing cache left unchanged", r$species))))
+  }
+  for (r in done) {
+    items <- c(items, list(shiny::tags$li(sprintf(
+      "%s: %d features, %d unresolved, %d retained from cache",
+      r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L,
+      r$n_retained_from_cache %||% 0L))))
+  }
+
+  shiny::tags$div(
+    class = "pelsa-refresh-result",
+    style = sprintf(paste0("margin-top:10px; padding:10px; border:1px solid %s; ",
+                           "border-radius:6px; background:%s; color:%s;"),
+                    pal$border, pal$bg, pal$fg),
+    shiny::tags$strong(shiny::icon(pal$icon), " ", pal$head),
+    shiny::tags$ul(style = "margin:6px 0 0 0;", items)
+  )
 }
