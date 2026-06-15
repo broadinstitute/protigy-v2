@@ -24,11 +24,12 @@
 #       in the package but is intentionally NOT wired into the volcano render.
 #
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
-# 7E a single selection() (a left-click or a Find-accession) drives a composite
-# client-side plotlyProxy restyle of marker.color + marker.line.color/width on
-# the background + marker traces (gold fill for the selected peptide, gold ring
-# for same-protein peptides; no opacity dimming) AND opens the per-protein
-# intensity line panel (3C); 7F per-ome exports.
+# 7E a single selection() (a left-click or a Find-accession) drives the volcano
+# highlight by REBUILDING the figure with the gold baked into the point colors
+# (pelsa_volcano_recolor -> gold fill for the selected peptide, gold ring for
+# same-protein peptides; per-point marker.color restyle is unreliable on WebGL
+# scattergl, so the highlight is drawn into the build instead of proxy-restyled)
+# AND opens the per-protein intensity line panel (3C); 7F per-ome exports.
 #
 # Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
 ################################################################################
@@ -475,15 +476,6 @@ PELSASection3_Ome_Server <- function(id,
     find_query  <- reactiveVal(NULL)   # last submitted Find text (or NULL)
     find_result <- reactiveVal(NULL)   # list(mask, accessions, count) or NULL
 
-    # The last BUILT volcano plotly (captured by the render below). Declared here
-    # with the rest of the selection state so the render that WRITES it is never a
-    # forward reference; apply_highlight() reads it for the live trace indices.
-    volcano_built <- reactiveVal(NULL)
-    # Cached bg/marker trace indices for the CURRENT built plot. Recomputed once
-    # per build (in the render) so apply_highlight() does not plotly_build() the
-    # ~100k-point figure on every selection/find/color-mode change.
-    volcano_trace_idx <- reactiveVal(NULL)
-
     # ONE place to clear the whole transient selection + find highlight.
     clear_selection <- function() {
       selection(NULL); find_query(NULL); find_result(NULL)
@@ -707,17 +699,17 @@ PELSASection3_Ome_Server <- function(id,
     # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
     # is rendered (no thinning - toWebGL handles every point on the GPU).
     #
-    # SELECTION HIGHLIGHT - ONE mechanism (a client-side plotlyProxy restyle, NOT
-    # a rebuild): the base plot is built ONCE per (dataset, contrast, color-mode,
-    # label-mode), so selection()/find_result() are ISOLATED out of this render's
-    # reactive deps. apply_highlight() then restyles the per-point marker color /
-    # outline (see the composite recolor observer below), so the ~100k-point /
-    # ~15MB figure is NOT re-serialized on every selection.
+    # SELECTION HIGHLIGHT - rebuild on selection (the reliable path): the render
+    # DEPENDS on selection()/find_result() and passes them to the build, which
+    # BAKES the gold fill + ring into the point colors. Per-point marker.color
+    # restyle is unreliable on WebGL scattergl, so the highlight is drawn into the
+    # figure rather than proxy-restyled. The rebuild fires only on click/find/clear
+    # (and contrast/color-mode/label changes) - never on hover/pan.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
       fr <- find_result()
-      p <- pelsa_volcano_build_plot(
+      pelsa_volcano_build_plot(
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
         label_mode = label_mode_for_contrast(), n_top = top_n_for_contrast(),
@@ -725,12 +717,6 @@ PELSASection3_Ome_Server <- function(id,
         selection = selection(),
         find_mask = if (is.null(fr)) NULL else fr$mask,
         register_click = TRUE)
-      volcano_built(p)
-      # Resolve + cache the meta-tagged trace indices ONCE per build.
-      volcano_trace_idx(tryCatch(
-        .pelsa_volcano_trace_index(plotly::plotly_build(p)),
-        error = function(e) NULL))
-      p
     })
 
     output$pelsa_marker_count <- renderText({
@@ -919,9 +905,9 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> resolve it to a peptide and
-    # set selection(origin="click"). The highlight flows through apply_highlight
-    # (the ONE composite recolor observer) - NO inline restyle here. The clicked
-    # segment is resolved by coordinate (x within [pep_start, pep_end], y ~ logFC).
+    # set selection(origin="click"). Setting selection() triggers the volcano
+    # rebuild (which bakes the gold) - NO inline restyle here. The clicked segment
+    # is resolved by coordinate (x within [pep_start, pep_end], y ~ logFC).
     observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_woods")), {
       ev <- plotly::event_data("plotly_click", source = ns("pelsa_woods"))
       w  <- tryCatch(pinned_woods(), error = function(e) NULL)
