@@ -53,7 +53,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
                                      stat_results = NULL,
                                      stat_params = NULL,
                                      pelsa_analysis = NULL,
-                                     pelsa_setup_state = NULL) {
+                                     pelsa_setup_state = NULL,
+                                     marker_add_request = NULL) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -532,6 +533,7 @@ PELSASection3_Ome_Server <- function(id,
           # Upper-LEFT arm of the L: pinned metadata + intensity line plot.
           column(3,
             shinydashboardPlus::box(
+              uiOutput(ns("pelsa_add_marker_ui")),
               uiOutput(ns("pelsa_pin_metadata")),
               plotly::plotlyOutput(ns("pelsa_intensity_plot"), height = "440px"),
               helpText("Click a point to pin its peptide profile."),
@@ -935,6 +937,67 @@ PELSASection3_Ome_Server <- function(id,
       tags$table(class = "table table-condensed",
         tags$tbody(lapply(seq_len(nrow(rows)), function(i)
           tags$tr(tags$td(tags$strong(rows$label[i])), tags$td(rows$value[i])))))
+    })
+
+    ## ------------------------------------------------------------------------
+    ## ADD-TO-MARKER-LIST button (under the "Pinned Peptide" title). Resolves the
+    ## pinned accession + gene, pushes them onto the shared marker_add_request
+    ## handle so Setup (Section 1) merges them. Removal stays in Setup. The button
+    ## disables + relabels "Already a marker" when the accession is already listed.
+    ## ------------------------------------------------------------------------
+    # The pinned (accession, gene) as a 1-row marker frame, or NULL when nothing
+    # is pinned / unresolvable. Gene falls back winning_gene -> PG.Genes -> "".
+    pinned_marker_row <- reactive({
+      sel <- selection()
+      if (is.null(sel) || is.null(sel$accession) || !nzchar(sel$accession)) {
+        return(NULL)
+      }
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      gene <- ""
+      if (!is.null(df)) {
+        row <- sel$row
+        if (is.null(row) || is.na(row)) row <- match(sel$peptide_seq,
+                                                     as.character(df$id))
+        if (!is.na(row)) {
+          r <- df[row, , drop = FALSE]
+          g <- if (!is.na(r$winning_gene) && nzchar(r$winning_gene))
+            r$winning_gene else as.character(r$PG.Genes)[1L]
+          if (!is.na(g) && nzchar(g)) gene <- g
+        }
+      }
+      data.frame(accession = as.character(sel$accession), gene = gene,
+                 stringsAsFactors = FALSE)
+    })
+
+    output$pelsa_add_marker_ui <- renderUI({
+      mr <- pinned_marker_row()
+      if (is.null(mr)) return(NULL)  # nothing pinned -> no button
+      already <- mr$accession %in% isolate(marker_accessions())
+      if (already) {
+        tags$div(style = "margin-bottom:8px;",
+          shiny::actionButton(ns("pelsa_add_marker"),
+            label = "Already a marker", icon = shiny::icon("check"),
+            class = "btn-sm", disabled = "disabled"))
+      } else {
+        tags$div(style = "margin-bottom:8px;",
+          shiny::actionButton(ns("pelsa_add_marker"),
+            label = "Add accession to marker list", icon = shiny::icon("plus"),
+            class = "btn-sm btn-primary"))
+      }
+    })
+
+    observeEvent(input$pelsa_add_marker, {
+      mr <- pinned_marker_row()
+      if (is.null(mr)) return()
+      acc <- mr$accession
+      if (acc %in% isolate(marker_accessions())) {
+        showNotification(sprintf("%s is already a marker.", acc),
+                         type = "message", duration = 3)
+        return()
+      }
+      if (is.function(marker_add_request)) marker_add_request(mr)
+      showNotification(sprintf("Added %s to the marker list.", acc),
+                       type = "message", duration = 3)
     })
 
     output$pelsa_intensity_plot <- plotly::renderPlotly({

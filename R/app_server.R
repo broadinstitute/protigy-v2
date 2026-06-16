@@ -128,6 +128,12 @@ app_server <- function(input, output, session) {
   )
   pelsa_active_dataset <- pelsa_container$active_dataset
 
+  ## Shared marker-add channel: the Volcano (Section 3) requests an accession be
+  # added to the marker list, the Setup module (Section 1) - the marker list's
+  # single owner - observes the request and merges it. A reactiveVal holding the
+  # last requested data.frame(accession, gene); Section 1 keeps removal authority.
+  pelsa_marker_add_request <- reactiveVal(NULL)
+
   ## PELSA Section 1 module (Setup)
   # Returns list(exports = <per-ome export reactiveVal>, setup_state = <live
   # reactiveValues>, analysis = <per-dataset analysis cache reactiveVal>).
@@ -142,6 +148,7 @@ app_server <- function(input, output, session) {
     GCTs_original = GCTs_original,
     active_dataset = pelsa_active_dataset,
     set_analyzed_datasets = pelsa_container$set_analyzed_datasets,
+    marker_add_request = pelsa_marker_add_request,
     parent_session = session
   )
   all_PELSASection1_exports <- all_PELSASection1$exports
@@ -172,7 +179,8 @@ app_server <- function(input, output, session) {
     stat_results = stat_setup_output$stat_results,
     stat_params = stat_setup_output$stat_params,
     pelsa_analysis = pelsa_analysis,
-    pelsa_setup_state = pelsa_setup_state
+    pelsa_setup_state = pelsa_setup_state,
+    marker_add_request = pelsa_marker_add_request
   )
 
   ## TEMPLATE module

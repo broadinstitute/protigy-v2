@@ -353,6 +353,45 @@ test_that("marker table: compound autofill, add, remove, clear all flow", {
   )
 })
 
+test_that("marker_add_request channel: Volcano-requested accession merges in", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+  marker_add_request <- shiny::reactiveVal(NULL)
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                marker_add_request = marker_add_request),
+    {
+      expect_equal(nrow(setup_state$marker_rows), 0L)
+
+      # Volcano pushes an accession -> Section 1 observes and merges it.
+      marker_add_request(data.frame(accession = "P77777", gene = "GENEX",
+                                    stringsAsFactors = FALSE))
+      session$flushReact()
+      expect_equal(nrow(setup_state$marker_rows), 1L)
+      expect_true("P77777" %in% setup_state$marker_rows$accession)
+
+      # Re-requesting the SAME accession is idempotent (merge dedupes).
+      marker_add_request(data.frame(accession = "P77777", gene = "GENEX",
+                                    stringsAsFactors = FALSE))
+      session$flushReact()
+      expect_equal(nrow(setup_state$marker_rows), 1L)
+
+      # A different accession adds another row.
+      marker_add_request(data.frame(accession = "Q11111", gene = "GENEY",
+                                    stringsAsFactors = FALSE))
+      session$flushReact()
+      expect_equal(nrow(setup_state$marker_rows), 2L)
+    }
+  )
+})
+
 test_that("compound autofill merges into existing user-pasted rows", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)

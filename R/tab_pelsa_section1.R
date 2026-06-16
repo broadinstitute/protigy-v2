@@ -79,6 +79,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                                      GCTs_original,
                                      active_dataset,
                                      set_analyzed_datasets = NULL,
+                                     marker_add_request = NULL,
                                      parent_session = NULL) {
 
   moduleServer(id, function(input, output, session) {
@@ -200,6 +201,21 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       marker_rows(pelsa_merge_marker_rows(marker_rows(), new_rows))
       updateTextAreaInput(session, "pelsa_marker_input", value = "")
     })
+
+    # Cross-module: the Volcano (Section 3) requests an accession be added via the
+    # shared `marker_add_request` handle (data.frame(accession, gene)). Merge it
+    # into the marker table - removal stays here in Setup. Merge is idempotent
+    # (dedupes by accession), so a re-request of an existing marker is a no-op.
+    if (is.function(marker_add_request)) {
+      observeEvent(marker_add_request(), {
+        req <- marker_add_request()
+        if (is.null(req) || !is.data.frame(req) ||
+            !all(c("accession", "gene") %in% names(req)) || nrow(req) == 0L) {
+          return()
+        }
+        marker_rows(pelsa_merge_marker_rows(marker_rows(), req))
+      }, ignoreNULL = TRUE)
+    }
 
     # Remove selected rows (immutable replace).
     observeEvent(input$pelsa_remove_markers, {
