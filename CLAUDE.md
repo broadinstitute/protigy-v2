@@ -27,6 +27,9 @@ shinytest2 (browser) tests are heavier and gated — see `dev/shinytest2_testing
   `sidebar_setup*.R` = upload/processing pipeline. Keep this split when adding code.
 - Templates for new modules: `R/tab_TEMPLATE.R` and `R/tab_TEMPLATE_SINGLE-OME.R`.
   Full guide: `dev/module_requirements.md`.
+- **PELSA** is the largest subsystem (~40% of `R/`): a `tab_pelsa_container.R` tab with
+  numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus many `tab_pelsa_*_helpers.R`.
+  It extends the naming rule above — follow the existing `section`/`_helpers` split there.
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -54,7 +57,12 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
 - **Dependencies live in two places**: `DESCRIPTION` Imports AND a roxygen `@import`/
   `@importFrom` (`R/protigy-package.R` or at the function); re-run `devtools::document()` after.
 - Reusable helpers: `R/utilities.R`.
+- **ASCII-only R source**: no literal Unicode in `R/`; use `\uXXXX` escapes (e.g.
+  `"●"` for a filled bullet). Enforced in practice — non-ASCII bytes break `R CMD check`.
 
 ## Test data
 `data(brca_retrospective_v5.0_proteome_gct)` (also `_phosphoproteome_`, `_rnaseq_`);
 sample files in `inst/extdata/`.
+Tests live in `tests/testthat/test-*.R`. PELSA tests build on synthetic ground-truth
+fixtures in `tests/testthat/fixtures/pelsa/` (`generate_synthetic.R` + canned UniProt
+JSON) — prefer these over real data for deterministic assertions.
