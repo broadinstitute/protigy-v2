@@ -46,7 +46,9 @@ are native `plot_ly`/WebGL and need a **parallel static ggplot built for export*
 
 One nested `pelsa_exports/` tree **per ome**, three flat stage subfolders. Figures
 and tables live **together** in each stage folder (no `figures/` vs `tables/` split).
-Figures are written as **both PDF and PNG** (PNG via `ragg`).
+Figures are written as **PNG** (via `ragg`, 300 dpi). PDF output is retained in
+the code but gated **off** by default (`.PELSA_EXPORT_PDF`); flip the flag to also
+emit vector PDFs.
 
 ```
 <ome>/
@@ -105,7 +107,7 @@ Add to `R/tab_pelsa_constants.R`:
   path (recursive, idempotent) and return it. Gives the `pelsa_exports/<stage>/...` tree
   without touching the global loop.
 - **`pelsa_save_figure(plot, dir_name, basename, plot_type = "default")`** - write
-  one ggplot as **PDF + PNG**, sized by the existing `get_ggsave_params()`:
+  one ggplot as **PNG** (PDF gated off via `.PELSA_EXPORT_PDF`), sized by the existing `get_ggsave_params()`:
 
   ```r
   pelsa_save_figure <- function(plot, dir_name, basename, plot_type = "default") {
@@ -146,7 +148,7 @@ deferred.)*
 
 ### 4.2 `02_qc/` (Section 2)
 
-**Figures** (PDF + PNG):
+**Figures** (PNG; PDF gated off):
 
 | Template name              | Source reactive (`tab_pelsa_section2.R`) | Plot |
 |----------------------------|------------------------------------------|------|

@@ -23,6 +23,13 @@
 # intensity panel split). Kept in one place so figures + footnotes stay in sync.
 .PELSA_EXPORT_SIG_CUTOFF <- 0.05
 
+# Figure-export format switches. PNG (via the ragg AGG device) is the shipping
+# format; every exported figure is rasterized at this DPI. PDF output is kept in
+# the code but switched OFF by default - flip .PELSA_EXPORT_PDF to TRUE to also
+# emit vector PDFs alongside the PNGs (future demand).
+.PELSA_EXPORT_PDF <- FALSE
+.PELSA_EXPORT_DPI <- 300
+
 # Synthetic contrast key for "significant in ANY contrast" (the contrast-
 # independent intensity panel split + significant-protein union). A min-adj.P
 # column named adj.P.Val.<this> is added so the existing per-contrast helpers

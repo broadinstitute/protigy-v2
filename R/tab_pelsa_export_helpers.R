@@ -3,14 +3,15 @@
 #
 # The global exporter (tab_export.R) hands each module a directory
 # (<ome>/<tab_name>/) and calls its export functions with that path. PELSA's
-# three section servers are merged under a single "pelsa" tab in app_server(), so
-# the handed dir is <ome>/pelsa/. Each PELSA export function then carves its own
-# stage subfolder inside it via pelsa_export_stage_dir() - the generic loop in
-# tab_export.R is never touched.
+# three section servers are merged under a single "pelsa_exports" tab in
+# app_server(), so the handed dir is <ome>/pelsa_exports/. Each PELSA export
+# function then carves its own stage subfolder inside it via
+# pelsa_export_stage_dir() - the generic loop in tab_export.R is never touched.
 #
 # Helpers:
 #   pelsa_export_stage_dir(dir_name, ...)  -> create + return a nested subfolder
-#   pelsa_save_figure(plot, dir, basename) -> write a ggplot as PDF + PNG (ragg)
+#   pelsa_save_figure(plot, dir, basename) -> write a ggplot as PNG (ragg); PDF
+#                                             retained but gated off by default
 #   pelsa_safe_name(x)                     -> sanitize a filename token
 #   pelsa_export_add_any_contrast(stat_df) -> add adj.P.Val.<ANY> = min across
 #                                             contrasts (drives the union set)
@@ -30,19 +31,26 @@ pelsa_export_stage_dir <- function(dir_name, ...) {
   path
 }
 
-# Write ONE ggplot as both PDF and PNG (PNG via the ragg AGG device - the
-# project's deterministic, high-quality raster device) into dir_name. Sizes are
-# in inches. Returns the two paths invisibly.
+# Write ONE ggplot as PNG (via the ragg AGG device - the project's deterministic,
+# high-quality raster device) into dir_name. Sizes are in inches; every figure is
+# rasterized at .PELSA_EXPORT_DPI. PDF output is retained but gated OFF by default
+# (`pdf = .PELSA_EXPORT_PDF`); set the flag TRUE to also emit a vector PDF. Returns
+# the written path(s) invisibly.
 # @noRd
 pelsa_save_figure <- function(plot, dir_name, basename, width = 9, height = 5,
-                              dpi = 300) {
-  pdf_path <- file.path(dir_name, paste0(basename, ".pdf"))
+                              dpi = .PELSA_EXPORT_DPI, pdf = .PELSA_EXPORT_PDF) {
   png_path <- file.path(dir_name, paste0(basename, ".png"))
-  ggplot2::ggsave(pdf_path, plot, device = "pdf",
-                  width = width, height = height, units = "in")
   ggplot2::ggsave(png_path, plot, device = ragg::agg_png,
                   width = width, height = height, units = "in", dpi = dpi)
-  invisible(c(pdf_path, png_path))
+  paths <- png_path
+  # PDF export is kept for future demand; disabled unless the flag is TRUE.
+  if (isTRUE(pdf)) {
+    pdf_path <- file.path(dir_name, paste0(basename, ".pdf"))
+    ggplot2::ggsave(pdf_path, plot, device = "pdf",
+                    width = width, height = height, units = "in")
+    paths <- c(pdf_path, png_path)
+  }
+  invisible(paths)
 }
 
 # Sanitize a gene/accession/contrast token for use in a filename: keep
