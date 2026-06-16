@@ -462,23 +462,8 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
 # @param find_mask   NULL, or a logical over df rows - the multi-accession Find
 #   highlight (uniform gold fill), baked into the build.
 # @param register_click  TRUE -> event_register the plotly_click on this source.
-# @return a plotly object (toWebGL'd).
+# @return a built plotly object (native scattergl traces, no ggplotly/toWebGL).
 # @noRd
-# Drop the `hoveron` attribute from every trace of a (pre-build) plotly object.
-# ggplotly sets hoveron = "points" on geom_point traces; scattergl (toWebGL)
-# rejects it and warns on EVERY plotly_build, including Shiny's serialize-time
-# rebuild that a build-site suppressWarnings cannot wrap. Stripping it once
-# silences the benign warning at its source. @noRd
-.pelsa_strip_hoveron <- function(p) {
-  if (is.list(p$x) && !is.null(p$x$data) && length(p$x$data) > 0L) {
-    p$x$data <- lapply(p$x$data, function(tr) {
-      tr$hoveron <- NULL
-      tr
-    })
-  }
-  p
-}
-
 pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
                                      label_mode = "top_n", n_top = 3L,
@@ -527,52 +512,89 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   mk_hl <- if (nrow(mk) > 0L)
     pelsa_volcano_highlight_mask(mk, selection, find_mask) else logical(0)
 
-  gg <- ggplot2::ggplot()
-  # Background cloud in its real sig/feature colors (highlighted ones are redrawn
-  # gold on top below, so their base draw underneath is harmless).
-  if (nrow(bg) > 0L) {
-    bg$.tip <- tip(bg)
-    gg <- gg + ggplot2::geom_point(
-      data = bg,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
+  # ---- native plot_ly scattergl build (replaces the slow ggplotly path) ------
+  # Trace z-order (later traces draw ON TOP):
+  #   0. background cloud (sig/feature colors)
+  #   1. magenta markers (ALWAYS on top of the cloud)
+  #   2+. gold highlight overlays (selection/find), drawn over everything
+  # The marker/background traces are meta-tagged so the recolor proxy restyle
+  # finds them by index (see .pelsa_volcano_trace_index). With a hand-built
+  # figure the trace order is deterministic, so the bg + marker traces are added
+  # FIRST and in that order (always index 0 and 1). The scalar `meta` tag is
+  # stamped AFTER plotly_build (a trace-level `meta=` arg would be recycled to a
+  # per-point vector by plot_ly's data-mapping); stamping it on the built trace
+  # keeps it a true scalar that survives Shiny's serialize-time re-build, so no
+  # RGB tag-detection loop is needed.
+  #
+  # Sizes: ggplot point `size` is in mm, plotly `size` is in px; the px values
+  # below were tuned against the previous ggplotly render so the cloud/marker/
+  # gold dots match visually. The marker:bg ratio (~1.6/1.1) and gold == marker
+  # size are preserved.
+  bg_px   <- 5
+  mk_px   <- 7
+  gold_px <- mk_px
+
+  p <- plotly::plot_ly(source = source_id)
+
+  # 0. BACKGROUND cloud (always added so the bg trace exists at index 0; an empty
+  #    frame yields an empty trace, which keeps the meta indices stable).
+  bg_tip <- tip(bg)
+  p <- plotly::add_trace(
+    p, type = "scattergl", mode = "markers",
+    x = bg$logFC, y = bg$logP,
+    marker = list(
       color = pelsa_volcano_color_column(bg, color_mode),
-      alpha = .PELSA_VOLCANO_BG_ALPHA, size = .PELSA_VOLCANO_BG_SIZE)
-  }
-  # Marker overlay (magenta, ON TOP, ALWAYS - drawn last). Non-highlighted markers
-  # ALWAYS keep their magenta fill, even when a selection/find is active (the gold
-  # overlay below only covers the highlighted ones).
-  if (nrow(mk) > 0L) {
-    mk$.tip <- tip(mk)
-    gg <- gg + ggplot2::geom_point(
-      data = mk,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      fill = .PELSA_VOLCANO_MARKER_COLOR, color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
-  }
-  # Gold highlight overlay (drawn on top of EVERYTHING): gold fill + black outline,
-  # ALL at the marker size (the user wants gold points the same size as the magenta
-  # marker peptides), so highlighted points read as one consistent size.
+      opacity = .PELSA_VOLCANO_BG_ALPHA, size = bg_px,
+      line = list(width = 0)),
+    text = bg_tip, hoverinfo = "text",
+    showlegend = FALSE)
+
+  # 1. MARKER overlay (magenta, ON TOP, ALWAYS). Non-highlighted markers keep
+  #    their magenta fill even under an active selection/find.
+  mk_tip <- tip(mk)
+  p <- plotly::add_trace(
+    p, type = "scattergl", mode = "markers",
+    x = mk$logFC, y = mk$logP,
+    marker = list(
+      color = .PELSA_VOLCANO_MARKER_COLOR, size = mk_px,
+      line = list(color = .PELSA_VOLCANO_MARKER_EDGE, width = 0.5)),
+    text = mk_tip, hoverinfo = "text",
+    showlegend = FALSE)
+
+  # 2. GOLD highlight overlays (gold fill + black outline, marker size), drawn on
+  #    top of EVERYTHING. Background-highlighted then marker-highlighted points.
   if (length(bg_hl) > 0L && any(bg_hl)) {
     hb <- bg[bg_hl, , drop = FALSE]
-    gg <- gg + ggplot2::geom_point(
-      data = hb,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      fill = .PELSA_GOLD, color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
+    p <- plotly::add_trace(
+      p, type = "scattergl", mode = "markers",
+      x = hb$logFC, y = hb$logP,
+      marker = list(
+        color = .PELSA_GOLD, size = gold_px,
+        line = list(color = .PELSA_VOLCANO_MARKER_EDGE, width = 0.5)),
+      text = tip(hb), hoverinfo = "text",
+      showlegend = FALSE)
   }
   if (length(mk_hl) > 0L && any(mk_hl)) {
     hm <- mk[mk_hl, , drop = FALSE]
-    gg <- gg + ggplot2::geom_point(
-      data = hm,
-      ggplot2::aes(x = .data$logFC, y = .data$logP, text = .data$.tip),
-      fill = .PELSA_GOLD, color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = .PELSA_VOLCANO_MARKER_SIZE, stroke = 0.4)
+    p <- plotly::add_trace(
+      p, type = "scattergl", mode = "markers",
+      x = hm$logFC, y = hm$logP,
+      marker = list(
+        color = .PELSA_GOLD, size = gold_px,
+        line = list(color = .PELSA_VOLCANO_MARKER_EDGE, width = 0.5)),
+      text = tip(hm), hoverinfo = "text",
+      showlegend = FALSE)
   }
 
+  # Threshold line: a horizontal dashed grey40 line across the x-range, drawn as
+  # a layout shape (NOT a trace) so it never perturbs the bg/marker trace indices.
+  shapes <- list()
   y_cut <- attr(full_df, "y_cutoff")
   if (!is.null(y_cut) && is.finite(y_cut)) {
-    gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
-                                   color = "grey40")
+    shapes <- list(list(
+      type = "line", xref = "paper", yref = "y",
+      x0 = 0, x1 = 1, y0 = y_cut, y1 = y_cut,
+      line = list(dash = "dash", color = "grey40", width = 1)))
   }
 
   # Labels are NOT drawn as a ggplot geom_text (that renders ON the point, hard
@@ -591,67 +613,27 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
     if (nrow(lab_df) == 0L) lab_df <- NULL
   }
 
-  gg <- gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") +
-    ggplot2::theme_bw()
+  # theme_bw look (white panel, light-grey gridlines, no zero-lines) + axis
+  # titles. The threshold-line shape (if any) goes in here too. Trace `meta`
+  # tags are set DIRECTLY above, so no post-build tag-detection loop is needed.
+  p <- plotly::layout(
+    p,
+    xaxis = list(title = "logFC", zeroline = FALSE, showgrid = TRUE,
+                 gridcolor = "grey92"),
+    yaxis = list(title = "-log10(P.Value)", zeroline = FALSE, showgrid = TRUE,
+                 gridcolor = "grey92"),
+    plot_bgcolor = "white", paper_bgcolor = "white",
+    shapes = shapes, showlegend = FALSE)
 
-  # suppressWarnings on BOTH ggplotly + toWebGL: ggplotly leaks the benign
-  # "'scattergl' objects don't have these attributes: 'hoveron'" warning (one per
-  # geom_point trace) that otherwise spams test output.
-  p <- suppressWarnings(plotly::ggplotly(gg, source = source_id, tooltip = "text"))
-  # ggplotly sets `hoveron = "points"` on each geom_point trace; scattergl (what
-  # toWebGL produces) does not support `hoveron`, so EVERY downstream
-  # plotly_build (incl. Shiny's serialize-time rebuild, which suppressWarnings
-  # here can't reach) re-emits the warning. Strip it once now so the rebuild is
-  # clean -- the attribute is benign and unused for scattergl.
-  p <- .pelsa_strip_hoveron(p)
-  p <- suppressWarnings(plotly::toWebGL(p))
-  # Tag the background + marker point traces so the recolor proxy restyle can find
-  # them by index regardless of how many optional traces (hline, labels) exist.
-  # The marker trace is the magenta-fill point trace. ggplotly stores the fill on
-  # marker$color but in plotly's own format (e.g. "rgba(255,0,255,1)"), NOT the
-  # source hex, so the match is done on parsed RGB channels (format-agnostic).
-  if (length(p$x$data) > 0L) {
-    mk_rgb <- as.integer(grDevices::col2rgb(.PELSA_VOLCANO_MARKER_COLOR)[, 1L])
-    parse_rgb <- function(x) {
-      x <- as.character(x)[1L]
-      if (is.na(x) || !nzchar(x)) return(NULL)
-      m <- regmatches(x, regexpr("rgba?\\(([^)]*)\\)", x))
-      if (length(m) == 1L && nzchar(m)) {
-        nums <- suppressWarnings(as.integer(
-          trimws(strsplit(gsub("rgba?\\(|\\)", "", m), ",")[[1]])))
-        if (length(nums) >= 3L && !any(is.na(nums[1:3]))) return(nums[1:3])
-      }
-      tryCatch(as.integer(grDevices::col2rgb(x)[, 1L]),
-               error = function(e) NULL)
-    }
-    # A constant fill may serialize as a scalar OR a repeated vector whose
-    # elements are all equal; treat both as the single marker color.
-    const_fill <- function(mc) {
-      if (is.null(mc) || length(mc) == 0L) return(NULL)
-      u <- unique(as.character(mc))
-      if (length(u) == 1L) u else NULL
-    }
-    tagged_bg <- FALSE
-    for (k in seq_along(p$x$data)) {
-      tr <- p$x$data[[k]]
-      mc <- tryCatch(tr$marker$color, error = function(e) NULL)
-      is_pts <- !is.null(tr$mode) && grepl("markers", tr$mode)
-      if (!is_pts) next
-      cf <- const_fill(mc)
-      rgb1 <- if (!is.null(cf)) parse_rgb(cf) else NULL
-      if (!is.null(rgb1) && identical(rgb1, mk_rgb)) {
-        p$x$data[[k]]$meta <- "pelsa_mk"
-      } else if (!tagged_bg) {
-        p$x$data[[k]]$meta <- "pelsa_bg"; tagged_bg <- TRUE
-      }
-    }
-    # Loud (not silent) if NEITHER trace got tagged - a missing marker trace is
-    # legitimate (no marker peptides), so only warn when nothing landed at all.
-    if (sum(vapply(p$x$data, function(tr)
-          isTRUE(tr$meta %in% c("pelsa_bg", "pelsa_mk")), logical(1))) < 1L) {
-      warning("pelsa_volcano_build_plot: could not tag bg/marker traces")
-    }
-  }
+  # Build once now so the trace list is materialized, then stamp the SCALAR meta
+  # tags on the (deterministic) bg/marker traces - index 0 = background,
+  # index 1 = markers. A scalar set post-build survives a downstream re-build
+  # (verified), so .pelsa_volcano_trace_index resolves them on both the returned
+  # object AND plotly_build(p).
+  p <- plotly::plotly_build(p)
+  if (length(p$x$data) >= 1L) p$x$data[[1L]]$meta <- "pelsa_bg"
+  if (length(p$x$data) >= 2L) p$x$data[[2L]]$meta <- "pelsa_mk"
+
   # Boxed labels (white opaque-ish bg, border = labeled point's own color),
   # offset from the point + overlap-suppressed (Statistics-tab scheme).
   if (!is.null(lab_df)) {
