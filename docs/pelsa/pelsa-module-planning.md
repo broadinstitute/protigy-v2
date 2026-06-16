@@ -587,14 +587,14 @@ section**, so troubleshooting detail is one click away without cluttering the da
   > It does **not** restrict the volcano coloring to one direction. *(The science reviewers found the
   > earlier "down-only is the canonical significant set / cell 28 partitions into `sig_results` /`(BH)`"
   > wording does not match the `20260609` notebook, which is two-sided with no internal BH. See
-  > `docs/pelsa-review-findings.md` X1 and Decision #4.)* Destabilization (`logFC>0`) is real PELSA
+  > `docs/pelsa/pelsa-review-findings.md` X1 and Decision #4.)* Destabilization (`logFC>0`) is real PELSA
   > signal and stays visible (red) — see still-open item B on whether to surface up/down counts.
 
 - **Color toggle (RESOLVED: single mutually-exclusive toggle).** One control to choose the coloring
   basis — `Color by significance` (default) vs `Color by UniProt feature class`. **Implement as a single
   `radioButtons`/segmented control, NOT two mutually-exclusive checkboxes** (one source of truth, can't
   desync, and it drops the fragile `shinyjs::runjs` disable juggling the existing module uses — see
-  `docs/pelsa-review-findings.md` X10).
+  `docs/pelsa/pelsa-review-findings.md` X10).
 
   > ⚠ Divergence from original doc: the doc frames color as a single toggle "significance vs UniProt
   > features." The notebook (cells 32/33) actually renders **two separate volcano SETS to disk** —
@@ -658,7 +658,7 @@ section**, so troubleshooting detail is one click away without cluttering the da
   > independently evaluated for B (where another peptide may be B's best). This per-accession semantics
   > is the desired behavior, not a bug. It is **representative-peptide selection for display/prioritization,
   > not FDR-controlled protein-level inference** — if a "N proteins" count is ever surfaced, label it as
-  > such. ACAT/Simes per-protein aggregation is deferred (not needed now). See `docs/pelsa-review-findings.md` X5.
+  > such. ACAT/Simes per-protein aggregation is deferred (not needed now). See `docs/pelsa/pelsa-review-findings.md` X5.
 
 - **Marker autofill + overlay.** The Setup marker list seeds `poi_registry[[key]]` at section entry; the
   user can still add/remove markers during analysis. Marker peptides render in **magenta `#FF00FF`**
@@ -713,7 +713,7 @@ section**, so troubleshooting detail is one click away without cluttering the da
   > occurrence**, drops not-found pairs — **not** from `peptides.py::explode_peptide_rows` (which uses the
   > Spectronaut token). The R port must target the FASTA version, build an `{accession: sequence}` map,
   > and pin which occurrence labels a multi-occurrence peptide's single volcano dot. **Reclassify this as
-  > Moderate–High parity risk** (the re-port table currently under-rates it). See `docs/pelsa-review-findings.md` X2.
+  > Moderate–High parity risk** (the re-port table currently under-rates it). See `docs/pelsa/pelsa-review-findings.md` X2.
 
 - **Threshold line & top-N:** dashed horizontal line at the empirical raw-p corresponding to
   `adj.P.Val == 0.05`; **no line** if nothing passes BH. Top-N labels = smallest adj.P.Val;
@@ -758,7 +758,7 @@ section**, so troubleshooting detail is one click away without cluttering the da
 >   (significant, |logFC|≥0.5, marker-protein peptides) are **never** thinned.
 > Put the hovered/pinned protein's sibling peptides in a **separate small trace** so the fade restyle
 > touches only that trace, and tie the fade to the **pinned** selection (not transient hover). See
-> `docs/pelsa-review-findings.md` X3/X4.
+> `docs/pelsa/pelsa-review-findings.md` X3/X4.
 
 The two-behaviour UX is deliberate: a cheap hover preview, and an expensive line plot only on an explicit
 pin. Concrete plotly mechanisms (Context7 `plotly` for R,
@@ -1118,7 +1118,7 @@ relevant sections above.
    tie-break (most-negative logFC wins) and intensity-line protein selection — **not** to restrict the
    volcano coloring. *(This corrects the earlier "down-only is the default significant set" wording, which
    the science reviewers found does not match the notebook; BH/`adj.P.Val` also comes from Protigy
-   upstream, PELSA does not recompute it. See `docs/pelsa-review-findings.md` X1.)*
+   upstream, PELSA does not recompute it. See `docs/pelsa/pelsa-review-findings.md` X1.)*
 5. **Execution architecture — RESOLVED (2026-06-12):** all-R port, no `reticulate`; notebook is the
    gold standard; every converted helper is parity-tested **on a shared synthetic dataset** (per-helper
    + end-to-end). New R deps: `httr2`, `data.table`, `matrixStats`, `stringi` (**no `arrow`** — cache

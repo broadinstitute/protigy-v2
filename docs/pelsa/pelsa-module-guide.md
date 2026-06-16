@@ -3,7 +3,7 @@
 > **Who this is for.** Biologists and proteomics researchers using the PELSA section of
 > Protigy. It explains *what each part does and why*, in plain terms, while staying
 > technically accurate. You do **not** need to read any code. A companion technical spec
-> (`docs/pelsa-module-planning.md`) has the implementation details.
+> (`docs/pelsa/pelsa-module-planning.md`) has the implementation details.
 
 ## What PELSA is
 
@@ -231,4 +231,4 @@ needed for testing). Grouped by job:
 
 *Generated as part of the PELSA module implementation. For implementation detail and the
 record of intentional differences from the reference notebook, see
-`docs/pelsa-module-planning.md`.*
+`docs/pelsa/pelsa-module-planning.md`.*
