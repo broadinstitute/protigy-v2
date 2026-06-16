@@ -135,6 +135,11 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         zip_dir <- tempdir(check = T)
         exports_dir <- file.path(zip_dir, dir_name)
         dir.create(exports_dir, recursive = T)
+        # EXP-4: clean up the per-export temp dir on exit (success OR error) so it
+        # does not leak across repeated exports in a long-running Shiny session.
+        # The returned zip (`file`) is a SIBLING of exports_dir under zip_dir, so
+        # this unlink never touches it; on.exit runs after zip::zip() has written it.
+        on.exit(unlink(exports_dir, recursive = TRUE), add = TRUE)
         
         # gather inputs
         exports <- all_exports$exports
@@ -173,14 +178,22 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         success_exports <- c()
         error_exports <- c()
         
+        # EXP-5: snapshot each selected tab's export object ONCE here, so the
+        # progress pre-loop and the write loop below both read from the snapshot
+        # instead of evaluating each `exports[[tab_name]]()` reactive twice.
+        exports_snapshot <- lapply(selected_tabs, function(tab_name) {
+          if (is.reactive(exports[[tab_name]])) {
+            exports[[tab_name]]()
+          } else {
+            exports[[tab_name]]
+          }
+        })
+        names(exports_snapshot) <- selected_tabs
+
         # Calculate total number of exports for progress tracking
         total_exports <- 0
         for (tab_name in selected_tabs) {
-          if (is.reactive(exports[[tab_name]])) {
-            exports_all_omes <- exports[[tab_name]]()
-          } else {
-            exports_all_omes <- exports[[tab_name]]
-          }
+          exports_all_omes <- exports_snapshot[[tab_name]]
           for (ome in intersect(selected_omes, names(exports_all_omes))) {
             exports_this_ome <- exports_all_omes[[ome]]
             total_exports <- total_exports + length(exports_this_ome)
@@ -194,12 +207,9 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
           # loop through selected tabs
           lapply(selected_tabs, function(tab_name) {
           
-          if (is.reactive(exports[[tab_name]])) {
-            exports_all_omes <- exports[[tab_name]]()
-          } else {
-            exports_all_omes <- exports[[tab_name]]
-          }
-          
+          # EXP-5: read the once-evaluated snapshot, not the reactive again
+          exports_all_omes <- exports_snapshot[[tab_name]]
+
           # loop through selected omes
           lapply(intersect(selected_omes, names(exports_all_omes)), function(ome) {
             exports_this_ome <- exports_all_omes[[ome]]

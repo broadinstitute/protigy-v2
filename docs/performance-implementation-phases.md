@@ -31,9 +31,9 @@ and deferring the speculative server-side volcano work behind `toWebGL`.
 | **2** | **[ ]** | **Gene-symbol vectorization** (Cluster A, gene-symbol subset) | dp-2a, dp-redundant | ~480ms→24ms/pass | Low | `geneSymbol`-column diff on fixture |
 | **3** | **[x] DONE** | **matrixStats numerics** (Cluster C) | dp-norm, dp-sd, dp-1b | ~250ms/ome + crash bugfix | None/Low | filtered-row-set diff; NA/Inf parity; 1-row test |
 | **4** | **[x] DONE** | **Package attach trim** (Cluster D) | START-01, START-02 | ~1–1.4s cold open | None | re-grep + `check()` clean |
-| **5** | **[ ]** | **Deep-copy + setup I/O + observer hygiene** | dp-1a, START-04, START-03 | smaller per-copy + long-session stability | Low | list-column guard; cold-cache bench; add/remove test |
+| **5** | **[~] PARTIAL** | **Deep-copy + setup I/O + observer hygiene** | ~~dp-1a~~ (deferred), START-04 [x], START-03 [x] | smaller per-copy + long-session stability | Low | list-column guard; cold-cache bench; add/remove test |
 | **5b** | **[ ]** | **CSV/Excel → GCT conversion (post-"Start" build)** | INPUT-1, INPUT-2 | faster GCT build after exp-design upload | Low | byte-identical classification + cdesc on fixture |
-| **6** | **[ ]** | **Export CSV + hygiene** (Cluster E, CSV half) | EXP-2, EXP-4 cleanup, EXP-5 | ~1–3s export | Low (caveat) | confirm CSVs terminal; release-note byte change |
+| **6** | **[~] PARTIAL** | **Export CSV + hygiene** (Cluster E, CSV half) | ~~EXP-2~~ (deferred), EXP-4 cleanup [x], EXP-5 [x] | ~1–3s export | Low (caveat) | confirm CSVs terminal; release-note byte change |
 | **7 (conditional)** | **[ ]** | **Server-side volcano refactor** (Cluster F, deferred) | STAT-03, STAT-05, STAT-01, STAT-08, EXP-6 | per-render ms on 34k rows | Low–Med (unverified) | only if Phase 1 `toWebGL` insufficient; per-item byte-diff |
 | **8** | **[ ]** | **Statistics-tab volcano → PELSA-parity (native scattergl + proxy labeling)** | SVOL-1, SVOL-2, SVOL-3 | volcano render + per-selection refresh | Med | see Phase 8 below |
 | **Blocked** | **[ ]** | **dp-double** (gene-symbol runs twice/ome) | dp-double | halves dominant processing cost | Risky | repackage fallback-branch test (Open Q #3) |
@@ -85,7 +85,13 @@ START-01 (lazy-load vsn/mixtools/mclust/preprocessCore via `pkg::fn()`, keep in 
 `furrr`/`future`/`WriteXLS`). One `devtools::document()` regen. Gate: re-grep R/ + tests/ for bare symbols;
 `devtools::check()` clean.
 
-## Phase 5 — Deep-copy + setup I/O + observer hygiene  **[ ] NOT IMPLEMENTED**
+## Phase 5 — Deep-copy + setup I/O + observer hygiene  **[~] PARTIAL (START-03 + START-04 DONE 2026-06-16; dp-1a DEFERRED)**
+START-04: `read_gct_cdesc_as_character` reads only the GCT header region via a connection (no full second pass);
+verified byte-identical to the old full-read on all `inst/extdata/*.gct` + leading-zero-cdesc fixtures + a brca temp
+GCT. START-03: remove-button observers registered once per id via a monotonic tracker (no accumulation); add/
+remove/clear/re-add behavior unchanged (incl. clear -> re-add-same-filename still single handler). dp-1a (deep-copy)
+deferred per request.
+
 dp-1a (`as.data.frame` deep copy with list-column guard), START-04 (bound the second `.gct` read to the header
 region), START-03 (fix observer accumulation on file add/remove). Gate: dp-1a list-column guard; START-04
 warm/cold bench + byte-identical cdesc incl. `'001'`; START-03 add/remove/re-add/clear shinytest2.
@@ -120,7 +126,12 @@ Path: `processCSVExcelWorkflow*` → `convertToGCT` → `classifyColumns` / `cre
 Gate the whole phase on a byte-identical `@rdesc`/`@cdesc`/`@mat` diff of the resulting GCT on a CSV+design
 fixture before/after.
 
-## Phase 6 — Export CSV + hygiene  **[ ] NOT IMPLEMENTED** (`tab_export.R` untouched; no `readr::write_csv`)
+## Phase 6 — Export CSV + hygiene  **[~] PARTIAL (EXP-4 + EXP-5 DONE 2026-06-16; EXP-2 DEFERRED)**
+EXP-4: `on.exit(unlink(exports_dir))` cleans the per-export temp dir on success or error (the returned zip is a
+sibling, never touched). EXP-5: each tab export object snapshotted once instead of evaluating the reactive twice.
+Verified: identical files/contents, identical progress count, each reactive evaluated once, temp dir cleaned (even
+when an export throws), zip intact. EXP-2 (`readr::write_csv` swap) deferred per request.
+
 EXP-2 (`readr::write_csv` at 5 terminal sites) + EXP-4 temp-dir `on.exit(unlink)` cleanup + EXP-5 snapshot style
 cleanup. Gate: confirm every swapped CSV is a terminal zip artifact never re-ingested; note the user-visible byte
 change (quoting/exponent/NA-literal) in release notes.
