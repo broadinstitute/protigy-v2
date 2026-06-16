@@ -205,6 +205,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     parameters_internal_reactive <- reactiveVal()
     GCTs_unprocessed_internal_reactive <- reactiveVal()
     accumulated_files <- reactiveVal(NULL)  # Store accumulated file uploads
+    # Track remove-button ids that already have a live observeEvent so each id is
+    # registered exactly once per session (prevents observer accumulation /
+    # multi-fire on every accumulated_files() invalidation). Monotonic by design:
+    # never reset, so re-adding a previously seen filename does not double-register.
+    registered_remove_btns <- reactiveVal(character(0))
 
     # INT-2: memoized per-ome discrete-column map for the setup panel's dropdowns.
     # Depends ONLY on the GCTs reactiveVal, so it recomputes exactly when the GCTs
@@ -420,12 +425,26 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         return(NULL)
       }
 
-      # Create observers for each remove button using filename as unique identifier
+      # Create observers for each remove button using filename as unique identifier.
+      # Only register button ids that do not already have a live observeEvent, so the
+      # handler set does not grow on every accumulated_files() invalidation. Existing
+      # handlers look the file up BY NAME at click time and no-op if it is gone, so
+      # keeping them alive across add/remove/clear cycles is safe.
+      # isolate() so reading/writing the tracker does not make this observe depend
+      # on itself (the observe must only re-run on accumulated_files() changes).
+      already_registered <- isolate(registered_remove_btns())
+      newly_registered <- character(0)
       lapply(1:nrow(files), function(i) {
         # Use filename as unique identifier (sanitize for use as ID)
         file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
         btn_id <- paste0("remove_file_", file_id)
         filename <- files$name[i]  # Capture filename at observer creation time
+
+        # Skip ids that already have a live handler (also de-dupes within this batch).
+        if (btn_id %in% already_registered || btn_id %in% newly_registered) {
+          return(NULL)
+        }
+        newly_registered <<- c(newly_registered, btn_id)
 
         observeEvent(input[[btn_id]], {
           # Wrap in tryCatch to handle any reactive errors
@@ -498,6 +517,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           })
         }, ignoreInit = TRUE, ignoreNULL = TRUE)
       })
+
+      # Record the ids we just registered so they are not registered again on the
+      # next invalidation. Tracker is never cleared, guaranteeing one handler per id.
+      if (length(newly_registered) > 0L) {
+        isolate(registered_remove_btns(c(already_registered, newly_registered)))
+      }
     })
 
     # Handle clear all files

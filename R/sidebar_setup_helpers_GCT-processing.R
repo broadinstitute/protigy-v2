@@ -619,18 +619,33 @@ split_tab_fields <- function(line) {
 # This preserves annotation values like "001" exactly as provided in file.
 # @noRd
 read_gct_cdesc_as_character <- function(file_path) {
-  lines <- readLines(file_path, warn = FALSE)
-  if (length(lines) < 3L) {
+  # Only the header region is needed: line 1 (version), line 2 (dims), line 3
+  # (column id row), then nchd cdesc rows. The data matrix that follows is never
+  # used here, so read just the first (3 + nchd) lines instead of the whole file.
+  con <- file(file_path, open = "r")
+  on.exit(close(con), add = TRUE)
+
+  head2 <- readLines(con, n = 2L, warn = FALSE)
+  if (length(head2) < 2L) {
     stop("Invalid .gct file (expected at least 3 lines): ", file_path)
   }
 
-  dims <- suppressWarnings(as.integer(split_tab_fields(lines[2L])))
+  dims <- suppressWarnings(as.integer(split_tab_fields(head2[2L])))
   if (length(dims) < 2L || any(is.na(dims[1:2]))) {
     stop("Invalid .gct dimensions line: ", file_path)
   }
   ncmat <- dims[2L]
   nrhd <- if (length(dims) >= 3L && !is.na(dims[3L])) dims[3L] else 0L
   nchd <- if (length(dims) >= 4L && !is.na(dims[4L])) dims[4L] else 0L
+
+  # Read the column-id header row plus the nchd cdesc metadata rows. readLines
+  # stops early on EOF, so a truncated header yields a short `lines` vector that
+  # trips the same guards below (we intentionally do not pad here).
+  rest <- readLines(con, n = 1L + nchd, warn = FALSE)
+  lines <- c(head2, rest)
+  if (length(lines) < 3L) {
+    stop("Invalid .gct file (expected at least 3 lines): ", file_path)
+  }
 
   header <- split_tab_fields(lines[3L])
   if (nrhd > 0L) {
