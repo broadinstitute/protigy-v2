@@ -190,10 +190,10 @@ app_server <- function(input, output, session) {
   #   GCTs_original = GCTs_original
   # )
   
-  ## PELSA: merge the three section export reactives into ONE "pelsa" tab so the
-  ## exporter writes a single nested tree per ome (<ome>/pelsa/<stage>/...). Each
-  ## section's export functions carve their own stage subfolder; names are unique
-  ## across sections (setup / qc / volcano / intensity / woods).
+  ## PELSA: merge the three section export reactives into ONE "pelsa_exports" tab
+  ## so the exporter writes a single nested tree per ome (<ome>/pelsa_exports/<stage>/
+  ## ...). Each section's export functions carve their own stage subfolder; names are
+  ## unique across sections (setup / qc / volcano / intensity / woods).
   all_pelsa_exports <- reactive({
     s1 <- tryCatch(all_PELSASection1_exports(), error = function(e) NULL) %||% list()
     s2 <- tryCatch(all_PELSASection2_exports(), error = function(e) NULL) %||% list()
@@ -218,7 +218,7 @@ app_server <- function(input, output, session) {
         multiomeHeatmap_exports = all_multiomeHeatmap_exports,
         statSummary_exports = all_statSummary_exports,
         statPlot_exports = all_statPlot_exports,
-        pelsa = all_pelsa_exports
+        pelsa_exports = all_pelsa_exports
       )
     )
 

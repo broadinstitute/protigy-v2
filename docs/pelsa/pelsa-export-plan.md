@@ -3,10 +3,10 @@
 Planning doc for what the PELSA module writes into the global **Export** tab, the
 folder structure it produces, and the framework that supports it.
 
-Status: **planning only** — no code written yet. The framework (folders + figure
-helper) is agreed. The per-stage file lists below reflect the agreed output set;
-template/file names are listed for review, and a few computation questions are
-flagged in §6 (Open decisions).
+Status: **implemented** — this doc is retained as the design record. The framework
+(folders + figure helpers) and the per-stage output set below are live in the app
+across all three PELSA sections; see `R/tab_pelsa_export_helpers.R` and the
+`tab_pelsa_section1/2/3.R` export closures. The Open decisions in §6 are resolved.
 
 ---
 
@@ -44,13 +44,13 @@ are native `plot_ly`/WebGL and need a **parallel static ggplot built for export*
 
 ## 2. Target folder structure
 
-One nested `pelsa/` tree **per ome**, three flat stage subfolders. Figures and
-tables live **together** in each stage folder (no `figures/` vs `tables/` split).
+One nested `pelsa_exports/` tree **per ome**, three flat stage subfolders. Figures
+and tables live **together** in each stage folder (no `figures/` vs `tables/` split).
 Figures are written as **both PDF and PNG** (PNG via `ragg`).
 
 ```
 <ome>/
-└── pelsa/
+└── pelsa_exports/
     ├── 01_setup/                  # Section 1 - run configuration + user inputs
     ├── 02_qc/                     # Section 2 - QC figures + summary tables
     └── 03_volcano/                # Section 3 - volcano / intensity / Woods
@@ -102,7 +102,7 @@ Add to `R/tab_pelsa_constants.R`:
 ### 3.2 New helper file: `R/tab_pelsa_export_helpers.R`
 
 - **`pelsa_export_stage_dir(dir_name, ...)`** - `dir.create()` the nested subfolder
-  path (recursive, idempotent) and return it. Gives the `pelsa/<stage>/...` tree
+  path (recursive, idempotent) and return it. Gives the `pelsa_exports/<stage>/...` tree
   without touching the global loop.
 - **`pelsa_save_figure(plot, dir_name, basename, plot_type = "default")`** - write
   one ggplot as **PDF + PNG**, sized by the existing `get_ggsave_params()`:
@@ -302,16 +302,14 @@ end-to-end) before filling figure/table contents.
 
 ---
 
-## 7. Figure prototypes (visual iteration before app integration)
+## 7. Figure design notes (from the visual-iteration prototypes)
 
-Standalone, self-contained R scripts that reproduce the notebook layouts in
-ggplot2 (later ported into the app). Synthetic data approximates the notebook's
-FKBP2 / FKBP3 reference figures.
-
-| Script (`dev/pelsa_export_prototypes/`) | Output (gitignored, `dev/`) | Status |
-|------------------------------------------|------------------------------|--------|
-| `woods_export_prototype.R`               | `dev/woods_export_example.png` | matches layout; peptide coloring switched to **-log10(adj.P)** gradient; feature legend shows **all** classes |
-| `intensity_export_prototype.R`           | `dev/intensity_export_example.png` | matches layout; restores end-of-line `aa<pos>` labels (ggrepel) the in-app hover-only version drops |
+The two layouts were first built as standalone ggplot2 scripts iterated against the
+notebook's FKBP2 / FKBP3 reference figures, then ported into the app as
+`pelsa_woods_export_ggplot` (`R/tab_pelsa_woods_helpers.R`) and
+`pelsa_intensity_export_ggplot` (`R/tab_pelsa_section3_helpers.R`). The throwaway
+prototype scripts and their example PNGs have been removed; the design notes below
+are kept as the spec for those builders.
 
 Woods design notes (single-panel, notebook layout + app schema):
 - bold left title `GENE (ACC), N aa`; italic subtitle `Wood's plot: <contrast>`;
