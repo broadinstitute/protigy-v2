@@ -133,6 +133,21 @@ gct_setup_apply_to_all_valid <- function(
   list(ok = TRUE, msg = NA_character_)
 }
 
+# Collision-free, filename-stable element id for a file's remove button.
+# A plain gsub-to-underscore (e.g. gsub("[^a-zA-Z0-9_]", "_", name)) is NOT
+# injective: "a-b.gct" and "a_b.gct" both collapse to one id, which (a) emits
+# duplicate HTML ids and (b) makes the register-once dedup in the server skip the
+# second file's handler, leaving its remove button non-functional. Hex-encoding
+# the filename bytes is injective (distinct names -> distinct ids) AND stable
+# (the same name always yields the same id, which the monotonic dedup relies on).
+# Index-based ids cannot be used here: the persistent observer captures the
+# filename at first registration, so a positional id would target the wrong file
+# after a removal reorders the list.
+gct_remove_btn_id <- function(filename) {
+  paste0("remove_file_",
+         paste(sprintf("%02x", utf8ToInt(enc2utf8(filename))), collapse = ""))
+}
+
 # UI for the sidebar setup
 setupSidebarUI <- function(id = "setupSidebar") {
   # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
@@ -288,8 +303,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         div(
           style = "max-height: 200px; overflow-y: auto; margin-bottom: 10px; width: 100%;",
           lapply(1:nrow(files), function(i) {
-            # Use filename as unique identifier (sanitize for use as ID)
-            file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
+            # Collision-free, filename-stable id (see gct_remove_btn_id).
+            btn_id <- gct_remove_btn_id(files$name[i])
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
@@ -297,7 +312,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 files$name[i]
               ),
               actionButton(
-                ns(paste0("remove_file_", file_id)),
+                ns(btn_id),
                 label = NULL,
                 icon = icon("times"),
                 class = "btn-sm btn-primary",
@@ -435,9 +450,10 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       already_registered <- isolate(registered_remove_btns())
       newly_registered <- character(0)
       lapply(1:nrow(files), function(i) {
-        # Use filename as unique identifier (sanitize for use as ID)
-        file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
-        btn_id <- paste0("remove_file_", file_id)
+        # Collision-free, filename-stable id (see gct_remove_btn_id). Distinct
+        # filenames never share an id, so the register-once dedup below cannot
+        # drop a second file's handler.
+        btn_id <- gct_remove_btn_id(files$name[i])
         filename <- files$name[i]  # Capture filename at observer creation time
 
         # Skip ids that already have a live handler (also de-dupes within this batch).

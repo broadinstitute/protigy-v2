@@ -81,7 +81,13 @@ test_that("read_gct_cdesc_as_character errors on a truncated header", {
 })
 
 test_that("read_gct_cdesc_as_character errors on too-few lines", {
-  tmp <- tempfile(fileext = ".gct")
-  writeLines(c("#1.3"), tmp)
-  expect_error(read_gct_cdesc_as_character(tmp), "expected at least 3 lines")
+  # 1 line: only the version row -> incomplete-header branch (after reading 2 lines).
+  tmp1 <- tempfile(fileext = ".gct")
+  writeLines(c("#1.3"), tmp1)
+  expect_error(read_gct_cdesc_as_character(tmp1), "incomplete header")
+
+  # 2 lines: version + dims but no column-id/data row -> the >=3-line guard.
+  tmp2 <- tempfile(fileext = ".gct")
+  writeLines(c("#1.3", "2\t2\t0\t0"), tmp2)
+  expect_error(read_gct_cdesc_as_character(tmp2), "expected at least 3 lines")
 })

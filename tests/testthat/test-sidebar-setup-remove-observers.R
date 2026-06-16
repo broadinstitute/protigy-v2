@@ -17,7 +17,12 @@ make_files <- function(names) {
 }
 
 expected_btn_ids <- function(names) {
-  paste0("remove_file_", gsub("[^a-zA-Z0-9_]", "_", names))
+  vapply(names, gct_remove_btn_id, character(1), USE.NAMES = FALSE)
+}
+
+# Fire a remove button by filename (ids are hex-encoded; build the input name).
+fire_remove <- function(session, filename) {
+  do.call(session$setInputs, stats::setNames(list(1L), gct_remove_btn_id(filename)))
 }
 
 test_that("remove-button observers register once per id and do not accumulate", {
@@ -76,7 +81,7 @@ test_that("remove-button observers register once per id and do not accumulate", 
       # Brand-new filename after clear adds exactly one new id.
       accumulated_files(make_files(c("a.gct", "d.gct")))
       session$flushReact()
-      expect_true("remove_file_d_gct" %in% registered_remove_btns())
+      expect_true(gct_remove_btn_id("d.gct") %in% registered_remove_btns())
       expect_equal(length(registered_remove_btns()), 4L)
     }
   )
@@ -91,17 +96,38 @@ test_that("remove handler removes exactly the targeted file by name", {
       session$flushReact()
 
       # Fire the middle remove button; only y.gct should be removed.
-      session$setInputs(remove_file_y_gct = 1L)
+      fire_remove(session, "y.gct")
       session$flushReact()
       remaining <- accumulated_files()
       expect_equal(remaining$name, c("x.gct", "z.gct"))
 
       # Removing the last two leaves NULL (full reset path).
-      session$setInputs(remove_file_x_gct = 1L)
+      fire_remove(session, "x.gct")
       session$flushReact()
-      session$setInputs(remove_file_z_gct = 1L)
+      fire_remove(session, "z.gct")
       session$flushReact()
       expect_null(accumulated_files())
+    }
+  )
+})
+
+test_that("filenames colliding under naive sanitization get distinct ids and both work", {
+  # "a-b.gct" and "a_b.gct" both collapse to "a_b_gct" under gsub-to-underscore,
+  # which would emit duplicate ids and make the register-once dedup drop the
+  # second file's handler. Hex-encoded ids keep them distinct (CodeRabbit CRITICAL).
+  expect_false(identical(gct_remove_btn_id("a-b.gct"), gct_remove_btn_id("a_b.gct")))
+  shiny::testServer(
+    setupSidebarServer,
+    args = list(id = "setupSidebar", parent = NULL),
+    {
+      accumulated_files(make_files(c("a-b.gct", "a_b.gct")))
+      session$flushReact()
+      # Both files registered a distinct handler (no collision-drop).
+      expect_equal(length(registered_remove_btns()), 2L)
+      # Removing the first leaves exactly the second.
+      fire_remove(session, "a-b.gct")
+      session$flushReact()
+      expect_equal(accumulated_files()$name, "a_b.gct")
     }
   )
 })

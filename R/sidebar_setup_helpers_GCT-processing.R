@@ -627,7 +627,7 @@ read_gct_cdesc_as_character <- function(file_path) {
 
   head2 <- readLines(con, n = 2L, warn = FALSE)
   if (length(head2) < 2L) {
-    stop("Invalid .gct file (expected at least 3 lines): ", file_path)
+    stop("Invalid .gct file (incomplete header, expected version and dimensions lines): ", file_path)
   }
 
   dims <- suppressWarnings(as.integer(split_tab_fields(head2[2L])))
