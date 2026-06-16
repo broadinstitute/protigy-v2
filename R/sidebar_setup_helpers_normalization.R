@@ -88,9 +88,7 @@ normalize.data  <- function(data, # a data matrix
 ##
 ## 20160235
 #############################################################################################
-#' @importFrom preprocessCore normalize.quantiles
-#' @importFrom vsn justvsn
-normalize.data.helper <- function(data, 
+normalize.data.helper <- function(data,
                                   method=c('Median',
                                            'Median (non-zero)',
                                            'Quantile', 
@@ -130,7 +128,7 @@ normalize.data.helper <- function(data,
   
   ## quantile
   if(method == 'Quantile'){
-    data.norm <- normalize.quantiles(data)
+    data.norm <- preprocessCore::normalize.quantiles(data)
     rownames(data.norm) <- rownames(data)
     colnames(data.norm) <- paste( colnames(data))
     
@@ -211,7 +209,7 @@ normalize.data.helper <- function(data,
   
   ## VSN - variance stabilizing normalization
   if(method == 'VSN'){
-    data.norm <- justvsn(data)
+    data.norm <- vsn::justvsn(data)
   }
   
   cat('\n\n-- normalize data exit--\n\n')
@@ -219,8 +217,6 @@ normalize.data.helper <- function(data,
   return(data.norm)
 }
 
-#' @importFrom mixtools normalmixEM
-#' @importFrom mclust Mclust mclustBIC
 two.comp.normalize <- function (sample, type='default', mode.lower.bound=-3) {
   #   1. For all sample types, fit a 2-component gaussian mixture model using normalmixEM.
   #   2. For the bimodal samples, find the major mode M1 by kernel density estimation
@@ -251,9 +247,9 @@ two.comp.normalize <- function (sample, type='default', mode.lower.bound=-3) {
   dens.x <- dens$x [x.range];  dens.y <- dens$y [x.range]
   mode <- dens.x[which.max(dens.y)]                                                        
   if (type=='bimodal') mean.constr <- c (NA, mode) else mean.constr <- c (mode, mode)
-  model <- normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
-  model.rep <- normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
-  model.alt <- Mclust (data, G=2, modelNames=c ("V","E"))
+  model <- mixtools::normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
+  model.rep <- mixtools::normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
+  model.alt <- mclust::Mclust (data, G=2, modelNames=c ("V","E"))
   # V results is separate SDs for each cluster; E fits a single SD for both clusters
   if (length (model.alt$parameters$variance$sigmasq)==1)  # latter code expects two SD values
     model.alt$parameters$variance$sigmasq <- rep (model.alt$parameters$variance$sigmasq, 2)
@@ -278,8 +274,8 @@ two.comp.normalize <- function (sample, type='default', mode.lower.bound=-3) {
           abs (sum (c (model$mu, model$sigma) - c (model.rep$mu, model.rep$sigma))) > 1e-3 ) {
     # if major mode (and SD of mode) is not within 5% of data range, or if the other mean (for bimodals only) 
     # is not within 25% of the Mclust result, try again
-    model <- normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
-    model.rep <- normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
+    model <- mixtools::normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
+    model.rep <- mixtools::normalmixEM (data, k=2, mean.constr=mean.constr, maxit=10000)
     
     if (n.try > 50) stop (paste ("Can't fit mixture model ... giving up\n"))
     n.try <- n.try + 1

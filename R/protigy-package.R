@@ -25,7 +25,6 @@
 #' @importFrom circlize colorRamp2
 #' @importFrom colourpicker colourInput updateColourInput
 #' @importFrom shinyBS tipify
-#' @importFrom WriteXLS WriteXLS
 #' @importFrom scales label_percent
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom yaml read_yaml write_yaml
@@ -38,8 +37,6 @@
 #' @importFrom rlang .data
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput
-#' @importFrom future plan availableCores
-#' @importFrom furrr future_map future_map2
 #' @importFrom Matrix Matrix
 #' @importFrom matrixStats rowSds rowMeans2 rowMedians colMedians
 #' @importFrom stringi stri_locate_all_fixed stri_replace_all_fixed
