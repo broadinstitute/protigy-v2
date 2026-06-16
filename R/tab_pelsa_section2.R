@@ -137,7 +137,15 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         ))
       }
 
-      pelsa_section2_dashboard_ui(ns, ome)
+      # The bottom QC tables auto-expand when they carry rows (only empty tables
+      # stay collapsed) - decide each from the cache entry at render time.
+      has_unmatched <-
+        (entry$qc$n_unmatched_rows %||% nrow(entry$unmatched %||% data.frame())) > 0L
+      has_unannotated <-
+        (entry$qc$n_unannotated_accessions %||% length(entry$unannotated)) > 0L
+      pelsa_section2_dashboard_ui(ns, ome,
+                                  has_unmatched = has_unmatched,
+                                  has_unannotated = has_unannotated)
     })
 
     ## 6A - EXPERIMENT-WIDE ##
@@ -147,9 +155,20 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       n <- if (is.null(entry)) NA_integer_ else entry$qc$n_peptides
       shinydashboard::valueBox(
         value    = format(n %||% NA_integer_, big.mark = ","),
-        subtitle = "Total peptide IDs (original rows)",
+        subtitle = "Total peptides identified",
         icon     = icon("dna"),
         color    = "aqua"
+      )
+    })
+
+    output$fully_quantified_count <- shinydashboard::renderValueBox({
+      entry <- active_entry()
+      n <- if (is.null(entry)) NA_integer_ else entry$qc$n_fully_quantified
+      shinydashboard::valueBox(
+        value    = format(n %||% NA_integer_, big.mark = ","),
+        subtitle = "Fully-quantified peptides",
+        icon     = icon("check-double"),
+        color    = "green"
       )
     })
 
@@ -177,7 +196,8 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       )
     })
 
-    # Per-protein sequence coverage distribution.
+    # Per-protein sequence coverage - experiment-wide density (default) OR a
+    # per-condition density (toggle).
     coverage_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
@@ -185,17 +205,27 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         return(pelsa_blank_plot(
           "No peptides mapped to FASTA - check species / FASTA."))
       }
-      pelsa_coverage_distribution_plot(entry$coverage)
+      if (identical(input$coverage_mode %||% "overall", "per_condition")) {
+        pelsa_coverage_by_condition_plot(entry$coverage_by_condition,
+                                         active_condition_order())
+      } else {
+        pelsa_coverage_distribution_plot(entry$coverage)
+      }
     })
     output$coverage_plot <- renderPlotly({
       ggplotly(coverage_plot_reactive())
     })
 
-    # Peptide-length DENSITY with dodged mean + median lines.
+    # Peptide-length density - experiment-wide (default) OR per-condition (toggle).
     length_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
-      pelsa_length_density_plot(entry$peptide_metrics)
+      if (identical(input$length_mode %||% "overall", "per_condition")) {
+        pelsa_length_by_condition_plot(entry$length_by_condition,
+                                       active_condition_order())
+      } else {
+        pelsa_length_density_plot(entry$peptide_metrics)
+      }
     })
     output$length_plot <- renderPlotly({
       ggplotly(length_plot_reactive())
@@ -213,10 +243,15 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
 
     ## 6B - PER-CONDITION CV KDE ##
 
+    # CV - per-condition KDE (default) OR pooled experiment-wide density (toggle).
     cv_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
-      pelsa_cv_kde_plot(entry$cv, active_condition_order())
+      if (identical(input$cv_mode %||% "per_condition", "overall")) {
+        pelsa_cv_overall_plot(entry$cv)
+      } else {
+        pelsa_cv_kde_plot(entry$cv, active_condition_order())
+      }
     })
     output$cv_plot <- renderPlotly({
       ggplotly(cv_plot_reactive())
@@ -224,9 +259,11 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
     output$cv_caption <- renderUI({
       tags$p(.PELSA_CV_CAPTION, style = "color:#6c757d; font-style:italic;")
     })
+    # The skipped-condition note belongs to the per-condition KDE only.
     output$cv_skipped_note <- renderUI({
       entry <- active_entry()
       req(entry)
+      if (identical(input$cv_mode %||% "per_condition", "overall")) return(NULL)
       elig <- pelsa_cv_kde_eligibility(entry$cv, active_condition_order())
       if (nrow(elig$skipped) == 0L) return(NULL)
       msg <- paste(
@@ -248,25 +285,6 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       ggplotly(depth_plot_reactive())
     })
 
-    output$depth_table <- DT::renderDataTable({
-      entry <- active_entry()
-      req(entry)
-      ds <- entry$depth_summary
-      tab <- data.frame(
-        Metric = c("Mean peptides / sample", "Median peptides / sample",
-                   "CV (%) across samples", "Total peptides"),
-        Value  = c(
-          round(ds$mean_n %||% NA_real_, 1),
-          round(ds$median_n %||% NA_real_, 1),
-          round(ds$cv_pct %||% NA_real_, 2),
-          ds$total_n_peptides %||% NA_integer_
-        ),
-        stringsAsFactors = FALSE, check.names = FALSE
-      )
-      DT::datatable(tab, rownames = FALSE,
-                    options = list(dom = "t", ordering = FALSE))
-    })
-
     ## 6D - MAPPING / ANNOTATION QC (collapsible, bottom) ##
 
     output$unmatched_table <- DT::renderDataTable({
@@ -284,7 +302,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       DT::datatable(
         display, rownames = FALSE, selection = "none",
         extensions = "Buttons",
-        options = list(pageLength = 10, scrollY = "300px", scrollCollapse = TRUE,
+        options = list(pageLength = 100, scrollY = "300px", scrollCollapse = TRUE,
                        dom = "Bfrtip", buttons = c("csv"))
       )
     })
@@ -298,7 +316,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       DT::datatable(
         display, rownames = FALSE, selection = "none",
         extensions = "Buttons",
-        options = list(pageLength = 10, scrollY = "300px", scrollCollapse = TRUE,
+        options = list(pageLength = 100, scrollY = "300px", scrollCollapse = TRUE,
                        dom = "Bfrtip", buttons = c("csv"))
       )
     })
@@ -312,8 +330,12 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       if (is.null(cache)) return(list())
       datasets <- names(cache)
       datasets <- datasets[!vapply(cache, pelsa_analysis_failed, logical(1))]
+      ss <- tryCatch(pelsa_setup_state(), error = function(e) NULL)
       stats::setNames(lapply(datasets, function(ome) {
-        pelsa_section2_exports_for(cache[[ome]], ome)
+        co <- if (is.null(ss)) NULL else ss$condition_order[[ome]]
+        so <- if (is.null(ss)) NULL else ss$sample_order[[ome]]
+        pelsa_section2_exports_for(cache[[ome]], ome,
+                                   condition_order = co, sample_order = so)
       }), datasets)
     })
 
@@ -344,71 +366,89 @@ pelsa_section2_message_box <- function(title, message, status = "primary") {
   )
 }
 
+# A compact inline experiment-wide / per-condition radio toggle for a plot panel.
+# `default` is the selected VALUE ("overall" or "per_condition"). @noRd
+pelsa_mode_toggle <- function(ns, id, default = "overall") {
+  radioButtons(
+    ns(id), label = NULL, inline = TRUE,
+    choices  = c("Experiment-wide" = "overall",
+                 "Per-condition"   = "per_condition"),
+    selected = default
+  )
+}
+
 # The full dashboard layout for one analyzed dataset (6A-6D). Pure markup; all
 # inputIds/outputIds wrapped in ns().
 # @noRd
-pelsa_section2_dashboard_ui <- function(ns, ome) {
+pelsa_section2_dashboard_ui <- function(ns, ome,
+                                        has_unmatched = FALSE,
+                                        has_unannotated = FALSE) {
   tagList(
     # 6A value boxes (inline counts incl. the 6D mapping/annotation QC totals).
     fluidRow(
-      shinydashboard::valueBoxOutput(ns("total_peptide_ids"), width = 4),
-      shinydashboard::valueBoxOutput(ns("failed_match_count"), width = 4),
-      shinydashboard::valueBoxOutput(ns("failed_annotation_count"), width = 4)
+      shinydashboard::valueBoxOutput(ns("total_peptide_ids"), width = 3),
+      shinydashboard::valueBoxOutput(ns("fully_quantified_count"), width = 3),
+      shinydashboard::valueBoxOutput(ns("failed_match_count"), width = 3),
+      shinydashboard::valueBoxOutput(ns("failed_annotation_count"), width = 3)
     ),
 
-    # 6A coverage + peptide length.
+    # 6C depth bar + 6A missed cleavage.
     fluidRow(
       shinydashboardPlus::box(
+        plotlyOutput(ns("depth_plot")),
+        title = "Peptides quantified per sample", status = "primary",
+        width = 6, headerBorder = TRUE, solidHeader = TRUE
+      ),
+      shinydashboardPlus::box(
+        plotlyOutput(ns("missed_plot")),
+        title = "Missed-cleavage distribution", status = "primary",
+        width = 6, headerBorder = TRUE, solidHeader = TRUE
+      )
+    ),
+
+    # 6A coverage + peptide length (each with an experiment-wide / per-condition
+    # toggle; default experiment-wide).
+    fluidRow(
+      shinydashboardPlus::box(
+        pelsa_mode_toggle(ns, "coverage_mode", "overall"),
         plotlyOutput(ns("coverage_plot")),
         title = "Per-protein sequence coverage", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       ),
       shinydashboardPlus::box(
+        pelsa_mode_toggle(ns, "length_mode", "overall"),
         plotlyOutput(ns("length_plot")),
         title = "Peptide-length distribution", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       )
     ),
 
-    # 6A missed cleavage + 6C depth bar.
+    # 6B CV KDE (toggle; default per-condition).
     fluidRow(
       shinydashboardPlus::box(
-        plotlyOutput(ns("missed_plot")),
-        title = "Missed-cleavage distribution", status = "primary",
-        width = 6, headerBorder = TRUE, solidHeader = TRUE
-      ),
-      shinydashboardPlus::box(
-        plotlyOutput(ns("depth_plot")),
-        DT::dataTableOutput(ns("depth_table")),
-        title = "Peptides quantified per sample", status = "primary",
-        width = 6, headerBorder = TRUE, solidHeader = TRUE
-      )
-    ),
-
-    # 6B per-condition CV KDE.
-    fluidRow(
-      shinydashboardPlus::box(
+        pelsa_mode_toggle(ns, "cv_mode", "per_condition"),
         plotlyOutput(ns("cv_plot")),
         uiOutput(ns("cv_skipped_note")),
         uiOutput(ns("cv_caption")),
-        title = "Per-condition CV (replicate reproducibility)",
+        title = "Per-condition CV",
         status = "primary", width = 12, headerBorder = TRUE, solidHeader = TRUE
       )
     ),
 
-    # 6D collapsible QC tables PINNED AT THE BOTTOM (default collapsed).
+    # 6D collapsible QC tables PINNED AT THE BOTTOM. Auto-expanded when they have
+    # rows; only an empty table stays collapsed.
     fluidRow(
       shinydashboardPlus::box(
         DT::dataTableOutput(ns("unmatched_table")),
         title = "QC: peptides that failed FASTA match",
         status = "warning", width = 6, headerBorder = TRUE, solidHeader = TRUE,
-        collapsible = TRUE, collapsed = TRUE
+        collapsible = TRUE, collapsed = !has_unmatched
       ),
       shinydashboardPlus::box(
         DT::dataTableOutput(ns("unannotated_table")),
         title = "QC: proteins that failed annotation",
         status = "warning", width = 6, headerBorder = TRUE, solidHeader = TRUE,
-        collapsible = TRUE, collapsed = TRUE
+        collapsible = TRUE, collapsed = !has_unannotated
       )
     )
   )
@@ -426,53 +466,186 @@ pelsa_blank_plot <- function(message) {
     theme_void()
 }
 
-# 6A: per-protein sequence coverage distribution (histogram of the fraction).
+# Experiment-wide DENSITY with BOTH a dashed mean and a dashed median line, the
+# text annotations vertically dodged so they don't overlap. The shared builder
+# behind the coverage + length panels' "Experiment-wide" toggle mode.
+#
+# @param vals      numeric values (NA / non-finite dropped).
+# @param value_fmt function(value) -> string used in the "mean = .." / "median =
+#                  .." labels (e.g. coverage formats as a percentage).
 # @noRd
-pelsa_coverage_distribution_plot <- function(coverage) {
-  vals <- pelsa_coverage_values(coverage)
-  if (length(vals) == 0L) {
-    return(pelsa_blank_plot("No coverage values to display."))
-  }
-  med <- stats::median(vals, na.rm = TRUE)
-  over_n <- pelsa_over_length_count(coverage)
-  df <- data.frame(coverage = vals)
-  subtitle <- sprintf("median coverage = %.1f%%", 100 * med)
-  if (over_n > 0L) {
-    subtitle <- sprintf("%s | %d clamped (over-length)", subtitle, over_n)
-  }
-  ggplot(df, aes(x = .data$coverage)) +
-    geom_histogram(bins = 30, fill = "#4e79a7", color = "white") +
-    geom_vline(xintercept = med, linetype = "dashed", color = "#e15759") +
-    labs(x = "Sequence coverage (fraction)", y = "Proteins",
-         title = "Per-protein sequence coverage", subtitle = subtitle) +
+pelsa_overall_density_plot <- function(vals, x_label, title,
+                                       value_fmt = function(v) sprintf("%.1f", v),
+                                       fill = "#59a14f", subtitle = NULL,
+                                       blank_msg = "Not enough values for a density.") {
+  vals <- vals[is.finite(vals)]
+  if (length(vals) < 2L) return(pelsa_blank_plot(blank_msg))
+  m  <- mean(vals)
+  md <- stats::median(vals)
+  y_top <- tryCatch(max(stats::density(vals)$y, na.rm = TRUE),
+                    error = function(e) 1)
+  if (!is.finite(y_top) || y_top <= 0) y_top <- 1
+  ys <- pelsa_dodge_offsets(2L, y_top = y_top * 0.95, y_range = y_top)
+  df <- data.frame(x = vals)
+
+  ggplot(df, aes(x = .data$x)) +
+    geom_density(fill = fill, alpha = 0.4, color = fill) +
+    geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
+    geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
+    annotate("text", x = m,  y = ys[1], label = paste0("mean = ", value_fmt(m)),
+             color = "#e15759", hjust = -0.05, size = 3.2) +
+    annotate("text", x = md, y = ys[2],
+             label = paste0("median = ", value_fmt(md)),
+             color = "#4e79a7", hjust = -0.05, size = 3.2) +
+    labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
     theme_bw()
 }
 
-# 6A: peptide-length DENSITY with BOTH a dashed mean and a dashed median line,
-# their text annotations vertically dodged so they don't overlap. @noRd
+# Per-condition DENSITY: one curve per ELIGIBLE condition (>= min_n finite
+# values), a vertical dashed median line per condition with dodged white-halo
+# labels, x-limit at the 99th percentile. The shared builder behind the coverage
+# + length panels' "Per-condition" toggle mode (the CV panel keeps its own
+# pelsa_cv_kde_plot, which carries the >=20-CV skipped-condition note).
+#
+# @param df         data.frame with a `condition` column + `value_col`.
+# @param value_col  name of the numeric value column.
+# @param value_fmt  function(value) -> string for the median labels.
+# @param min_n      minimum finite values for a condition's density (default 2).
+# @noRd
+pelsa_per_condition_density_plot <- function(df, value_col,
+                                             condition_order = NULL,
+                                             x_label, title,
+                                             value_fmt = function(v) sprintf("%.1f", v),
+                                             min_n = 2L,
+                                             blank_msg = "No per-condition data to display.") {
+  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L ||
+      !all(c("condition", value_col) %in% names(df))) {
+    return(pelsa_blank_plot(blank_msg))
+  }
+  d <- data.frame(condition = as.character(df$condition),
+                  value = suppressWarnings(as.numeric(df[[value_col]])),
+                  stringsAsFactors = FALSE)
+  d <- d[is.finite(d$value) & !is.na(d$condition) & nzchar(d$condition), ,
+         drop = FALSE]
+  if (nrow(d) == 0L) return(pelsa_blank_plot(blank_msg))
+
+  # Eligibility + display order: requested condition_order first (present only),
+  # then any remaining conditions in natural order; drop conditions with < min_n.
+  counts <- table(d$condition)
+  present <- unique(d$condition)
+  req <- as.character(condition_order %||% character(0))
+  req <- req[!is.na(req) & nzchar(req)]
+  ordered <- c(intersect(req, present), setdiff(present, req))
+  eligible <- ordered[vapply(ordered, function(cond) {
+    as.integer(counts[[cond]] %||% 0L) >= min_n
+  }, logical(1))]
+  if (length(eligible) == 0L) {
+    return(pelsa_blank_plot(
+      sprintf("No condition has >= %d values to draw a density.", min_n)))
+  }
+  d <- d[d$condition %in% eligible, , drop = FALSE]
+  d$condition <- factor(d$condition, levels = eligible)
+
+  x_hi <- stats::quantile(d$value, 0.99, na.rm = TRUE, names = FALSE)
+  if (!is.finite(x_hi) || x_hi <= min(d$value, na.rm = TRUE)) {
+    x_hi <- max(d$value, na.rm = TRUE)
+  }
+  x_lo <- min(0, min(d$value, na.rm = TRUE))
+
+  medians <- stats::aggregate(value ~ condition, data = d,
+                              FUN = function(x) stats::median(x, na.rm = TRUE))
+  peak <- tryCatch(max(stats::density(d$value)$y, na.rm = TRUE),
+                   error = function(e) 1)
+  if (!is.finite(peak) || peak <= 0) peak <- 1
+  medians$y <- pelsa_dodge_offsets(nrow(medians), y_top = peak * 0.95,
+                                   y_range = peak)
+  medians$x <- medians$value
+  # Disclose the per-condition n alongside each median so a curve drawn from a
+  # handful of values is self-evidently noisy (rather than presented as an
+  # authoritative median). Mirrors the CV-KDE labels.
+  medians$n <- as.integer(counts[as.character(medians$condition)])
+  medians$label <- vapply(seq_len(nrow(medians)), function(i) {
+    sprintf("%s median = %s (n=%d)", medians$condition[i],
+            value_fmt(medians$value[i]), medians$n[i])
+  }, character(1))
+
+  ggplot(d, aes(x = .data$value, color = .data$condition,
+                fill = .data$condition)) +
+    geom_density(alpha = 0.15) +
+    geom_vline(data = medians,
+               aes(xintercept = .data$x, color = .data$condition),
+               linetype = "dashed", show.legend = FALSE) +
+    pelsa_halo_text_layers(medians, x_hi = x_hi, peak = peak) +
+    geom_text(data = medians,
+              aes(x = .data$x, y = .data$y, label = .data$label,
+                  color = .data$condition),
+              hjust = -0.05, size = 3, show.legend = FALSE) +
+    coord_cartesian(xlim = c(x_lo, x_hi)) +
+    labs(x = x_label, y = "Density", color = "Condition", fill = "Condition",
+         title = title) +
+    theme_bw()
+}
+
+# 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
+pelsa_coverage_distribution_plot <- function(coverage) {
+  vals <- pelsa_coverage_values(coverage)
+  over_n <- pelsa_over_length_count(coverage)
+  subtitle <- if (over_n > 0L)
+    sprintf("%d clamped (over-length)", over_n) else NULL
+  pelsa_overall_density_plot(
+    vals, x_label = "Sequence coverage (fraction)",
+    title = "Per-protein sequence coverage", fill = "#4e79a7",
+    value_fmt = function(v) sprintf("%.1f%%", 100 * v), subtitle = subtitle,
+    blank_msg = "Not enough coverage values for a density.")
+}
+
+# 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
+pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
+                                             condition_order = NULL) {
+  pelsa_per_condition_density_plot(
+    coverage_by_condition, value_col = "coverage",
+    condition_order = condition_order,
+    x_label = "Sequence coverage (fraction)",
+    title = "Per-protein sequence coverage by condition",
+    value_fmt = function(v) sprintf("%.1f%%", 100 * v),
+    blank_msg = "No per-condition coverage - a condition column is required.")
+}
+
+# 6A: peptide-length DENSITY (experiment-wide mode). @noRd
 pelsa_length_density_plot <- function(peptide_metrics) {
   vals <- pelsa_length_values(peptide_metrics)
-  if (length(vals) < 2L) {
-    return(pelsa_blank_plot("Not enough peptides for a length density."))
-  }
-  m  <- mean(vals, na.rm = TRUE)
-  md <- stats::median(vals, na.rm = TRUE)
-  dens <- stats::density(vals)
-  y_top <- max(dens$y, na.rm = TRUE)
-  ys <- pelsa_dodge_offsets(2L, y_top = y_top * 0.95, y_range = y_top)
-  df <- data.frame(length = vals)
+  pelsa_overall_density_plot(
+    vals, x_label = "Peptide length (residues)",
+    title = "Peptide-length distribution", fill = "#59a14f",
+    value_fmt = function(v) sprintf("%.1f", v),
+    blank_msg = "Not enough peptides for a length density.")
+}
 
-  ggplot(df, aes(x = .data$length)) +
-    geom_density(fill = "#59a14f", alpha = 0.4, color = "#59a14f") +
-    geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
-    geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
-    annotate("text", x = m,  y = ys[1], label = sprintf("mean = %.1f", m),
-             color = "#e15759", hjust = -0.05, size = 3.2) +
-    annotate("text", x = md, y = ys[2], label = sprintf("median = %.1f", md),
-             color = "#4e79a7", hjust = -0.05, size = 3.2) +
-    labs(x = "Peptide length (residues)", y = "Density",
-         title = "Peptide-length distribution") +
-    theme_bw()
+# 6A: peptide-length DENSITY (per-condition mode). @noRd
+pelsa_length_by_condition_plot <- function(length_by_condition,
+                                           condition_order = NULL) {
+  pelsa_per_condition_density_plot(
+    length_by_condition, value_col = "peptide_length",
+    condition_order = condition_order,
+    x_label = "Peptide length (residues)",
+    title = "Peptide-length distribution by condition",
+    value_fmt = function(v) sprintf("%.1f", v),
+    blank_msg = "No per-condition lengths - a condition column is required.")
+}
+
+# 6B: experiment-wide CV DENSITY (pooled across conditions). Unlike the
+# per-condition KDE (which drops conditions with < 20 finite CVs), the pooled
+# view intentionally includes EVERY "ok" CV -- pooling is exactly what makes a
+# small condition's CVs usable. The subtitle discloses the pooled count so the
+# two toggle modes are not silently describing different universes. @noRd
+pelsa_cv_overall_plot <- function(cv) {
+  vals <- pelsa_cv_ok_values(cv)
+  subtitle <- if (length(vals) > 0L)
+    sprintf("all conditions pooled (n = %d CVs)", length(vals)) else NULL
+  pelsa_overall_density_plot(
+    vals, x_label = "CV (%)", title = "CV distribution", fill = "#af7aa1",
+    value_fmt = function(v) sprintf("%.1f%%", v), subtitle = subtitle,
+    blank_msg = "No CV data - a raw GCT + condition column are required.")
 }
 
 # 6A: missed-cleavage bar (0,1,2,...). @noRd
@@ -484,7 +657,8 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
   ggplot(df, aes(x = .data$missed, y = .data$count)) +
     geom_col(fill = "#f28e2b") +
-    labs(x = "Missed cleavages", y = "Peptides",
+    scale_y_continuous(labels = scales::label_scientific()) +
+    labs(x = "Missed cleavages", y = "# of peptides",
          title = "Missed-cleavage distribution") +
     theme_bw()
 }
@@ -520,23 +694,54 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
   if (!is.finite(peak) || peak <= 0) peak <- 1
   medians$y <- pelsa_dodge_offsets(nrow(medians), y_top = peak * 0.95,
                                    y_range = peak)
-  medians$label <- sprintf("%s median = %.1f%%", medians$condition,
-                           medians$cv_pct)
+  medians$x <- medians$cv_pct
+  cv_counts <- table(ok$condition)
+  medians$n <- as.integer(cv_counts[as.character(medians$condition)])
+  medians$label <- sprintf("%s median = %.1f%% (n=%d)", medians$condition,
+                           medians$cv_pct, medians$n)
 
   ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
                  fill = .data$condition)) +
     geom_density(alpha = 0.15) +
     geom_vline(data = medians,
-               aes(xintercept = .data$cv_pct, color = .data$condition),
+               aes(xintercept = .data$x, color = .data$condition),
                linetype = "dashed", show.legend = FALSE) +
+    # White halo behind the median labels (multiple nudged white copies) so the
+    # text stays readable over overlapping density curves, then the colored text.
+    pelsa_halo_text_layers(medians, x_hi = x_hi, peak = peak) +
     geom_text(data = medians,
-              aes(x = .data$cv_pct, y = .data$y, label = .data$label,
+              aes(x = .data$x, y = .data$y, label = .data$label,
                   color = .data$condition),
               hjust = -0.05, size = 3, show.legend = FALSE) +
     coord_cartesian(xlim = c(0, x_hi)) +
     labs(x = "CV (%)", y = "Density", color = "Condition", fill = "Condition",
          title = "Per-condition CV distribution") +
     theme_bw()
+}
+
+# White-halo outline for the per-condition median labels. ggplot has no native
+# text-halo, and shadowtext does not round-trip through ggplotly. We emulate one
+# by drawing the label several times in white UNDER the colored text, each copy
+# offset by a small fraction of the x/y extents. The offsets are baked into the
+# DATA (new x/y columns) rather than applied with nudge_x/nudge_y: ggplotly
+# silently drops position_nudge, collapsing the halo onto one point, whereas
+# pre-offset coordinates survive the round-trip. Four cardinal offsets keep the
+# plotly payload light. Returns ONE geom_text layer over the expanded frame.
+# @noRd
+pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
+  dx <- (if (is.finite(x_hi) && x_hi > 0) x_hi else 1) * 0.006
+  dy <- (if (is.finite(peak) && peak > 0) peak else 1) * 0.012
+  offs <- data.frame(ox = c(-1, 1, 0, 0), oy = c(0, 0, -1, 1))
+  halo <- do.call(rbind, lapply(seq_len(nrow(offs)), function(i) {
+    h <- medians
+    h$x <- medians$x + offs$ox[i] * dx
+    h$y <- medians$y + offs$oy[i] * dy
+    h
+  }))
+  geom_text(data = halo,
+            aes(x = .data$x, y = .data$y, label = .data$label),
+            color = "white", hjust = -0.05, size = size,
+            inherit.aes = FALSE, show.legend = FALSE)
 }
 
 # 6C: per-sample depth bar, ordered by sample_order (alphabetical fallback).
@@ -558,48 +763,129 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
 # Export builders (6E) - re-derive each file from the cache entry
 ################################################################################
 
-# Build the per-ome export list for ONE analyzed dataset's cache entry. Each
-# element is a function(dir_name) that writes one CSV re-derived from the cache.
+# Per-sample QC summary: one row per sample, the non-NA peptide count (depth).
 # @noRd
-pelsa_section2_exports_for <- function(entry, ome) {
-  write_one <- function(df, suffix) {
-    function(dir_name) {
-      utils::write.csv(
-        df,
-        file = file.path(dir_name, sprintf("pelsa_%s_%s.csv", suffix, ome)),
-        row.names = FALSE
-      )
-    }
-  }
-
-  cv_df <- entry$cv %||% data.frame()
-  coverage_df <- entry$coverage %||% data.frame()
-  depth_df <- {
-    nq <- entry$n_quantified
-    per_sample <- data.frame(
-      sample       = names(nq) %||% character(0),
-      n_quantified = as.integer(nq %||% integer(0)),
-      stringsAsFactors = FALSE
-    )
-    ds <- entry$depth_summary
-    if (is.data.frame(ds) && nrow(ds) > 0L) {
-      for (col in names(ds)) per_sample[[col]] <- ds[[col]][1]
-    }
-    per_sample
-  }
-  unmatched_df <- entry$unmatched %||% data.frame()
-  unannotated_df <- data.frame(
-    accession = as.character(entry$unannotated %||% character(0)),
+pelsa_qc_sample_summary <- function(entry) {
+  nq <- entry$n_quantified
+  data.frame(
+    sample = names(nq) %||% character(0),
+    n_peptides_quantified = as.integer(nq %||% integer(0)),
     stringsAsFactors = FALSE
   )
-  peptide_metrics_df <- entry$peptide_metrics %||% data.frame()
+}
 
-  list(
-    cv              = write_one(cv_df, "cv"),
-    coverage        = write_one(coverage_df, "coverage"),
-    depth           = write_one(depth_df, "depth"),
-    unmatched       = write_one(unmatched_df, "unmatched"),
-    unannotated     = write_one(unannotated_df, "unannotated"),
-    peptide_metrics = write_one(peptide_metrics_df, "peptide_metrics")
+# Per-condition QC summary: median/mean CV, sequence coverage and peptide length.
+# Coverage + length come from the QC tab's per-condition cache fields
+# (coverage_by_condition / length_by_condition); CV from the per-peptide cv
+# frame. Columns absent from the cache are simply omitted (graceful).
+# @noRd
+pelsa_qc_condition_summary <- function(entry, condition_order = NULL) {
+  agg <- function(df, col, fun) {
+    if (!is.data.frame(df) || nrow(df) == 0L ||
+        !all(c("condition", col) %in% colnames(df))) {
+      return(stats::setNames(numeric(0), character(0)))
+    }
+    tapply(as.numeric(df[[col]]), as.character(df$condition), function(x) {
+      x <- x[is.finite(x)]
+      if (length(x) == 0L) NA_real_ else fun(x)
+    })
+  }
+  cv  <- entry$cv %||% data.frame()
+  cov <- entry$coverage_by_condition %||% data.frame()
+  len <- entry$length_by_condition %||% data.frame()
+
+  med_cv  <- agg(cv,  "cv_pct",         stats::median)
+  mean_cv <- agg(cv,  "cv_pct",         mean)
+  med_cov  <- agg(cov, "coverage",       stats::median)
+  mean_cov <- agg(cov, "coverage",       mean)
+  med_len  <- agg(len, "peptide_length", stats::median)
+  mean_len <- agg(len, "peptide_length", mean)
+
+  conds <- unique(c(names(med_cv), names(med_cov), names(med_len)))
+  if (length(conds) == 0L) return(data.frame())
+  if (!is.null(condition_order)) {
+    ordered <- intersect(condition_order, conds)
+    conds <- c(ordered, setdiff(conds, ordered))
+  }
+  n_pep <- if (is.data.frame(cv) && "condition" %in% colnames(cv))
+    table(as.character(cv$condition)) else integer(0)
+
+  data.frame(
+    condition             = conds,
+    n_peptides_quantified = as.integer(n_pep[conds]),
+    median_cv_pct         = unname(med_cv[conds]),
+    mean_cv_pct           = unname(mean_cv[conds]),
+    median_coverage       = unname(med_cov[conds]),
+    mean_coverage         = unname(mean_cov[conds]),
+    median_peptide_length = unname(med_len[conds]),
+    mean_peptide_length   = unname(mean_len[conds]),
+    stringsAsFactors = FALSE
   )
+}
+
+# Experiment-wide QC summary: totals + FASTA/annotation failure counts/percents.
+# @noRd
+pelsa_qc_experiment_summary <- function(entry) {
+  qc <- entry$qc %||% list()
+  n_total <- as.integer(qc$n_peptides %||% NA_integer_)
+  n_unmatched <- as.integer(qc$n_unmatched_rows %||%
+                              nrow(entry$unmatched %||% data.frame()))
+  n_unann <- as.integer(qc$n_unannotated_accessions %||%
+                          length(entry$unannotated %||% character(0)))
+  n_acc <- nrow(entry$coverage %||% data.frame())  # distinct matched accessions
+  pm <- entry$peptide_metrics %||% data.frame()
+  mmc <- if (is.data.frame(pm) && "missed_cleavages" %in% colnames(pm) &&
+             nrow(pm) > 0L)
+    mean(as.numeric(pm$missed_cleavages), na.rm = TRUE) else NA_real_
+  pct <- function(num, den) if (is.na(den) || den <= 0L) NA_real_ else 100 * num / den
+  data.frame(
+    n_peptides_total         = n_total,
+    n_unmatched_peptides     = n_unmatched,
+    pct_unmatched_peptides   = pct(n_unmatched, n_total),
+    n_unannotated_proteins   = n_unann,
+    pct_unannotated_proteins = pct(n_unann, n_acc),
+    mean_missed_cleavages    = mmc,
+    stringsAsFactors = FALSE
+  )
+}
+
+# Build the per-ome export bundle for ONE analyzed dataset. Returns a single
+# `qc` function that writes the three summary CSVs + five figures into the
+# 02_qc/ stage subfolder. condition_order / sample_order honor the user's
+# confirmed ordering (NULL -> the builders' alphabetical fallback).
+# @noRd
+pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
+                                       sample_order = NULL) {
+  qc_bundle <- function(dir_name) {
+    out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_QC)
+
+    utils::write.csv(pelsa_qc_sample_summary(entry),
+                     file.path(out, "qc_sample_summary.csv"), row.names = FALSE)
+    utils::write.csv(pelsa_qc_condition_summary(entry, condition_order),
+                     file.path(out, "qc_condition_summary.csv"), row.names = FALSE)
+    utils::write.csv(pelsa_qc_experiment_summary(entry),
+                     file.path(out, "qc_experiment_summary.csv"), row.names = FALSE)
+
+    cov <- entry$coverage %||% data.frame()
+    pm  <- entry$peptide_metrics %||% data.frame()
+    cvd <- entry$cv %||% data.frame()
+    nq  <- entry$n_quantified
+    save_fig <- function(p, base, w = 8, h = 5) tryCatch(
+      pelsa_save_figure(p, out, base, width = w, height = h),
+      error = function(e) NULL)
+
+    if (is.data.frame(cov) && nrow(cov) > 0L)
+      save_fig(pelsa_coverage_distribution_plot(cov), "coverage_distribution")
+    if (is.data.frame(pm) && nrow(pm) > 0L) {
+      save_fig(pelsa_length_density_plot(pm), "peptide_length_density")
+      save_fig(pelsa_missed_cleavage_plot(pm), "missed_cleavage_bar")
+    }
+    if (is.data.frame(cvd) && nrow(cvd) > 0L)
+      save_fig(pelsa_cv_kde_plot(cvd, condition_order), "cv_kde")
+    if (length(nq) > 0L)
+      save_fig(pelsa_depth_bar_plot(nq, sample_order), "n_peptides_per_sample")
+
+    invisible(out)
+  }
+  list(qc = qc_bundle)
 }

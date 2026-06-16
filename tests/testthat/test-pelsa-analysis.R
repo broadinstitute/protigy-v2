@@ -268,7 +268,8 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_setequal(
     names(one),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "peptide_metrics", "annotation_features", "unannotated", "qc")
+      "coverage", "coverage_by_condition", "peptide_metrics",
+      "length_by_condition", "annotation_features", "unannotated", "qc")
   )
   # The full-duplicate `annotation` frame is NOT stored (memory win).
   expect_false("annotation" %in% names(one))
@@ -310,6 +311,20 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_equal(nrow(one$peptide_metrics), nrow(syn$peptides))
   expect_true(all(c("missed_cleavages", "peptide_length") %in%
                     colnames(one$peptide_metrics)))
+
+  # Per-condition length / coverage (Summary toggle): correct columns, finite
+  # values, conditions a subset of the cv conditions (synthetic has 3).
+  expect_setequal(colnames(one$length_by_condition),
+                  c("condition", "peptide_length"))
+  expect_setequal(colnames(one$coverage_by_condition),
+                  c("condition", "coverage"))
+  expect_gt(nrow(one$length_by_condition), 0L)
+  expect_gt(nrow(one$coverage_by_condition), 0L)
+  expect_true(all(is.finite(one$coverage_by_condition$coverage)))
+  expect_true(all(one$coverage_by_condition$coverage >= 0 &
+                    one$coverage_by_condition$coverage <= 1))
+  expect_true(all(unique(one$length_by_condition$condition) %in%
+                    unique(one$cv$condition)))
 
   # Annotation (2I): only the 3 feature columns are stored, row-aligned to
   # matched; the full annotated frame is reconstructable via the accessor.

@@ -9,14 +9,16 @@
 # NOT the raw uploaded intensities. This DIFFERS from the within-condition CV
 # helper (R/tab_pelsa_cv_helpers.R), which operates on RAW linear intensities.
 #
-# QUANTIFIED MASK -- followed LITERALLY from the PELSA notebook
-# (peptides_quantified_per_sample, cell 25/26 -- the same mask used for
-# avg_intensity): a peptide is "quantified" for a sample iff its processed value
-# is FINITE AND strictly > 0, i.e. `is.finite(x) & x > 0`. NOTE: a log2 value can
-# legitimately be NEGATIVE, and a negative log2 value is still a real
-# measurement; nevertheless the notebook mask counts only strictly-positive
-# finite values, so we replicate it exactly (do NOT treat negatives as
-# quantified).
+# QUANTIFIED MASK -- the canonical pelsa_quantified_mask (finite AND non-zero,
+# `is.finite(x) & x != 0`). This DEPARTS from the notebook's literal `> 0`:
+# the notebook ran that mask on RAW LINEAR intensities (where `> 0` correctly
+# means "detected"), but Protigy applies it to the PROCESSED matrix, which is
+# log-transformed and median-normalized. On a log/median-centered matrix a real
+# low-abundance peptide has a NEGATIVE value and median-centering pushes ~half
+# of all finite values <= 0, so `> 0` silently dropped up to ~50% of genuine
+# measurements. `!= 0` keeps negatives (real, low-abundance) while still
+# excluding NA (upstream maps raw 0 -> NA before logging) and exact-zero; on a
+# LINEAR matrix (never negative) it is identical to the old `> 0`.
 #
 # CV DISTINCTION: pelsa_depth_summary()'s cv_pct is the PLAIN linear CV of the
 # per-sample COUNTS (sample sd / mean * 100, ddof = 1) -- it is the CV of the
@@ -33,16 +35,41 @@
 # order and do not re-order. Keep free of Shiny reactivity for unit-testability.
 ################################################################################
 
+# Presence/absence mask for a PELSA intensity matrix: TRUE where a value is a
+# GENUINE measurement. A value is "quantified" iff it is finite AND non-zero.
+#
+# This is the single, canonical definition of "quantified" shared by per-sample
+# depth (pelsa_peptides_per_sample), fully-quantified counts, and per-condition
+# membership, so the three never drift apart.
+#
+# Why `!= 0` and not the notebook's `> 0`:
+#   - LINEAR matrix (log_transformation = "None"): raw intensities are never
+#     negative; a literal 0 means "not detected" -> excluded. So `!= 0` is
+#     IDENTICAL to the old `> 0` here -- no behavior change on linear data.
+#   - LOG-transformed / normalized matrix: a real low-abundance peptide has a
+#     NEGATIVE log value (raw intensity < 1), and median-centering pushes ~half
+#     of all finite values <= 0 BY CONSTRUCTION. The old `> 0` silently dropped
+#     those genuine measurements (under-counting depth / fully-quantified /
+#     membership by up to ~50%). `!= 0` keeps them. Upstream maps raw 0 -> NA
+#     before logging, so NA already encodes absence; the only value `!= 0`
+#     excludes on log data is an exact log == 0 (raw intensity exactly 1), a
+#     negligible measure-zero edge.
+# NA / NaN / Inf / -Inf -> FALSE (not finite). 0 -> FALSE (absent).
+# @noRd
+pelsa_quantified_mask <- function(mat) {
+  is.finite(mat) & mat != 0
+}
+
 # Count, per sample column, how many peptides are "quantified" in a PROCESSED
-# (log2) matrix, using the notebook mask `is.finite(x) & x > 0`.
+# matrix, using the canonical pelsa_quantified_mask (finite & non-zero).
 #
 # Vectorized: colSums() over the logical mask matrix -- one pass, no apply loop.
 #
 # @param processed_mat numeric matrix (rows = peptides, cols = samples) of
-#                       PROCESSED (log2) values, OR a data.frame coerced to
-#                       matrix (documented). Must have UNIQUE column (sample)
-#                       names (duplicates make the named-integer return
-#                       ambiguous for downstream counts[name] selection).
+#                       PROCESSED values, OR a data.frame coerced to matrix
+#                       (documented). Must have UNIQUE column (sample) names
+#                       (duplicates make the named-integer return ambiguous for
+#                       downstream counts[name] selection).
 # @return NAMED integer vector; names = sample (column) names in column order,
 #         values = number of quantified peptides per sample.
 # @noRd
@@ -59,9 +86,7 @@ pelsa_peptides_per_sample <- function(processed_mat) {
       !anyDuplicated(colnames(processed_mat))
   )
 
-  # Notebook mask: finite AND strictly > 0. NA / 0 / negative / Inf -> FALSE.
-  mask <- is.finite(processed_mat) & processed_mat > 0
-  counts <- colSums(mask)
+  counts <- colSums(pelsa_quantified_mask(processed_mat))
   storage.mode(counts) <- "integer"
   counts
 }

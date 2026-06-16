@@ -151,11 +151,12 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   cache <- res$ds
   expect_false(pelsa_analysis_failed(cache))
 
-  # ---- SEAM 1: cache has all 10 documented, well-formed components ---------
+  # ---- SEAM 1: cache has all 12 documented, well-formed components ---------
   expect_setequal(
     names(cache),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "peptide_metrics", "annotation_features", "unannotated", "qc")
+      "coverage", "coverage_by_condition", "peptide_metrics",
+      "length_by_condition", "annotation_features", "unannotated", "qc")
   )
   # The full-duplicate `annotation` frame is NOT stored (~27MB/dataset saved).
   expect_false("annotation" %in% names(cache))

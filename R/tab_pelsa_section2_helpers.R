@@ -207,6 +207,28 @@ pelsa_length_values <- function(peptide_metrics) {
   v[is.finite(v)]
 }
 
+# Finite, "ok"-status CV percentages pooled across ALL conditions.
+#
+# The experiment-wide CV toggle mode draws ONE density over every replicate-CV
+# the per-condition KDE would otherwise split. It applies the same
+# cv_status == "ok" + finite filter, but -- unlike the per-condition KDE -- does
+# NOT drop conditions with < 20 CVs: pooling is exactly what makes a small
+# condition's CVs usable, so the pooled view is a strict superset. The caller
+# (pelsa_cv_overall_plot) discloses the pooled count in the panel subtitle.
+#
+# @param cv the cache `cv` data.frame (or NULL).
+# @return numeric - finite ok cv_pct values. Empty when none.
+# @noRd
+pelsa_cv_ok_values <- function(cv) {
+  if (is.null(cv) || !is.data.frame(cv) ||
+      !all(c("cv_pct", "cv_status") %in% names(cv))) {
+    return(numeric(0))
+  }
+  keep <- !is.na(cv$cv_status) & cv$cv_status == "ok"
+  v <- suppressWarnings(as.numeric(cv$cv_pct[keep]))
+  v[is.finite(v)]
+}
+
 # Missed-cleavage counts as an ordered factor-ready data.frame for the bar plot.
 #
 # @param peptide_metrics the cache `peptide_metrics` data.frame.

@@ -896,14 +896,18 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
   if (any(is_pinned_lvl)) {
     sel_rows <- ld[ld$aa_label %in% lvl[is_pinned_lvl], , drop = FALSE]
     if (nrow(sel_rows) > 0L) {
-      gg <- gg + ggplot2::geom_point(
+      # `text` is a plotly tooltip aes, not a ggplot one; geom_point() emits a
+      # DEFERRED "Ignoring unknown aesthetics: text" warning at construction
+      # that escapes suppressWarnings at the ggplotly/build site, so muffle it
+      # here where the layer is actually built.
+      gg <- gg + suppressWarnings(ggplot2::geom_point(
         data = sel_rows, na.rm = TRUE, shape = 21, size = 2.2, stroke = 0.6,
         fill = .PELSA_VOLCANO_GOLD, color = "black",
         ggplot2::aes(x = .data$condition, y = .data$mean_log2,
                      group = interaction(.data$peptide_seq,
                                          .data$pep_occurrence_idx),
                      text = .data$.tip),
-        inherit.aes = FALSE, show.legend = FALSE)
+        inherit.aes = FALSE, show.legend = FALSE))
     }
   }
   # Marker proteins: facet Significant/Non-significant; non-marker -> single.
@@ -947,11 +951,14 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
   if (length(panels) <= 1L) {
     # showlegend = FALSE: ggplotly does not always honor legend.position="none";
     # the floating hover tooltip identifies each peptide line.
-    return(suppressWarnings(plotly::layout(
+    # plotly_build() is forced INSIDE suppressWarnings so the deferred ggplot
+    # build (which emits "Ignoring unknown aesthetics: text" for the plotly
+    # tooltip aes) is muffled here, not later in renderPlotly's print path.
+    return(suppressWarnings(plotly::plotly_build(plotly::layout(
       plotly::ggplotly(
         pelsa_intensity_line_ggplot(ld, pinned_label = pinned_label),
         tooltip = "text"),
-      showlegend = FALSE)))
+      showlegend = FALSE))))
   }
   # Stable order: Significant on top, Non-significant below.
   ord <- c("Significant", "Non-significant")
@@ -965,7 +972,10 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
       ggplot2::theme(plot.title = ggplot2::element_text(
         face = "bold", size = 11, hjust = 0.5))
     # Only the bottom panel keeps the x tick labels (shared axis).
-    suppressWarnings(plotly::ggplotly(gg, tooltip = "text"))
+    # Force the build inside suppressWarnings so the deferred ggplot build
+    # (which warns "Ignoring unknown aesthetics: text" for the tooltip aes)
+    # is muffled here rather than later in renderPlotly's print path.
+    suppressWarnings(plotly::plotly_build(plotly::ggplotly(gg, tooltip = "text")))
   })
   # titleY = FALSE so plotly does NOT render the per-panel y-axis titles (they
   # were stripped via labs(y = NULL) but titleY = TRUE would re-add them and they
@@ -980,7 +990,72 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
       text = "mean log2 intensity", x = -0.12, y = 0.5,
       xref = "paper", yref = "paper", textangle = -90,
       showarrow = FALSE, font = list(size = 12))))
-  suppressWarnings(p)
+  suppressWarnings(plotly::plotly_build(p))
+}
+
+# Build the STATIC export intensity-line plot (ggplot + ggrepel). Mirrors the
+# notebook layout: centered bold title "GENE (ACC)", centered subtitle
+# "Mapped with N peptide(s)", two shared-y facets "Significant peptides (n)" |
+# "Non-significant peptides (n)", one line per peptide-occurrence with end-of-
+# line "aa<pos>" labels (the static analogue of the in-app hover tooltip).
+#
+# @param ld   a pelsa_intensity_line_data() frame (condition factor, mean_log2,
+#   peptide_seq, pep_occurrence_idx, aa_label, panel).
+# @param gene/accession  title tokens.
+# @param log_base  intensity transform applied at setup (2 or 10) -> y label.
+# @return a ggplot.
+# @noRd
+pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
+  conds <- levels(ld$condition)
+  if (is.null(conds)) {
+    conds <- unique(as.character(ld$condition))
+    ld$condition <- factor(as.character(ld$condition), levels = conds)
+  }
+  ld$grp <- interaction(ld$peptide_seq, ld$pep_occurrence_idx, drop = TRUE)
+
+  counts <- tapply(ld$grp, ld$panel, function(x) length(unique(x)))
+  panel_lab <- function(p) sprintf("%s peptides (%d)", p, counts[[p]])
+  lvl <- intersect(c("Significant", "Non-significant"), names(counts))
+  ld$panel_f <- factor(vapply(as.character(ld$panel), panel_lab, character(1)),
+                       levels = vapply(lvl, panel_lab, character(1)))
+
+  # one label per line, anchored at the last condition that line reaches.
+  lab_rows <- do.call(rbind, lapply(split(ld, ld$grp), function(d) {
+    d <- d[order(match(as.character(d$condition), conds)), , drop = FALSE]
+    d[nrow(d), , drop = FALSE]
+  }))
+
+  n_total <- length(unique(ld$grp))
+  sub_txt <- if (n_total == 1L) "Mapped with 1 peptide"
+             else sprintf("Mapped with %d peptides", n_total)
+  y_lab <- sprintf("Average log%d(intensity)", as.integer(log_base))
+
+  ggplot2::ggplot(ld, ggplot2::aes(x = .data$condition, y = .data$mean_log2,
+                                   group = .data$grp, color = .data$grp)) +
+    ggplot2::geom_line(linewidth = 0.5, alpha = 0.9, na.rm = TRUE) +
+    ggplot2::geom_point(size = 1.4, na.rm = TRUE) +
+    ggrepel::geom_text_repel(
+      data = lab_rows,
+      ggplot2::aes(label = .data$aa_label, color = .data$grp),
+      direction = "y", hjust = 0, nudge_x = 0.12, size = 2.6,
+      segment.size = 0.25, segment.color = "grey70", min.segment.length = 0,
+      box.padding = 0.1, max.overlaps = Inf, na.rm = TRUE,
+      xlim = c(length(conds) + 0.02, NA)) +
+    ggplot2::facet_wrap(~ .data$panel_f, nrow = 1, scales = "fixed") +
+    ggplot2::scale_color_hue(guide = "none") +
+    ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = c(0.3, 0.7))) +
+    ggplot2::coord_cartesian(clip = "off") +
+    ggplot2::labs(title = sprintf("%s (%s)", gene, accession),
+                  subtitle = sub_txt, x = "Condition", y = y_lab) +
+    ggplot2::theme_bw(base_size = 11) +
+    ggplot2::theme(
+      plot.title    = ggplot2::element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(hjust = 0.5, color = "grey25"),
+      axis.text.x = ggplot2::element_text(angle = 30, hjust = 1),
+      strip.text  = ggplot2::element_text(face = "bold"),
+      strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
+      panel.spacing = ggplot2::unit(1.4, "lines"),
+      panel.grid.minor = ggplot2::element_blank())
 }
 
 # Re-derive a volcano df for export (all_peptide / best_peptide), from plain
@@ -1065,7 +1140,8 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 # Build the static export ggplot (mirrors pelsa_volcano_build_plot's geom layout
 # but returns a plain ggplot for the PDF device - no plotly / WebGL / browser).
 # @noRd
-.pelsa_export_ggplot <- function(df, full_df, color_mode = "significance") {
+.pelsa_export_ggplot <- function(df, full_df, color_mode = "significance",
+                                 label_mode = "none", n_top = 3L) {
   split <- pelsa_volcano_marker_split(df)
   bg <- split$background
   mk <- split$markers
@@ -1086,6 +1162,24 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   if (!is.null(y_cut) && is.finite(y_cut)) {
     gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
                                    color = "grey40")
+  }
+  # Bake peptide labels per the in-app label mode (the on-screen labels are
+  # plotly annotations; the static export draws them as repelled text).
+  if (!identical(label_mode, "none") && "label" %in% colnames(df)) {
+    idx <- tryCatch(
+      pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
+      error = function(e) integer(0))
+    if (length(idx) > 0L) {
+      lab <- df[idx, , drop = FALSE]
+      lab <- lab[!is.na(lab$label) & nzchar(lab$label), , drop = FALSE]
+      if (nrow(lab) > 0L) {
+        gg <- gg + ggrepel::geom_text_repel(
+          data = lab,
+          ggplot2::aes(x = .data$logFC, y = .data$logP, label = .data$label),
+          size = 2.6, max.overlaps = Inf, min.segment.length = 0,
+          segment.size = 0.2, segment.color = "grey60")
+      }
+    }
   }
   gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") + ggplot2::theme_bw()
 }

@@ -68,6 +68,7 @@ Imports:
     IRanges,
     jsonlite,
     matrixStats,
+    ragg,
     stringi
 Depends:
     R (>= 4.0.0),

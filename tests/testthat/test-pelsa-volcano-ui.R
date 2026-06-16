@@ -974,7 +974,7 @@ test_that("7E: switching contrast CLEARS a stale selection", {
   })
 })
 
-test_that("7F: exports list has the 4 fns and each writes a file", {
+test_that("7F: exports list has volcano/intensity/woods fns; volcano writes figures", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
                       pelsa_label_mode = "top_n", pelsa_top_n = 3,
@@ -983,24 +983,18 @@ test_that("7F: exports list has the 4 fns and each writes a file", {
     force(active_volcano_df())
 
     exports <- session$returned
-    expect_setequal(names(exports),
-                    c("volcano_plot", "proteins_of_interest",
-                      "volcano_labels", "plotted_intensities"))
+    expect_setequal(names(exports), c("volcano", "intensity", "woods"))
     expect_true(all(vapply(exports, is.function, logical(1))))
 
     dir <- tempfile("pelsa_export_"); dir.create(dir)
     for (fn in exports) fn(dir)
-    files <- list.files(dir)
-    expect_true(any(grepl("pelsa_volcano_Proteome\\.pdf$", files)))
-    expect_true(any(grepl("pelsa_proteins_of_interest_Proteome\\.csv$", files)))
-    expect_true(any(grepl("pelsa_volcano_labels_Proteome\\.csv$", files)))
-    expect_true(any(grepl("pelsa_plotted_intensities_Proteome\\.csv$", files)))
 
-    # The 12-col sidecar shape on disk.
-    lab <- utils::read.csv(
-      file.path(dir, "pelsa_volcano_labels_Proteome.csv"),
-      stringsAsFactors = FALSE)
-    expect_equal(ncol(lab), 12L)
-    expect_true("winning_accession" %in% colnames(lab))
+    # Volcano figures land in 03_volcano/01_volcano (one per contrast, PDF+PNG),
+    # named all_peptide_volcano_<contrast>.
+    vdir <- file.path(dir, "03_volcano", "01_volcano")
+    expect_true(dir.exists(vdir))
+    vfiles <- list.files(vdir)
+    expect_true(any(grepl("^all_peptide_volcano_.*\\.pdf$", vfiles)))
+    expect_true(any(grepl("^all_peptide_volcano_.*\\.png$", vfiles)))
   })
 })

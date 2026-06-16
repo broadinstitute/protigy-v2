@@ -231,30 +231,34 @@ test_that("empty unmatched / unannotated produce empty-but-valid tables", {
 
 # ---- pelsa_section2_exports_for ----------------------------------------------
 
-test_that("exports_for re-derives CSVs from a cache entry", {
+test_that("exports_for writes the 02_qc summaries from a cache entry", {
   cache <- .summary_build_cache("ds1")
   entry <- cache$ds1
   expect_false(pelsa_analysis_failed(entry))
 
+  # One `qc` bundle that writes the three summaries (+ figures) into 02_qc/.
   exp_list <- pelsa_section2_exports_for(entry, "ds1")
-  expect_setequal(
-    names(exp_list),
-    c("cv", "coverage", "depth", "unmatched", "unannotated", "peptide_metrics")
-  )
+  expect_setequal(names(exp_list), "qc")
 
   dir <- tempfile("pelsa_exp_"); dir.create(dir)
   for (fn in exp_list) fn(dir)
-  files <- list.files(dir, pattern = "\\.csv$")
+  qc_dir <- file.path(dir, "02_qc")
+  expect_true(dir.exists(qc_dir))
+  files <- list.files(qc_dir, pattern = "\\.csv$")
   expect_true(all(c(
-    "pelsa_cv_ds1.csv", "pelsa_coverage_ds1.csv", "pelsa_depth_ds1.csv",
-    "pelsa_unmatched_ds1.csv", "pelsa_unannotated_ds1.csv",
-    "pelsa_peptide_metrics_ds1.csv") %in% files))
+    "qc_sample_summary.csv", "qc_condition_summary.csv",
+    "qc_experiment_summary.csv") %in% files))
 
-  # depth CSV carries per-sample rows + the summary columns appended.
-  depth <- utils::read.csv(file.path(dir, "pelsa_depth_ds1.csv"),
-                           stringsAsFactors = FALSE)
-  expect_true(all(c("sample", "n_quantified", "total_n_peptides") %in%
-                    names(depth)))
+  # Sample summary: one row per sample with the non-NA peptide count.
+  sample <- utils::read.csv(file.path(qc_dir, "qc_sample_summary.csv"),
+                            stringsAsFactors = FALSE)
+  expect_true(all(c("sample", "n_peptides_quantified") %in% names(sample)))
+
+  # Experiment summary: a single-row totals/failure table.
+  exp_csv <- utils::read.csv(file.path(qc_dir, "qc_experiment_summary.csv"),
+                             stringsAsFactors = FALSE)
+  expect_equal(nrow(exp_csv), 1L)
+  expect_true("n_peptides_total" %in% names(exp_csv))
 })
 
 # ---- testServer: gates + good-entry render -----------------------------------
@@ -396,18 +400,26 @@ test_that("Summary renders metrics + exports for a good cache entry", {
       expect_false(is.null(output$cv_plot))
       expect_false(is.null(output$depth_plot))
 
+      # Toggling each panel's experiment-wide <-> per-condition mode renders
+      # through the live module (guards the radio input-id wiring).
+      session$setInputs(coverage_mode = "per_condition",
+                        length_mode = "per_condition", cv_mode = "overall")
+      expect_false(is.null(output$coverage_plot))
+      expect_false(is.null(output$length_plot))
+      expect_false(is.null(output$cv_plot))
+      session$setInputs(coverage_mode = "overall", length_mode = "overall",
+                        cv_mode = "per_condition")
+      expect_false(is.null(output$cv_plot))
+
       # The CV caption is EXACTLY the required text.
       cap <- paste(as.character(output$cv_caption), collapse = "")
       expect_true(grepl(
         "CV of sum-normalized \\(un-logged\\) intensities", cap))
 
-      # Exports: one entry per analyzed dataset, with the 6E names.
+      # Exports: one entry per analyzed dataset, the single `qc` bundle.
       exp_all <- session$returned()
       expect_identical(names(exp_all), "ds1")
-      expect_setequal(
-        names(exp_all$ds1),
-        c("cv", "coverage", "depth", "unmatched", "unannotated",
-          "peptide_metrics"))
+      expect_setequal(names(exp_all$ds1), "qc")
     }
   )
 })
@@ -442,15 +454,141 @@ test_that("Summary renders + exports for a good entry whose cv is NULL", {
       expect_false(grepl("Run Start Analysis", html))
       # The CV plot output renders without error despite cv = NULL.
       expect_false(is.null(output$cv_plot))
-      # Exports still produce all six (cv export writes an empty data.frame).
+      # Exports still produce the qc bundle; the condition summary is written
+      # (an empty/condition-less frame) without error when cv is NULL.
       exp_all <- session$returned()
-      expect_setequal(
-        names(exp_all$ds1),
-        c("cv", "coverage", "depth", "unmatched", "unannotated",
-          "peptide_metrics"))
+      expect_setequal(names(exp_all$ds1), "qc")
       dir <- tempfile("pelsa_cvnull_"); dir.create(dir)
-      exp_all$ds1$cv(dir)
-      expect_true(file.exists(file.path(dir, "pelsa_cv_ds1.csv")))
+      exp_all$ds1$qc(dir)
+      expect_true(file.exists(file.path(dir, "02_qc",
+                                        "qc_experiment_summary.csv")))
     }
   )
+})
+
+################################################################################
+# Per-condition toggle helpers (experiment-wide <-> per-condition modes).
+################################################################################
+
+test_that("pelsa_condition_membership: >=1-sample rule, many-to-many", {
+  m <- matrix(c(
+    # s1   s2   s3   s4
+       5,   0,   7,  NA,   # pep1: A in s1 only,   B in s3 only
+       0,  NA,   0,   0,   # pep2: quantified nowhere
+       3,   4,   0,   9    # pep3: A in s1&s2,     B in s4
+  ), nrow = 3, byrow = TRUE,
+     dimnames = list(NULL, c("s1", "s2", "s3", "s4")))
+  cmap <- c(s1 = "A", s2 = "A", s3 = "B", s4 = "B")
+
+  mem <- pelsa_condition_membership(m, cmap)
+  expect_setequal(colnames(mem), c("row_id", "condition"))
+  # pep1: A(s1>0) + B(s3>0); pep3: A(s1,s2) + B(s4); pep2: none.
+  A <- sort(mem$row_id[mem$condition == "A"])
+  B <- sort(mem$row_id[mem$condition == "B"])
+  expect_equal(A, c(1L, 3L))
+  expect_equal(B, c(1L, 3L))
+  expect_false(2L %in% mem$row_id)
+})
+
+test_that("pelsa_condition_membership: empty inputs -> empty frame", {
+  empty <- pelsa_condition_membership(matrix(numeric(0), nrow = 0, ncol = 0),
+                                      c(s1 = "A"))
+  expect_equal(nrow(empty), 0L)
+  m <- matrix(1, nrow = 1, dimnames = list(NULL, "s1"))
+  expect_equal(nrow(pelsa_condition_membership(m, character(0))), 0L)
+})
+
+test_that("pelsa_length_by_condition: joins lengths by row_id", {
+  mem <- data.frame(row_id = c(1L, 3L, 1L), condition = c("A", "A", "B"),
+                    stringsAsFactors = FALSE)
+  pm <- data.frame(peptide_length = c(7, 9, 11), stringsAsFactors = FALSE)
+  out <- pelsa_length_by_condition(mem, pm)
+  expect_setequal(colnames(out), c("condition", "peptide_length"))
+  expect_equal(out$peptide_length[out$condition == "A"], c(7, 11))
+  expect_equal(out$peptide_length[out$condition == "B"], 7)
+  # Out-of-range row_ids are dropped, never error.
+  bad <- pelsa_length_by_condition(data.frame(row_id = 99L, condition = "A"), pm)
+  expect_equal(nrow(bad), 0L)
+})
+
+test_that("pelsa_coverage_by_condition: per-condition union coverage", {
+  # 10-residue protein P. condition A covers [1,5] (50%); B covers [1,5]+[6,10]
+  # (100%). matched .row_id links peptides to membership.
+  matched <- data.frame(
+    accession = c("P", "P"),
+    pep_start = c(1L, 6L),
+    pep_end   = c(5L, 10L),
+    .row_id   = c(1L, 2L),
+    stringsAsFactors = FALSE, check.names = FALSE
+  )
+  fasta <- list(P = paste(rep("A", 10), collapse = ""))
+  mem <- data.frame(
+    row_id    = c(1L, 1L, 2L),
+    condition = c("A", "B", "B"),
+    stringsAsFactors = FALSE
+  )
+  out <- pelsa_coverage_by_condition(mem, matched, fasta)
+  expect_setequal(colnames(out), c("condition", "coverage"))
+  expect_equal(out$coverage[out$condition == "A"], 0.5)
+  expect_equal(out$coverage[out$condition == "B"], 1.0)
+})
+
+test_that("pelsa_cv_ok_values: only finite ok rows pooled", {
+  cv <- data.frame(
+    cv_pct    = c(10, 20, NA, 30, Inf),
+    cv_status = c("ok", "ok", "ok", "insufficient_replicates", "ok"),
+    stringsAsFactors = FALSE
+  )
+  expect_equal(sort(pelsa_cv_ok_values(cv)), c(10, 20))
+  expect_equal(pelsa_cv_ok_values(NULL), numeric(0))
+})
+
+test_that("density plot builders return ggplot, blank on edge cases", {
+  expect_s3_class(pelsa_overall_density_plot(c(1, 2, 3, 4), "x", "t"), "ggplot")
+  expect_s3_class(pelsa_overall_density_plot(numeric(0), "x", "t"), "ggplot")
+
+  df <- data.frame(condition = rep(c("A", "B"), each = 5),
+                   value = c(1:5, 11:15), stringsAsFactors = FALSE)
+  expect_s3_class(
+    pelsa_per_condition_density_plot(df, "value", x_label = "x", title = "t"),
+    "ggplot")
+  # A single-point condition is below min_n=2 -> falls back to blank (no curve).
+  one <- data.frame(condition = "A", value = 3, stringsAsFactors = FALSE)
+  expect_s3_class(
+    pelsa_per_condition_density_plot(one, "value", x_label = "x", title = "t"),
+    "ggplot")
+  expect_s3_class(pelsa_cv_overall_plot(NULL), "ggplot")
+})
+
+test_that("CV experiment-wide mode discloses the pooled CV count in subtitle", {
+  cv <- data.frame(
+    row_id    = 1:6,
+    condition = rep(c("A", "B"), each = 3),
+    cv_pct    = c(10, 20, 30, 12, 18, 24),
+    cv_status = "ok",
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_cv_overall_plot(cv)
+  expect_s3_class(p, "ggplot")
+  # Pools EVERY "ok" CV (6 here) regardless of per-condition eligibility, and
+  # says so in the subtitle so the toggle modes are not silently different.
+  expect_match(p$labels$subtitle, "pooled \\(n = 6 CVs\\)")
+})
+
+test_that("per-condition median labels disclose n", {
+  # Condition A has many values, B only a few -> each label surfaces its n.
+  df <- data.frame(
+    condition = c(rep("A", 12), rep("B", 3)),
+    value     = c(seq_len(12), c(20, 21, 22)),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_per_condition_density_plot(df, "value", x_label = "x", title = "t")
+  expect_s3_class(p, "ggplot")
+  txt <- unlist(lapply(p$layers, function(l) {
+    d <- l$data
+    if (is.data.frame(d) && "label" %in% names(d)) as.character(d$label)
+    else character(0)
+  }))
+  expect_true(any(grepl("median = .* \\(n=12\\)", txt)))
+  expect_true(any(grepl("median = .* \\(n=3\\)", txt)))
 })

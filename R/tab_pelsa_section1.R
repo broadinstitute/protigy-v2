@@ -970,6 +970,30 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # each export function recompute its dataset from scratch; honor the
     # planning-doc memory contract (no per-ome instance leaks; keep only the
     # active dataset's heavy objects hot).
+    # The 01_setup export bundle for one ome: run configuration (pelsa_setup.yaml)
+    # + the marker table (pelsa_markers.csv). Reads the shared setup_state at
+    # export time so it reflects the latest run configuration.
+    make_setup_export <- function(ome) function(dir_name) {
+      out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_SETUP)
+      ss <- tryCatch(isolate(pelsa_setup_snapshot(setup_state)),
+                     error = function(e) NULL)
+      if (is.null(ss)) return(invisible(NULL))
+      cfg <- list(
+        species          = ss$species %||% NA,
+        compound         = ss$compound %||% NA,
+        condition_column = ss$condition_col[[ome]] %||% NA,
+        condition_order  = as.list(ss$condition_order[[ome]] %||% character(0)),
+        sample_order     = as.list(ss$sample_order[[ome]] %||% character(0))
+      )
+      yaml::write_yaml(cfg, file.path(out, "pelsa_setup.yaml"))
+      mr <- ss$marker_rows
+      if (is.data.frame(mr) && nrow(mr) > 0L) {
+        utils::write.csv(mr, file.path(out, "pelsa_markers.csv"),
+                         row.names = FALSE)
+      }
+      invisible(out)
+    }
+
     all_exports <- reactiveVal()
     observeEvent(all_omes(), {
       ome_exports <- sapply(all_omes(), function(ome) {
@@ -982,6 +1006,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           color_map                 = reactive(custom_colors()[[ome]])
         )
       }, simplify = FALSE)
+      # Attach the shared 01_setup export to each ome (setup_state is shared).
+      ome_exports <- stats::setNames(lapply(names(ome_exports), function(ome) {
+        c(ome_exports[[ome]] %||% list(),
+          list(setup = make_setup_export(ome)))
+      }), names(ome_exports))
       all_exports(ome_exports)
     })
 

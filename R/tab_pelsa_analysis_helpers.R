@@ -434,7 +434,7 @@ pelsa_condition_map_for <- function(cdesc, sample_cols, condition_col) {
 # Canonical predicate: did a per-dataset cache entry FAIL?
 #
 # The ONE place that defines the success-vs-failure rule for entries in the
-# pelsa_run_analysis() return list. A successful entry is the 10-component cache
+# pelsa_run_analysis() return list. A successful entry is the 12-component cache
 # (see the Cache contract below); a failed entry is list(error = <message>,
 # stage = <stage label or NA>). Phase 6/7 MUST test with this predicate rather
 # than inlining `!is.null(entry$error)`, so the rule lives in one place.
@@ -475,6 +475,115 @@ pelsa_annotation_frame <- function(entry) {
   out
 }
 
+# ---- per-condition membership + distributions (Summary toggle) ---------------
+
+# Peptide -> condition membership over the PROCESSED matrix.
+#
+# A peptide BELONGS to a condition when it is quantified (the canonical
+# pelsa_quantified_mask: finite AND non-zero) in AT LEAST ONE of that condition's
+# samples. Many-to-many: a peptide quantified across several conditions appears
+# once per condition. Pure (no Shiny, no network).
+#
+# @param proc_mat      peptides x samples numeric matrix (colnames = samples).
+# @param condition_map NAMED vector sample -> condition (pelsa_condition_map_for).
+# @return data.frame(row_id = integer 1-based peptide-frame row, condition =
+#         character), one row per (peptide, condition) membership. Empty when
+#         there are no samples / no mapped conditions.
+# @noRd
+pelsa_condition_membership <- function(proc_mat, condition_map) {
+  if (is.data.frame(proc_mat)) proc_mat <- as.matrix(proc_mat)
+  empty <- data.frame(row_id = integer(0), condition = character(0),
+                      stringsAsFactors = FALSE)
+  if (!is.matrix(proc_mat) || ncol(proc_mat) == 0L || nrow(proc_mat) == 0L) {
+    return(empty)
+  }
+  cm <- condition_map
+  if (is.null(cm) || length(cm) == 0L) return(empty)
+  keep <- !is.na(cm) & nzchar(as.character(cm))
+  cm <- cm[keep]
+  samples <- intersect(names(cm), colnames(proc_mat))
+  if (length(samples) == 0L) return(empty)
+
+  mask <- pelsa_quantified_mask(proc_mat[, samples, drop = FALSE])
+  conds <- unique(as.character(cm[samples]))
+  parts <- lapply(conds, function(cond) {
+    cols <- samples[as.character(cm[samples]) == cond]
+    inc <- rowSums(mask[, cols, drop = FALSE]) > 0   # quantified in >= 1 sample
+    rid <- which(inc)
+    if (length(rid) == 0L) return(NULL)
+    data.frame(row_id = as.integer(rid), condition = cond,
+               stringsAsFactors = FALSE)
+  })
+  parts <- parts[!vapply(parts, is.null, logical(1))]
+  if (length(parts) == 0L) return(empty)
+  do.call(rbind, parts)
+}
+
+# Long per-condition peptide-length frame for the Summary length toggle.
+#
+# @param membership      pelsa_condition_membership() output.
+# @param peptide_metrics the cache peptide_metrics frame (row-aligned to the
+#                        peptide frame == membership$row_id index space).
+# @return data.frame(condition, peptide_length). Empty when no membership.
+# @noRd
+pelsa_length_by_condition <- function(membership, peptide_metrics) {
+  empty <- data.frame(condition = character(0), peptide_length = numeric(0),
+                      stringsAsFactors = FALSE)
+  if (is.null(membership) || !is.data.frame(membership) ||
+      nrow(membership) == 0L) {
+    return(empty)
+  }
+  if (is.null(peptide_metrics) || !is.data.frame(peptide_metrics) ||
+      !("peptide_length" %in% names(peptide_metrics))) {
+    return(empty)
+  }
+  len <- suppressWarnings(as.numeric(peptide_metrics$peptide_length))
+  rid <- membership$row_id
+  ok <- !is.na(rid) & rid >= 1L & rid <= length(len)
+  data.frame(condition = as.character(membership$condition[ok]),
+             peptide_length = len[rid[ok]],
+             stringsAsFactors = FALSE)
+}
+
+# Long per-condition sequence-coverage frame for the Summary coverage toggle.
+#
+# For each condition it subsets the matched cache to the peptides quantified in
+# that condition and runs the SAME interval-union coverage as the experiment-wide
+# metric, keeping the finite per-accession coverage fractions. @noRd
+pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
+                                        acc_col = "accession",
+                                        start_col = "pep_start",
+                                        end_col = "pep_end",
+                                        row_id_col = ".row_id") {
+  empty <- data.frame(condition = character(0), coverage = numeric(0),
+                      stringsAsFactors = FALSE)
+  if (is.null(membership) || !is.data.frame(membership) ||
+      nrow(membership) == 0L) {
+    return(empty)
+  }
+  if (!is.data.frame(matched) || nrow(matched) == 0L ||
+      !(row_id_col %in% names(matched))) {
+    return(empty)
+  }
+  m_rid <- suppressWarnings(as.integer(matched[[row_id_col]]))
+  conds <- unique(as.character(membership$condition))
+  parts <- lapply(conds, function(cond) {
+    rids <- membership$row_id[membership$condition == cond]
+    sub <- matched[m_rid %in% rids, , drop = FALSE]
+    if (nrow(sub) == 0L) return(NULL)
+    cov <- suppressWarnings(
+      pelsa_sequence_coverage(sub, fasta_map, acc_col = acc_col,
+                              start_col = start_col, end_col = end_col))
+    v <- suppressWarnings(as.numeric(cov$coverage))
+    v <- v[is.finite(v)]
+    if (length(v) == 0L) return(NULL)
+    data.frame(condition = cond, coverage = v, stringsAsFactors = FALSE)
+  })
+  parts <- parts[!vapply(parts, is.null, logical(1))]
+  if (length(parts) == 0L) return(empty)
+  do.call(rbind, parts)
+}
+
 # ---- per-dataset assembly ----------------------------------------------------
 
 # Assemble one dataset's per-dataset analysis cache from the verified helpers.
@@ -487,7 +596,7 @@ pelsa_annotation_frame <- function(entry) {
 #
 # @section Cache contract:
 # The returned named list is the load-bearing contract Phases 6 (Summary) and 7
-# (Volcano) READ (never recompute). On SUCCESS it has exactly these 10
+# (Volcano) READ (never recompute). On SUCCESS it has exactly these 12
 # components (EXACT names + shapes as implemented):
 #   (NOTE: the former full-duplicate `annotation` frame is no longer stored; the
 #   cache now carries `annotation_features` - just the 3 feature columns,
@@ -514,8 +623,18 @@ pelsa_annotation_frame <- function(entry) {
 #   coverage       data.frame, one row per DISTINCT matched accession. Cols:
 #                  accession, covered_residues, protein_length, coverage ([0,1] or
 #                  NA), over_length_flag.
+#   coverage_by_condition data.frame(condition, coverage), the per-protein
+#                  coverage fraction split by condition (a peptide belongs to a
+#                  condition when quantified in >= 1 of its samples). Empty frame
+#                  when no usable processed condition column. Feeds the Summary
+#                  coverage panel's per-condition toggle mode.
 #   peptide_metrics data.frame, one row per peptide-frame row. Cols:
 #                  PEP.StrippedSequence, missed_cleavages, peptide_length.
+#   length_by_condition data.frame(condition, peptide_length), peptide lengths
+#                  split by condition (same membership rule as
+#                  coverage_by_condition). Empty frame when no usable processed
+#                  condition column. Feeds the Summary length panel's
+#                  per-condition toggle mode.
 #   annotation_features data.frame, row-aligned to `matched`, with exactly 3
 #                  columns: feature_class_primary, winning_accession,
 #                  winning_gene. The full annotated frame (matched + these 3) is
@@ -523,7 +642,9 @@ pelsa_annotation_frame <- function(entry) {
 #                  cache does NOT store the full duplicate.
 #   unannotated    character vector of accessions present in the matched cache but
 #                  ABSENT from feat_df (isoform-base fallback applied).
-#   qc             list: n_peptides, n_exploded, n_matched_rows, n_unmatched_rows,
+#   qc             list: n_peptides, n_fully_quantified (peptides quantified --
+#                  finite & non-zero -- in ALL samples), n_exploded,
+#                  n_matched_rows, n_unmatched_rows,
 #                  unmatched_by_reason (named integer vector reason -> count),
 #                  n_unannotated_accessions.
 #
@@ -612,19 +733,33 @@ pelsa_run_analysis_one <- function(gct,
   # delinearize by this dataset's declared log base BEFORE sum-normalize + CV.
   # CV is NOT invariant under log; the notebook delinearizes first. "None"/NA
   # means the matrix is already linear -> pelsa_delinearize passes it through.
+  # CANONICAL condition annotation, shared by the CV panel (2D) AND the
+  # per-condition membership (Summary toggle) so both describe the SAME
+  # sample -> condition mapping. Prefer the ORIGINAL GCT's cdesc (CV's source of
+  # truth); fall back to the processed GCT's cdesc for the data.frame seam or
+  # when the original lacks the column. Each consumer intersects this map with
+  # its own matrix's columns, so a sample filtered out of one matrix simply
+  # drops from that panel without desyncing the condition labels.
+  cdesc_cond <- if (!is.null(gct_original) && methods::is(gct_original, "GCT")) {
+    methods::slot(gct_original, "cdesc")
+  } else {
+    NULL
+  }
+  if (is.null(cdesc_cond) || !is.data.frame(cdesc_cond) ||
+      !(condition_col %in% names(cdesc_cond))) {
+    cdesc_cond <- .pelsa_gct_cdesc(gct)
+  }
+  has_cond_col <- !is.null(cdesc_cond) && is.data.frame(cdesc_cond) &&
+    condition_col %in% names(cdesc_cond)
+
   .step("Computing CV")
   cv <- NULL
   if (!is.null(gct_original)) {
-    cdesc_raw <- if (methods::is(gct_original, "GCT")) {
-      methods::slot(gct_original, "cdesc")
-    } else {
-      .pelsa_gct_cdesc(gct)  # data.frame seam: reuse the processed cdesc if any
-    }
     log_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
     raw_mat <- pelsa_delinearize(log_mat, log_base)
-    if (!is.null(cdesc_raw) && is.data.frame(cdesc_raw) &&
-        condition_col %in% names(cdesc_raw)) {
-      cmap <- pelsa_condition_map_for(cdesc_raw, colnames(raw_mat), condition_col)
+    if (has_cond_col) {
+      cmap <- pelsa_condition_map_for(cdesc_cond, colnames(raw_mat),
+                                      condition_col)
       if (length(cmap) > 0L) {
         sub <- raw_mat[, names(cmap), drop = FALSE]
         cv <- pelsa_within_condition_cv(sub, cmap, min_nonNA = min_nonNA)
@@ -638,6 +773,14 @@ pelsa_run_analysis_one <- function(gct,
   n_quantified <- pelsa_peptides_per_sample(proc_mat)
   depth_summary <- pelsa_depth_summary(n_quantified,
                                        total_n_peptides = nrow(peptides))
+
+  # Fully-quantified peptides: rows quantified (the canonical pelsa_quantified_
+  # mask: finite & non-zero) in EVERY sample. 0 when there are no samples.
+  n_fully_quantified <- if (ncol(proc_mat) == 0L) {
+    0L
+  } else {
+    sum(rowSums(!pelsa_quantified_mask(proc_mat)) == 0L)
+  }
 
   # --- 2F sequence coverage from the matched cache + fasta ------------------
   coverage <- pelsa_sequence_coverage(matched, fasta_map)
@@ -656,6 +799,30 @@ pelsa_run_analysis_one <- function(gct,
     check.names          = FALSE
   )
 
+  # --- per-condition length / coverage (Summary toggle) ---------------------
+  # Membership over the PROCESSED matrix, keyed by the CANONICAL condition map
+  # (cdesc_cond, shared with the CV panel) so the per-condition Summary panels
+  # and the CV panel agree on which samples belong to each condition. A peptide
+  # belongs to a condition when quantified in >= 1 of its samples. Empty frames
+  # when there is no usable condition column.
+  length_by_condition <- data.frame(condition = character(0),
+                                    peptide_length = numeric(0),
+                                    stringsAsFactors = FALSE)
+  coverage_by_condition <- data.frame(condition = character(0),
+                                      coverage = numeric(0),
+                                      stringsAsFactors = FALSE)
+  if (has_cond_col) {
+    cmap_proc <- pelsa_condition_map_for(cdesc_cond, colnames(proc_mat),
+                                         condition_col)
+    if (length(cmap_proc) > 0L) {
+      membership <- pelsa_condition_membership(proc_mat, cmap_proc)
+      length_by_condition <- pelsa_length_by_condition(membership,
+                                                       peptide_metrics)
+      coverage_by_condition <- pelsa_coverage_by_condition(membership, matched,
+                                                           fasta_map)
+    }
+  }
+
   # --- mapping / annotation QC counts ---------------------------------------
   reasons <- if ("reason" %in% colnames(unmatched)) {
     as.character(unmatched$reason)
@@ -664,6 +831,7 @@ pelsa_run_analysis_one <- function(gct,
   }
   qc <- list(
     n_peptides            = nrow(peptides),
+    n_fully_quantified    = n_fully_quantified,
     n_exploded            = nrow(exploded),
     n_matched_rows        = nrow(matched),
     n_unmatched_rows      = nrow(unmatched),
@@ -678,7 +846,9 @@ pelsa_run_analysis_one <- function(gct,
     n_quantified        = n_quantified,
     depth_summary       = depth_summary,
     coverage            = coverage,
+    coverage_by_condition = coverage_by_condition,
     peptide_metrics     = peptide_metrics,
+    length_by_condition = length_by_condition,
     annotation_features = annotation_features,
     unannotated         = unannotated,
     qc                  = qc
