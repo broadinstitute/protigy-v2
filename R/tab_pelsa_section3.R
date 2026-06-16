@@ -639,15 +639,16 @@ PELSASection3_Ome_Server <- function(id,
         helpText("Marker-protein peptides are always drawn in magenta on top."),
         hr(),
         fluidRow(
-          # LEFT column: the volcano point color key.
-          column(6,
+          # LEFT column: the volcano point color key. Narrower than the feature
+          # column - the key labels are short, so it cedes width to the right.
+          column(5,
             tags$strong("Color key"),
             tags$ul(class = "pelsa-color-key",
               style = "list-style:none; padding-left:0; margin:0;",
               tags$li(tags$span(style = "color:#FF00FF;", "\u25cf"),
                       " marker protein"),
               tags$li(tags$span(style = sprintf("color:%s;", .PELSA_GOLD),
-                                "\u25cf"), " selected / highlighted"),
+                                "\u25cf"), " highlighted"),
               tags$li(tags$span(style = "color:darkred;", "\u25cf"),
                       " significant up"),
               tags$li(tags$span(style = "color:#1f4e9c;", "\u25cf"),
@@ -658,8 +659,9 @@ PELSASection3_Ome_Server <- function(id,
           ),
           # RIGHT column: the COMPLETE UniProt feature color reference - every
           # class in the palette, shown even when absent from this protein, so the
-          # user has a full key to the Woods feature track.
-          column(6,
+          # user has a full key to the Woods feature track. Wider than the color
+          # key (7 vs 5) - its labels wrap ("low complexity / disorder").
+          column(7,
             tags$strong("UniProt feature colors"),
             .pelsa_feature_legend_ui()
           )
@@ -928,7 +930,8 @@ PELSASection3_Ome_Server <- function(id,
       w  <- tryCatch(pinned_woods(), error = function(e) NULL)
       n_pep <- if (!is.null(w) && is.data.frame(w$pep))
         length(unique(w$pep$peptide_seq)) else NA_integer_
-      rows <- pelsa_pin_metadata_rows(df, row, n_pep)
+      cov_frac <- if (!is.null(w)) w$coverage_frac %||% NA_real_ else NA_real_
+      rows <- pelsa_pin_metadata_rows(df, row, n_pep, coverage_frac = cov_frac)
       tags$table(class = "table table-condensed",
         tags$tbody(lapply(seq_len(nrow(rows)), function(i)
           tags$tr(tags$td(tags$strong(rows$label[i])), tags$td(rows$value[i])))))
@@ -971,13 +974,20 @@ PELSASection3_Ome_Server <- function(id,
                                       sig_cutoff = 0.05)
 
       # Protein length: prefer the cache coverage frame; fall back to the max
-      # mapped residue so the axis still spans the peptides.
+      # mapped residue so the axis still spans the peptides. cov_frac is the
+      # validated fractional coverage (NA unless FASTA length resolved) - surfaced
+      # for the metadata panel's "Sequence coverage" row.
       cov <- entry$coverage %||% data.frame()
       plen <- NA_integer_
+      cov_frac <- NA_real_
       if (is.data.frame(cov) && all(c("accession", "protein_length") %in%
                                      colnames(cov))) {
-        hit <- cov$protein_length[as.character(cov$accession) == acc]
-        if (length(hit) > 0L) plen <- as.integer(hit[[1]])
+        idx <- which(as.character(cov$accession) == acc)
+        if (length(idx) > 0L) {
+          plen <- as.integer(cov$protein_length[idx[1L]])
+          if ("coverage" %in% colnames(cov))
+            cov_frac <- as.numeric(cov$coverage[idx[1L]])
+        }
       }
       if (is.na(plen) || plen < 1L) {
         plen <- if (nrow(pep) > 0L) max(pep$pep_end, na.rm = TRUE) else 1L
@@ -1010,7 +1020,7 @@ PELSASection3_Ome_Server <- function(id,
 
       list(pep = pep, lanes = lanes,
            intervals = pelsa_coverage_intervals(pep$pep_start, pep$pep_end),
-           prot_len = plen)
+           prot_len = plen, coverage_frac = cov_frac)
     })
 
     output$pelsa_woods_panel <- plotly::renderPlotly({

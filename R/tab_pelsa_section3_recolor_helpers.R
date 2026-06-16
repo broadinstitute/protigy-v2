@@ -260,8 +260,12 @@ pelsa_volcano_find_mask <- function(df, accession) {
 # volcano-df row. The Peptide label is the winning-accession label
 # "<winning_gene>_aa<pep_start>" (gene->accession fallback when gene is empty).
 # n_peptides is the count the caller computed (distinct peptides PLOTTED for this
-# accession in the active contrast). @noRd
-pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides) {
+# accession in the active contrast). coverage_frac is the parent accession's
+# fractional sequence coverage in [0,1] (covered residues / FASTA length), or NA
+# when the protein length is unresolved - rendered as "Sequence coverage" right
+# under Accession. @noRd
+pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides,
+                                    coverage_frac = NA_real_) {
   r <- volcano_df[row, , drop = FALSE]
   acc_fb <- if (!is.na(r$winning_accession) && nzchar(r$winning_accession))
     r$winning_accession else as.character(r$PG.ProteinAccessions)[1L]
@@ -270,11 +274,14 @@ pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides) {
   gene_disp <- if (is.na(gene) || !nzchar(gene)) "NA" else gene
   label_stem <- if (gene_disp == "NA") acc_fb else gene_disp
   pep_label <- paste0(label_stem, "_aa", r$pep_start)
+  cov_disp <- if (length(coverage_frac) != 1L || is.na(coverage_frac))
+    "NA" else sprintf("%.1f%%", 100 * coverage_frac)
   data.frame(
-    label = c("Peptide", "Accession", "Gene",
+    label = c("Peptide", "Accession", "Sequence coverage", "Gene",
               "Quantified peptides (this contrast)", "Sequence", "Position",
               "adj.P", "logFC"),
-    value = c(pep_label, acc_fb, gene_disp, as.character(as.integer(n_peptides)),
+    value = c(pep_label, acc_fb, cov_disp, gene_disp,
+              as.character(as.integer(n_peptides)),
               as.character(r$id),
               paste0(r$pep_start, "-", r$pep_end),
               sprintf("%.2g", r$adj.P.Val), sprintf("%.2g", r$logFC)),

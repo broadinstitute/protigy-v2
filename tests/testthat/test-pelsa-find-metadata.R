@@ -73,6 +73,22 @@ test_that("metadata_rows: 2-col (label,value) df with the panel fields", {
   expect_equal(lv[["Position"]], "7-17")
   expect_match(lv[["adj.P"]], "0.01")
   expect_match(lv[["logFC"]], "1.1")
+  # Sequence coverage row sits between Accession and Gene; NA by default.
+  expect_equal(lv[["Sequence coverage"]], "NA")
+  expect_equal(which(rows$label == "Sequence coverage"), 3L)
+  expect_equal(which(rows$label == "Gene"), 4L)
+})
+
+test_that("metadata_rows: coverage_frac renders as a 1-decimal percent", {
+  df <- .find_df()
+  rows <- pelsa_pin_metadata_rows(df, row = 1L, n_peptides = 2L,
+                                  coverage_frac = 0.4237)
+  lv <- setNames(rows$value, rows$label)
+  expect_equal(lv[["Sequence coverage"]], "42.4%")
+  # NA / malformed coverage falls back to "NA".
+  expect_equal(setNames(
+    pelsa_pin_metadata_rows(df, 1L, 2L, coverage_frac = NA_real_)$value,
+    pelsa_pin_metadata_rows(df, 1L, 2L)$label)[["Sequence coverage"]], "NA")
 })
 
 test_that("metadata_rows: empty gene -> accession fallback label, Gene = NA", {

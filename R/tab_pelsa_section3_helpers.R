@@ -897,7 +897,7 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
     sel_rows <- ld[ld$aa_label %in% lvl[is_pinned_lvl], , drop = FALSE]
     if (nrow(sel_rows) > 0L) {
       gg <- gg + ggplot2::geom_point(
-        data = sel_rows, na.rm = TRUE, shape = 21, size = 2.2, stroke = 0.9,
+        data = sel_rows, na.rm = TRUE, shape = 21, size = 2.2, stroke = 0.6,
         fill = .PELSA_VOLCANO_GOLD, color = "black",
         ggplot2::aes(x = .data$condition, y = .data$mean_log2,
                      group = interaction(.data$peptide_seq,
