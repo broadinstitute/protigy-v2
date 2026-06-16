@@ -139,3 +139,79 @@ test_that("recolor find_mask: duplicate ids across protein groups stay row-align
   expect_equal(out$background$color[1], .PELSA_GOLD)
   expect_equal(out$background$color[2], "gray70")
 })
+
+# ---- gold OVERLAY trace (Stage B: proxy addTraces highlight) ----------------
+
+# Full volcano-df shape the gold trace + hover read (logFC/logP/pep_*/gene/acc).
+.mk_full_df <- function() {
+  data.frame(
+    id                   = c("PEPA1", "PEPA2", "PEPB1", "PEPMK"),
+    winning_accession    = c("ACCA", "ACCA", "ACCB", "ACCMK"),
+    PG.ProteinAccessions = c("ACCA", "ACCA", "ACCB", "ACCMK"),
+    winning_gene         = c("GA", "GA", "GB", "GM"),
+    PG.Genes             = c("GA", "GA", "GB", "GM"),
+    is_marker            = c(FALSE, FALSE, FALSE, TRUE),
+    sig_color            = c("#1f4e9c", "darkred", "gray70", "gray70"),
+    feature_color        = c("#111", "#222", "#333", "#444"),
+    logFC                = c(-1, 1, 2, 0.5),
+    logP                 = c(1, 2, 3, 1.5),
+    adj.P.Val            = c(0.2, 0.01, 0.001, 0.3),
+    P.Value              = c(0.1, 0.005, 0.0005, 0.2),
+    pep_start            = c(1L, 5L, 2L, 9L),
+    pep_end              = c(4L, 9L, 8L, 15L),
+    label                = c("GA_aa1", "GA_aa5", "GB_aa2", "GM_aa9"),
+    stringsAsFactors     = FALSE, check.names = FALSE)
+}
+
+test_that("gold_trace: NULL when nothing is highlighted", {
+  df <- .mk_full_df()
+  expect_null(pelsa_volcano_gold_trace(df, selection = NULL, find_mask = NULL))
+  expect_null(pelsa_volcano_gold_trace(df[0, , drop = FALSE],
+                                       selection = list(accession = "ACCA")))
+  expect_null(pelsa_volcano_gold_trace("not a df"))
+})
+
+test_that("gold_trace: selection -> gold scattergl trace over the right points", {
+  df <- .mk_full_df()
+  sel <- list(accession = "ACCA", peptide_seq = "PEPA1")  # PEPA1 + sibling PEPA2
+  tr <- pelsa_volcano_gold_trace(df, selection = sel, find_mask = NULL)
+  expect_false(is.null(tr))
+  expect_equal(tr$type, "scattergl")
+  expect_equal(tr$mode, "markers")
+  expect_identical(tr$meta, "pelsa_gold")
+  expect_identical(tr$marker$color, .PELSA_GOLD)
+  expect_identical(tr$marker$line$color, .PELSA_VOLCANO_MARKER_EDGE)
+  # Two highlighted points (PEPA1 + PEPA2), at their (logFC, logP).
+  expect_equal(tr$x, c(-1, 1))
+  expect_equal(tr$y, c(1, 2))
+  # 6-line hover, one per highlighted point.
+  expect_length(tr$text, 2L)
+  expect_true(all(grepl("Peptide: ", tr$text, fixed = TRUE)))
+  expect_equal(lengths(regmatches(tr$text, gregexpr("<br>", tr$text))),
+               c(5L, 5L))  # 6 lines => 5 <br> separators
+})
+
+test_that("gold_trace: find_mask alone highlights the matched rows", {
+  df <- .mk_full_df()
+  fm <- df$winning_accession == "ACCB"   # row 3 only
+  tr <- pelsa_volcano_gold_trace(df, selection = NULL, find_mask = fm)
+  expect_false(is.null(tr))
+  expect_equal(tr$x, 2)     # PEPB1 logFC
+  expect_equal(tr$y, 3)     # PEPB1 logP
+  expect_length(tr$text, 1L)
+})
+
+test_that("gold_trace size matches the build's gold/marker px (7)", {
+  df <- .mk_full_df()
+  tr <- pelsa_volcano_gold_trace(df, selection = list(accession = "ACCA"))
+  expect_equal(tr$marker$size, 7)
+})
+
+test_that("volcano_tip: empty in -> empty out; 6 lines per row otherwise", {
+  df <- .mk_full_df()
+  expect_length(pelsa_volcano_tip(df[0, , drop = FALSE]), 0L)
+  tips <- pelsa_volcano_tip(df)
+  expect_length(tips, nrow(df))
+  expect_true(grepl("Accession: ACCA", tips[1], fixed = TRUE))
+  expect_true(grepl("logFC: -1.00", tips[1], fixed = TRUE))
+})

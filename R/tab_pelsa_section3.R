@@ -715,25 +715,81 @@ PELSASection3_Ome_Server <- function(id,
     # all-peptide AND best-peptide (7D) panels share ONE code path. The FULL df
     # is rendered (no thinning - toWebGL handles every point on the GPU).
     #
-    # SELECTION HIGHLIGHT - rebuild on selection (the reliable path): the render
-    # DEPENDS on selection()/find_result() and passes them to the build, which
-    # BAKES the gold fill + ring into the point colors. Per-point marker.color
-    # restyle is unreliable on WebGL scattergl, so the highlight is drawn into the
-    # figure rather than proxy-restyled. The rebuild fires only on click/find/clear
-    # (and contrast/color-mode/label changes) - never on hover/pan.
+    # SELECTION HIGHLIGHT - gold OVERLAY trace (the fast path): the BASE volcano
+    # is built ONCE and does NOT depend on selection()/find_result(), so a
+    # click/find never rebuilds the ~100k-point cloud. The gold highlight is a
+    # separate scattergl trace pushed/removed via plotlyProxyInvoke
+    # addTraces/deleteTraces (see the two gold observers below). Adding a NEW
+    # trace renders reliably on WebGL scattergl (a per-point marker.color restyle
+    # silently fails there, so we do NOT use that). The base render depends only
+    # on plot_df()/color-mode/label/top_n - the inputs that change the cloud
+    # itself.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
-      fr <- find_result()
       pelsa_volcano_build_plot(
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
         label_mode = label_mode_for_contrast(), n_top = top_n_for_contrast(),
         source_id = ns("pelsa_volcano"),
-        selection = selection(),
-        find_mask = if (is.null(fr)) NULL else fr$mask,
+        selection = NULL, find_mask = NULL,
         register_click = TRUE)
     })
+
+    ## ------------------------------------------------------------------------
+    ## GOLD HIGHLIGHT OVERLAY (proxy addTraces/deleteTraces - no rebuild)
+    ## ------------------------------------------------------------------------
+    # The base figure has exactly TWO point traces: index 0 = background
+    # (meta "pelsa_bg"), index 1 = markers (meta "pelsa_mk"). The gold highlight,
+    # when present, is ALWAYS the LAST trace, pushed as a third trace at index 2.
+    # gold_present tracks whether that third trace currently exists on the client
+    # so we never delete a trace that is not there.
+    gold_present <- reactiveVal(FALSE)
+    gold_proxy   <- plotly::plotlyProxy("pelsa_volcano_plot", session)
+
+    # Re-apply the gold overlay for the CURRENT selection/find: remove the prior
+    # gold trace (if we added one) then add the fresh one. The base build is
+    # untouched. The gold trace is index 2 (bg=0, markers=1), so we delete the
+    # explicit index 2L rather than rely on a "-1 == last" convention.
+    apply_gold_overlay <- function() {
+      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      if (is.null(df) || nrow(df) == 0L) return()
+      if (isTRUE(gold_present())) {
+        plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(2L))
+        gold_present(FALSE)
+      }
+      fr <- find_result()
+      tr <- pelsa_volcano_gold_trace(
+        df, selection(), if (is.null(fr)) NULL else fr$mask)
+      if (!is.null(tr)) {
+        plotly::plotlyProxyInvoke(gold_proxy, "addTraces", tr)
+        gold_present(TRUE)
+      }
+    }
+
+    # (a) SELECTION/FIND observer. The base cloud is unchanged, so the OLD gold
+    # trace is still on the client; apply_gold_overlay() deletes it (tracked) and
+    # adds the new one. Covers click->click (B's gold replaces A's), click->clear
+    # (selection() -> NULL -> gold removed, nothing added).
+    observeEvent(list(selection(), find_result()), {
+      apply_gold_overlay()
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
+
+    # (b) BASE-REBUILD observer. A color-mode/label/top_n/contrast change
+    # re-renders the WHOLE figure, which clears ALL extra traces on the client.
+    # So the old gold trace is GONE - reset gold_present(FALSE) WITHOUT a delete
+    # (deleting the now-absent trace would error / drop the markers), then re-add
+    # the current gold once the new figure has flushed to the client. Covers
+    # click->change-color-mode (gold survives the rebuild as exactly one trace).
+    observeEvent(
+      list(input$pelsa_color_mode, label_mode_for_contrast(),
+           top_n_for_contrast(), active_contrast()),
+      {
+        session$onFlushed(function() {
+          gold_present(FALSE)   # the rebuild already cleared the gold trace
+          apply_gold_overlay()
+        }, once = TRUE)
+      }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     output$pelsa_marker_count <- renderText({
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
@@ -776,12 +832,12 @@ PELSASection3_Ome_Server <- function(id,
       selection(c(res, list(origin = "click")))  # new list, no in-place mutation
     }, ignoreInit = TRUE)
 
-    # SELECTION/FIND HIGHLIGHT - baked into the build (rebuild-on-select). The
-    # gold fill + rings are drawn into the figure by pelsa_volcano_build_plot
-    # (which reuses pelsa_volcano_recolor), because a per-point marker.color proxy
-    # restyle is unreliable on WebGL scattergl. The render above depends on
-    # selection()/find_result(), so a selection/find change rebuilds the figure
-    # with the highlight already in it - no proxy restyle is used.
+    # SELECTION/FIND HIGHLIGHT - applied as a gold OVERLAY trace (no rebuild).
+    # Setting selection()/find_result() fires the gold observer (a) above, which
+    # pushes/replaces the gold scattergl trace via plotlyProxyInvoke addTraces/
+    # deleteTraces. The base figure is never rebuilt on click/find/clear. Adding
+    # a new trace renders reliably on WebGL scattergl (a per-point marker.color
+    # restyle silently fails there, so it is NOT used).
 
     ## ------------------------------------------------------------------------
     ## 7E - PINNED metadata table + per-protein intensity LINE plot (3C)
@@ -921,9 +977,10 @@ PELSASection3_Ome_Server <- function(id,
     })
 
     # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> resolve it to a peptide and
-    # set selection(origin="click"). Setting selection() triggers the volcano
-    # rebuild (which bakes the gold) - NO inline restyle here. The clicked segment
-    # is resolved by coordinate (x within [pep_start, pep_end], y ~ logFC).
+    # set selection(origin="click"). Setting selection() fires the gold-overlay
+    # observer (which pushes the gold trace via the proxy) - NO volcano rebuild.
+    # The clicked segment is resolved by coordinate (x in [pep_start, pep_end],
+    # y ~ logFC).
     observeEvent(plotly::event_data("plotly_click", source = ns("pelsa_woods")), {
       ev <- plotly::event_data("plotly_click", source = ns("pelsa_woods"))
       w  <- tryCatch(pinned_woods(), error = function(e) NULL)

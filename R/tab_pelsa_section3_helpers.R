@@ -430,6 +430,55 @@ pelsa_volcano_labels_sidecar <- function(volcano_df, panel = "all_peptide") {
   out
 }
 
+# ---- volcano hover-tip (shared by the base build + the gold overlay) --------
+
+# Build the 6-line volcano hover text for a set of df rows. Factored out of
+# pelsa_volcano_build_plot so the gold OVERLAY trace (pelsa_volcano_gold_trace,
+# pushed via plotlyProxyInvoke("addTraces")) gets the IDENTICAL hover as the base
+# background/marker traces. Pure: a function of its data.frame arg. @noRd
+pelsa_volcano_tip <- function(d) {
+  if (nrow(d) == 0L) return(character(0))
+  no_span <- is.na(d$pep_start) | is.na(d$pep_end)
+  pos <- ifelse(no_span, "unknown", paste0(d$pep_start, "-", d$pep_end))
+  gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
+                    d$PG.Genes, d$winning_gene)
+  acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
+                   d$PG.ProteinAccessions, d$winning_accession)
+  stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
+  pep_lab <- paste0(stem, "_aa", d$pep_start)
+  lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
+  adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
+  paste0("Peptide: ", pep_lab, "<br>",
+         "Accession: ", acc_fb, "<br>",
+         "Gene: ", ifelse(is.na(gene_fb) | !nzchar(gene_fb), "NA", gene_fb), "<br>",
+         "Position: ", pos, "<br>",
+         "logFC: ", lfc_chr, "<br>",
+         "adj.P: ", adjp_chr)
+}
+
+# Build the gold-highlight OVERLAY scattergl trace (a plain list, ready for
+# plotlyProxyInvoke("addTraces", ...)) for the selection/find highlight: gold
+# fill + black outline at marker size, with the standard 6-line hover. Returns
+# NULL when nothing is highlighted.
+#
+# The marker `size` here (7) MUST match the build's gold/marker px
+# (pelsa_volcano_build_plot's gold_px == mk_px == 7) so the proxy-pushed overlay
+# visually matches the gold the static export build bakes. @noRd
+pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
+  if (!is.data.frame(df) || nrow(df) == 0L) return(NULL)
+  m <- pelsa_volcano_highlight_mask(df, selection, find_mask)
+  if (!any(m)) return(NULL)
+  d <- df[m, , drop = FALSE]
+  list(
+    type = "scattergl", mode = "markers",
+    x = as.numeric(d$logFC), y = as.numeric(d$logP),
+    text = pelsa_volcano_tip(d), hoverinfo = "text",
+    marker = list(color = .PELSA_GOLD, size = 7,
+                  line = list(color = .PELSA_VOLCANO_MARKER_EDGE, width = 0.5)),
+    showlegend = FALSE, meta = "pelsa_gold"
+  )
+}
+
 # ---- shared plot-assembly (BOTH volcano panels reuse this) ------------------
 
 # Assemble the WebGL volcano plotly object from the FULL volcano frame (every
@@ -483,25 +532,9 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # per-point marker.color restyle is unreliable on WebGL scattergl, so the gold
   # is drawn into the figure itself). See the highlight-overlay geoms below.
 
-  tip <- function(d) {
-    if (nrow(d) == 0L) return(character(0))
-    no_span <- is.na(d$pep_start) | is.na(d$pep_end)
-    pos <- ifelse(no_span, "unknown", paste0(d$pep_start, "-", d$pep_end))
-    gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
-                      d$PG.Genes, d$winning_gene)
-    acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
-                     d$PG.ProteinAccessions, d$winning_accession)
-    stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
-    pep_lab <- paste0(stem, "_aa", d$pep_start)
-    lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
-    adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
-    paste0("Peptide: ", pep_lab, "<br>",
-           "Accession: ", acc_fb, "<br>",
-           "Gene: ", ifelse(is.na(gene_fb) | !nzchar(gene_fb), "NA", gene_fb), "<br>",
-           "Position: ", pos, "<br>",
-           "logFC: ", lfc_chr, "<br>",
-           "adj.P: ", adjp_chr)
-  }
+  # The 6-line hover is shared with the gold overlay trace via the top-level
+  # pelsa_volcano_tip() helper (so base + overlay hovers are identical).
+  tip <- pelsa_volcano_tip
 
   # Highlight mask over the FULL df (selected + same-protein + find-matched). All
   # highlighted points are styled IDENTICALLY: gold fill + black outline, SAME
