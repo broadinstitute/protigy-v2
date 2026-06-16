@@ -29,7 +29,7 @@ and deferring the speculative server-side volcano work behind `toWebGL`.
 |-------|--------|-------|-------|-------------|------|------|
 | **1** | **[x] DONE** | **Biggest verified wins (UI freeze + volcano render)** | INT-1, INT-2, INT-3, STAT-02, STAT-07 | ~630ms toggle freeze; volcano jank | Low (guarded) | shinytest2 toggle; scattergl click smoke |
 | **2** | **[ ]** | **Gene-symbol vectorization** (Cluster A, gene-symbol subset) | dp-2a, dp-redundant | ~480ms→24ms/pass | Low | `geneSymbol`-column diff on fixture |
-| **3** | **[ ]** | **matrixStats numerics** (Cluster C) | dp-norm, dp-sd, dp-1b | ~250ms/ome + crash bugfix | None/Low | filtered-row-set diff; NA/Inf parity; 1-row test |
+| **3** | **[x] DONE** | **matrixStats numerics** (Cluster C) | dp-norm, dp-sd, dp-1b | ~250ms/ome + crash bugfix | None/Low | filtered-row-set diff; NA/Inf parity; 1-row test |
 | **4** | **[ ]** | **Package attach trim** (Cluster D) | START-01, START-02 | ~1–1.4s cold open | None | re-grep + `check()` clean |
 | **5** | **[ ]** | **Deep-copy + setup I/O + observer hygiene** | dp-1a, START-04, START-03 | smaller per-copy + long-session stability | Low | list-column guard; cold-cache bench; add/remove test |
 | **5b** | **[ ]** | **CSV/Excel → GCT conversion (post-"Start" build)** | INPUT-1, INPUT-2 | faster GCT build after exp-design upload | Low | byte-identical classification + cdesc on fixture |
@@ -64,7 +64,13 @@ dp-2a (faithful vectorized `fix_gene_symbols`, fuzz-verified 70k+ cases) + dp-re
 second `safe_copy_rdesc`). **dp-double stays blocked.** Gate: `geneSymbol`-column diff incl. list-column + UTF-8
 fuzz; dp-redundant failure-path assertion.
 
-## Phase 3 — matrixStats numerics  **[ ] NOT IMPLEMENTED**
+## Phase 3 — matrixStats numerics  **[x] DONE (verified 2026-06-16)**
+Implemented via fully-qualified `matrixStats::colMedians/colMads/rowSds` + base `rowMeans`. Validated by
+a standalone OLD-vs-NEW harness (`dev/perf_phase3/`), a live-package equivalence check, `test-perf-phase3.R`,
+and an independent Opus stats-validation review (VERDICT: safe; no input changes a stored result; only
+~1e-16 reduction-order noise that never flips a filtered set, and NaN-vs-NA on all-NA columns that is always
+masked by NA propagation). dp-1b also fixes a latent single-survivor-row crash.
+
 dp-norm (`colMedians`/`colMads`), dp-sd (`rowSds`), dp-1b (`rowMeans(is.na)` + `drop=FALSE` bugfix). Introduces
 the `matrixStats` DESCRIPTION/roxygen dependency **once**. Gate: dp-sd filtered-row-set diff (not just
 `all.equal`); dp-norm NA/Inf/zero-MAD fixture diff; dp-1b 1-row & 0-row regression tests.

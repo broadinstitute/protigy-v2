@@ -139,43 +139,43 @@ normalize.data.helper <- function(data,
   }
   ## median only
   if(method == 'Median'){
-    
-    data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
-    data.norm <- safe_set_colnames(data.norm, data)
-    
+    ## matrixStats::colMedians matches apply(data, 2, median, na.rm=T) in one C
+    ## pass (up to ~1e-16 reduction-order noise); sweep() subtracts each column
+    ## median, reproducing the old per-column arithmetic.
+    med <- matrixStats::colMedians(data, na.rm = TRUE)
+    data.norm <- sweep(data, 2L, med, "-")
+    dimnames(data.norm) <- dimnames(data)
+
     if(per_group){
-      all_medians <- apply(data, 2, median, na.rm=T)
-      data.norm <- data.norm + median( all_medians, na.rm=T)
+      data.norm <- data.norm + median( med, na.rm=T)
     }
   }
   ## median plus shifting by medians of medians
   if(method == 'Median (non-zero)'){
-    
-    all_medians <- apply(data, 2, median, na.rm=T)
-    data.norm <- apply(data, 2, function(x) x - median(x, na.rm=T))
-    
-    data.norm <- data.norm + median( all_medians, na.rm=T )
-    data.norm <- safe_set_colnames(data.norm, data)
+    med <- matrixStats::colMedians(data, na.rm = TRUE)
+    data.norm <- sweep(data, 2L, med, "-") + median( med, na.rm=T )
+    dimnames(data.norm) <- dimnames(data)
   }
   ## median & MAD
   if(method == 'Median-MAD'){
-    data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
-    data.norm <- safe_set_colnames(data.norm, data)
-    
+    ## colMedians/colMads match stats::median/stats::mad (constant 1.4826, median
+    ## center) up to ~1e-16 reduction-order noise; nested sweep() reproduces
+    ## (x - median)/mad column-wise.
+    med <- matrixStats::colMedians(data, na.rm = TRUE)
+    md  <- matrixStats::colMads(data, na.rm = TRUE)
+    data.norm <- sweep(sweep(data, 2L, med, "-"), 2L, md, "/")
+    dimnames(data.norm) <- dimnames(data)
+
     if(per_group){
-      all_medians <-  apply(data, 2, median, na.rm=T)
-      data.norm <- data.norm + median( all_medians, na.rm=T)
+      data.norm <- data.norm + median( med, na.rm=T)
     }
   }
   ## median & MAD plus shifting by medians of medians
   if(method == 'Median-MAD (non-zero)'){
-    
-    all_medians <- apply(data, 2, median, na.rm=T)
-    data.norm <- apply(data, 2, function(x) (x - median(x, na.rm=T))/mad(x, na.rm=T) )
-    
-    data.norm <- data.norm + median( all_medians, na.rm=T )
-    data.norm <- safe_set_colnames(data.norm, data)
-    
+    med <- matrixStats::colMedians(data, na.rm = TRUE)
+    md  <- matrixStats::colMads(data, na.rm = TRUE)
+    data.norm <- sweep(sweep(data, 2L, med, "-"), 2L, md, "/") + median( med, na.rm=T )
+    dimnames(data.norm) <- dimnames(data)
   }
   
   ## 2-component normalization

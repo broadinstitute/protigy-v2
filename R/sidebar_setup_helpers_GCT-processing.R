@@ -1073,9 +1073,11 @@ perform_data_normalization <- function(data, method, cdesc,
 
 # maximum missing value filter
 perform_missing_filter <- function(data, max_missing) {
-  missing_percent <- apply(data, 1, function(x) sum(is.na(x))/length(x))
-  data <- data[missing_percent <= max_missing/100, ]
-  return(data)
+  # rowMeans(is.na(data)) == sum(is.na(x))/length(x) per row, in one C-level pass.
+  # drop = FALSE keeps a matrix when exactly one row survives (the old code dropped
+  # to a vector, which crashed the downstream data.frame(data, id = rownames(data))).
+  missing_percent <- rowMeans(is.na(data))
+  data[missing_percent <= max_missing / 100, , drop = FALSE]
 }
 
 # perform data filtering
