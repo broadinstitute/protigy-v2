@@ -18,6 +18,8 @@ to regenerate `NAMESPACE`.
 - `source("setup.R")`           # one-time: install Bioc + CRAN deps + the package
 
 shinytest2 (browser) tests are heavier and gated — see `dev/shinytest2_testing_guide.md`.
+CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
+`shinytest2-on-demand.yaml` runs the browser tests on demand.
 
 ## Architecture
 - `R/launchApp.R` → `app_UI` (`R/app_ui.R`) + `app_server` (`R/app_server.R`) + `app_onStart`.
@@ -27,7 +29,7 @@ shinytest2 (browser) tests are heavier and gated — see `dev/shinytest2_testing
   `sidebar_setup*.R` = upload/processing pipeline. Keep this split when adding code.
 - Templates for new modules: `R/tab_TEMPLATE.R` and `R/tab_TEMPLATE_SINGLE-OME.R`.
   Full guide: `dev/module_requirements.md`.
-- **PELSA** is the largest subsystem (~40% of `R/`): a `tab_pelsa_container.R` tab with
+- **PELSA** is the largest subsystem (~1/3 of `R/`, 27 files): a `tab_pelsa_container.R` tab with
   numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus many `tab_pelsa_*_helpers.R`.
   It extends the naming rule above — follow the existing `section`/`_helpers` split there.
 
