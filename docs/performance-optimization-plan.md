@@ -1,5 +1,12 @@
 # Performance Optimization Plan: ProTIGY Pipeline + Export
 
+> **Implementation status (verified 2026-06-16 against merged `feat/pelsa-integration`): NONE of the items
+> in this doc (1a, 1b, 2a, 2b, 3a-3d) are implemented yet.** They target `sidebar_setup_helpers_GCT-processing.R`,
+> `tab_export.R`, `tab_stat_summary.R`, and `tab_qc_cv.R` — all of which the perf branch left untouched. The work
+> that *did* ship (the UI-freeze + volcano-render wins: INT-1/2/3, STAT-02, STAT-07) lives in the companion
+> tracker `performance-implementation-phases.md` (Phase 1), not here. Per-item `[ ]` markers below. (`2b` is
+> marked **Dropped** in the phases doc — <1ms at 2-4 omes.)
+
 ## Context
 Review of the GCT data processing pipeline (triggered by "Submit" in the setup sidebar) and the multi-omics export path identified targeted, non-breaking optimizations. No new dependencies — `future`/`furrr`/`readr` are already in `DESCRIPTION`.
 
@@ -17,7 +24,7 @@ Wins that don't show measurable improvement at these sizes have been dropped.
 
 ## Priority 1 — High Impact, Low Risk
 
-### 1a. Replace `serialize/unserialize` deep copy in `df_deep_copy()`
+### 1a. [ ] Replace `serialize/unserialize` deep copy in `df_deep_copy()`
 **File:** `R/sidebar_setup_helpers_GCT-processing.R` — `df_deep_copy()` (~L475)
 
 `unserialize(serialize(df, NULL))` traverses the full R object graph. For atomic-column data frames (which rdesc/cdesc always are) it is ~20–30× slower per call than the `as.data.frame()` round-trip that `safe_copy_rdesc()` already uses elsewhere in this file (L200–204).
@@ -40,7 +47,7 @@ df_deep_copy <- function(df) {
 
 ---
 
-### 1b. Vectorize `perform_missing_filter` with `rowMeans` + add `drop = FALSE` (bugfix)
+### 1b. [ ] Vectorize `perform_missing_filter` with `rowMeans` + add `drop = FALSE` (bugfix)
 **File:** `R/sidebar_setup_helpers_GCT-processing.R` — `perform_missing_filter()` (~L907)
 
 Two changes in one swap:
@@ -60,7 +67,7 @@ perform_missing_filter <- function(data, max_missing) {
 
 ## Priority 2 — Largest Wins (require careful implementation)
 
-### 2a. Vectorize `fix_gene_symbols` string operations (REWRITTEN — original draft was broken)
+### 2a. [ ] Vectorize `fix_gene_symbols` string operations (REWRITTEN — original draft was broken)
 **File:** `R/sidebar_setup_helpers_GCT-processing.R` — `fix_gene_symbols()` (L11–96)
 
 **This is the single largest win in the plan.** Benchmarked: ~178 ms (proteome) + ~545 ms (phospho) → ~4 ms + ~15 ms. **~700 ms saving per two-ome run.**
@@ -91,7 +98,7 @@ rdesc$geneSymbol[!nzchar(rdesc$geneSymbol)] <- NA_character_
 
 ---
 
-### 2b. Pre-compute ome→columns map for two merge loops (NARROWED)
+### 2b. [~] Pre-compute ome→columns map for two merge loops (NARROWED) — DROPPED (phases doc)
 **File:** `R/sidebar_setup_helpers_GCT-processing.R` — `merge_processed_gcts()` (~L1059–1310)
 
 Earlier draft made two wrong claims that have been removed: (a) the "stale `merged_cdesc_subset`" bug — the refresh already exists in the loop right after the NA-fill mutation; (b) applying to the conflict-DETECTION loop — that loop iterates `names(gct@cdesc)` per ome and gains nothing from the precompute.
@@ -125,7 +132,7 @@ conflict_columns <- unique(unlist(conflict_columns_list, use.names = FALSE))
 
 This section is new. The reviewers found the largest cluster of unaddressed wins in the export path. Multi-omics exports touch `tab_export.R` plus per-tab download functions in `tab_stat_summary.R`, `tab_stat_plot.R`, `tab_qc_cv.R`, etc.
 
-### 3a. Lower zip compression level
+### 3a. [ ] Lower zip compression level
 **File:** `R/tab_export.R` — `zip::zip()` call (~L254)
 
 `zip::zip` defaults to `compression_level = 9` (maximum). Multi-omics exports are PDF-heavy (volcano plots, heatmaps, pval histograms × N omes × N contrasts) — PDFs are already compressed internally, so re-compressing at level 9 burns CPU for ~1% size delta.
@@ -144,7 +151,7 @@ zip::zip(
 
 ---
 
-### 3b. Single-pass reactive evaluation in the export handler
+### 3b. [ ] Single-pass reactive evaluation in the export handler
 **File:** `R/tab_export.R` — `downloadHandler` content function (~L129–260)
 
 Currently every `exports[[tab_name]]()` reactive is read **twice**: once in the pre-loop at L178–188 to compute `total_exports` for the progress bar, then again in the write loop at L195–246. For tabs whose export reactives are non-trivial, this doubles the prep cost.
@@ -168,7 +175,7 @@ Also adds `on.exit(unlink(exports_dir, recursive = TRUE), add = TRUE)` immediate
 
 ---
 
-### 3c. Memoize repeated `stat_results()[[ome]]` reads
+### 3c. [ ] Memoize repeated `stat_results()[[ome]]` reads
 **File:** `R/tab_stat_summary.R` — `stat_results_export_function` (~L686–708), `de_summary_export_function` (~L750–820)
 
 `stat_results()[[ome]]` is currently materialized 3× per call in the stat-results export (write.csv + two dplyr `select`s) and re-evaluated again in `de_summary_export_function`. For 30k-row phospho stat tables this is 3–5 full data.frame copies per ome per export.
@@ -191,7 +198,7 @@ Apply the same snapshot pattern in `de_summary_export_function`. If the underlyi
 
 ---
 
-### 3d. Use `readr::write_csv` instead of `utils::write.csv`
+### 3d. [ ] Use `readr::write_csv` instead of `utils::write.csv`
 **Files:**
 - `R/tab_stat_summary.R` — L692, L815
 - `R/tab_qc_cv.R` — L383, L409
