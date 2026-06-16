@@ -35,3 +35,9 @@ firebase-debug.log
 inst/database/*/uniprot_features/*.tsv
 inst/database/*/uniprot_features/*.parquet
 inst/database/*/uniprot_membrane/*.tsv
+
+# ──────────────────────────────────────────────────────────────────────────
+# Dev scratch artifacts (regenerable; not source)
+#   e.g. volcano visual-diff PNGs from the kaleido consistency check
+# ──────────────────────────────────────────────────────────────────────────
+dev/*.png
