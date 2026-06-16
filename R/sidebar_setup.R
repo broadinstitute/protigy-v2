@@ -206,6 +206,17 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     GCTs_unprocessed_internal_reactive <- reactiveVal()
     accumulated_files <- reactiveVal(NULL)  # Store accumulated file uploads
 
+    # INT-2: memoized per-ome discrete-column map for the setup panel's dropdowns.
+    # Depends ONLY on the GCTs reactiveVal, so it recomputes exactly when the GCTs
+    # change (any upload / removal / reprocess via either upload path, since both
+    # write GCTs_unprocessed_internal_reactive). gctSetupUI consumes this instead
+    # of re-scanning is.discrete() over every annotation column on every rebuild
+    # (e.g. on every Intensity-data toggle). Recompute-on-change preserves the
+    # original "always fresh" guarantee; it only skips redundant re-scans.
+    discrete_columns_map <- reactive({
+      build_discrete_columns_map(GCTs_unprocessed_internal_reactive())
+    })
+
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
     backNextLogic <- reactiveValues(placeChanged = 0)
@@ -727,7 +738,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_unprocessed_internal_reactive())})
+                                                   GCTs = GCTs_unprocessed_internal_reactive(),
+                                                   discrete_columns = discrete_columns_map())})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -765,16 +777,45 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       }
     })
     observeEvent(current_intensity(), {
-      # first, collect all the current inputs
-      collectInputs()
+      # INT-1: do NOT call collectInputs() here. It writes parameters_internal_reactive,
+      # and output$sideBarMain (a renderUI) reads that reactiveVal, so the write forced a
+      # full setup-panel rebuild (the visible grey-out) on every intensity toggle.
+      # The call was redundant for persistence: every exit path (Next/Back/Submit/
+      # back-to-labels) re-runs collectInputs() from live widget state before acting, so
+      # no in-progress edit is lost, and the toggled intensity_data is re-collected then.
+      # This handler updates only data_normalization and max_missing. It reads their
+      # LIVE widget values (with a stored fallback for the pre-paint NULL window) — NOT
+      # the stored reactiveVal — because the stored value is only refreshed by
+      # collectInputs() at navigation, so a user who edits the dropdown and then toggles
+      # would otherwise have their edit reset to the stale stored value. Reading live
+      # preserves the user's in-progress selection. The intensity-dependent choice list
+      # is derived from current_intensity() (the live checkbox).
 
       # gather current label and parameters
       label = names(parameters_internal_reactive())[backNextLogic$place]
       parameters = parameters_internal_reactive()[[label]]
 
+      # INT-1: read the LIVE widget values for the two fields this handler updates,
+      # falling back to the STORED value only when the widget hasn't reported yet
+      # (first paint / pre-flush, where live input is NULL). The stored reactiveVal
+      # is NOT kept in sync with the dropdown/numeric on every keystroke — only
+      # collectInputs() (run at Next/Back/Submit) writes it — so reading the stored
+      # value here would reset an in-progress edit: e.g. user picks "Quantile", then
+      # toggles intensity, and the stored (pre-edit) value would overwrite "Quantile".
+      # Reading live preserves the user's selection through a toggle. These reads are
+      # read-only dependencies and do NOT cause a panel rebuild.
+      live_norm <- input[[paste0(label, '_data_normalization')]]
+      if (is.null(live_norm) || !nzchar(live_norm)) {
+        live_norm <- parameters$data_normalization
+      }
+      live_max_missing <- input[[paste0(label, '_max_missing')]]
+      if (is.null(live_max_missing) || is.na(suppressWarnings(as.numeric(live_max_missing)[1]))) {
+        live_max_missing <- parameters$max_missing
+      }
+
       # indicator for intensity data (check out the yaml format)
       ind = paste0("intensity_data_", tolower(current_intensity()))
-      
+
       # update data normalization
       # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
       norm_choices <- parameter_choices$data_normalization[[ind]]
@@ -783,10 +824,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (n_samples > 20) {
         norm_choices <- norm_choices[norm_choices != "2-component"]
       }
-      # If current selection is 2-component but it should be disabled, use default
+      # Keep the user's current selection if it is still valid in the new intensity
+      # branch; otherwise fall back to the default. (If current selection is
+      # 2-component but it should be disabled, use default.)
       norm_selected <- ifelse(
-        parameters$data_normalization %in% norm_choices,
-        parameters$data_normalization,
+        live_norm %in% norm_choices,
+        live_norm,
         default_parameters$data_normalization)
       if (n_samples > 20 && norm_selected == "2-component") {
         norm_selected <- default_parameters$data_normalization
@@ -795,14 +838,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         inputId = paste0(label, '_data_normalization'),
         choices = norm_choices,
         selected = norm_selected)
-      
+
       # update max missing
       updateNumericInput(
         inputId = paste0(label, '_max_missing'),
         min = parameter_choices$max_missing[[ind]]$min,
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
-        value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
+        value = min(as.numeric(live_max_missing), parameter_choices$max_missing[[ind]]$max))
     })
 
     # update sample filter values choices when sample filter column changes

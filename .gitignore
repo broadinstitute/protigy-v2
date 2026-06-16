@@ -24,6 +24,7 @@ pkg.lock
 .DS_Store
 .cursor/
 .positai
+.worktrees/
 firebase-debug.log
 
 # ──────────────────────────────────────────────────────────────────────────

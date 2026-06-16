@@ -860,6 +860,31 @@ statPlot_Ome_Server <- function(id,
         )
       }
 
+      # Render the scatter (base points + label markers) on the GPU via WebGL.
+      # 34k SVG point-nodes are the classic plotly slowdown; toWebGL converts the
+      # scatter traces to scattergl so pan/zoom/hover stay smooth. This is a
+      # render-backend switch only: identical points/labels and identical data.
+      # The click handler (get_clicked_feature_id) matches purely on click$x/$y,
+      # which scattergl returns reliably, so click-to-select is unaffected. The
+      # PDF export path (volcano_plot_export_function) is separate and stays SVG.
+      # Applied after add_volcano_labels so the overlaid label markers convert too.
+      # Falls back to the SVG plot if toWebGL ever errors on a given object.
+      p <- tryCatch(
+        withCallingHandlers(
+          plotly::toWebGL(p),
+          warning = function(w) {
+            # ggplotly sets 'hoveron' on SVG scatter traces; scattergl has no such
+            # attribute, so toWebGL drops it and emits a benign warning on every
+            # render. Mute only that specific warning; let any other surface.
+            if (grepl("hoveron", conditionMessage(w))) invokeRestart("muffleWarning")
+          }
+        ),
+        error = function(e) {
+          message("toWebGL conversion failed, falling back to SVG: ", conditionMessage(e))
+          p
+        }
+      )
+
       p <- event_register(p, "plotly_click")
       p
     })

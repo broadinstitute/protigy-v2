@@ -510,7 +510,12 @@ stat.testing <- function(
         # OPTIMIZATION STRATEGY 5: Use cbind instead of repeated merge (30-40% faster)
         # OPTIMIZATION STRATEGY 6: Vectorize derived calculations (5% faster)
         # Extract results for each contrast - access fit2 object directly instead of N topTable calls
-        results_list <- vector("list", n_contrasts)
+        # STAT-07: this per-contrast list previously reused the name `results_list`,
+        # shadowing the outer per-ome accumulator (created above) and clobbering it on
+        # every ome iteration. With a single ome (the current caller) the output was
+        # unaffected, but a multi-ome batch would drop all but the last ome. Use a
+        # distinct name (matching the F-test branch's `posthoc_results_list` convention).
+        contrast_results_list <- vector("list", n_contrasts)
 
         for (i in seq_along(contrast_names)) {
           contrast_name <- contrast_names[i]
@@ -538,14 +543,14 @@ stat.testing <- function(
           # Rename columns with contrast name
           colnames(contrast_results) <- paste(colnames(contrast_results), contrast_name, sep = '.')
 
-          results_list[[i]] <- contrast_results
+          contrast_results_list[[i]] <- contrast_results
         }
 
         # Combine all contrasts at once using cbind (O(N) instead of O(N*M²))
         # All results have same features in same order, so cbind is safe and fast
         combined_results <- cbind(
           data.frame(id = id, stringsAsFactors = FALSE),
-          do.call(cbind, results_list)
+          do.call(cbind, contrast_results_list)
         )
         rownames(combined_results) <- id
 
