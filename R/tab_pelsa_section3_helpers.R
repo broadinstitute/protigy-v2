@@ -698,7 +698,32 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
 # @noRd
 .pelsa_volcano_label_annotations <- function(p, lab_df, color_mode,
                                              full_df = lab_df, min_dist = 0.045) {
-  if (is.null(lab_df) || nrow(lab_df) == 0L) return(p)
+  anns <- pelsa_volcano_label_annotation_list(lab_df, color_mode, full_df,
+                                              min_dist)
+  if (length(anns) == 0L) return(p)
+  plotly::layout(p, annotations = anns)
+}
+
+# Compute the boxed-label annotation LIST for a volcano (greedy overlap-
+# suppressed, Statistics-tab scheme). Returns a list of plotly annotation specs
+# (possibly empty) - PURE, no plot object. This is the authoritative annotation
+# computation used both by the build wrapper above (baked into the figure) and
+# by the module's relayout fast-path (applied via plotlyProxyInvoke without a
+# rebuild). Each spec is offset up-and-right of its point (xshift/yshift, box
+# never covers the point), a white slightly-transparent box with a 1px border
+# colored to the labeled point's OWN color, and a greedy proximity suppressor
+# drops labels that would pile on an already-placed one (normalized [0,1] space).
+#
+# @param lab_df     the labeled rows (logFC, logP, label, + color columns).
+# @param color_mode "significance" | "feature" (drives the border color).
+# @param full_df    the full volcano df (for the normalization x/y ranges).
+# @param min_dist   normalized-space proximity threshold to suppress overlaps.
+# @return a list of plotly annotation specs (empty list() when nothing kept).
+# @noRd
+pelsa_volcano_label_annotation_list <- function(lab_df, color_mode,
+                                                full_df = lab_df,
+                                                min_dist = 0.045) {
+  if (is.null(lab_df) || nrow(lab_df) == 0L) return(list())
 
   # Normalize to [0,1] using the full plot's ranges (so "close" means close
   # on-screen, not in raw logFC/logP units).
@@ -729,11 +754,11 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       keep <- c(keep, i)
     }
   }
-  if (length(keep) == 0L) return(p)
+  if (length(keep) == 0L) return(list())
   kept   <- lab_df[keep, , drop = FALSE]
   border <- border_all[keep]
 
-  anns <- lapply(seq_len(nrow(kept)), function(i) {
+  lapply(seq_len(nrow(kept)), function(i) {
     list(
       x = kept$logFC[i], y = kept$logP[i], text = kept$label[i],
       xref = "x", yref = "y",
@@ -746,7 +771,32 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
       captureevents = FALSE
     )
   })
-  plotly::layout(p, annotations = anns)
+}
+
+# Compute the current volcano annotation LIST from the active df + label
+# settings (the module relayout fast-path uses this). Resolves the labeled rows
+# for `label_mode`/`n_top`, filters to rows with a non-empty `label`, then
+# delegates to pelsa_volcano_label_annotation_list. Returns an EMPTY list() when
+# the mode yields no labels (e.g. "none") - so an empty relayout clears ALL
+# annotations on the client (the "remove stale labels" path). PURE + testable.
+#
+# @param df         the active volcano df.
+# @param label_mode a pelsa_volcano_label_rows() mode.
+# @param n_top      N for the top_n label mode.
+# @param color_mode "significance" | "feature" (drives the border color).
+# @return a list of plotly annotation specs (empty list() for no labels).
+# @noRd
+pelsa_volcano_current_annotations <- function(df, label_mode, n_top,
+                                              color_mode) {
+  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L) return(list())
+  lab_idx <- tryCatch(
+    pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
+    error = function(e) integer(0))
+  if (length(lab_idx) == 0L) return(list())
+  lab_df <- df[lab_idx, , drop = FALSE]
+  lab_df <- lab_df[!is.na(lab_df$label) & nzchar(lab_df$label), , drop = FALSE]
+  if (nrow(lab_df) == 0L) return(list())
+  pelsa_volcano_label_annotation_list(lab_df, color_mode, full_df = df)
 }
 
 # ---- 7F: the static export ggplot + the empty matched-cache frame -----------

@@ -268,6 +268,77 @@ test_that("thin note: NULL when nothing thinned, string otherwise", {
   expect_true(grepl("30", note) && grepl("100", note))
 })
 
+# ---- annotation-LIST helpers (relayout fast-path; Stage C) -----------------
+
+# A small two-marker volcano df with non-empty labels, well separated so the
+# overlap suppressor keeps both. Mirrors the build-annotation fixture above.
+.mk_label_df <- function() {
+  df <- data.frame(
+    id = c("p1", "p2"), logFC = c(-2, 2), logP = c(3, 4),
+    adj.P.Val = c(0.001, 0.0001), P.Value = c(0.001, 0.0001),
+    Significant = c(TRUE, TRUE), sig_direction = c("down", "up"),
+    sig_color = c("#1f4e9c", "darkred"),
+    feature_class_primary = "none", feature_color = "#d3d3d3",
+    winning_accession = c("A", "B"), winning_gene = c("g1", "g2"),
+    label = c("g1_aa10", "g2_aa50"), is_marker = c(TRUE, TRUE),
+    PG.ProteinAccessions = c("A", "B"), PG.Genes = c("g1", "g2"),
+    pep_start = c(10L, 50L), pep_end = c(18L, 58L), stringsAsFactors = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  df
+}
+
+test_that("label_annotation_list: empty/NULL -> list(); each spec well-formed", {
+  expect_identical(pelsa_volcano_label_annotation_list(NULL, "significance"),
+                   list())
+  expect_identical(
+    pelsa_volcano_label_annotation_list(.mk_label_df()[0, ], "significance"),
+    list())
+
+  df <- .mk_label_df()
+  anns <- pelsa_volcano_label_annotation_list(df, "significance", full_df = df)
+  expect_equal(length(anns), 2L)
+  # Each spec carries the relayout-required keys.
+  for (a in anns) {
+    expect_true(all(c("x", "y", "text", "bordercolor") %in% names(a)))
+    expect_equal(a$bgcolor, "rgba(255,255,255,0.85)")
+  }
+  expect_setequal(vapply(anns, function(a) a$bordercolor, ""),
+                  c("#1f4e9c", "darkred"))
+})
+
+test_that("current_annotations: mode drives the spec count (none -> empty)", {
+  df <- .mk_label_df()
+
+  # "none" yields no labels -> an empty list (an empty relayout clears all).
+  expect_identical(
+    pelsa_volcano_current_annotations(df, "none", 3L, "significance"), list())
+
+  # "all_significant" labels both significant rows.
+  a_sig <- pelsa_volcano_current_annotations(df, "all_significant", 3L,
+                                             "significance")
+  expect_equal(length(a_sig), 2L)
+
+  # "top_n" with n_top = 1 keeps one label per protein -> both proteins, both
+  # rows kept here (one row each).
+  a_top <- pelsa_volcano_current_annotations(df, "top_n", 1L, "significance")
+  expect_equal(length(a_top), 2L)
+  expect_true(all(vapply(a_top, function(a) "text" %in% names(a), logical(1))))
+
+  # An empty df -> empty list (no error).
+  expect_identical(
+    pelsa_volcano_current_annotations(df[0, ], "top_n", 3L, "significance"),
+    list())
+})
+
+test_that("current_annotations: feature color-mode drives the border color", {
+  df <- .mk_label_df()
+  anns <- pelsa_volcano_current_annotations(df, "all_significant", 3L, "feature")
+  expect_equal(length(anns), 2L)
+  # feature mode -> feature_color border (#d3d3d3 here for both rows).
+  expect_true(all(vapply(anns, function(a) a$bordercolor, "") == "#d3d3d3"))
+})
+
 # ---------------------------------------------------------------------------
 # PASS 2 (7D-7F) PURE HELPERS
 # ---------------------------------------------------------------------------
