@@ -178,6 +178,12 @@ test_that("merge_processed_gcts renames conflicting cdesc columns per ome", {
   expect_equal(merged@cdesc[c("s1", "s2"), "batch.omeB"], c("DIFF1", "DIFF2"))
   # Non-conflicting shared column survives untouched.
   expect_true("shared" %in% cols)
+  # The original ambiguous `batch` column must NOT be resurrected. Previously the
+  # missing-column NA-fill loop re-added it populated with only one ome's values
+  # (last-writer-wins), silently dropping the other ome's data. Only the three
+  # intended columns (batch.omeA, batch.omeB, shared) should remain.
+  expect_false("batch" %in% cols)
+  expect_equal(length(cols), 3L)
 })
 
 test_that("merge_processed_gcts fills missing one-ome-only columns with NA", {
@@ -200,6 +206,18 @@ test_that("merge_processed_gcts fills missing one-ome-only columns with NA", {
   # omeA samples keep their values; omeB samples are NA.
   expect_equal(merged@cdesc[c("sA1", "sA2"), "extra"], c("E1", "E2"))
   expect_true(all(is.na(merged@cdesc[c("sB1", "sB2"), "extra"])))
+
+  # NOTE on the `x` column: when the two omes have DISJOINT sample ids,
+  # cmapR::merge_gct introduces a spurious all-NA `x` column in the merged
+  # cdesc. This was verified to originate inside cmapR itself (it is present in
+  # the raw cmapR::merge_gct output before any of merge_processed_gcts' own
+  # post-processing runs), not from our merge logic. It carries no data, so we
+  # assert the load-bearing invariant -- the real annotation columns are present
+  # and no values were lost -- rather than fighting the cmapR internal.
+  expect_true(all(c("grp", "extra") %in% names(merged@cdesc)))
+  # grp came from both omes and is intact for every sample (no data lost).
+  expect_equal(merged@cdesc[c("sA1", "sA2", "sB1", "sB2"), "grp"],
+               c("p", "q", "p", "q"))
 })
 
 test_that("merge_processed_gcts adds protigy.ome from dataset_label and prefixes rids", {

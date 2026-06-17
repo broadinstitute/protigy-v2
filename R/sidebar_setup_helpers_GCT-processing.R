@@ -1276,8 +1276,12 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
     incProgress()
     
     # remove conflicting columns and re-name by ome
+    # track base names that were split into per-ome variants so the missing-column
+    # NA-fill loop below does NOT resurrect them (doing so would re-add the
+    # ambiguous column with only one ome's values -- silent data loss).
+    split_out_base_columns <- character(0)
     for (col in conflict_columns) {
-      
+
       # get the omes that contain this conflict column
       omes_with_col <- names(which(
         sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
@@ -1302,12 +1306,18 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
         dplyr::mutate(new_columns, .after = dplyr::all_of(col)) %>%
         dplyr::select(-dplyr::all_of(col))
+
+      split_out_base_columns <- unique(c(split_out_base_columns, col))
     }
-    
+
     # Add missing columns logic
-    # Find columns that exist in some datasets but not in the merged cdesc
+    # Find columns that exist in some datasets but not in the merged cdesc.
+    # Exclude any base column that the conflict-rename loop just split into
+    # per-ome variants -- re-adding it here would resurrect the ambiguous
+    # column populated with only one ome's values (last-writer-wins data loss).
     all_unique_columns <- unique(unlist(lapply(GCTs_processed, function(gct) names(gct@cdesc))))
     missing_columns <- setdiff(all_unique_columns, names(GCTs_merged@cdesc))
+    missing_columns <- setdiff(missing_columns, split_out_base_columns)
     
     if (length(missing_columns) > 0) {
       message("Adding missing columns to merged GCT: ", paste(missing_columns, collapse = ", "))
