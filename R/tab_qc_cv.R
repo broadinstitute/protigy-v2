@@ -155,6 +155,25 @@ QCCV_Ome_Server <- function(id,
         )
       }
 
+      # CV is undefined for a single sample (sd/mean needs replicates). Grey out
+      # the whole panel for single-sample omes with the shared message.
+      req(GCT_processed())
+      cv_min_samples_msg <- min_samples_message(GCT_processed(), n = 2, analysis = "CV")
+      if (!is.null(cv_min_samples_msg)) {
+        return(
+          fluidRow(
+            shinydashboardPlus::box(
+              h4(cv_min_samples_msg),
+              status       = "primary",
+              width        = 12,
+              title        = "Coefficient of Variation (CV)",
+              headerBorder = TRUE,
+              solidHeader  = TRUE
+            )
+          )
+        )
+      }
+
       fluidRow(
         shinydashboardPlus::box(
           div(
@@ -382,7 +401,16 @@ QCCV_Ome_Server <- function(id,
 
     ## Export functions -------------------------------------------------------
 
+    # CV needs >= 2 samples (sd/mean across replicates). For single-sample omes
+    # the on-screen panel is greyed out; skip the exports too rather than write
+    # an all-NA CV table/plot into the zip.
+    cv_export_available <- function() {
+      isTRUE(show_cv_plots()) &&
+        is.null(min_samples_message(GCT_processed(), n = 2, analysis = "CV"))
+    }
+
     cv_results_csv_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       write.csv(
         cv_table(),
         file      = file.path(dir_name, paste0("cv_results_", ome, ".csv")),
@@ -391,7 +419,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_export <- function(dir_name) {
-      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
+      if (!cv_export_available()) return(invisible(NULL))
       ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("cv_violin_", ome, ".pdf"),
@@ -405,6 +433,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_results_filtered_csv_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
@@ -417,7 +446,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_filtered_export <- function(dir_name) {
-      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
@@ -434,6 +463,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_filtered_gct_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
