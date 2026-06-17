@@ -155,6 +155,21 @@ pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
     })
   }
 
+  # M4: the per-tab switcher bars all share the inputId `pelsa_active_dataset`
+  # (the single source of truth), but they are separate widgets, so selecting on
+  # one tab left the OTHER tabs' bars showing a stale highlight. Push the current
+  # selection back to every bar on change so the visible state can never diverge
+  # from active_dataset(). Shiny dispatches the update to all bindings whose id
+  # matches, syncing all three; setting the same value re-emits nothing, so this
+  # does not loop. (DOM-level sync is verified by manual app smoke, not testServer.)
+  observeEvent(input$pelsa_active_dataset, {
+    shinyWidgets::updateRadioGroupButtons(
+      session,
+      inputId  = "pelsa_active_dataset",
+      selected = input$pelsa_active_dataset
+    )
+  }, ignoreInit = TRUE)
+
   # Active dataset: the selected button when shown, otherwise the sole dataset.
   active_dataset <- reactive({
     datasets <- analyzed_datasets()
