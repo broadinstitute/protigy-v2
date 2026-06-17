@@ -92,56 +92,6 @@ test_that("stat.testing handles 'None' test type", {
   expect_null(result)
 })
 
-test_that("stat.testing handles intensity parameter conversion", {
-  mock_gct <- create_mock_gct()
-  gct_list <- list(proteome = mock_gct)
-  
-  # Test string conversion
-  result1 <- stat.testing(
-    test = "None",
-    annotation_col = "group",
-    chosen_omes = "proteome",
-    gct = gct_list,
-    chosen_groups = c("A", "B"),
-    selected_contrasts = NULL,
-    p.value.alpha = 0.05,
-    use.adj.pvalue = TRUE,
-    apply.log = FALSE,
-    intensity = "Yes"
-  )
-  expect_null(result1)
-  
-  # Test numeric conversion
-  result2 <- stat.testing(
-    test = "None",
-    annotation_col = "group",
-    chosen_omes = "proteome",
-    gct = gct_list,
-    chosen_groups = c("A", "B"),
-    selected_contrasts = NULL,
-    p.value.alpha = 0.05,
-    use.adj.pvalue = TRUE,
-    apply.log = FALSE,
-    intensity = 1
-  )
-  expect_null(result2)
-  
-  # Test NULL handling
-  result3 <- stat.testing(
-    test = "None",
-    annotation_col = "group",
-    chosen_omes = "proteome",
-    gct = gct_list,
-    chosen_groups = c("A", "B"),
-    selected_contrasts = NULL,
-    p.value.alpha = 0.05,
-    use.adj.pvalue = TRUE,
-    apply.log = FALSE,
-    intensity = NULL
-  )
-  expect_null(result3)
-})
-
 # ---------------------------------------------------------------------------
 # Real stat.testing driver + synthetic GCT builder
 #
@@ -397,133 +347,41 @@ test_that("stat.testing two-sample logFC sign follows A - B convention", {
   expect_true(spike_row$significant.A_over_B)
 })
 
-# Helper function to extract core volcano plot logic
-test_volcano_plot <- function(df, test_type, volcano_groups = NULL, volcano_contrasts = NULL, 
-                              sig_cutoff = 0.05, sig_stat = "adj.p.val", 
-                              sig.col = 'darkred', bg.col = 'gray', gene_symbol_col = "geneSymbol") {
-  
-  # Extract column names based on test type
-  if (test_type == "One-sample Moderated T-test") {
-    keyword <- volcano_groups
-    logfc_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "logFC.", ")")
-    logP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "Log.P.Value.", ")")
-    adjP_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "adj.P.Val.", ")")
-    pval_pattern <- paste0("(?i)(?=.*", keyword, ")(?=.*", "P.value.", ")")
-  } else if (test_type == "Two-sample Moderated T-test") {
-    groups <- unlist(strsplit(volcano_contrasts, " / "))
-    contrast_name <- paste0(groups[1], "_over_", groups[2])
-    logfc_pattern <- paste0("logFC.*", contrast_name)
-    logP_pattern <- paste0("Log\\.P\\.Value.*", contrast_name)
-    adjP_pattern <- paste0("adj\\.P\\.Val.*", contrast_name)
-    pval_pattern <- paste0("P\\.value.*", contrast_name)
-  }
-  
-  logFC_col <- grep(logfc_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  logP_col <- grep(logP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  adjP_col <- grep(adjP_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  pval_col <- grep(pval_pattern, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  id_col <- grep("id", colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  
-  # Check columns exist
-  required_cols <- c(logFC_col, logP_col, adjP_col, id_col)
-  if(!all(required_cols %in% colnames(df))) {
-    stop("Some required columns are missing in the result data.")
-  }
-  df <- df[complete.cases(df[, required_cols]), ]
-  
-  # Add columns for plotting
-  df$id <- df[[id_col]]
-  df$logFC <- df[[logFC_col]]
-  df$adj.P.Val <- as.numeric(df[[adjP_col]])
-  df$logP <- df[[logP_col]]
-  df$P.Value <- as.numeric(df[[pval_col]])
-  
-  # Handle geneSymbol column
-  geneSymbol_col <- tryCatch({
-    grep(gene_symbol_col, colnames(df), value = TRUE, perl = TRUE, ignore.case = TRUE)[1]
-  }, error = function(e) {
-    NULL
-  })
-  
-  if (!is.null(geneSymbol_col) && !is.na(geneSymbol_col)) {
-    df$geneSymbol <- df[[geneSymbol_col]]
-  } else {
-    df$geneSymbol <- df$id
-  }
-  
-  # Compute threshold for dashed line
-  if(sig_stat == "adj.p.val") {
-    passing.id <- which(df$adj.P.Val < sig_cutoff)
-    if(length(passing.id) > 0){
-      y_cutoff <- -log10(max(df$P.Value[passing.id], na.rm = TRUE))
-    } else {
-      y_cutoff <- Inf
-    }
-  } else {
-    y_cutoff <- -log10(sig_cutoff)
-  }
-  
-  df$Significant <- df$logP > y_cutoff
-  
-  return(df)
-}
+# NOTE: The test_volcano_plot helper and its tests (which re-implemented volcano
+# column-extraction logic inline and asserted on the copy) were removed.
+# The real cutoff / volcano logic is exercised in test-volcano-labeling.R.
 
-test_that("Volcano plot core logic works for Two-sample test", {
-  mock_stat_results <- create_mock_stat_results()
-  
-  result <- test_volcano_plot(
-    df = mock_stat_results$proteome,
-    test_type = "Two-sample Moderated T-test",
-    volcano_contrasts = "A / B",
-    sig_cutoff = 0.05,
-    sig_stat = "adj.p.val",
-    gene_symbol_col = "geneSymbol"
-  )
-  
-  expect_true(is.data.frame(result))
-  expect_true("logFC" %in% colnames(result))
-  expect_true("logP" %in% colnames(result))
-  expect_true("Significant" %in% colnames(result))
-  expect_true("geneSymbol" %in% colnames(result))
-  expect_true(all(result$Significant %in% c(TRUE, FALSE)))
-})
+test_that("stat.testing intensity=TRUE exercises trend eBayes path", {
+  # Previously this test paired intensity conversion with test='None', which
+  # returns NULL before intensity is ever read, so no observable effect.
+  # Now we run a real Two-sample test with intensity=TRUE and verify the result
+  # is structurally identical to the non-intensity run -- the eBayes(trend=TRUE)
+  # path must complete without error and the output columns must be present.
+  gct <- make_stat_gct(n_genes = 15, groups = c("A", "B"), per_group = 4, seed = 5)
 
-test_that("Volcano plot core logic handles missing gene symbol", {
-  mock_stat_results <- create_mock_stat_results()
-  # Remove geneSymbol column
-  mock_stat_results$proteome$geneSymbol <- NULL
-  
-  result <- test_volcano_plot(
-    df = mock_stat_results$proteome,
-    test_type = "Two-sample Moderated T-test",
-    volcano_contrasts = "A / B",
-    sig_cutoff = 0.05,
-    sig_stat = "adj.p.val",
-    gene_symbol_col = "geneSymbol"
+  res_no <- run_stat_testing(
+    test = "Two-sample Moderated T-test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = list(c("A", "B")),
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = FALSE
   )
-  
-  expect_true(is.data.frame(result))
-  expect_true("geneSymbol" %in% colnames(result))
-  # Should use ID as fallback
-  expect_equal(result$geneSymbol, result$id)
-})
+  res_yes <- run_stat_testing(
+    test = "Two-sample Moderated T-test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = list(c("A", "B")),
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = TRUE
+  )
 
-test_that("Volcano plot core logic works for One-sample test", {
-  mock_stat_results <- create_mock_stat_results()
-  
-  result <- test_volcano_plot(
-    df = mock_stat_results$proteome,
-    test_type = "One-sample Moderated T-test",
-    volcano_groups = "A",
-    sig_cutoff = 0.05,
-    sig_stat = "adj.p.val",
-    gene_symbol_col = "geneSymbol"
-  )
-  
-  expect_true(is.data.frame(result))
-  expect_true("logFC" %in% colnames(result))
-  expect_true("logP" %in% colnames(result))
-  expect_true("Significant" %in% colnames(result))
+  # Both must complete and produce the same row count and contrast columns.
+  expect_equal(nrow(res_no$proteome), 15)
+  expect_equal(nrow(res_yes$proteome), 15)
+  for (col in c("logFC.A_over_B", "P.Value.A_over_B", "adj.P.Val.A_over_B",
+                "significant.A_over_B")) {
+    expect_true(col %in% colnames(res_no$proteome),  info = paste("no-intensity missing", col))
+    expect_true(col %in% colnames(res_yes$proteome), info = paste("intensity missing", col))
+  }
 })
 
 # Note: plotVolcano missing gene symbol test removed due to reactive context dependencies
@@ -756,67 +614,9 @@ test_that("stat.testing alpha and adjustment monotonicity (F-test)", {
   expect_lte(run(0.05, TRUE), run(0.05, FALSE))
 })
 
-test_that("Volcano plot handles edge cases", {
-  # Create test data with edge cases
-  edge_case_data <- data.frame(
-    id = paste0("gene_", 1:5),
-    gene_name = paste0("gene_", 1:5),
-    geneSymbol = paste0("GENE", 1:5),
-    logFC.A_over_B = c(0, 1, -1, 10, -10),  # Including extreme values
-    P.Value.A_over_B = c(0.001, 0.01, 0.1, 0.5, 0.9),
-    adj.P.Val.A_over_B = c(0.01, 0.05, 0.2, 0.6, 0.95),
-    Log.P.Value.A_over_B = c(3, 2, 1, 0.3, 0.05),
-    significant.A_over_B = c(TRUE, TRUE, FALSE, FALSE, FALSE),
-    stringsAsFactors = FALSE
-  )
-  
-  # Test with extreme logFC values
-  result <- test_volcano_plot(
-    df = edge_case_data,
-    test_type = "Two-sample Moderated T-test",
-    volcano_contrasts = "A / B",
-    sig_cutoff = 0.05,
-    sig_stat = "adj.p.val",
-    gene_symbol_col = "geneSymbol"
-  )
-  
-  expect_true(is.data.frame(result))
-  expect_true("logFC" %in% colnames(result))
-  expect_true("logP" %in% colnames(result))
-  expect_true("Significant" %in% colnames(result))
-  expect_true(all(is.finite(result$logFC)))
-  expect_true(all(is.finite(result$logP)))
-})
-
-test_that("Volcano plot handles missing data gracefully", {
-  # Create test data with missing values in non-required columns
-  missing_data <- data.frame(
-    id = paste0("gene_", 1:5),
-    gene_name = paste0("gene_", 1:5),
-    geneSymbol = paste0("GENE", 1:5),
-    logFC.A_over_B = c(1, 0.5, -1, 2, -2),
-    P.Value.A_over_B = c(0.01, 0.05, 0.1, 0.1, 0.2),
-    adj.P.Val.A_over_B = c(0.05, 0.1, 0.1, 0.15, 0.25),
-    Log.P.Value.A_over_B = c(2, 1.3, 1, 1, 0.7),
-    significant.A_over_B = c(TRUE, FALSE, FALSE, FALSE, FALSE),
-    stringsAsFactors = FALSE
-  )
-  
-  # Should handle missing data gracefully by filtering out incomplete cases
-  result <- test_volcano_plot(
-    df = missing_data,
-    test_type = "Two-sample Moderated T-test",
-    volcano_contrasts = "A / B",
-    sig_cutoff = 0.05,
-    sig_stat = "adj.p.val",
-    gene_symbol_col = "geneSymbol"
-  )
-  
-  expect_true(is.data.frame(result))
-  expect_true("logFC" %in% colnames(result))
-  expect_true("logP" %in% colnames(result))
-  expect_true("Significant" %in% colnames(result))
-})
+# NOTE: "Volcano plot handles edge cases" and "Volcano plot handles missing data
+# gracefully" were removed -- both used the deleted test_volcano_plot helper and
+# never called production code. Volcano logic is covered in test-volcano-labeling.R.
 
 test_that("stat.testing handles a single-feature matrix", {
   # Two-sample with a single feature.
@@ -844,291 +644,118 @@ test_that("stat.testing handles a single-feature matrix", {
   expect_true("significant.A" %in% colnames(res_t1$proteome))
 })
 
-test_that("Statistics functions handle column duplication fix", {
-  # Test that the fix for "Input columns in x must be unique" error works
-  # This test simulates the scenario where rdesc already has an "id" column
-  
-  # Create mock GCT with rdesc that already has an "id" column
-  mock_mat <- matrix(rnorm(60), nrow = 10, ncol = 6)
-  rownames(mock_mat) <- paste0("gene_", 1:10)
-  colnames(mock_mat) <- paste0("sample_", 1:6)
-  
-  mock_cdesc <- data.frame(
-    group = rep(c("A", "B"), each = 3),
-    row.names = paste0("sample_", 1:6)
+test_that("stat.testing produces no duplicate column names when rdesc has an id column", {
+  # Regression: when rdesc already carries an "id" column the left_join used to
+  # create a duplicate id.x / id.y pair, causing downstream failures.  Run the
+  # real stat.testing with a GCT whose rdesc already contains "id" and assert
+  # that all output column names are unique.
+  gct <- make_stat_gct(n_genes = 10, groups = c("A", "B"), per_group = 3, seed = 81)
+  # make_stat_gct already puts an "id" column in rdesc, which is the scenario.
+  expect_true("id" %in% colnames(gct@rdesc))
+
+  # Moderated F-test path
+  res_f <- run_stat_testing(
+    test = "Moderated F test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = NULL,
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = FALSE
   )
-  
-  # Create rdesc with an existing "id" column (this was causing the error)
-  mock_rdesc <- data.frame(
-    id = paste0("gene_", 1:10),  # This column already exists
-    gene_name = paste0("gene_", 1:10),
-    geneSymbol = paste0("GENE", 1:10),
-    row.names = paste0("gene_", 1:10)
+  df_f <- res_f$proteome
+  expect_false(any(duplicated(colnames(df_f))),
+               info = "F-test result must have unique column names")
+  expect_equal(nrow(df_f), 10)
+
+  # Two-sample T-test path
+  res_t <- run_stat_testing(
+    test = "Two-sample Moderated T-test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = list(c("A", "B")),
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = FALSE
   )
-  
-  mock_gct <- new("GCT",
-    mat = mock_mat,
-    cdesc = mock_cdesc,
-    rdesc = mock_rdesc,
-    rid = paste0("gene_", 1:10),
-    cid = paste0("sample_", 1:6)
-  )
-  
-  # Test that the statistical functions work without column duplication errors
-  # This simulates the core logic from stat.testing without the Shiny wrapper
-  
-  # Test Moderated F-test logic
-  groups <- rep(c("A", "B"), each = 3)
-  f <- factor(groups)
-  design <- model.matrix(~ 0 + f)
-  data.rownorm <- sweep(mock_mat, MARGIN = 1, STATS = apply(mock_mat, 1, mean, na.rm = TRUE))
-  
-  if (requireNamespace("limma", quietly = TRUE)) {
-    fit <- limma::lmFit(data.rownorm, design)
-    fit <- limma::eBayes(fit, robust = TRUE)
-    sig <- limma::topTable(fit, number = nrow(mock_mat), sort.by = 'none')
-    
-    # Test the column joining logic that was fixed
-    rdesc_df <- as.data.frame(mock_rdesc)
-    
-    # This should NOT create a duplicate "id" column
-    if (!"id" %in% colnames(rdesc_df)) {
-      id.col <- names(Filter(function(col) !is.numeric(col), mock_rdesc))[1]
-      rdesc_df[[id.col]] <- rownames(rdesc_df)
-      colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-    }
-    
-    # Create final results
-    final.results <- data.frame(
-      id = rownames(mock_mat),
-      sig,
-      stringsAsFactors = FALSE
-    )
-    
-    # Test the dplyr::right_join that was failing
-    expect_no_error({
-      combined_results <- dplyr::right_join(rdesc_df, final.results, by = "id")
-    })
-    
-    expect_true(is.data.frame(combined_results))
-    expect_equal(nrow(combined_results), nrow(mock_mat))
-    expect_true("id" %in% colnames(combined_results))
-    expect_false(any(duplicated(colnames(combined_results))))
-  }
-  
-  # Test Two-sample T-test logic
-  groups <- rep(c("A", "B"), each = 3)
-  groups <- factor(groups, levels = c("A", "B"))
-  design.mat <- cbind(ref = 1, comparison = as.numeric(groups))
-  data.matrix <- data.frame(mock_mat, stringsAsFactors = FALSE)
-  
-  if (requireNamespace("limma", quietly = TRUE)) {
-    m <- limma::lmFit(data.matrix, design.mat)
-    m <- limma::eBayes(m, robust = TRUE)
-    sig <- limma::topTable(m, coef = colnames(design.mat)[2], number = nrow(mock_mat), sort.by = "none")
-    
-    # Test the column joining logic for two-sample test
-    rdesc_df <- as.data.frame(mock_rdesc)
-    
-    # This should NOT create a duplicate "id" column
-    if (!"id" %in% colnames(rdesc_df)) {
-      id.col <- names(Filter(function(col) !is.numeric(col), mock_rdesc))[1]
-      colnames(rdesc_df)[colnames(rdesc_df) == id.col] <- "id"
-    }
-    
-    final.results <- data.frame(
-      id = rownames(mock_mat),
-      sig,
-      stringsAsFactors = FALSE
-    )
-    
-    # Test the dplyr::right_join that was failing
-    expect_no_error({
-      combined_results <- dplyr::right_join(rdesc_df, final.results, by = "id")
-    })
-    
-    expect_true(is.data.frame(combined_results))
-    expect_equal(nrow(combined_results), nrow(mock_mat))
-    expect_true("id" %in% colnames(combined_results))
-    expect_false(any(duplicated(colnames(combined_results))))
-  }
+  df_t <- res_t$proteome
+  expect_false(any(duplicated(colnames(df_t))),
+               info = "Two-sample result must have unique column names")
+  expect_equal(nrow(df_t), 10)
 })
 
-test_that("Normalized values join preserves all rows in statistics results", {
-  # Test that when normalized values are added to statistics results,
-  # all rows are preserved and IDs match correctly
-  
-  # Create mock data with specific IDs to test the join
-  set.seed(123)
-  n_features <- 25
+test_that("stat.testing output preserves all input rows and includes intensity columns", {
+  # Regression: normalized-values join must not drop rows or produce duplicate IDs.
+  # Use real stat.testing (not an inline simulation) on a GCT with UniProt-style IDs.
+  n_genes <- 25
   n_samples <- 6
-  
-  # Create matrix with some IDs that might cause issues (e.g., potential duplicates)
-  mock_mat <- matrix(rnorm(n_features * n_samples), nrow = n_features, ncol = n_samples)
-  # Use IDs that could potentially have issues if rownames are used incorrectly
-  feature_ids <- c(paste0("A0A0", sprintf("%06d", 1:10)), 
+  feature_ids <- c(paste0("A0A0", sprintf("%06d", 1:10)),
                    paste0("E9P", sprintf("%04d", 1:5)),
                    paste0("H0Y", sprintf("%04d", 1:5)),
                    paste0("Q9", sprintf("%06d", 1:5)))
-  rownames(mock_mat) <- feature_ids
-  colnames(mock_mat) <- paste0("sample_", 1:n_samples)
-  
-  # Create rdesc with id column (matching the actual GCT structure)
-  mock_rdesc <- data.frame(
-    id = feature_ids,  # Same IDs as rownames
-    gene_name = paste0("gene_", 1:n_features),
-    geneSymbol = paste0("GENE", 1:n_features),
-    row.names = feature_ids
+  samples <- paste0("sample_", seq_len(n_samples))
+  set.seed(99)
+  mat <- matrix(rnorm(n_genes * n_samples), nrow = n_genes,
+                dimnames = list(feature_ids, samples))
+  cdesc <- data.frame(group = rep(c("A", "B"), each = 3), row.names = samples,
+                      stringsAsFactors = FALSE)
+  rdesc <- data.frame(id = feature_ids,
+                      geneSymbol = paste0("SYM_", seq_len(n_genes)),
+                      row.names = feature_ids, stringsAsFactors = FALSE)
+  gct <- new("GCT", mat = mat, cdesc = cdesc, rdesc = rdesc,
+             rid = feature_ids, cid = samples)
+
+  res <- run_stat_testing(
+    test = "Two-sample Moderated T-test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = list(c("A", "B")),
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = FALSE
   )
-  
-  mock_cdesc <- data.frame(
-    group = rep(c("A", "B"), each = 3),
-    row.names = paste0("sample_", 1:n_samples)
-  )
-  
-  mock_gct <- new("GCT",
-    mat = mock_mat,
-    cdesc = mock_cdesc,
-    rdesc = mock_rdesc,
-    rid = feature_ids,
-    cid = paste0("sample_", 1:n_samples)
-  )
-  
-  # Simulate the statistics calculation and normalized values join
-  # This mimics the logic from tab_stat_setup_helpers.R
-  
-  # Step 1: Get data (as in the actual function)
-  ome_data <- mock_gct@mat
-  rdesc <- mock_gct@rdesc
-  
-  # Step 2: Create statistics results (simplified)
-  # In real code, this would come from limma, but for testing we'll create mock results
-  final_results <- data.frame(
-    id = feature_ids,
-    logFC = rnorm(n_features),
-    P.Value = runif(n_features, 0, 1),
-    adj.P.Val = runif(n_features, 0, 1),
-    stringsAsFactors = FALSE
-  )
-  
-  # Step 3: Join rdesc to results (as in actual code)
-  rdesc_df <- as.data.frame(rdesc)
-  if (!"id" %in% colnames(rdesc_df)) {
-    rdesc_df$id <- rownames(rdesc_df)
-  }
-  
-  combined_results <- dplyr::left_join(rdesc_df, final_results, by = "id")
-  
-  # Verify initial join preserved all rows
-  expect_equal(nrow(combined_results), n_features)
-  expect_true(all(feature_ids %in% combined_results$id))
-  
-  # Step 4: Add normalized values (the part we fixed)
-  normalized_df <- as.data.frame(ome_data)
-  # Use the same ID source as used for statistics (from rdesc)
-  if ("id" %in% colnames(rdesc)) {
-    normalized_df$id <- rdesc[["id"]]
-  } else {
-    normalized_df$id <- rownames(rdesc)
-  }
-  
-  # Verify normalized_df has correct IDs
-  expect_equal(nrow(normalized_df), n_features)
-  expect_true(all(feature_ids %in% normalized_df$id))
-  
-  # Step 5: Join normalized values
-  combined_results_with_intensities <- dplyr::left_join(combined_results, normalized_df, by = "id")
-  
-  # THE KEY TEST: All rows should be preserved
-  expect_equal(nrow(combined_results_with_intensities), n_features, 
-               info = "All rows must be preserved when adding normalized values")
-  expect_true(all(feature_ids %in% combined_results_with_intensities$id),
-              info = "All original IDs must be present after join")
-  
-  # Verify that normalized values were added (should have sample columns)
-  expect_true(all(paste0("sample_", 1:n_samples) %in% colnames(combined_results_with_intensities)),
-              info = "Normalized intensity columns should be present")
-  
-  # Verify no duplicate IDs in the result
-  expect_equal(length(unique(combined_results_with_intensities$id)), n_features,
-               info = "No duplicate IDs should be created")
+  df <- res$proteome
+
+  expect_equal(nrow(df), n_genes,
+               info = "All input features must be present in output")
+  expect_true(all(feature_ids %in% df$id),
+              info = "All original IDs must appear in output")
+  expect_equal(length(unique(df$id)), n_genes,
+               info = "No duplicate IDs")
+  # Intensity columns (the raw normalized values appended last) must be present.
+  expect_true(all(samples %in% colnames(df)),
+              info = "Normalized intensity columns must be present in output")
 })
 
-test_that("Normalized values join works with IDs from rdesc (not rownames)", {
-  # Test that the join uses rdesc[["id"]] correctly, not rownames
-  # This tests the specific fix we made
-  
-  set.seed(456)
+test_that("stat.testing uses rdesc id column (not matrix rownames) for output IDs", {
+  # When rdesc$id differs from matrix rownames the output $id must come from
+  # rdesc, not from rownames().  Use real stat.testing.
   n_features <- 15
   n_samples <- 4
-  
-  # Create matrix where rownames might differ from rdesc$id (edge case)
-  mock_mat <- matrix(rnorm(n_features * n_samples), nrow = n_features, ncol = n_samples)
-  rownames(mock_mat) <- paste0("row_", 1:n_features)
-  colnames(mock_mat) <- paste0("sample_", 1:n_samples)
-  
-  # Create rdesc with id column that's different from rownames
-  # This simulates a case where rownames might be modified but rdesc$id is correct
-  feature_ids <- paste0("ID_", 1:n_features)
-  mock_rdesc <- data.frame(
-    id = feature_ids,  # IDs in rdesc (the correct ones to use)
-    gene_name = paste0("gene_", 1:n_features),
-    row.names = rownames(mock_mat)  # Rownames match matrix, but IDs are different
+  set.seed(456)
+  mat_rownames <- paste0("row_", seq_len(n_features))
+  feature_ids  <- paste0("ID_", seq_len(n_features))
+  samples      <- paste0("sample_", seq_len(n_samples))
+
+  mat <- matrix(rnorm(n_features * n_samples), nrow = n_features,
+                dimnames = list(mat_rownames, samples))
+  cdesc <- data.frame(group = rep(c("A", "B"), each = 2), row.names = samples,
+                      stringsAsFactors = FALSE)
+  # rdesc rownames match the matrix rownames; rdesc$id carries different values.
+  rdesc <- data.frame(id = feature_ids,
+                      gene_name = paste0("gene_", seq_len(n_features)),
+                      row.names = mat_rownames, stringsAsFactors = FALSE)
+  gct <- new("GCT", mat = mat, cdesc = cdesc, rdesc = rdesc,
+             rid = mat_rownames, cid = samples)
+
+  res <- run_stat_testing(
+    test = "Two-sample Moderated T-test", annotation_col = "group",
+    chosen_omes = "proteome", gct = list(proteome = gct),
+    chosen_groups = c("A", "B"), selected_contrasts = list(c("A", "B")),
+    p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+    intensity = FALSE
   )
-  
-  mock_cdesc <- data.frame(
-    group = rep(c("A", "B"), each = 2),
-    row.names = paste0("sample_", 1:n_samples)
-  )
-  
-  mock_gct <- new("GCT",
-    mat = mock_mat,
-    cdesc = mock_cdesc,
-    rdesc = mock_rdesc,
-    rid = rownames(mock_mat),
-    cid = paste0("sample_", 1:n_samples)
-  )
-  
-  # Simulate statistics results using rdesc IDs (as in actual code)
-  ome_data <- mock_gct@mat
-  rdesc <- mock_gct@rdesc
-  
-  # Create final results with IDs from rdesc (as in actual code)
-  final_results <- data.frame(
-    id = rdesc[["id"]],  # Using rdesc IDs, not rownames
-    logFC = rnorm(n_features),
-    P.Value = runif(n_features, 0, 1),
-    stringsAsFactors = FALSE
-  )
-  
-  # Join rdesc to results
-  rdesc_df <- as.data.frame(rdesc)
-  if (!"id" %in% colnames(rdesc_df)) {
-    rdesc_df$id <- rownames(rdesc_df)
-  }
-  
-  combined_results <- dplyr::left_join(rdesc_df, final_results, by = "id")
-  expect_equal(nrow(combined_results), n_features)
-  
-  # Add normalized values using the FIXED approach (rdesc[["id"]], not rownames)
-  normalized_df <- as.data.frame(ome_data)
-  if ("id" %in% colnames(rdesc)) {
-    normalized_df$id <- rdesc[["id"]]  # Use rdesc IDs, not rownames
-  } else {
-    normalized_df$id <- rownames(rdesc)
-  }
-  
-  # Join normalized values
-  combined_results_with_intensities <- dplyr::left_join(combined_results, normalized_df, by = "id")
-  
-  # All rows should be preserved
-  expect_equal(nrow(combined_results_with_intensities), n_features,
-               info = "All rows must be preserved when using rdesc IDs")
-  expect_true(all(feature_ids %in% combined_results_with_intensities$id),
-              info = "All rdesc IDs must be present")
-  
-  # Verify IDs match between results and normalized values
-  expect_setequal(combined_results_with_intensities$id, feature_ids)
+  df <- res$proteome
+
+  expect_equal(nrow(df), n_features)
+  # IDs in the output must come from rdesc$id, not from matrix rownames.
+  expect_setequal(df$id, feature_ids)
+  expect_false(any(mat_rownames %in% df$id),
+               info = "Matrix rownames must not appear as ids when rdesc carries its own id column")
 })
 
 # NOTE: The p-value/volcano adjusted-cutoff tautology tests that used to live
@@ -1196,6 +823,53 @@ test_that("stat.testing F-test handles hyphens in group names", {
   })
   expect_equal(nrow(result$proteome), 12)
   expect_true("F" %in% colnames(result$proteome))
+})
+
+test_that("stat.testing F-test post-hoc contrasts work with hyphenated group names", {
+  # BUG: the F-test post-hoc block used paste0("`f", group1, ...") with the
+  # ORIGINAL group name, but design columns are named "f" + make.names(group).
+  # For "Non-inflamed" this generated "`fNon-inflamed`" which makeContrasts
+  # could not resolve (it expected "`fNon.inflamed`").  Fixed by applying
+  # make.names() to the group name in the contrast string.
+  gct <- make_stat_gct(
+    n_genes = 15,
+    groups = c("Inflamed", "Non-inflamed", "Pre-inflamed"),
+    per_group = 4, seed = 74,
+    spike = list(gene = "gene_1", group = "Inflamed", shift = 10)
+  )
+
+  # This must not error -- before the fix it threw
+  #   "object 'fNon-inflamed' not found"
+  expect_no_error({
+    result <- run_stat_testing(
+      test = "Moderated F test", annotation_col = "group",
+      chosen_omes = "proteome", gct = list(proteome = gct),
+      chosen_groups = c("Inflamed", "Non-inflamed", "Pre-inflamed"),
+      selected_contrasts = list(
+        c("Inflamed", "Non-inflamed"),
+        c("Inflamed", "Pre-inflamed")
+      ),
+      p.value.alpha = 0.05, use.adj.pvalue = TRUE, apply.log = FALSE,
+      intensity = FALSE
+    )
+  })
+
+  df <- result$proteome
+  expect_equal(nrow(df), 15)
+
+  # Post-hoc contrast columns must appear with the ORIGINAL group labels.
+  for (cn in c("Inflamed_over_Non-inflamed", "Inflamed_over_Pre-inflamed")) {
+    for (stat in c("logFC", "P.Value", "adj.P.Val", "significant",
+                   "Log.P.Value", "sign.logP")) {
+      col <- paste0(stat, ".", cn)
+      expect_true(col %in% colnames(df), info = paste("missing column:", col))
+    }
+  }
+
+  # gene_1 spiked in Inflamed -> Inflamed_over_Non-inflamed should be positive.
+  spike_row <- df[df$id == "gene_1", ]
+  expect_gt(spike_row[["logFC.Inflamed_over_Non-inflamed"]], 3)
+  expect_lt(spike_row[["P.Value.Inflamed_over_Non-inflamed"]], 0.05)
 })
 
 ################################################################################

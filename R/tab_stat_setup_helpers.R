@@ -175,8 +175,13 @@ stat.testing <- function(
             contrast_pair <- selected_contrasts[[i]]
             group1 <- contrast_pair[1]
             group2 <- contrast_pair[2]
-            # Use backticks to handle special characters in group names
-            contrast_strings[i] <- paste0("`f", group1, "` - `f", group2, "`")
+            # Design columns are named "f" + make.names(group), so contrast
+            # strings must use make.names-valid forms (mirrors the two-sample
+            # branch's group_name_map pattern).  The user-facing contrast NAME
+            # keeps the original labels so downstream column names are unchanged.
+            contrast_strings[i] <- paste0(
+              "`f", make.names(group1), "` - `f", make.names(group2), "`"
+            )
             contrast_names[i] <- paste0(group1, "_over_", group2)
           }
 
