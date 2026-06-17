@@ -249,3 +249,27 @@ test_that("create_corr_boxplot: gradient midpoint equals (min+max)/2, not min", 
   expect_equal(mid, CORR_TRUE_MIDPOINT, tolerance = 1e-9,
                label = "corr_boxplot gradient midpoint == (min+max)/2")
 })
+
+# --------------------------------------------------------------------------- #
+# summary_quant_features (R/tab_summary_helpers.R)                            #
+# --------------------------------------------------------------------------- #
+# This helper coerces the annotation to a factor and uses its integer codes as
+# the continuous gradient value (as.numeric on a factor -> 1..n). With 5 distinct
+# values the codes are 1..5, so the true midpoint is 3 and the buggy value is 1.
+
+test_that("summary_quant_features: gradient midpoint equals (min+max)/2, not min", {
+  gct  <- make_cont_gct()                  # 5 distinct cont values -> codes 1..5
+  cmap <- make_cont_color_map()
+
+  p <- summary_quant_features(gct, "cont_col", "test_ome", cmap)
+  expect_s3_class(p, "ggplot")
+
+  mid <- extract_gradient2_midpoint(p)
+  expect_false(is.na(mid),
+               label = "gradient2 midpoint should be extractable from summary plot scale")
+  # factor codes 1..5 -> wrong (min) = 1, true (min+max)/2 = 3
+  expect_false(isTRUE(all.equal(mid, 1, tolerance = 1e-9)),
+               label = "midpoint must not equal min (1) -- that is the bug")
+  expect_equal(mid, 3, tolerance = 1e-9,
+               label = "summary plot gradient midpoint == (min+max)/2 of factor codes")
+})
