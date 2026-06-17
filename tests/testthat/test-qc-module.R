@@ -851,6 +851,23 @@ test_that("calculate_PCA handles edge cases correctly", {
   
   # Should error appropriately
   expect_error(calculate_PCA(na_gct), "No features remain after filtering")
+
+  # Single-sample dataset: PCA is undefined. Must fail with a clear message,
+  # NOT the cryptic "argument is of length zero" from a dropped matrix dimension.
+  single_mat <- matrix(c(1, 2, 3, 4, 5), nrow = 5, ncol = 1)
+  rownames(single_mat) <- paste0("gene", 1:5)
+  colnames(single_mat) <- "sample1"
+
+  single_gct <- new("GCT",
+                     mat = single_mat,
+                     cdesc = data.frame(group = "A", row.names = "sample1"),
+                     rdesc = data.frame(gene_name = paste0("gene", 1:5),
+                                        row.names = paste0("gene", 1:5)),
+                     rid = paste0("gene", 1:5),
+                     cid = "sample1"
+  )
+
+  expect_error(calculate_PCA(single_gct), "at least 2 samples")
 })
 
 test_that("create_PCA_plot accepts fill_shapes parameter", {

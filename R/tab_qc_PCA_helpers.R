@@ -26,10 +26,20 @@ calculate_PCA <- function(gct) {
   
   # Ensure rownames (samples) match original column names
   rownames(data.norm) <- original_colnames
-  
-  # Filter out zero-variance features (columns after transpose)
-  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
-  
+
+  # PCA is undefined for a single sample (per-feature variance is undefined and
+  # scaling cannot standardize). Guard up front: with one sample the matrix is a
+  # single row, and the column subset below would silently drop to a vector,
+  # producing a cryptic "argument is of length zero" downstream.
+  if (nrow(data.norm) < 2) {
+    stop("PCA requires at least 2 samples. This dataset has ", nrow(data.norm),
+         " sample(s).")
+  }
+
+  # Filter out zero-variance features (columns after transpose).
+  # drop = FALSE keeps the result a matrix even when a single row/column survives.
+  data.norm <- data.norm[, apply(data.norm, 2, var, na.rm = TRUE) != 0, drop = FALSE]
+
   # Check if we have any data left after filtering
   if (ncol(data.norm) == 0) {
     stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
