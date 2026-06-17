@@ -28,30 +28,45 @@ create_corr_heatmap <- function (gct, col_of_interest, ome, custom_color_map = N
   #get colors if defined
   #otherwise just use default colors
   #NOTE: need to add NA as a color or else it doesn't show up properly in the legend
-  if (custom_color_map$is_discrete) {
+  if (is.null(custom_color_map)) {
+    colors <- NULL
+  } else if (custom_color_map$is_discrete) {
     colors <- c(unlist(custom_color_map$colors),"gray50")
     names(colors) <- c(custom_color_map$vals,"NA")
-  } else{
-    colors = NULL
+  } else {
+    colors <- NULL
   }
   
   #create heatmap using ComplexHeatmap
-  
-  # Column annotation
-  ha <- HeatmapAnnotation(
-    annot = annot[,col_of_interest],
-    col = list(annot = colors),
-    show_legend = F,
-    show_annotation_name = F
-  )
-  
-  #Row annotation
-  row_ha <- rowAnnotation(
-    annot = annot[,col_of_interest],
-    col = list(annot = colors),
-    show_annotation_name=F,
-    annotation_legend_param = list(annot = list(title=col_of_interest))
-  )
+
+  # Column annotation -- omit col argument when no custom colors so that
+  # ComplexHeatmap assigns its own default palette (mirrors create_corr_boxplot
+  # behavior: NULL custom_color_map -> default colors)
+  if (is.null(colors)) {
+    ha <- HeatmapAnnotation(
+      annot = annot[,col_of_interest],
+      show_legend = F,
+      show_annotation_name = F
+    )
+    row_ha <- rowAnnotation(
+      annot = annot[,col_of_interest],
+      show_annotation_name=F,
+      annotation_legend_param = list(annot = list(title=col_of_interest))
+    )
+  } else {
+    ha <- HeatmapAnnotation(
+      annot = annot[,col_of_interest],
+      col = list(annot = colors),
+      show_legend = F,
+      show_annotation_name = F
+    )
+    row_ha <- rowAnnotation(
+      annot = annot[,col_of_interest],
+      col = list(annot = colors),
+      show_annotation_name=F,
+      annotation_legend_param = list(annot = list(title=col_of_interest))
+    )
+  }
   
   #color scale
   col_fun = colorRamp2(c(-1,-0.5,0,0.5,1), 
