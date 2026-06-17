@@ -288,8 +288,17 @@ stat.testing <- function(
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
 
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
+        # Prefer the literal "id" column (cmapR orders it LAST in rdesc, so
+        # picking the first non-numeric column would grab an annotation column
+        # like geneSymbol and desync the downstream join). Mirror the F-test /
+        # two-sample branches.
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+        } else {
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+        }
         colnames(tab)[1] <- id.col
 
         for (group_name in chosen_groups) {

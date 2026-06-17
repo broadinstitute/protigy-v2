@@ -305,6 +305,40 @@ test_that("stat.testing one-sample produces per-group columns", {
   expect_true(all(df$adj.P.Val.A >= df$P.Value.A - 1e-9, na.rm = TRUE))
 })
 
+test_that("stat.testing one-sample uses the 'id' rdesc column even when it is not first", {
+  # Regression: cmapR's parse_gctx orders rdesc with annotation columns FIRST
+  # and `id` LAST. The one-sample branch picked the first non-numeric rdesc
+  # column as the id, so it grabbed geneSymbol (gene values), and the join on
+  # "id" produced all-NA stat columns. Build a GCT with geneSymbol first, id
+  # last (the GCT-upload shape) and assert the stats actually populate.
+  gct <- make_stat_gct(n_genes = 12, groups = c("A", "B"), per_group = 4, seed = 3)
+  # Reorder rdesc so `id` is the LAST column (geneSymbol first), as parse_gctx does.
+  gct@rdesc <- gct@rdesc[, c("geneSymbol", "id"), drop = FALSE]
+
+  result <- run_stat_testing(
+    test = "One-sample Moderated T-test",
+    annotation_col = "group",
+    chosen_omes = "proteome",
+    gct = list(proteome = gct),
+    chosen_groups = c("A"),
+    selected_contrasts = NULL,
+    p.value.alpha = 0.05,
+    use.adj.pvalue = TRUE,
+    apply.log = FALSE,
+    intensity = FALSE
+  )
+
+  df <- result$proteome
+  expect_equal(nrow(df), 12)
+  # The join must succeed: stat columns are populated, not all-NA.
+  expect_true("logFC.A" %in% colnames(df))
+  expect_false(all(is.na(df$logFC.A)),
+               info = "logFC.A all-NA means the id-column join failed (the bug)")
+  expect_false(all(is.na(df$P.Value.A)))
+  # The id column must carry the true feature ids (gene_*), not gene symbols.
+  expect_true(any(grepl("^gene_", as.character(df$id))))
+})
+
 test_that("stat.testing one-sample handles multiple groups", {
   gct <- make_stat_gct(n_genes = 15, groups = c("A", "B"), per_group = 4)
 
