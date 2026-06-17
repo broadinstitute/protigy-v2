@@ -190,54 +190,68 @@ test_that("perform_data_normalization disables 2-component for datasets with >20
   expect_equal(result$data.norm, test_data)
 })
 
-test_that("perform_data_normalization allows 2-component for datasets with <=20 samples", {
-  # Create test data with exactly 20 samples
+test_that("perform_data_normalization does NOT disable 2-component for datasets with <=20 samples (boundary)", {
+  # FIX C (P2.5): the previous tests ended in `expect_true(TRUE)` or an either/or
+  # `%in% c("2-component","None")` that passes regardless of what the function does.
+  # The guard's documented contract is:
+  #   ncol > 20  -> emit a warning AND set updated_method = "None"
+  #   ncol <= 20 -> NO warning about sample count; 2-component is attempted
+  #
+  # This test verifies the <=20 side: the sample-count warning must NOT fire
+  # for a 20-column dataset.  The test will fail if the guard threshold is moved
+  # (e.g. to <= 20 triggers the disable), confirming real coverage.
   test_data <- matrix(rnorm(80), nrow = 4, ncol = 20)
   rownames(test_data) <- paste0("gene_", 1:4)
   colnames(test_data) <- paste0("sample_", 1:20)
-  
+
   test_cdesc <- data.frame(
     group = rep(c("A", "B"), each = 10),
     row.names = paste0("sample_", 1:20)
   )
-  
-  # Test that 2-component is allowed (may fail to converge, but won't be disabled)
-  # Note: 2-component may still fail for other reasons, so we just check it's not disabled
-  result <- perform_data_normalization(
-    test_data, "2-component", test_cdesc, FALSE, NULL
+
+  # The sample-count warning must NOT fire for exactly 20 samples.
+  # Capture all warnings and assert the guard-specific one is absent.
+  warns <- character(0)
+  withCallingHandlers(
+    result <- perform_data_normalization(
+      test_data, "2-component", test_cdesc, FALSE, NULL
+    ),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
   )
-  
-  # Should either succeed or fail with convergence error, but not be disabled due to sample count
-  # If it fails, it will be a try-error, not None due to sample count
-  if (result$updated_method == "None") {
-    # If it failed, it should be due to convergence, not sample count
-    # We can't easily test the actual normalization without mocking, so we just verify
-    # it wasn't disabled due to sample count (no warning about >20 samples)
-    expect_true(TRUE) # Test passes if we get here
-  } else {
-    expect_equal(result$updated_method, "2-component")
-  }
+  guard_msg <- "Two-component normalization is disabled for datasets with more than 20 samples"
+  expect_false(
+    any(grepl(guard_msg, warns, fixed = TRUE)),
+    info = paste("Guard warning must be absent for 20-sample dataset; got:", paste(warns, collapse = " | "))
+  )
 })
 
-test_that("perform_data_normalization allows 2-component for datasets with exactly 20 samples", {
-  # Create test data with exactly 20 samples (boundary case)
-  test_data <- matrix(rnorm(80), nrow = 4, ncol = 20)
+test_that("perform_data_normalization does NOT disable 2-component for datasets with 19 samples", {
+  # Belt-and-suspenders: strictly fewer than 20 samples — the guard must not fire.
+  test_data <- matrix(rnorm(76), nrow = 4, ncol = 19)
   rownames(test_data) <- paste0("gene_", 1:4)
-  colnames(test_data) <- paste0("sample_", 1:20)
-  
+  colnames(test_data) <- paste0("sample_", 1:19)
+
   test_cdesc <- data.frame(
-    group = rep(c("A", "B"), each = 10),
-    row.names = paste0("sample_", 1:20)
+    group = rep(c("A", "B"), length.out = 19),
+    row.names = paste0("sample_", 1:19)
   )
-  
-  # Should not warn about >20 samples (exactly 20 is allowed)
-  result <- perform_data_normalization(
-    test_data, "2-component", test_cdesc, FALSE, NULL
+
+  warns <- character(0)
+  withCallingHandlers(
+    perform_data_normalization(test_data, "2-component", test_cdesc, FALSE, NULL),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
   )
-  
-  # Should attempt normalization (may fail for other reasons, but not disabled)
-  expect_true(result$updated_method %in% c("2-component", "None"))
-  # If None, it's due to convergence failure, not sample count
+  guard_msg <- "Two-component normalization is disabled for datasets with more than 20 samples"
+  expect_false(
+    any(grepl(guard_msg, warns, fixed = TRUE)),
+    info = paste("Guard warning must be absent for 19-sample dataset; got:", paste(warns, collapse = " | "))
+  )
 })
 
 test_that("perform_missing_filter filters based on missing percentage", {
@@ -559,63 +573,77 @@ test_that("parse_gctx_preserve_cdesc restores raw cdesc values for .gct", {
   expect_identical(rownames(parsed_preserved@cdesc), parsed_preserved@cid)
 })
 
-test_that("geneSymbol column selection preserves original column when geneSymbol doesn't exist", {
-  # Test the geneSymbol column selection logic directly
-  # Create test rdesc without geneSymbol
+test_that("apply_gene_symbol_from_params creates geneSymbol from selected column when geneSymbol doesn't exist", {
+  # FIX D (P2.3): the previous test re-implemented the assignment inline
+  #   (`test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]`)
+  # and asserted on its own copy, never calling apply_gene_symbol_from_params.
+  # This rewrite calls the REAL function so the test fails if that function
+  # is removed or broken.
   test_rdesc <- data.frame(
-    id = paste0("gene_", 1:3),
-    gene_name = c("GENE1", "GENE2", "GENE3"),  # This column will be selected for geneSymbol
+    id        = paste0("gene_", 1:3),
+    gene_name = c("GENE1", "GENE2", "GENE3"),
     row.names = paste0("gene_", 1:3)
   )
-  
-  # Simulate the geneSymbol column selection logic from transformGCTs
-  gene_symbol_col <- "gene_name"
-  
-  # geneSymbol doesn't exist - create it from selected column
-  # Preserve the original column (don't remove it)
-  test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]
-  
-  # Verify geneSymbol was created
-  expect_true("geneSymbol" %in% names(test_rdesc))
-  expect_equal(test_rdesc$geneSymbol, c("GENE1", "GENE2", "GENE3"))
-  
-  # Verify original gene_name column is preserved
-  expect_true("gene_name" %in% names(test_rdesc))
-  expect_equal(test_rdesc$gene_name, c("GENE1", "GENE2", "GENE3"))
-})
 
-test_that("geneSymbol column selection preserves original geneSymbol as geneSymbol_original when selecting different column", {
-  # Test the geneSymbol column selection logic directly
-  # Create test rdesc with existing geneSymbol
-  test_rdesc <- data.frame(
-    id = paste0("gene_", 1:3),
-    geneSymbol = c("OLD1", "OLD2", "OLD3"),  # Original geneSymbol
-    gene_name = c("NEW1", "NEW2", "NEW3"),  # This column will be selected
-    row.names = paste0("gene_", 1:3)
+  params <- list(
+    gene_symbol_column         = "gene_name",
+    convert_ids_to_gene_symbol = FALSE
   )
-  
-  # Simulate the geneSymbol column selection logic from transformGCTs
-  gene_symbol_col <- "gene_name"
-  
-  # User selected a different column - preserve original as geneSymbol_original
-  test_rdesc$geneSymbol_original <- test_rdesc$geneSymbol
-  test_rdesc$geneSymbol <- test_rdesc[[gene_symbol_col]]
-  # Selected column should be preserved (not removed)
-  
-  # Verify original geneSymbol was preserved as geneSymbol_original
-  expect_true("geneSymbol_original" %in% names(test_rdesc))
-  expect_equal(test_rdesc$geneSymbol_original, c("OLD1", "OLD2", "OLD3"))
-  
-  # Verify new geneSymbol was created from gene_name
-  expect_true("geneSymbol" %in% names(test_rdesc))
-  expect_equal(test_rdesc$geneSymbol, c("NEW1", "NEW2", "NEW3"))
-  
-  # Verify selected column (gene_name) was preserved
-  expect_true("gene_name" %in% names(test_rdesc))
-  expect_equal(test_rdesc$gene_name, c("NEW1", "NEW2", "NEW3"))
+
+  out <- apply_gene_symbol_from_params(rdesc = test_rdesc, params = params, ome = "test_ome")
+
+  # Function must create geneSymbol from the selected column.
+  expect_true("geneSymbol" %in% names(out$rdesc))
+  expect_equal(out$rdesc$geneSymbol, c("GENE1", "GENE2", "GENE3"))
+
+  # Source column is preserved unchanged.
+  expect_true("gene_name" %in% names(out$rdesc))
+  expect_equal(out$rdesc$gene_name, c("GENE1", "GENE2", "GENE3"))
 })
 
-# Note: Integration tests for transformGCTs geneSymbol handling have been removed.
-# The core functionality is already well-tested via fix_gene_symbols() tests (lines 297-397).
-# The geneSymbol column selection logic is straightforward and doesn't require separate integration tests
-# that depend on Shiny mocking, which causes maintenance issues.
+test_that("apply_gene_symbol_from_params preserves original geneSymbol as geneSymbol_original when overwriting", {
+  # FIX D (P2.3): same class of tautological re-implementation as above.
+  test_rdesc <- data.frame(
+    id         = paste0("gene_", 1:3),
+    geneSymbol = c("OLD1", "OLD2", "OLD3"),
+    gene_name  = c("NEW1", "NEW2", "NEW3"),
+    row.names  = paste0("gene_", 1:3)
+  )
+
+  params <- list(
+    gene_symbol_column         = "gene_name",
+    convert_ids_to_gene_symbol = FALSE
+  )
+
+  out <- apply_gene_symbol_from_params(rdesc = test_rdesc, params = params, ome = "test_ome")
+
+  # Original geneSymbol must be backed up.
+  expect_true("geneSymbol_original" %in% names(out$rdesc))
+  expect_equal(out$rdesc$geneSymbol_original, c("OLD1", "OLD2", "OLD3"))
+
+  # geneSymbol must be overwritten with values from the selected column.
+  expect_equal(out$rdesc$geneSymbol, c("NEW1", "NEW2", "NEW3"))
+
+  # Source column is preserved unchanged.
+  expect_equal(out$rdesc$gene_name, c("NEW1", "NEW2", "NEW3"))
+})
+
+test_that("apply_gene_symbol_from_params leaves rdesc unchanged when gene_symbol_column is None", {
+  # Regression guard: "None" means the user did not select a gene-symbol column.
+  test_rdesc <- data.frame(
+    id         = paste0("gene_", 1:3),
+    gene_name  = c("G1", "G2", "G3"),
+    row.names  = paste0("gene_", 1:3)
+  )
+
+  params <- list(
+    gene_symbol_column         = "None",
+    convert_ids_to_gene_symbol = FALSE
+  )
+
+  out <- apply_gene_symbol_from_params(rdesc = test_rdesc, params = params, ome = "test_ome")
+
+  # No geneSymbol column should have been created.
+  expect_false("geneSymbol" %in% names(out$rdesc))
+  expect_identical(out$rdesc, test_rdesc)
+})
