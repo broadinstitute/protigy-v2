@@ -139,6 +139,11 @@ test_that("no markers and no significant peptides -> empty (zero-row) result", {
 })
 
 test_that("pelsa_intensity_proteins is vectorized & fast on ~100k peptides", {
+  # P3.7 de-flake: this asserts wall-clock time (a performance smoke), not
+  # correctness, so it is non-deterministic on shared/slow CI runners. Skip it
+  # there; the correctness of the same call is covered by the other blocks.
+  skip_on_cran()
+  skip_on_ci()
   set.seed(7)
   N <- 100000L
   acc <- sprintf("P%06d", sample.int(N / 5L, N, replace = TRUE)) # ~20k accessions
