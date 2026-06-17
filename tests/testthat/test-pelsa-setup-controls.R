@@ -543,3 +543,49 @@ test_that("setup_box render gates on a valid active dataset (NULL / unknown -> n
     )
   )
 })
+
+# ---------------------------------------------------------------------------
+# pelsa_setup_box_ui: re-render must preserve the user's selections
+#
+# Regression: output$setup_box depends on active_dataset(), so switching the
+# active dataset re-renders the box. If the recreated inputs reset to their
+# hardcoded defaults, the re-emitted values clobber setup_state datasets/
+# species/compound. The builder must honor seeded selections so a re-render
+# preserves what the user chose.
+# ---------------------------------------------------------------------------
+test_that("pelsa_setup_box_ui defaults reproduce first-load selections", {
+  ns <- shiny::NS("x")
+  html <- as.character(pelsa_setup_box_ui(
+    datasets  = c("proteome", "phospho"),
+    species   = c("human", "mouse"),
+    compounds = c("CompoundA" = "CompoundA"),
+    ns        = ns
+  ))
+  # default: all datasets checked, first species selected, no compound
+  expect_true(grepl("value=\"proteome\"[^>]*checked", html))
+  expect_true(grepl("value=\"phospho\"[^>]*checked", html))
+  expect_true(grepl("<option value=\"human\" selected>", html))
+  # default compound is the "(none)" = "" entry
+  expect_true(grepl("<option value=\"\" selected>", html))
+})
+
+test_that("pelsa_setup_box_ui honors seeded selections (re-render preserves choices)", {
+  ns <- shiny::NS("x")
+  html <- as.character(pelsa_setup_box_ui(
+    datasets  = c("proteome", "phospho"),
+    species   = c("human", "mouse"),
+    compounds = c("CompoundA" = "CompoundA"),
+    ns        = ns,
+    selected_datasets = "phospho",      # NOT all datasets
+    selected_species  = "mouse",        # NOT the first species
+    selected_compound = "CompoundA"     # NOT "(none)"
+  ))
+  # only phospho checked; proteome NOT checked
+  expect_true(grepl("value=\"phospho\"[^>]*checked", html))
+  expect_false(grepl("value=\"proteome\"[^>]*checked", html))
+  # mouse selected, not human
+  expect_true(grepl("<option value=\"mouse\" selected>", html))
+  expect_false(grepl("<option value=\"human\" selected>", html))
+  # the chosen compound is selected
+  expect_true(grepl("<option value=\"CompoundA\" selected>", html))
+})

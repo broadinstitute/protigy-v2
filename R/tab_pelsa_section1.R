@@ -136,11 +136,25 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       ome <- active_dataset()
       req(ome, ome %in% all_omes())
 
+      # Seed the recreated inputs from the persisted setup_state (isolated, so
+      # reading it does not add a reactive dependency). Without this, an
+      # active-dataset switch re-renders the box at hardcoded defaults, whose
+      # re-emitted values clobber setup_state$datasets/species/compound via the
+      # control observers below. Defaults (first load) fall back when unset.
+      species_choices <- pelsa_list_species(pelsa_database_dir())
+      sel_datasets <- isolate(setup_state$datasets) %||% all_omes()
+      sel_species  <- isolate(setup_state$species) %||%
+        (if (length(species_choices)) species_choices[[1]] else NULL)
+      sel_compound <- isolate(setup_state$compound) %||% ""
+
       pelsa_setup_box_ui(
         datasets  = all_omes(),
-        species   = pelsa_list_species(pelsa_database_dir()),
+        species   = species_choices,
         compounds = names(compound_markers()$compounds),
-        ns        = ns
+        ns        = ns,
+        selected_datasets = sel_datasets,
+        selected_species  = sel_species,
+        selected_compound = sel_compound
       )
     })
 

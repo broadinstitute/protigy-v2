@@ -624,7 +624,10 @@ pelsa_section_head <- function(icon_name, label) {
 # @param ns        the module namespacer (session$ns / NS(id)).
 # @return a shiny tag (the Setup box).
 # @noRd
-pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
+pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
+                               selected_datasets = datasets,
+                               selected_species  = if (length(species)) species[[1]] else NULL,
+                               selected_compound = "") {
   # The Setup box is split into two equal columns. Each logical group is wrapped
   # in a .pelsa-section card whose LAYER class color-codes it so the user can
   # parse the form at a glance (see inst/custom.css "PELSA Setup"):
@@ -639,12 +642,15 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
     class = "pelsa-section pelsa-layer-data",
     pelsa_section_head("table-list", "Data inputs"),
 
-    # 1. Datasets to analyze (FIRST control).
+    # 1. Datasets to analyze (FIRST control). `selected_*` defaults reproduce the
+    #    original first-load defaults; the server passes the persisted setup_state
+    #    selections so a setup-box RE-RENDER (e.g. an active-dataset switch) does
+    #    NOT reset the user's choices and re-emit defaults into setup_state.
     shiny::checkboxGroupInput(
       ns("pelsa_datasets"),
       label    = "Datasets to analyze",
       choices  = datasets,
-      selected = datasets
+      selected = selected_datasets
     ),
 
     # 2. Species (live list of inst/database/ subfolders).
@@ -652,7 +658,7 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
       ns("pelsa_species"),
       label   = "Species",
       choices = species,
-      selected = if (length(species)) species[[1]] else NULL
+      selected = selected_species
     ),
 
     # 3. Treatment compound (presets from compound_markers.yaml).
@@ -660,7 +666,8 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns) {
     shiny::selectInput(
       ns("pelsa_compound"),
       label   = "Treatment compound",
-      choices = c("(none)" = "", compounds)
+      choices = c("(none)" = "", compounds),
+      selected = selected_compound
     ),
 
     shiny::tags$hr(),
