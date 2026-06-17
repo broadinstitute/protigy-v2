@@ -151,12 +151,27 @@ stat.testing <- function(
           colnames(final.results)
         )
 
-        #replace zero-centered average with the true average expression
-        avg <- t(aggregate(t(data), by = list(groups), function(x) {
+        #replace zero-centered average with the true average expression.
+        # aggregate() sorts its output ALPHABETICALLY by Group.1, but the design
+        # (and thus the AveExpr.<group> columns) follows factor level order =
+        # order of appearance. Reorder the aggregate columns to the factor level
+        # order BEFORE the positional assignment, else each group's mean lands
+        # in the wrong AveExpr column when the two orders differ.
+        agg <- aggregate(t(data), by = list(groups), function(x) {
           mean(x, na.rm = T)
-        }))
-        avg <- avg[-1, ]
+        })
+        agg_group_order <- as.character(agg$Group.1)        # alphabetical
+        avg <- t(agg)
+        avg <- avg[-1, , drop = FALSE]
         avg <- matrix(as.numeric(avg), ncol = ncol(avg))
+        # Design columns are in levels(f) order; map those make.names-valid
+        # levels back to the original group names aggregate used, then to its
+        # (sorted) column positions.
+        design_group_order <- names(group_name_map)[
+          match(levels(f), unname(group_name_map))
+        ]
+        col_perm <- match(design_group_order, agg_group_order)
+        avg <- avg[, col_perm, drop = FALSE]
         final.results[, grepl("AveExpr.", colnames(final.results))] <- avg
         final.results[, colnames(final.results) == "AveExpr"] <- rowMeans(
           avg,

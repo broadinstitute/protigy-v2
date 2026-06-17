@@ -217,6 +217,42 @@ test_that("stat.testing F-test emits the post-hoc contrast block", {
   expect_lt(spike_row$P.Value.A_over_B, 1e-3)
 })
 
+test_that("F-test per-group AveExpr columns are key-matched, not positionally misaligned", {
+  # Regression: the design's AveExpr.<group> columns follow factor level order
+  # (order of APPEARANCE in the group column), but aggregate() sorts its output
+  # ALPHABETICALLY. A positional assignment then writes each group's mean into
+  # the wrong AveExpr column whenever appearance order != alphabetical order.
+  #
+  # Lay out group "B" first then "A" (appearance order B, A; alphabetical A, B)
+  # and spike a gene's intensity hugely in group A. AveExpr.A must carry the
+  # high mean; the bug would put A's mean under AveExpr.B.
+  gct <- make_stat_gct(
+    n_genes = 12, groups = c("B", "A"), per_group = 4, seed = 7,
+    spike = list(gene = "gene_1", group = "A", shift = 100)
+  )
+
+  result <- run_stat_testing(
+    test = "Moderated F test",
+    annotation_col = "group",
+    chosen_omes = "proteome",
+    gct = list(proteome = gct),
+    chosen_groups = c("B", "A"),
+    selected_contrasts = NULL,
+    p.value.alpha = 0.05,
+    use.adj.pvalue = TRUE,
+    apply.log = FALSE,
+    intensity = FALSE
+  )
+
+  df <- result$proteome
+  expect_true(all(c("AveExpr.A", "AveExpr.B") %in% colnames(df)))
+  row <- df[df$id == "gene_1", ]
+  # The spike (+100) was in group A, so AveExpr.A must be the large one.
+  expect_gt(row$AveExpr.A, 50)
+  expect_lt(row$AveExpr.B, 50)
+  expect_gt(row$AveExpr.A, row$AveExpr.B)
+})
+
 test_that("stat.testing F-test skips omes with insufficient groups", {
   # Only one of the chosen groups is present -> ome is skipped (message + next).
   gct <- make_stat_gct(n_genes = 10, groups = c("A"), per_group = 4)
