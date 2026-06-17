@@ -989,12 +989,45 @@ test_that("7F: exports list has volcano/intensity/woods fns; volcano writes figu
     dir <- tempfile("pelsa_export_"); dir.create(dir)
     for (fn in exports) fn(dir)
 
-    # Volcano figures land in 03_volcano/01_volcano (one per contrast, PDF+PNG),
-    # named all_peptide_volcano_<contrast>.
+    # Volcano figures land in 03_volcano/01_volcano (one per contrast, PNG only;
+    # PDF export was intentionally gated off in commit 71e2496), named
+    # all_peptide_volcano_<contrast>.
     vdir <- file.path(dir, "03_volcano", "01_volcano")
     expect_true(dir.exists(vdir))
     vfiles <- list.files(vdir)
-    expect_true(any(grepl("^all_peptide_volcano_.*\\.pdf$", vfiles)))
     expect_true(any(grepl("^all_peptide_volcano_.*\\.png$", vfiles)))
+    expect_false(any(grepl("^all_peptide_volcano_.*\\.pdf$", vfiles)))
+  })
+})
+
+# M5: adding a marker must clear the cached volcano df so the live view rebuilds
+# and re-flags the new accession (was: cached df kept the old markers).
+test_that("M5: changing markers clears the volcano cache so the active view rebuilds", {
+  ss <- shiny::reactiveVal(.mk_setup_state_full())  # marker_rows = ACC1
+  args <- .full_args()
+  args$pelsa_setup_state <- ss
+  shiny::testServer(PELSASection3_Ome_Server, args = args, {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B",
+                      pelsa_show_best_panel = FALSE)
+    df1 <- active_volcano_df()
+    expect_equal(names(volcano_df_cache()), "A_over_B")
+    expect_setequal(marker_accessions(), "ACC1")
+
+    # Add ACC2 to the marker list (mimics the add-to-marker action upstream).
+    ss(modifyList(.mk_setup_state_full(), list(
+      marker_rows = data.frame(accession = c("ACC1", "ACC2"),
+                               gene = c("G1", "G2"),
+                               stringsAsFactors = FALSE))))
+    session$flushReact()
+    # M5 fix: the cache-clearing observer fired -> cache emptied.
+    expect_length(volcano_df_cache(), 0L)
+    expect_setequal(marker_accessions(), c("ACC1", "ACC2"))
+
+    # Reading again rebuilds (repopulates the cache) and flags >= as many markers.
+    df2 <- active_volcano_df()
+    expect_equal(names(volcano_df_cache()), "A_over_B")
+    expect_gte(sum(df2$is_marker, na.rm = TRUE), sum(df1$is_marker, na.rm = TRUE))
   })
 })

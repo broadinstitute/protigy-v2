@@ -214,6 +214,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           return()
         }
         marker_rows(pelsa_merge_marker_rows(marker_rows(), req))
+        # M6: reset the shared channel so an identical re-request (e.g. add A,
+        # remove A here in Setup, then add A again from the volcano) still
+        # registers as a value change and re-fires this observer. ignoreNULL =
+        # TRUE makes this NULL write inert (it will not trigger the observer).
+        marker_add_request(NULL)
       }, ignoreNULL = TRUE)
     }
 

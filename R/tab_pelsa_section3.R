@@ -359,6 +359,16 @@ PELSASection3_Ome_Server <- function(id,
     # not this cache - persist user-facing settings across switches.
     volcano_df_cache <- reactiveVal(list())
 
+    # M5: when the marker list changes, drop the cached volcano df so the active
+    # contrast rebuilds with the updated markers. active_volcano_df() reads
+    # volcano_df_cache(), so clearing it invalidates and forces a rebuild (which
+    # reads the current markers at build time). Without this, the cached df keeps
+    # the old markers and a newly-added marker is not flagged on the live view
+    # until a contrast / color-mode switch.
+    observeEvent(marker_accessions(), {
+      volcano_df_cache(list())
+    }, ignoreInit = TRUE)
+
     active_volcano_df <- reactive({
       contrast <- active_contrast()
       req(contrast)
