@@ -344,7 +344,7 @@ test_that("pelsa_fetch_uniprot live smoke test (batched)", {
   testthat::skip_if_offline()
 
   res <- pelsa_fetch_uniprot("P04637")  # TP53
-  expect_named(res, c("features", "unresolved"))
+  expect_named(res, c("features", "unresolved", "canceled"))
   expect_gt(nrow(res$features), 0L)
   expect_true(all(res$features$accession == "P04637"))
   expect_true(all(

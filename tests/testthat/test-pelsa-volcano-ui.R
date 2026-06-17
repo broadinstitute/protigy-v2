@@ -1016,18 +1016,25 @@ test_that("M5: changing markers clears the volcano cache so the active view rebu
     expect_setequal(marker_accessions(), "ACC1")
 
     # Add ACC2 to the marker list (mimics the add-to-marker action upstream).
-    ss(modifyList(.mk_setup_state_full(), list(
-      marker_rows = data.frame(accession = c("ACC1", "ACC2"),
-                               gene = c("G1", "G2"),
-                               stringsAsFactors = FALSE))))
+    # Replace marker_rows wholesale: modifyList() would recurse into the
+    # data.frame (a list) and attempt a column-wise merge onto the 1-row frame.
+    st_two_markers <- .mk_setup_state_full()
+    st_two_markers$marker_rows <- data.frame(
+      accession = c("ACC1", "ACC2"), gene = c("G1", "G2"),
+      stringsAsFactors = FALSE)
+    ss(st_two_markers)
     session$flushReact()
-    # M5 fix: the cache-clearing observer fired -> cache emptied.
-    expect_length(volcano_df_cache(), 0L)
     expect_setequal(marker_accessions(), c("ACC1", "ACC2"))
 
-    # Reading again rebuilds (repopulates the cache) and flags >= as many markers.
+    # M5 fix: the marker change fires the cache-clearing observer, dropping the
+    # stale (ACC1-only) df; the next read rebuilds with the current markers. We
+    # assert the OBSERVABLE contract -- the live df now flags STRICTLY more
+    # peptides as markers (PEPA/PEPC for ACC1, plus PEPB for ACC2: 2 -> 3) --
+    # rather than the cache's transient empty state, which an output re-render
+    # repopulates within the same flush. Were the stale cache kept, the rebuilt
+    # df would still flag only ACC1's peptides and this would fail.
     df2 <- active_volcano_df()
     expect_equal(names(volcano_df_cache()), "A_over_B")
-    expect_gte(sum(df2$is_marker, na.rm = TRUE), sum(df1$is_marker, na.rm = TRUE))
+    expect_gt(sum(df2$is_marker, na.rm = TRUE), sum(df1$is_marker, na.rm = TRUE))
   })
 })
