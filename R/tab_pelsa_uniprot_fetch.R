@@ -289,10 +289,20 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 }
 
 # Fetch ALL pages for ONE batch's query, following UniProt's Link: rel="next"
-# cursor. Returns the accumulated list of entry objects (each an entry as
-# resp_body_json() yields). Throws on retry-exhausted network/5xx so the caller's
-# breaker can count consecutive batch failures. A 4xx (e.g. malformed query)
-# yields zero entries for the batch (its accessions become unresolved).
+# cursor. Returns list(entries = <list of entry objects>, failed = <logical>).
+#
+# `entries` always carries the entries parsed from EVERY successfully-fetched
+# page, even when a later page fails -- req_perform_iterative(on_error="return")
+# returns the good pages alongside a trailing error condition, so a mid-
+# pagination network/5xx must NOT discard the pages already fetched (that would
+# silently mark successfully-annotated proteins as unresolved and inflate the
+# "proteins failed annotation fetch" QC metric).
+#
+# `failed` is TRUE when a retry-exhausted network/5xx error terminated
+# pagination -- the caller's breaker counts consecutive failed batches. A 4xx
+# (e.g. a healthy server rejecting a malformed query) is NOT a failure: it
+# yields zero entries for that page, and any un-fetched accessions simply fall
+# into `unresolved` downstream.
 # @noRd
 .pelsa_fetch_one_batch <- function(base_req, accs, size) {
   page_req <- httr2::req_url_path_append(base_req, .PELSA_UNIPROT_SEARCH_PATH)
@@ -313,20 +323,8 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
     on_error = "return"
   )
 
-  # A retry-exhausted transient/5xx (or network) error surfaces as the LAST
-  # element being an error condition; re-throw so the batch counts as failed.
-  failed <- Filter(function(r) inherits(r, "error") || inherits(r, "condition"),
-                   resps)
-  if (length(failed) > 0L) {
-    # Only treat SERVER/network failures as batch failures; a 4xx is a healthy
-    # server rejecting the query -> zero entries, not a breaker trip.
-    last <- failed[[length(failed)]]
-    status <- tryCatch(httr2::resp_status(last$resp), error = function(e) NA_integer_)
-    if (is.na(status) || status >= 500L) {
-      stop(last)
-    }
-  }
-
+  # Collect the entries from every good page FIRST, so they survive regardless of
+  # whether a later page failed.
   ok <- Filter(function(r) inherits(r, "httr2_response"), resps)
   entries <- list()
   for (resp in ok) {
@@ -334,7 +332,21 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
     parsed <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
     entries <- c(entries, .pelsa_search_results(parsed))
   }
-  entries
+
+  # A retry-exhausted transient/5xx (or network) error surfaces as a trailing
+  # error condition; flag the batch failed so the caller's breaker can count it.
+  # Only SERVER/network failures count -- a 4xx is a healthy server rejecting the
+  # query, not a breaker trip.
+  failed <- Filter(function(r) inherits(r, "error") || inherits(r, "condition"),
+                   resps)
+  batch_failed <- FALSE
+  if (length(failed) > 0L) {
+    last <- failed[[length(failed)]]
+    status <- tryCatch(httr2::resp_status(last$resp), error = function(e) NA_integer_)
+    if (is.na(status) || status >= 500L) batch_failed <- TRUE
+  }
+
+  list(entries = entries, failed = batch_failed)
 }
 
 # Fetch + parse UniProt features for a set of accessions (BATCHED /search).
@@ -438,21 +450,28 @@ pelsa_fetch_uniprot <- function(accessions,
       error = function(e) e
     )
 
+    # An unexpected hard error (not the structured partial-failure result) is
+    # treated like a fully-failed batch with no salvageable entries.
     if (inherits(fetched, "error") || inherits(fetched, "condition")) {
+      fetched <- list(entries = list(), failed = TRUE)
+    }
+
+    # ALWAYS keep the entries the batch managed to fetch (a mid-pagination 5xx
+    # still returns the good pages); their accessions become resolved. Only the
+    # un-fetched accessions of a failed batch fall into `unresolved` downstream.
+    entries <- c(entries, fetched$entries)
+
+    if (isTRUE(fetched$failed)) {
       consecutive_batch_failures <- consecutive_batch_failures + 1L
-      # accessions in this failed batch are (for now) unresolved; the merge in
-      # the caller retains any previously-cached rows for them.
       if (consecutive_batch_failures >= .PELSA_BREAKER_LIMIT) {
         stop(sprintf(
           paste0("pelsa_fetch_uniprot: UniProt unavailable -- %d consecutive ",
-                 "batch failures (last: %s)"),
-          consecutive_batch_failures, conditionMessage(fetched)))
+                 "batch failures"),
+          consecutive_batch_failures))
       }
-      .report(k, n_batches)
-      next
+    } else {
+      consecutive_batch_failures <- 0L
     }
-    consecutive_batch_failures <- 0L
-    entries <- c(entries, fetched)
     .report(k, n_batches)
   }
 

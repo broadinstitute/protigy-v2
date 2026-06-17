@@ -32,7 +32,7 @@ test_that("on_batch fires once per batch with (done, total)", {
   seen <- list()
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      lapply(accs, fake_entry)
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
     },
     .package = "Protigy"
   )
@@ -52,10 +52,12 @@ test_that("on_batch fires once per batch with (done, total)", {
 })
 
 test_that("a 4xx-style empty batch yields unresolved, NOT a breaker trip", {
-  # The real .pelsa_fetch_one_batch returns list() for a 4xx (query matched
-  # nothing). Simulate that: every batch returns no entries.
+  # The real .pelsa_fetch_one_batch returns zero entries (failed = FALSE) for a
+  # 4xx (query matched nothing). Simulate that: every batch returns no entries.
   testthat::local_mocked_bindings(
-    .pelsa_fetch_one_batch = function(base_req, accs, size) list(),
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(), failed = FALSE)
+    },
     .package = "Protigy"
   )
   # 10 accessions / batch_size 1 -> 10 empty batches. If empties counted toward
@@ -67,9 +69,11 @@ test_that("a 4xx-style empty batch yields unresolved, NOT a breaker trip", {
 })
 
 test_that("breaker trips after .PELSA_BREAKER_LIMIT consecutive failed batches", {
-  # Every batch throws (a 5xx/network failure surfaces as an error here).
+  # Every batch reports failed = TRUE (a 5xx/network failure) with no entries.
   testthat::local_mocked_bindings(
-    .pelsa_fetch_one_batch = function(base_req, accs, size) stop("503 boom"),
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(), failed = TRUE)
+    },
     .package = "Protigy"
   )
   limit <- get(".PELSA_BREAKER_LIMIT", envir = asNamespace("Protigy"))
@@ -90,8 +94,10 @@ test_that("breaker resets after a successful batch (failures must be consecutive
       # Alternate fail/succeed so consecutive failures never exceed 1 -- a single
       # success between failures resets the breaker counter. With this pattern the
       # breaker must NOT trip no matter how many batches run.
-      if (calls$n %% 2L == 0L) return(lapply(accs, fake_entry))  # success resets
-      stop("transient failure")
+      if (calls$n %% 2L == 0L) {
+        return(list(entries = lapply(accs, fake_entry), failed = FALSE))  # resets
+      }
+      list(entries = list(), failed = TRUE)
     },
     .package = "Protigy"
   )
@@ -109,7 +115,7 @@ test_that("should_cancel stops at a batch boundary and reports canceled = TRUE",
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
       calls$n <- calls$n + 1L
-      lapply(accs, fake_entry)
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
     },
     .package = "Protigy"
   )
@@ -150,8 +156,9 @@ test_that(".pelsa_fetch_one_batch returns entries for a 200 page", {
     resp_body_json = function(resp, ...) list(results = resp$.results),
     .package = "httr2"
   )
-  entries <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
-  expect_length(entries, 1L)
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_length(res$entries, 1L)
+  expect_false(res$failed)
 })
 
 test_that(".pelsa_fetch_one_batch yields zero entries for a 4xx (no throw)", {
@@ -168,11 +175,12 @@ test_that(".pelsa_fetch_one_batch yields zero entries for a 4xx (no throw)", {
     resp_body_json = function(resp, ...) list(results = resp$.results),
     .package = "httr2"
   )
-  entries <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
-  expect_length(entries, 0L)
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_length(res$entries, 0L)
+  expect_false(res$failed)
 })
 
-test_that(".pelsa_fetch_one_batch throws on a 5xx terminal error (breaker fuel)", {
+test_that(".pelsa_fetch_one_batch reports failed = TRUE on a 5xx terminal error (breaker fuel)", {
   fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
   err <- structure(
     list(message = "server error", resp = make_resp(503L)),
@@ -187,5 +195,35 @@ test_that(".pelsa_fetch_one_batch throws on a 5xx terminal error (breaker fuel)"
     resp_body_json = function(resp, ...) list(results = list()),
     .package = "httr2"
   )
-  expect_error(fetch_one(httr2::request("http://x"), c("P1"), size = 1L))
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_true(res$failed)
+  expect_length(res$entries, 0L)
+})
+
+test_that("5xx on a LATE page preserves the good pages already fetched (no data loss)", {
+  # Regression: req_perform_iterative(on_error='return') returns the successful
+  # cursor pages PLUS a trailing error condition. The old code re-threw via
+  # stop(last) BEFORE collecting the good pages, discarding P1/P2 entirely. Now
+  # the good pages' entries must survive and the batch is still flagged failed.
+  fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  err <- structure(
+    list(message = "server error", resp = make_resp(503L)),
+    class = c("httr2_http_503", "error", "condition")
+  )
+  testthat::local_mocked_bindings(
+    req_url_path_append = function(req, ...) req,
+    req_url_query = function(req, ...) req,
+    # page 1 (P1) ok, page 2 (P2) ok, page 3 fails 5xx after retries
+    req_perform_iterative = function(req, ...) list(
+      make_resp(200L, list(fake_entry("P1"))),
+      make_resp(200L, list(fake_entry("P2"))),
+      err
+    ),
+    resp_status = function(resp) resp$.status,
+    resp_body_json = function(resp, ...) list(results = resp$.results),
+    .package = "httr2"
+  )
+  res <- fetch_one(httr2::request("http://x"), c("P1", "P2"), size = 1L)
+  expect_true(res$failed)
+  expect_length(res$entries, 2L)  # P1 and P2 survived the late-page failure
 })
