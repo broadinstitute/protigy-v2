@@ -152,6 +152,42 @@ test_that("EXP-4: temp dir is cleaned even when an export errors mid-loop", {
   })
 })
 
+test_that("M11: per-export success/failure is captured from the tryCatch result", {
+  shiny::isolate({
+    exports_dir <- tempfile("m11_"); dir.create(exports_dir)
+    on.exit(unlink(exports_dir, recursive = TRUE), add = TRUE)
+    tab_path <- file.path(exports_dir, "proteome", "tabX")
+    dir.create(tab_path, recursive = TRUE)
+
+    items <- list(
+      good = function(dir_name) writeLines("ok", file.path(dir_name, "good.txt")),
+      bad  = function(dir_name) stop("export boom")
+    )
+
+    # Mirror the tab_export.R per-export capture + routing (M11).
+    success_exports <- character(0)
+    error_exports   <- character(0)
+    for (nm in names(items)) {
+      p <- items[[nm]]
+      export_ok <- my_shinyalert_tryCatch(
+        show.error = FALSE, return.error = FALSE,
+        expr = { p(tab_path); TRUE }
+      )
+      if (isTRUE(export_ok)) {
+        success_exports <- c(success_exports, nm)
+      } else {
+        error_exports <- c(error_exports, nm)
+      }
+    }
+
+    expect_identical(success_exports, "good")
+    expect_identical(error_exports, "bad")
+    # The tab dir always exists, so the OLD `!file.exists(tab_path)` probe could
+    # never have detected the failure -- this guards that regression.
+    expect_true(dir.exists(tab_path))
+  })
+})
+
 test_that("empty selection yields zero exports and cleaned temp dir", {
   shiny::isolate({
     ctr <- new.env()

@@ -346,6 +346,93 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_equal(one$qc$n_peptides, nrow(syn$peptides))
 })
 
+# ---- M8/M9: align CV source to the processed peptide set BY id ---------------
+
+# Minimal GCT from explicit rids (rdesc/cdesc carry an `id` col like real GCTs).
+.mk_rid_gct <- function(rids, samples = c("s1", "s2", "s3", "s4")) {
+  n <- length(rids); k <- length(samples)
+  mat <- matrix(as.double(seq_len(n * k)), nrow = n, ncol = k,
+                dimnames = list(rids, samples))
+  genes <- if (n == 0L) character(0) else paste0("G_", rids)
+  rdesc <- data.frame(id = rids, gene = genes, stringsAsFactors = FALSE)
+  rownames(rdesc) <- rids
+  cdesc <- data.frame(id = samples,
+                      condition = rep(c("A", "B"), length.out = k),
+                      stringsAsFactors = FALSE)
+  rownames(cdesc) <- samples
+  cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc, rid = rids, cid = samples)
+}
+
+test_that("pelsa_align_original_to_processed subsets + reorders the original by rid", {
+  orig <- .mk_rid_gct(c("pA", "pB", "pC", "pD", "pE"))
+
+  # identical set/order -> unchanged
+  same <- pelsa_align_original_to_processed(orig, .mk_rid_gct(c("pA","pB","pC","pD","pE")))
+  expect_identical(same@rid, c("pA","pB","pC","pD","pE"))
+
+  # rows dropped during processing -> only survivors remain, values BY id
+  drop <- pelsa_align_original_to_processed(orig, .mk_rid_gct(c("pA","pC","pE")))
+  expect_identical(drop@rid, c("pA","pC","pE"))
+  expect_identical(unname(drop@mat["pC", ]), unname(orig@mat["pC", ]))
+
+  # reordered processing -> original follows the processed order, values BY id
+  reord <- pelsa_align_original_to_processed(orig, .mk_rid_gct(c("pD","pA","pE","pB","pC")))
+  expect_identical(reord@rid, c("pD","pA","pE","pB","pC"))
+  expect_identical(unname(reord@mat[1, ]), unname(orig@mat["pD", ]))
+
+  # zero processed peptides -> empty CV source, no error
+  empty <- pelsa_align_original_to_processed(orig, .mk_rid_gct(character(0)))
+  expect_equal(nrow(empty@mat), 0L)
+
+  # data.frame seam (test fixtures may pass plain frames)
+  o <- data.frame(s1 = 1:4, s2 = 5:8, row.names = c("pA","pB","pC","pD"))
+  p <- data.frame(s1 = c(0,0), s2 = c(0,0), row.names = c("pC","pA"))
+  out <- pelsa_align_original_to_processed(o, p)
+  expect_identical(rownames(out), c("pC","pA"))
+  expect_equal(out["pC", "s1"], 3)
+})
+
+test_that("pelsa_align_original_to_processed stops on duplicate original ids", {
+  dup <- .mk_rid_gct(c("pA","pX","pB"))
+  methods::slot(dup, "rid") <- c("pA","pA","pB")   # forced invalid id namespace
+  expect_error(
+    pelsa_align_original_to_processed(dup, .mk_rid_gct(c("pA","pB"))),
+    "duplicate ids"
+  )
+})
+
+test_that("run_analysis_one computes CV over the PROCESSED peptides, not the original superset", {
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 6)
+  gct <- .mk_gct(syn)                              # processed: pep1..pepP
+  proc_rids <- gct@rid
+  sc <- syn$sample_cols
+
+  # Original = processed PLUS 5 extra peptide rows the filters would have dropped,
+  # and shuffled, so positional alignment to `gct` would be wrong.
+  extra_rids <- paste0("extra", seq_len(5))
+  extra_mat  <- matrix(stats::runif(length(extra_rids) * length(sc), 10, 20),
+                       nrow = length(extra_rids),
+                       dimnames = list(extra_rids, sc))
+  orig_mat   <- rbind(gct@mat, extra_mat)
+  shuffle    <- sample(nrow(orig_mat))
+  orig_mat   <- orig_mat[shuffle, , drop = FALSE]
+  orig_rdesc <- data.frame(id = rownames(orig_mat), stringsAsFactors = FALSE)
+  rownames(orig_rdesc) <- rownames(orig_mat)
+  gct_original <- cmapR::GCT(mat = orig_mat, rdesc = orig_rdesc,
+                             cdesc = gct@cdesc, rid = rownames(orig_mat), cid = sc)
+
+  one <- pelsa_run_analysis_one(
+    gct = gct, gct_original = gct_original,
+    fasta_map = syn$fasta, feat_df = .mk_feat_df(),
+    condition_col = "condition"
+  )
+
+  # CV is long (one row per peptide x condition). It must describe exactly the
+  # PROCESSED peptide count (3 conditions), NOT the original superset.
+  expect_equal(nrow(one$cv), length(proc_rids) * 3L)
+  expect_lt(nrow(one$cv), nrow(orig_mat) * 3L)     # superset would be larger
+})
+
 test_that("run_analysis_one skips CV when no original GCT is supplied", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 5)
   gct <- .mk_gct(syn)

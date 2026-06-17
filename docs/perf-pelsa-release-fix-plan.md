@@ -69,7 +69,9 @@ Fast, low-risk, and they unblock a clean `R CMD check`. Do these first.
 
 ---
 
-## Phase 3 — GCT / processing layer (M8/M9, M10, M11) — *cmapR-first where it fits*
+## Phase 3 — GCT / processing layer (M8/M9, M11) — *cmapR-first where it fits*
+> **Scope note:** M10 is **deferred** to a separate end-to-end data-handling review (see the M10 section).
+> Active Phase 3 scope is **M8/M9** (CV alignment) and **M11** (export-failure detection).
 
 ### M8/M9. Coefficient-of-variation (CV) values rely on row positions matching between two tables that aren't guaranteed to match
 - **Plain language:** CV is computed from the *original* (pre-processing) data, while the peptide list comes from the *processed* data. They're joined **by row position**, assuming both tables have the same rows in the same order. Nothing checks that. If processing ever drops or reorders rows, CV silently attaches to the wrong peptides.
@@ -78,19 +80,29 @@ Fast, low-risk, and they unblock a clean `R CMD check`. Do these first.
 - **Fix (cmapR-first):** align the original GCT to the processed peptide order **by id** using `cmapR::subset_gct(original_gct, rid = processed_rids)` instead of positional indexing (this is the one place the audit says to *add* a cmapR call). If a full key join isn't feasible, at minimum assert the two matrices share `rid`/row order and stop with a clear message otherwise. Files: `tab_pelsa_analysis_helpers.R:708-768`.
 - **Extra testing (you asked for this):** build small **synthetic GCT fixtures** simulating every scenario — identical order (baseline), rows dropped by filtering, rows reordered, duplicate ids, single row, zero rows — and assert CV maps to the correct peptide in each. This is the robustness gate for this item.
 
-### M10. Five processing-layer issues (validated: all real; 2 active, 3 latent)
-- **M10.1 (latent)** `GCT-processing.R:881` reads `output_list$data.log.trans` which only works by accidental prefix-matching of `data.log.transform`. **Fix:** use the exact name (the sibling caller at `:781` already does).
-- **M10.2 (active)** `GCT-processing.R:1105` builds a data frame that **mangles non-standard sample names** (e.g. `S-1` -> `S.1`), then the StdDev filter looks them up by the original names and hits a hard *"undefined columns selected"* error — so StdDev filtering can't run on datasets with spaces/dashes/`+`/leading-digit sample names. **Fix:** `check.names = FALSE` on that data frame (cmapR does **not** apply — this is a row-SD value filter on a matrix, not a GCT subset).
-- **M10.3 (latent)** `GCT-processing.R:914` reorders `cdesc` with `%in%` which keeps the *old* row order, while the column ids use the new order; a later conflict check compares them position-by-position and can flag false conflicts that corrupt merged annotations. **Fix (cmapR-aware):** reorder by name in column-id order — `cdesc[colnames(data.filtered), , drop=FALSE]` (and same for rdesc) so the GCT is internally consistent. (`subset_gct` doesn't fit here because `data.filtered` is a transformed matrix, not a subset of the input GCT; the name-indexed reorder is the correct minimal fix. Also index the merge comparison by id.)
-- **M10.4 (active, rare)** `utilities.R:111` "trim from the end" fallback uses end index `1` instead of `-1`, returning an empty label. **Fix:** `str_sub(x, -trim_length, -1)`.
-- **M10.5 (active)** `tab_stat_setup_helpers.R:155-160` fills the F-test per-group average-expression columns in factor order while the means come back in alphabetical order — so the group means get **transposed/mislabeled** when those orders differ (e.g. "Tumor" before "Normal"). **Fix:** compute the means directly in factor-level order, e.g. `sapply(levels(f), function(lv) rowMeans(data[, groups==lv, drop=FALSE], na.rm=TRUE))`.
+### M10. Five processing-layer issues (validated: all real; 2 active, 3 latent) — **DEFERRED**
+> **DEFERRED (2026-06-16):** M10 is pulled out of this release pass. M10.2 and M10.3 both turn out to be
+> symptoms of one unsettled question — *who owns sample/feature identity (names) as data moves through
+> normalize -> filter -> recombine -> merge*. Patching the five sites piecemeal risks masking that
+> structure. M10 will be addressed after a **comprehensive end-to-end review of data handling** in the
+> app (a separate workstream). The verified findings below are preserved so the tracing is not lost.
+>
+> **Line numbers verified against HEAD on 2026-06-16.** The remaining Phase 3 scope is **M8/M9 + M11 only.**
+- **M10.1 (latent)** `GCT-processing.R:881` reads `output_list$data.log.trans` which only works by accidental prefix-matching of `data.log.transform` (the field is `data.log.transform`, returned at `:1020`; sibling caller `:781` already uses the exact name). **Fix:** use the exact name. *Risk if a second `data.log.transform*` field is ever added: `$` becomes ambiguous and returns `NULL` silently.*
+- **M10.2 (active)** Sample-name mangling crashes/​corrupts the **StdDev** filter path on names with spaces/dashes/`+`/leading-digit. **Two mangling sites, both need `check.names = FALSE`** (verified end-to-end):
+  - `GCT-processing.R:1105` `data.frame(data, id = rownames(data))` mangles `S-1`->`S.1`; then `sd.filter` (`data-filtering.R:24`) selects `tab[, names(grp.vec)]` by the *original* names -> hard *"undefined columns selected"* error.
+  - `data-filtering.R:48` `data.frame(ids, tab)` re-mangles even after `:1105` is fixed; the mangled names flow back as `data.filtered` colnames and then `GCT-processing.R:914` `rownames(cdesc) %in% colnames(data.filtered)` fails to match -> empty `cdesc` / `cid`-`cdesc` mismatch -> corrupt GCT.
+  - **`janitor` rejected:** sample names are identifiers that must round-trip (cdesc/cid/merge-key/plots/exports); cleaning them forces a rename-everywhere-then-restore dance and risks collisions (`S-1` and `S.1` both -> `s_1`). The `method=="None"` branch already proves the rest of the pipeline handles non-syntactic names fine. `check.names = FALSE` (base R, 2 args) is the correct minimal fix.
+- **M10.3 (latent)** `GCT-processing.R:914-915` reorders `cdesc`/`rdesc` with `%in%` (keeps *old* row order) while `cid`/`rid` use `data.filtered` order; the merge conflict check (`:1264-1268`) then compares `gct@cdesc[[col]]` (gct order) against a `cid`-ordered subset position-by-position -> **false conflicts** that spawn spurious `col.<ome>` columns and corrupt merged annotations. **Fix:** (a) name-index the reorder — `cdesc[colnames(data.filtered), , drop=FALSE]` / `rdesc[rownames(data.filtered), , drop=FALSE]`; (b) index the comparison's left side by `samples_in_ome` too so both sides share order. (`subset_gct` doesn't fit — `data.filtered` is a transformed matrix, not a subset of the input GCT.)
+- **M10.4 (active, rare)** `utilities.R:111` "trim from the end" fallback uses end index `1` instead of `-1` -> `str_sub(x, -trim_length, 1)` returns `""` for strings longer than `trim_length`. Only hit on the both-ends-equally-unique tie with `default_trim="end"`. **Fix:** `str_sub(x, -trim_length, -1)`.
+- **M10.5 (active)** `tab_stat_setup_helpers.R:155-160`: `AveExpr.*` columns are in factor-level order (`f <- factor(..., levels = unique(groups_valid))`, design `~0+f`), but `aggregate()` returns group means **alphabetically**; the positional assignment transposes them when the orders differ (e.g. levels `Tumor, Normal`). **Fix:** compute means in factor-level order — `avg <- sapply(levels(f), function(lv) rowMeans(data[, f==lv, drop=FALSE], na.rm=TRUE))`.
 
 ### M11. Export failures are silently hidden
 - **Plain language:** The export step checks "did it work?" by testing whether a directory exists — but that directory always exists, so failures are never recorded. A module that fails to export simply vanishes from the zip with no warning.
 - **Now -> After:** Failed exports silently dropped -> failures are detected and surfaced.
 - **Fix:** capture success/failure from the actual `tryCatch` around each module export and record real failures. File: `tab_export.R:250`.
 
-**Phase 3 gate:** synthetic-GCT CV alignment tests (all scenarios), processing tests (`test-gct-processing.R`), F-test/stat tests, export tests; `devtools::check()`; review; commit.
+**Phase 3 gate:** synthetic-GCT CV alignment tests (all scenarios) + export-failure tests; `devtools::check()`; review; commit. *(M10's processing / F-test / merge tests move to the deferred data-handling review.)*
 
 ---
 

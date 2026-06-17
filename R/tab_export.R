@@ -232,22 +232,26 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
               progress_text <- paste0("Exporting ", tab_name, " - ", ome, " (", current_export, "/", total_exports, ")")
               incProgress(1/total_exports, detail = progress_text)
               
-              my_shinyalert_tryCatch(
+              # M11: capture success/failure from the tryCatch RESULT, not from a
+              # dir.exists() probe. `exports_in_tab_path` is the tab folder created
+              # at :219 -- it always exists, so the old `!file.exists()` check could
+              # never detect a failed export. `expr` returns TRUE on success;
+              # `return.error = FALSE` is the sentinel a caught error returns.
+              export_ok <- my_shinyalert_tryCatch(
                 text.error = paste0("<b>Export Failed for ", p_name, ":</b>"),
                 append.error = TRUE,
                 show.error = FALSE,  # Don't show popup for individual export failures
-                return.error = NULL,
+                return.error = FALSE,
                 expr = {
                   # save the plot using the p() function
                   p(exports_in_tab_path)
-                  
-                  # add to successful exports list
-                  success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+                  TRUE
                 }
               )
-              
-              # If the above failed, add to error list (my_shinyalert_tryCatch handles the error silently)
-              if (!file.exists(exports_in_tab_path)) {
+
+              if (isTRUE(export_ok)) {
+                success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+              } else {
                 error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
               }
               
