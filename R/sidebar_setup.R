@@ -494,9 +494,6 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 duration = 3
               )
 
-              # Small delay to ensure notification is displayed
-              Sys.sleep(0.1)
-
               # No files left - reset everything
               accumulated_files(NULL)
               parameters_internal_reactive(NULL)

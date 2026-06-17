@@ -74,6 +74,25 @@ pelsa_read_fasta <- function(path) {
   seqs <- as.character(seq_by_group)
   seqs[is.na(seqs)] <- "" # header with no sequence lines -> empty string
 
+  # ---- Duplicate-accession check ------------------------------------------
+  # Records are keyed by accession; assigning names() keeps the first sequence
+  # for any repeated key (first-wins). Both shipped FASTAs have zero duplicates,
+  # but a custom/edited FASTA could, so warn (behavior otherwise unchanged).
+  dups <- unique(keys[duplicated(keys)])
+  if (length(dups)) {
+    warning(
+      "pelsa_read_fasta: ", length(dups),
+      " duplicated accession(s); first sequence kept for each: ",
+      paste(utils::head(dups, 20L), collapse = ", "),
+      if (length(dups) > 20L) ", ..." else ""
+    )
+    # Make first-wins structural: keep only the first record per accession so
+    # the returned map has one entry per unique key (length()/iteration safe).
+    keep <- !duplicated(keys)
+    keys <- keys[keep]
+    seqs <- seqs[keep]
+  }
+
   out <- as.list(seqs)
   names(out) <- keys
   out

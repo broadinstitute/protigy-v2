@@ -905,7 +905,15 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           # of the same species). Off the per-dataset loop.
           setProgress(value = 0.05, detail = "Loading FASTA")
           fasta_path <- pelsa_species_fasta_path(database_dir, snapshot$species)
-          fasta_map  <- pelsa_read_fasta(fasta_path)
+          # Surface any reader warning (e.g. duplicated accessions) to the user,
+          # then muffle it so it does not abort the progress block.
+          fasta_map  <- withCallingHandlers(
+            pelsa_read_fasta(fasta_path),
+            warning = function(w) {
+              showNotification(conditionMessage(w), type = "warning", duration = NULL)
+              invokeRestart("muffleWarning")
+            }
+          )
 
           setProgress(value = 0.15, detail = "Reading feature annotation cache")
           species_dir <- file.path(database_dir, snapshot$species)

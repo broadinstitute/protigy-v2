@@ -48,6 +48,43 @@ test_that("pelsa_read_fasta errors on missing or empty file", {
   expect_error(pelsa_read_fasta(empty))
 })
 
+test_that("pelsa_read_fasta warns on duplicated accessions and keeps first-wins", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(
+    c(
+      ">sp|P12345|X_HUMAN first record",
+      "AAAA",
+      ">sp|P12345|X_HUMAN duplicate accession, different sequence",
+      "CCCC",
+      ">sp|Q99999|Y_HUMAN unique",
+      "GGGG"
+    ),
+    tmp
+  )
+
+  expect_warning(
+    fa <- pelsa_read_fasta(tmp),
+    "duplicated accession"
+  )
+  # first-wins: the first P12345 sequence is the one retained
+  expect_equal(fa[["P12345"]], "AAAA")
+  expect_equal(fa[["Q99999"]], "GGGG")
+  # first-wins is structural: one entry per unique accession
+  expect_setequal(names(fa), c("P12345", "Q99999"))
+  expect_equal(sum(names(fa) == "P12345"), 1L)
+})
+
+test_that("pelsa_read_fasta emits no warning when accessions are unique", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(
+    c(">sp|P11111|A_HUMAN", "AAAA", ">sp|P22222|B_HUMAN", "CCCC"),
+    tmp
+  )
+  expect_warning(pelsa_read_fasta(tmp), NA)
+})
+
 # ---- pelsa_map_peptide_positions --------------------------------------------
 
 # Build the exploded long frame once per test from the synthetic generator.

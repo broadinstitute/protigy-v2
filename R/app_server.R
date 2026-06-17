@@ -195,9 +195,15 @@ app_server <- function(input, output, session) {
   ## ...). Each section's export functions carve their own stage subfolder; names are
   ## unique across sections (setup / qc / volcano / intensity / woods).
   all_pelsa_exports <- reactive({
-    s1 <- tryCatch(all_PELSASection1_exports(), error = function(e) NULL) %||% list()
-    s2 <- tryCatch(all_PELSASection2_exports(), error = function(e) NULL) %||% list()
-    s3 <- tryCatch(all_PELSASection3_exports(), error = function(e) NULL) %||% list()
+    s1 <- tryCatch(all_PELSASection1_exports(), error = function(e) {
+      warning("PELSA export (section 1) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
+    s2 <- tryCatch(all_PELSASection2_exports(), error = function(e) {
+      warning("PELSA export (section 2) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
+    s3 <- tryCatch(all_PELSASection3_exports(), error = function(e) {
+      warning("PELSA export (section 3) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
     omes <- union(union(names(s1), names(s2)), names(s3))
     stats::setNames(lapply(omes, function(o) {
       c(s1[[o]] %||% list(), s2[[o]] %||% list(), s3[[o]] %||% list())
