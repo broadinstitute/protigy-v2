@@ -33,6 +33,10 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
 - **PELSA** is the largest subsystem (~1/3 of `R/`, 27 files): a `tab_pelsa_container.R` tab with
   numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus many `tab_pelsa_*_helpers.R`.
   It extends the naming rule above — follow the existing `section`/`_helpers` split there.
+  The volcano is a native plotly `scattergl` (WebGL) build: per-point `marker.color`
+  restyle and `plotlyProxyInvoke("relayout", annotations=)` do NOT reliably render on
+  WebGL — bake labels/annotations into `pelsa_volcano_build_plot()` and do highlights
+  as addTraces/deleteTraces overlay traces (only pan/zoom/select avoid a rebuild).
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -65,6 +69,8 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
   for id-based subset/reorder, and `mat()`/`meta()`/`ids()`/`melt_gct()` accessors,
   rather than rebuilding `data.frame`s from `mat()`+rownames (which silently mangles
   non-syntactic sample names and can desync rdesc/cdesc order). cmapR is already an Import.
+- **Significance cutoff is shared**: the PELSA volcano and the Statistics tab both read
+  `stat_params()[[ome]]$cutoff` (set in Statistics > Summary). Don't hardcode `0.05`.
 - Reusable helpers: `R/utilities.R`.
 - **ASCII-only R source**: no literal Unicode in `R/`; use `\uXXXX` escapes (e.g.
   `"●"` for a filled bullet). Enforced in practice — non-ASCII bytes break `R CMD check`.
