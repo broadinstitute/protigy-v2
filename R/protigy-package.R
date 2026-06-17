@@ -34,7 +34,7 @@
 #' @importFrom stats density mad median quantile sd aggregate coef qnorm qt setNames cor anova lm prcomp var complete.cases model.matrix
 #' @importFrom zip zip
 #' @importFrom utils tail stack combn compareVersion packageVersion write.csv write.table head
-#' @importFrom rlang .data
+#' @importFrom rlang .data %||%
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput
 #' @importFrom Matrix Matrix

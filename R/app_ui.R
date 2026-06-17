@@ -103,14 +103,14 @@ app_UI <- function(request) {dashboardPage(
       navbarMenu(
         "PELSA",
         # The PELSA dataset switcher input (pelsa_active_dataset) lives at the
-        # TOP LEVEL — it is NOT module-namespaced — so a single input drives all
+        # TOP LEVEL -- it is NOT module-namespaced -- so a single input drives all
         # three section modules together. See R/tab_pelsa_container.R for the
         # namespacing rationale.
         #
         # A navbarMenu only accepts tabPanels, so the switcher bar cannot sit in
         # one shared node above the tabset. Each tab therefore gets its OWN
         # uiOutput id (no duplicate DOM ids) but all three render the SAME bar
-        # from the SAME active-dataset reactive and write the SAME input id —
+        # from the SAME active-dataset reactive and write the SAME input id --
         # so pelsa_active_dataset remains the single source of truth.
         tabPanel(
           "Setup",

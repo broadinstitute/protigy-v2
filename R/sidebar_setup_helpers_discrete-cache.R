@@ -1,5 +1,5 @@
 ################################################################################
-# Module: SETUP SIDEBAR — discrete-column cache (INT-2)
+# Module: SETUP SIDEBAR -- discrete-column cache (INT-2)
 #
 # gctSetupUI() runs inside a renderUI body, so it re-derives its dropdown
 # choices from scratch on every panel rebuild. Two of those derivations scan
@@ -20,13 +20,13 @@
 # depends on GCTs_unprocessed_internal_reactive(). Both upload paths (GCT parse
 # AND CSV/Excel conversion) terminate by WRITING that reactiveVal, so any
 # upload / removal / reprocess invalidates the reactive and forces a fresh scan.
-# The reactive's value is therefore always consistent with the current GCTs —
+# The reactive's value is therefore always consistent with the current GCTs --
 # the cache only avoids RE-SCANNING when nothing about the GCTs changed (e.g. an
 # Intensity-toggle rebuild). On a real change, the reactive recomputes.
 #
 # gctSetupUI() stays a plain (non-reactive) function for testability: it accepts
 # an optional precomputed `discrete_columns` map and falls back to computing the
-# scan inline when that map is absent (NULL) or missing the requested label —
+# scan inline when that map is absent (NULL) or missing the requested label --
 # so behavior is identical whether or not the cache is wired in.
 ################################################################################
 
@@ -63,7 +63,7 @@ build_discrete_columns_map <- function(GCTs) {
 # otherwise computes inline from `df`. The inline fallback guarantees that:
 #   (a) calling gctSetupUI without a map (tests / non-Shiny) still works, and
 #   (b) a label not yet present in the map (e.g. a freshly added file before the
-#       reactive recomputed) never shows STALE/EMPTY choices — it computes fresh.
+#       reactive recomputed) never shows STALE/EMPTY choices -- it computes fresh.
 # `df` MUST be the live annotation table for (label, slot) so the fallback is
 # always correct.
 resolve_discrete_columns <- function(discrete_columns, label, slot, df) {

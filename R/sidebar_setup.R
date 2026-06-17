@@ -248,7 +248,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     sample_filter_input_state <- reactiveValues()
     row_filter_input_state <- reactiveValues()
     # Labels that just received default_parameters; after first parse, gene_symbol_column
-    # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
+    # is set from rdesc (geneSymbol if present, else None) once -- never overwrites user edits.
     gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
     
     # read in default settings and choices from yamls
@@ -825,8 +825,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # back-to-labels) re-runs collectInputs() from live widget state before acting, so
       # no in-progress edit is lost, and the toggled intensity_data is re-collected then.
       # This handler updates only data_normalization and max_missing. It reads their
-      # LIVE widget values (with a stored fallback for the pre-paint NULL window) — NOT
-      # the stored reactiveVal — because the stored value is only refreshed by
+      # LIVE widget values (with a stored fallback for the pre-paint NULL window) -- NOT
+      # the stored reactiveVal -- because the stored value is only refreshed by
       # collectInputs() at navigation, so a user who edits the dropdown and then toggles
       # would otherwise have their edit reset to the stale stored value. Reading live
       # preserves the user's in-progress selection. The intensity-dependent choice list
@@ -839,8 +839,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # INT-1: read the LIVE widget values for the two fields this handler updates,
       # falling back to the STORED value only when the widget hasn't reported yet
       # (first paint / pre-flush, where live input is NULL). The stored reactiveVal
-      # is NOT kept in sync with the dropdown/numeric on every keystroke — only
-      # collectInputs() (run at Next/Back/Submit) writes it — so reading the stored
+      # is NOT kept in sync with the dropdown/numeric on every keystroke -- only
+      # collectInputs() (run at Next/Back/Submit) writes it -- so reading the stored
       # value here would reset an in-progress edit: e.g. user picks "Quantile", then
       # toggles intensity, and the stored (pre-edit) value would overwrite "Quantile".
       # Reading live preserves the user's selection through a toggle. These reads are
