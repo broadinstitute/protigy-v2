@@ -369,6 +369,28 @@ PELSASection3_Ome_Server <- function(id,
       volcano_df_cache(list())
     }, ignoreInit = TRUE)
 
+    # Significance cutoff: SINGLE source of truth shared with the Statistics tab.
+    # The user sets it once in Statistics > Summary (stat_params()[[ome]]$cutoff)
+    # and it drives the PELSA volcano's significance coloring + the dashed
+    # threshold line + the export annotation. Falls back to the default constant
+    # when stats are not set up yet or the value is missing/invalid.
+    sig_cutoff_r <- reactive({
+      sp <- stat_params()
+      cut <- if (is.null(sp) || is.null(sp[[ome]])) NULL else sp[[ome]]$cutoff
+      cut <- suppressWarnings(as.numeric(cut))
+      if (length(cut) != 1L || is.na(cut) || cut <= 0 || cut > 1)
+        .PELSA_EXPORT_SIG_CUTOFF
+      else cut
+    })
+
+    # Changing the cutoff (in Statistics) must rebuild the PELSA volcano: drop the
+    # cached dfs so active_volcano_df()/best_volcano_df() recompute Significant /
+    # sig_direction and the empirical y_cutoff at the new threshold.
+    observeEvent(sig_cutoff_r(), {
+      volcano_df_cache(list())
+      best_volcano_df_cache(list())
+    }, ignoreInit = TRUE)
+
     active_volcano_df <- reactive({
       contrast <- active_contrast()
       req(contrast)
@@ -397,7 +419,8 @@ PELSASection3_Ome_Server <- function(id,
           feat_df       = fdf,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
-          opts          = list(panel = "all_peptide", sig_cutoff = 0.05)
+          opts          = list(panel = "all_peptide",
+                               sig_cutoff = sig_cutoff_r())
         ),
         error = function(e) {
           showNotification(
@@ -456,7 +479,8 @@ PELSASection3_Ome_Server <- function(id,
           feat_df       = fdf,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
-          opts          = list(panel = "best_peptide", sig_cutoff = 0.05)
+          opts          = list(panel = "best_peptide",
+                               sig_cutoff = sig_cutoff_r())
         ),
         error = function(e) {
           showNotification(
