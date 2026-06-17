@@ -224,30 +224,19 @@ make_corr_cont_gct <- function() {
   )
 }
 
-CORR_TRUE_MIDPOINT  <- 5   # (0 + 10) / 2
-CORR_WRONG_MIDPOINT <- 0   # what the buggy mean(min, max) returns
-
-test_that("create_corr_boxplot: gradient midpoint equals (min+max)/2, not min", {
+test_that("create_corr_boxplot: continuous color map uses default discrete fill (no gradient2)", {
+  # The intra-group correlation boxplot maps fill to the group factor, so it
+  # cannot carry a continuous gradient (that errored at build time). A
+  # continuous-coded annotation now falls back to the default discrete fill:
+  # no scale_fill_gradient2 is attached.
   gct  <- make_corr_cont_gct()
   cmap <- make_cont_color_map()
   cor_mat <- cor(gct@mat, use = "pairwise.complete.obs", method = "pearson")
 
   p <- create_corr_boxplot(gct, "cont_col", "test_corr_ome", cmap, "pearson", cor_mat)
   expect_s3_class(p, "ggplot")
-
-  mid <- extract_gradient2_midpoint(p)
-  expect_false(is.na(mid),
-               label = "gradient2 midpoint should be extractable from corr_boxplot scale")
-
-  # Must NOT equal the min value (which is what the buggy code produces)
-  expect_false(
-    isTRUE(all.equal(mid, CORR_WRONG_MIDPOINT, tolerance = 1e-9)),
-    label = paste0("midpoint must not equal min (", CORR_WRONG_MIDPOINT, ") -- that is the bug")
-  )
-
-  # Must equal the true (min+max)/2
-  expect_equal(mid, CORR_TRUE_MIDPOINT, tolerance = 1e-9,
-               label = "corr_boxplot gradient midpoint == (min+max)/2")
+  # No continuous gradient scale is present (would not render on a discrete fill).
+  expect_true(is.na(extract_gradient2_midpoint(p)))
 })
 
 # --------------------------------------------------------------------------- #
@@ -272,4 +261,23 @@ test_that("summary_quant_features: gradient midpoint equals (min+max)/2, not min
                label = "midpoint must not equal min (1) -- that is the bug")
   expect_equal(mid, 3, tolerance = 1e-9,
                label = "summary plot gradient midpoint == (min+max)/2 of factor codes")
+})
+
+# --------------------------------------------------------------------------- #
+# create_corr_boxplot: continuous color map must still RENDER                 #
+# --------------------------------------------------------------------------- #
+# The intra-group correlation boxplot maps fill to the group factor (ind), so a
+# continuous scale_fill_gradient2 cannot apply to it: ggplot_build() errors with
+# "Discrete value supplied to a continuous scale." A continuous-coded annotation
+# must fall back to the default discrete fill so the plot renders.
+
+test_that("create_corr_boxplot with a continuous color map still builds (no discrete/continuous clash)", {
+  gct  <- make_corr_cont_gct()
+  cmap <- make_cont_color_map()              # is_discrete = FALSE
+  cor_mat <- cor(gct@mat, use = "pairwise.complete.obs", method = "pearson")
+
+  p <- create_corr_boxplot(gct, "cont_col", "test_corr_ome", cmap, "pearson", cor_mat)
+  expect_s3_class(p, "ggplot")
+  # The actual regression: rendering must not throw.
+  expect_no_error(ggplot2::ggplot_build(p))
 })

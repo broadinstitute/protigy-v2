@@ -172,14 +172,11 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
     names(colors) <- c(custom_color_map$vals,"NA")
     fill_definition <- scale_fill_manual(values = colors)
   } else {
-    group <- as.numeric(group)
-    fill_definition <- scale_fill_gradient2(
-      low = custom_color_map$colors[which(custom_color_map$vals == "low")],
-      mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
-      high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(c(min(group, na.rm = TRUE), max(group, na.rm = TRUE))),
-      na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
-    )
+    # This boxplot maps fill to the group factor (ind), so a continuous
+    # scale_fill_gradient2 cannot apply -- ggplot would error "Discrete value
+    # supplied to a continuous scale". For a continuous-coded annotation the
+    # per-group fill is inherently discrete, so fall back to the default fill.
+    fill_definition <- NULL
   }
   
   # make boxplot
