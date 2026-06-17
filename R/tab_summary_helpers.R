@@ -243,7 +243,7 @@ summary_dataset <- function(params, gct_original, gct_processed) {
   # check if there are any unquantified features
   unquantified_features <- apply(gct_processed@mat, 1, function(x) all(is.na(x)))
   if (any(unquantified_features)) {
-    append(dataset_summary,
+    dataset_summary <- append(dataset_summary,
            list("Features w/o quantification" = sum(unquantified_features)),
            after = which(names(dataset_summary) == "Features (post-filtering)"))
   }
