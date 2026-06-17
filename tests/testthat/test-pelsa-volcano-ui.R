@@ -1038,3 +1038,32 @@ test_that("M5: changing markers clears the volcano cache so the active view rebu
     expect_gt(sum(df2$is_marker, na.rm = TRUE), sum(df1$is_marker, na.rm = TRUE))
   })
 })
+
+# ---------------------------------------------------------------------------
+# Shared-cutoff wiring (source-level regression guard)
+#
+# The pinned intensity + Woods panels and the intensity/Woods exports must
+# read the user-set cutoff via sig_cutoff_r() (Statistics > Summary), NOT a
+# hardcoded 0.05. These are reactive observers/handlers not reachable by the
+# pure-helper tests above, so we pin the wiring at the source level: reverting
+# any of these call sites back to a literal 0.05 fails this test.
+# ---------------------------------------------------------------------------
+test_that("pinned panels + exports thread sig_cutoff_r(), never a hardcoded 0.05", {
+  src <- readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3.R"),
+                   warn = FALSE)
+
+  # No literal `sig_cutoff = 0.05` anywhere in the module (the bug pattern).
+  expect_false(any(grepl("sig_cutoff\\s*=\\s*0\\.05", src)),
+               info = "tab_pelsa_section3.R must not hardcode sig_cutoff = 0.05")
+
+  # The pinned intensity reactive passes the reactive cutoff.
+  expect_true(any(grepl("sig_cutoff\\s*=\\s*sig_cutoff_r\\(\\)", src)),
+              info = "pinned panels must pass sig_cutoff = sig_cutoff_r()")
+
+  # The intensity/Woods exports must not fall back to the export constant for
+  # the on-screen-mirroring significance split (volcano export already used the
+  # user cutoff; these two now do too). The constant may still appear elsewhere,
+  # but not as the sig_cutoff argument to the data builders in the export path.
+  expect_false(any(grepl("\\.PELSA_ANY_CONTRAST,\\s*\\.PELSA_EXPORT_SIG_CUTOFF", src)),
+               info = "intensity/Woods exports must use the user cutoff, not the export constant")
+})

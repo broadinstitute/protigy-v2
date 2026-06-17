@@ -916,7 +916,7 @@ PELSASection3_Ome_Server <- function(id,
         pelsa_intensity_line_data(
           accession = acc, stat_df = stat_df, matched_cache = matched,
           processed_mat = pm, condition_map = cmap, condition_order = corder,
-          contrast = contrast, sig_cutoff = 0.05, is_marker = is_mk,
+          contrast = contrast, sig_cutoff = sig_cutoff_r(), is_marker = is_mk,
           show_all = TRUE),   # pinned panel shows ALL peptides of the protein
         error = function(e) NULL)
     })
@@ -1036,7 +1036,7 @@ PELSASection3_Ome_Server <- function(id,
 
       stat_df <- pelsa_volcano_stat_df(stat_df_raw(), matched)
       pep <- pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
-                                      sig_cutoff = 0.05)
+                                      sig_cutoff = sig_cutoff_r())
 
       # Protein length: prefer the cache coverage frame; fall back to the max
       # mapped residue so the axis still spans the peptides. cov_frac is the
@@ -1211,12 +1211,15 @@ PELSASection3_Ome_Server <- function(id,
       corder <- isolate(condition_order_r())
       if (is.null(pm) || is.null(cmap) || length(corder) == 0L)
         return(invisible(NULL))
+      # Use the SAME user-set cutoff as the on-screen intensity panel so the
+      # exported Significant/Non-significant split matches what the user sees.
+      sig_cutoff <- isolate(sig_cutoff_r())
       stat_df <- pelsa_export_add_any_contrast(
         pelsa_volcano_stat_df(stat_results()[[ome]], matched))
       markers <- isolate(marker_accessions())
       prot <- tryCatch(
         pelsa_intensity_proteins(stat_df, matched, markers, .PELSA_ANY_CONTRAST,
-                                 .PELSA_EXPORT_SIG_CUTOFF),
+                                 sig_cutoff),
         error = function(e) NULL)
       if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
       d_mk <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
@@ -1227,7 +1230,7 @@ PELSASection3_Ome_Server <- function(id,
         acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
         ld <- tryCatch(
           pelsa_intensity_line_data(acc, stat_df, matched, pm, cmap, corder,
-            .PELSA_ANY_CONTRAST, .PELSA_EXPORT_SIG_CUTOFF, is_marker = is_mk,
+            .PELSA_ANY_CONTRAST, sig_cutoff, is_marker = is_mk,
             show_all = TRUE),
           error = function(e) NULL)
         if (is.null(ld) || nrow(ld) == 0L) next
@@ -1248,12 +1251,14 @@ PELSASection3_Ome_Server <- function(id,
       entry <- cache_entry(); if (is.null(entry)) return(invisible(NULL))
       matched <- entry$matched %||% data.frame()
       if (nrow(matched) == 0L) return(invisible(NULL))
+      # Use the SAME user-set cutoff as the on-screen Woods panel.
+      sig_cutoff <- isolate(sig_cutoff_r())
       stat_df <- pelsa_volcano_stat_df(stat_results()[[ome]], matched)
       stat_any <- pelsa_export_add_any_contrast(stat_df)
       markers <- isolate(marker_accessions())
       prot <- tryCatch(
         pelsa_intensity_proteins(stat_any, matched, markers, .PELSA_ANY_CONTRAST,
-                                 .PELSA_EXPORT_SIG_CUTOFF),
+                                 sig_cutoff),
         error = function(e) NULL)
       if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
       fdf <- feat_df() %||% data.frame()
@@ -1274,13 +1279,13 @@ PELSASection3_Ome_Server <- function(id,
           contrast <- unname(choices[[cj]])
           pep <- tryCatch(
             pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
-                                     .PELSA_EXPORT_SIG_CUTOFF),
+                                     sig_cutoff),
             error = function(e) NULL)
           if (is.null(pep) || nrow(pep) == 0L) next
           plen <- pelsa_export_prot_len(cov, acc, pep)
           p <- tryCatch(
             pelsa_woods_export_ggplot(pep, feats, plen, gene, acc, contrast,
-                                      .PELSA_EXPORT_SIG_CUTOFF),
+                                      sig_cutoff),
             error = function(e) NULL)
           if (is.null(p)) next
           base <- paste0("woods_", pelsa_safe_name(gene), "_",
