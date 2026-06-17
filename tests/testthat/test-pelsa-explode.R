@@ -347,6 +347,43 @@ test_that("mismatched token counts align by index and fill missing with NA", {
   expect_equal(exploded$pep_position_token, c("10", "20", NA))
 })
 
+test_that("trailing-empty gene/position token is NOT recycled to all accessions", {
+  # Regression: strsplit() drops trailing empty fields, so "GENE1;" splits to a
+  # single token c("GENE1"). The old recycle-on-single-token rule then wrongly
+  # assigned GENE1 (and position 10) to BOTH accessions of "P1;P2". The trailing
+  # accession P2 has no gene/position of its own and must be NA, NOT GENE1.
+  df <- data.frame(
+    PG.ProteinAccessions = "P1;P2",
+    PG.Genes = "GENE1;",
+    PEP.PeptidePosition = "10;",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("P1", "P2"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GENE1", NA))
+  expect_equal(exploded$pep_position_token, c("10", NA))
+})
+
+test_that("a genuinely single token (no separator) still recycles to all accessions", {
+  # The legitimate recycle case must be preserved: "SHARED" has NO ";" separator,
+  # so it is one shared value for every accession.
+  df <- data.frame(
+    PG.ProteinAccessions = "P1;P2;P3",
+    PG.Genes = "SHARED",
+    PEP.PeptidePosition = "42",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 3L)
+  expect_true(all(exploded$gene == "SHARED"))
+  expect_true(all(exploded$pep_position_token == "42"))
+})
+
 test_that("explicit id_col is used as the stable identifier instead of .row_id", {
   df <- data.frame(
     pep_id = c("p1", "p2"),

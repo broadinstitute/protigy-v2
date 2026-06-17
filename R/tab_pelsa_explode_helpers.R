@@ -17,6 +17,26 @@
 # Shiny reactivity so they remain unit-testable.
 ################################################################################
 
+# Count the TRUE number of ;-delimited slots per row, including trailing-empty
+# fields that strsplit() drops. "A;B" -> 2, "A;" -> 2, "A" -> 1, "" / NA -> 1.
+# Used so the token-recycle rule keys off real slot count, not the strsplit
+# length (which silently collapses "GENE1;" to a single token).
+# @param x      character (or coercible) vector of ;-delimited strings
+# @param n_row  expected length (for the all-NA / zero-length fallback)
+# @return integer vector of length n_row
+# @noRd
+.pelsa_count_slots <- function(x, n_row) {
+  x <- as.character(x)
+  if (length(x) != n_row) x <- rep(x, length.out = n_row)
+  # number of ";" in each string; +1 = slot count. NA -> 1 slot.
+  n_sep <- vapply(
+    gregexpr(";", x, fixed = TRUE),
+    function(m) if (length(m) == 1L && m[1] == -1L) 0L else length(m),
+    integer(1)
+  )
+  n_sep + 1L
+}
+
 # Align a list of ;-split token vectors to per-row accession counts, returning a
 # flat character vector ordered to match the exploded (per-accession) rows.
 #
@@ -36,29 +56,46 @@
 # @param n_acc        integer vector, accession count per ORIGINAL row
 # @param row_idx      integer vector mapping each exploded row to its original
 #                     row (length = sum(n_acc); = rep(seq_along(n_acc), n_acc))
+# @param n_tok_true   optional integer vector of the TRUE per-row token count
+#                     (slots), counting trailing-empty fields that strsplit()
+#                     silently drops. When supplied, the recycle branch only
+#                     fires for a genuinely separator-free single token; a row
+#                     like "GENE1;" (1 split token but 2 true slots) is index-
+#                     padded so the trailing slot becomes NA instead of being
+#                     recycled. Defaults to lengths(token_lists) for callers
+#                     that do not have the original strings.
 # @return character vector of length sum(n_acc), aligned to exploded rows
 # @noRd
-.pelsa_align_tokens <- function(token_lists, n_acc, row_idx) {
+.pelsa_align_tokens <- function(token_lists, n_acc, row_idx, n_tok_true = NULL) {
   total <- length(row_idx)
   if (total == 0L) return(character(0))
 
-  # Per-original-row token counts and the flattened, trimmed token vector.
+  # Per-original-row SPLIT token counts and the flattened, trimmed token vector.
   n_tok <- lengths(token_lists)
   flat_tok <- trimws(unlist(token_lists, use.names = FALSE))
   if (is.null(flat_tok)) flat_tok <- character(0)
   # Start offset (0-based) of each row's tokens within flat_tok.
   tok_offset <- cumsum(n_tok) - n_tok
 
+  # The recycle decision must use the TRUE slot count (which counts trailing
+  # empties), not the strsplit length: "GENE1;" splits to 1 token but is 2 slots
+  # and must NOT recycle. Indexing into flat_tok still uses the split count.
+  if (is.null(n_tok_true)) n_tok_true <- n_tok
+
   # Within-row accession index k = 1,2,..,n1,1,2,..,n2,... for the exploded rows.
   k <- sequence(n_acc)
-  # Per-exploded-row view of the original row's token count.
+  # Per-exploded-row view of the original row's split + true token counts.
   n_tok_row <- n_tok[row_idx]
+  n_tok_true_row <- n_tok_true[row_idx]
 
   # Choose which within-row token each exploded row takes:
-  #   n_tok == 1            -> token 1 (recycle)
-  #   k <= n_tok            -> token k (1:1 / index-pad)
-  #   otherwise             -> NA (missing tail)
-  chosen <- ifelse(n_tok_row == 1L, 1L, ifelse(k <= n_tok_row, k, NA_integer_))
+  #   true slot count == 1 AND a token exists -> token 1 (recycle a genuinely
+  #       shared single value; gated on n_tok>=1 so an empty/NA field whose
+  #       strsplit() yields zero tokens does NOT index into the next row)
+  #   k <= split-token count -> token k (1:1 / index-pad to available tokens)
+  #   otherwise             -> NA (missing/trailing-empty tail, or empty field)
+  chosen <- ifelse(n_tok_true_row == 1L & n_tok_row >= 1L, 1L,
+                   ifelse(k <= n_tok_row, k, NA_integer_))
 
   # Global index into flat_tok = per-row offset + chosen within-row index.
   global_idx <- tok_offset[row_idx] + chosen
@@ -163,8 +200,14 @@ pelsa_explode_accessions <- function(df,
   # paired with its own gene/position even when an empty token is interspersed
   # (e.g. "A;;B" -> A keeps slot 1, B keeps slot 3, not the dropped middle slot).
   flat_row_idx_raw <- rep.int(seq_len(n_row), n_acc_raw)
-  gene_raw <- .pelsa_align_tokens(gene_lists, n_acc_raw, flat_row_idx_raw)
-  pos_raw  <- .pelsa_align_tokens(pos_lists,  n_acc_raw, flat_row_idx_raw)
+  # True per-row slot counts (count ";" separators + 1) so trailing-empty slots
+  # that strsplit() drops are still counted. An NA / empty field is 1 slot. This
+  # stops the recycle branch from firing on "GENE1;" (1 split token, 2 slots),
+  # while a genuinely separator-free single token ("SHARED") still recycles.
+  gene_slots <- .pelsa_count_slots(if (gene_col %in% colnames(df)) df[[gene_col]] else NA, n_row)
+  pos_slots  <- .pelsa_count_slots(if (pos_col  %in% colnames(df)) df[[pos_col]]  else NA, n_row)
+  gene_raw <- .pelsa_align_tokens(gene_lists, n_acc_raw, flat_row_idx_raw, gene_slots)
+  pos_raw  <- .pelsa_align_tokens(pos_lists,  n_acc_raw, flat_row_idx_raw, pos_slots)
 
   out$accession <- accession
   out$gene <- gene_raw[keep]
