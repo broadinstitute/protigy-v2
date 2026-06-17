@@ -14,6 +14,7 @@ to regenerate `NAMESPACE`.
 - `Protigy::launchApp()`        # launch the Shiny app
 - `devtools::document()`        # regenerate NAMESPACE/man after roxygen changes
 - `devtools::test()`            # run testthat suite; `devtools::test_active_file()` for one file
+#   (run `devtools::load_all(".")` first — tests exercise the loaded package, not source files)
 - `devtools::check()`           # full R CMD check (also runs in CI on push)
 - `source("setup.R")`           # one-time: install Bioc + CRAN deps + the package
 
@@ -58,6 +59,12 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
   notes.
 - **Dependencies live in two places**: `DESCRIPTION` Imports AND a roxygen `@import`/
   `@importFrom` (`R/protigy-package.R` or at the function); re-run `devtools::document()` after.
+  Note: `%||%` is NOT base R before 4.4 -- it must be imported from rlang (already in
+  `R/protigy-package.R`); don't assume it's globally available.
+- **GCT manipulation: prefer cmapR over hand-rolling.** Use `subset_gct(g, rid=, cid=)`
+  for id-based subset/reorder, and `mat()`/`meta()`/`ids()`/`melt_gct()` accessors,
+  rather than rebuilding `data.frame`s from `mat()`+rownames (which silently mangles
+  non-syntactic sample names and can desync rdesc/cdesc order). cmapR is already an Import.
 - Reusable helpers: `R/utilities.R`.
 - **ASCII-only R source**: no literal Unicode in `R/`; use `\uXXXX` escapes (e.g.
   `"●"` for a filled bullet). Enforced in practice — non-ASCII bytes break `R CMD check`.
