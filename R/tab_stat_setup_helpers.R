@@ -203,7 +203,7 @@ stat.testing <- function(
               AveExpr = fit2$Amean,
               t = fit2$t[, i],
               P.Value = fit2$p.value[, i],
-              adj.P.Val = p.adjust(fit2$p.value[, i], method = "BH"),
+              adj.P.Val = stats::p.adjust(fit2$p.value[, i], method = "BH"),
               B = fit2$lods[, i],
               stringsAsFactors = FALSE
             )
@@ -526,7 +526,7 @@ stat.testing <- function(
             AveExpr = fit2$Amean,
             t = fit2$t[, i],
             P.Value = fit2$p.value[, i],
-            adj.P.Val = p.adjust(fit2$p.value[, i], method = "BH"),
+            adj.P.Val = stats::p.adjust(fit2$p.value[, i], method = "BH"),
             B = fit2$lods[, i],
             stringsAsFactors = FALSE
           )

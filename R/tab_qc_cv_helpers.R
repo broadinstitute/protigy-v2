@@ -111,7 +111,7 @@ filter_cv_table <- function(cv_df, cutoff, min_groups = c("one", "all")) {
 create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
                                   log_scale = FALSE, y_range = NULL) {
   title <- trimws(paste("CV distributions", title_suffix))
-  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
+  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -"id")
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
   y_axis_label <- if (log_scale) "log10(CV)" else "CV"

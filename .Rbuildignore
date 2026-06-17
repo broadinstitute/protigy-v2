@@ -9,6 +9,8 @@
 ^\.claude$
 ^\.Rprofile$
 ^setup\.R$
+^CLAUDE\.md$
+^docs$
 # Large PELSA reference FASTAs (~70MB) are kept in the repo (Git LFS) but
 # excluded from the built package tarball to stay under CRAN/Bioc size limits.
 # Users supply/refresh these via the Setup page; only the .fasta blobs are
