@@ -161,7 +161,7 @@ QCCV_Ome_Server <- function(id,
             style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
             icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
             strong("Note: ", style = "color: #495057;"),
-            "CV calculations in this tab are only valid for raw (non-log-transformed) intensity values.",
+            "CV is computed on raw (linear) intensities; log2/log10-transformed datasets are delinearized automatically before the calculation.",
             style = "color: #495057;"
           ),
           uiOutput(ns("qc_cv_controls")),
@@ -283,10 +283,13 @@ QCCV_Ome_Server <- function(id,
       combine_cdesc_cols(GCT_processed()@cdesc, selected_cols())
     })
 
-    # Unfiltered CV table
+    # Unfiltered CV table. CV is computed on LINEAR intensities, so pass the
+    # dataset's declared log base; compute_cv_table delinearizes accordingly.
     cv_table <- reactive({
       req(GCT_processed(), grouping_vector())
-      compute_cv_table(GCT_processed()@mat, grouping_vector())
+      log_base <- (parameters() %||% list())$log_transformation %||% "None"
+      compute_cv_table(GCT_processed()@mat, grouping_vector(),
+                       log_base = log_base)
     })
 
     # Filtered CV table (NULL when filter is off)

@@ -28,19 +28,32 @@ combine_cdesc_cols <- function(cdesc, cols, sep = "_") {
 
 # Compute CV (sd / mean) per group per feature.
 #
+# CV is NOT invariant under log transformation, so it must be computed on RAW
+# LINEAR intensities. Protigy's processed matrix is log-transformed when the
+# dataset's setup selected log2/log10, so the matrix is DELINEARIZED by the
+# declared base before sd/mean (mirroring the PELSA CV path, which delinearizes
+# for the same reason). `log_base` comes from the dataset's setup parameter
+# `log_transformation` in {"None","log2","log10"}; "None"/NA passes through
+# unchanged (the matrix is already linear).
+#
 # @param mat       numeric matrix, features (rows) x samples (cols).
 #                  rownames(mat) are used as feature IDs.
 # @param grouping  character vector of length ncol(mat) assigning each sample
 #                  to a group. Use combine_cdesc_cols() to produce this.
+# @param log_base  declared log base of `mat`: "None"/NA (linear pass-through),
+#                  "log2" (2^mat), or "log10" (10^mat). Default "None".
 # @return data.frame with column `id` (feature identifier) followed by one
 #         `CV_<group>` column per unique group. Features with zero/NA mean
 #         produce NA CV (not Inf, not NaN).
-compute_cv_table <- function(mat, grouping) {
+compute_cv_table <- function(mat, grouping, log_base = "None") {
   stopifnot(
     is.matrix(mat),
     is.numeric(mat),
     length(grouping) == ncol(mat)
   )
+  # Recover linear intensities before CV (reuses the PELSA delinearizer, which
+  # leaves a "None"/NA matrix unchanged and only exponentiates log2/log10).
+  mat <- pelsa_delinearize(mat, log_base)
   groups <- unique(grouping)
   cv_cols <- vapply(groups, function(g) {
     cols <- which(grouping == g)
