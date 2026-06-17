@@ -182,3 +182,70 @@ test_that("create_boxplot: gradient midpoint correct when range does not start a
   expect_equal(mid, 7, tolerance = 1e-9,
                label = "non-zero range: gradient midpoint should be 7 not 3")
 })
+
+# --------------------------------------------------------------------------- #
+# create_corr_boxplot (R/tab_qc_correlation_helpers.R)                        #
+# --------------------------------------------------------------------------- #
+# NOTE: create_corr_boxplot requires at least one group to have >= 2 samples.
+# We use cont values c(0, 0, 10, 10) so that groups "0" and "10" each have
+# 2 samples -- min=0, max=10, true midpoint=5, buggy value=0.
+
+make_corr_cont_gct <- function() {
+  # 4 samples, 6 features; cont_col has two repeated values (0 and 10)
+  n_feat  <- 6L
+  n_samp  <- 4L
+  mat <- matrix(
+    seq_len(n_feat * n_samp) + 0.0,
+    nrow = n_feat,
+    dimnames = list(
+      paste0("f_", seq_len(n_feat)),
+      paste0("s_", seq_len(n_samp))
+    )
+  )
+  # small noise so columns are not perfectly collinear
+  set.seed(7L)
+  mat <- mat + matrix(rnorm(n_feat * n_samp, sd = 0.01), n_feat, n_samp)
+  cdesc <- data.frame(
+    cont_col = c(0, 0, 10, 10),
+    row.names = paste0("s_", seq_len(n_samp)),
+    stringsAsFactors = FALSE
+  )
+  rdesc <- data.frame(
+    id = paste0("f_", seq_len(n_feat)),
+    row.names = paste0("f_", seq_len(n_feat)),
+    stringsAsFactors = FALSE
+  )
+  new("GCT",
+      mat   = mat,
+      cdesc = cdesc,
+      rdesc = rdesc,
+      rid   = paste0("f_", seq_len(n_feat)),
+      cid   = paste0("s_", seq_len(n_samp))
+  )
+}
+
+CORR_TRUE_MIDPOINT  <- 5   # (0 + 10) / 2
+CORR_WRONG_MIDPOINT <- 0   # what the buggy mean(min, max) returns
+
+test_that("create_corr_boxplot: gradient midpoint equals (min+max)/2, not min", {
+  gct  <- make_corr_cont_gct()
+  cmap <- make_cont_color_map()
+  cor_mat <- cor(gct@mat, use = "pairwise.complete.obs", method = "pearson")
+
+  p <- create_corr_boxplot(gct, "cont_col", "test_corr_ome", cmap, "pearson", cor_mat)
+  expect_s3_class(p, "ggplot")
+
+  mid <- extract_gradient2_midpoint(p)
+  expect_false(is.na(mid),
+               label = "gradient2 midpoint should be extractable from corr_boxplot scale")
+
+  # Must NOT equal the min value (which is what the buggy code produces)
+  expect_false(
+    isTRUE(all.equal(mid, CORR_WRONG_MIDPOINT, tolerance = 1e-9)),
+    label = paste0("midpoint must not equal min (", CORR_WRONG_MIDPOINT, ") -- that is the bug")
+  )
+
+  # Must equal the true (min+max)/2
+  expect_equal(mid, CORR_TRUE_MIDPOINT, tolerance = 1e-9,
+               label = "corr_boxplot gradient midpoint == (min+max)/2")
+})

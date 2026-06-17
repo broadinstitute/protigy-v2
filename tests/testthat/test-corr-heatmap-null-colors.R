@@ -95,3 +95,33 @@ test_that("create_corr_heatmap returns a square correlation matrix", {
   expect_equal(dim(result_null$Table), c(n, n))
   expect_equal(dim(result_cmap$Table), c(n, n))
 })
+
+# ---------------------------------------------------------------------------
+# P1.2-D: non-NULL CONTINUOUS color map must not error
+# ---------------------------------------------------------------------------
+make_continuous_color_map <- function() {
+  list(
+    is_discrete = FALSE,
+    colors      = list(low = "blue", mid = "white", high = "red", na_color = "gray50"),
+    vals        = c("low", "mid", "high", "na_color")
+  )
+}
+
+test_that("create_corr_heatmap works correctly with a non-NULL continuous color map", {
+  gct  <- make_small_gct()
+  cmap <- make_continuous_color_map()
+
+  result <- tryCatch(
+    create_corr_heatmap(gct, "group", "proteome", custom_color_map = cmap),
+    error = function(e) e
+  )
+
+  expect_false(
+    inherits(result, "error"),
+    info = paste("Unexpected error:", if (inherits(result, "error")) conditionMessage(result) else "none")
+  )
+
+  expect_true(is.list(result))
+  expect_true(!is.null(result$HM))
+  expect_true(!is.null(result$Table))
+})

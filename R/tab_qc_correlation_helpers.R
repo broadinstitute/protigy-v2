@@ -177,7 +177,7 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(min(group), max(group)),
+      midpoint = mean(c(min(group, na.rm = TRUE), max(group, na.rm = TRUE))),
       na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
     )
   }
