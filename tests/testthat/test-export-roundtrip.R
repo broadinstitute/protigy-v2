@@ -244,8 +244,9 @@ test_that("P3.1: .pelsa_pack_lanes pushes overlapping intervals to new lanes", {
 })
 
 test_that("P3.1: .pelsa_pack_lanes reuses a freed lane after an interval ends", {
-  # [1,3], [5,7] (fits lane1 after [1,3]), [2,6] overlaps both -> lane2
-  lanes <- .pelsa_pack_lanes(c(1, 5, 2), c(3, 7, 6))
-  # first two go on lane 1 (non-overlapping), the [2,6] needs lane 2
-  expect_equal(max(lanes), 2L)
+  # Input (in original order): [1,3], [5,7], [2,6]
+  # Processing order (by start): [1,3] -> lane 1; [2,6] overlaps lane1 -> lane 2;
+  #   [5,7] -> lane1 is free (lane_end[1] = 3, 5 > 3) -> reuses lane 1.
+  # Result in ORIGINAL input order: [1,3]->1, [5,7]->1, [2,6]->2 => c(1L, 1L, 2L)
+  expect_equal(.pelsa_pack_lanes(c(1, 5, 2), c(3, 7, 6)), c(1L, 1L, 2L))
 })

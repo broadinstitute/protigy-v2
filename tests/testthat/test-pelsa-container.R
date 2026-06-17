@@ -85,7 +85,11 @@ test_that("set_analyzed_datasets pins a subset and resists auto-sync clobber", {
 
     # an unrelated reactive flush (same ome signature) must NOT restore the
     # full uploaded set -- the user pin holds.
-    gp(gp_with_omes(c("proteome", "phospho", "rna")))
+    # Use a structurally distinct object (same ome names, new list identity)
+    # so that reactiveVal does NOT short-circuit and the observe() actually fires.
+    gp2 <- gp_with_omes(c("proteome", "phospho", "rna"))
+    gp2$parameters$proteome <- list(touched = TRUE)
+    gp(gp2)
     session$flushReact()
     expect_equal(sink_env$res$active_dataset(), "phospho")
   })

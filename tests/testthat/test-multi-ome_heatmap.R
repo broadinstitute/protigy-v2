@@ -293,10 +293,14 @@ test_that("myComplexHeatmap works with clustering disabled", {
   expect_equal(result$cluster_columns, FALSE)
 })
 
-test_that("myComplexHeatmap reorders datasets correctly", {
+test_that("myComplexHeatmap: ome.order is accepted without dropping data", {
   skip_if_not_installed("ComplexHeatmap")
   td <- .hm_test_data()
-  # Request phosphoproteome first (reverse of natural rdesc order)
+  # Request phosphoproteome first (reverse of natural rdesc order).
+  # The returned Table's ome column is character (the factor used for row_split
+  # inside ComplexHeatmap is stripped when annotation rows are prepended), so
+  # visual ordering cannot be directly observed from Table row positions.
+  # This test verifies only that passing ome.order does NOT silently drop omes.
   params <- list(
     genes.char = "gene1,gene2",
     zscore = "none",
@@ -317,10 +321,6 @@ test_that("myComplexHeatmap reorders datasets correctly", {
   # Both omes must be present (ome.order was accepted and not silently dropped)
   expect_true("proteome" %in% data_rows$ome)
   expect_true("phosphoproteome" %in% data_rows$ome)
-  # NOTE: The ome column in the returned Table is character (the factor used for
-  # row_split ordering inside ComplexHeatmap is stripped by rbind when annotation
-  # rows are prepended to the Table). The visual order is controlled by
-  # row_order_param inside the HM object, not by Table row position.
 })
 
 test_that("myComplexHeatmap handles dataset selection", {
@@ -354,7 +354,9 @@ test_that("myComplexHeatmap handles dataset selection", {
 test_that("myComplexHeatmap handles dataset filtering", {
   skip_if_not_installed("ComplexHeatmap")
   td <- .hm_test_data()
-  # Only proteome selected
+  # Only proteome selected; ome.order = NULL so that ome.order re-leveling
+  # cannot independently NA out phosphoproteome rows -- the assertion must
+  # exercise selected_datasets alone.
   params <- list(
     genes.char = "gene1,gene2",
     selected_datasets = c("proteome"),
@@ -363,7 +365,7 @@ test_that("myComplexHeatmap handles dataset filtering", {
     max.val = 2,
     sort.after = NULL,
     show.sample.label = FALSE,
-    ome.order = c("proteome"),
+    ome.order = NULL,
     max_features_per_gene = 5,
     cluster_columns = FALSE,
     cluster_rows = FALSE

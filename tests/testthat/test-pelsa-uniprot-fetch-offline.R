@@ -156,12 +156,16 @@ test_that(".pelsa_fetch_one_batch returns entries for a 200 page", {
 
 test_that(".pelsa_fetch_one_batch yields zero entries for a 4xx (no throw)", {
   fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  # The 400 response carries a non-empty results payload. If the >=400 skip were
+  # absent the batch would parse the entry and return length 1; the skip is the
+  # ONLY reason the result is empty. This ensures removing the skip breaks the test.
   testthat::local_mocked_bindings(
     req_url_path_append = function(req, ...) req,
     req_url_query = function(req, ...) req,
-    req_perform_iterative = function(req, ...) list(make_resp(400L)),
+    req_perform_iterative = function(req, ...) list(make_resp(400L,
+      list(fake_entry("P1")))),
     resp_status = function(resp) resp$.status,
-    resp_body_json = function(resp, ...) list(results = list()),
+    resp_body_json = function(resp, ...) list(results = resp$.results),
     .package = "httr2"
   )
   entries <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
