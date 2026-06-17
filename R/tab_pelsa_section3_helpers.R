@@ -1068,10 +1068,13 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
 # @param markers   marker accessions.
 # @param contrast  the contrast suffix, or NULL.
 # @param panel     "all_peptide" | "best_peptide".
+# @param sig_cutoff the adj.P significance threshold (drives Significant /
+#                  sig_direction and the empirical y_cutoff dashed line).
 # @return a 3A volcano df, or NULL.
 # @noRd
 pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
-                                    contrast, panel) {
+                                    contrast, panel,
+                                    sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (is.null(contrast) ||
       !pelsa_volcano_has_contrast(stat_raw, contrast)) return(NULL)
@@ -1085,7 +1088,7 @@ pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
       matched_cache = if (nrow(matched) > 0L) matched else
         pelsa_volcano_empty_matched(),
       feat_df = fdf, markers = markers, contrast = contrast,
-      opts = list(panel = panel, sig_cutoff = 0.05)
+      opts = list(panel = panel, sig_cutoff = sig_cutoff)
     ),
     error = function(e) NULL
   )
@@ -1137,34 +1140,86 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   out
 }
 
+# Significance-direction -> human legend label (fixed display order).
+.PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",
+                              ns   = "Non-significant",
+                              up   = "Upregulated")
+
+# Build the per-point legend category + the manual color scale for a color mode.
+# significance: the 3 fixed direction buckets; feature: the 9 UniProt classes
+# (always all listed, mirroring the Woods feature legend). Returns the factor
+# category column for the background rows + a named values vector for the scale.
+# @noRd
+.pelsa_export_color_spec <- function(bg, color_mode) {
+  if (identical(color_mode, "feature")) {
+    keys   <- names(PELSA_FEATURE_COLORS)
+    labels <- unname(.PELSA_FEATURE_LABELS[keys])
+    values <- stats::setNames(unname(PELSA_FEATURE_COLORS[keys]), labels)
+    raw    <- as.character(bg$feature_class_primary)
+    cat    <- factor(unname(.PELSA_FEATURE_LABELS[raw]), levels = labels)
+    list(category = cat, values = values, method = "feature coloring")
+  } else {
+    labels <- unname(.PELSA_EXPORT_SIG_LABELS[c("down", "ns", "up")])
+    values <- stats::setNames(
+      c(.PELSA_SIG_COLOR_DOWN, .PELSA_SIG_COLOR_NS, .PELSA_SIG_COLOR_UP), labels)
+    raw    <- as.character(bg$sig_direction)
+    cat    <- factor(unname(.PELSA_EXPORT_SIG_LABELS[raw]), levels = labels)
+    list(category = cat, values = values, method = "significance coloring")
+  }
+}
+
 # Build the static export ggplot (mirrors pelsa_volcano_build_plot's geom layout
 # but returns a plain ggplot for the PDF device - no plotly / WebGL / browser).
+# Color/fill are mapped INSIDE aes() so the figure carries a legend: the chosen
+# color mode's categories (significance buckets or UniProt feature classes) plus
+# a separate magenta "Marker" entry. A title (the contrast) and subtitle
+# (<volcano type> | <coloring method>) are added when supplied.
+# @param contrast       the contrast suffix, used for the title (NULL -> none).
+# @param volcano_label  e.g. "All-peptide volcano" -> the subtitle prefix.
+# @param sig_cutoff     the adj.P significance threshold; drives the dashed-line
+#                       annotation text so it always matches the cutoff the df
+#                       was built with (single source of truth, no drift).
 # @noRd
 .pelsa_export_ggplot <- function(df, full_df, color_mode = "significance",
-                                 label_mode = "none", n_top = 3L) {
+                                 label_mode = "none", n_top = 3L,
+                                 contrast = NULL, volcano_label = NULL,
+                                 sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
+  color_mode <- color_mode %||% "significance"
   split <- pelsa_volcano_marker_split(df)
   bg <- split$background
   mk <- split$markers
+  spec <- .pelsa_export_color_spec(bg, color_mode)
+
   gg <- ggplot2::ggplot()
   if (nrow(bg) > 0L) {
+    bg$legend_cat <- spec$category
     gg <- gg + ggplot2::geom_point(
-      data = bg, ggplot2::aes(x = .data$logFC, y = .data$logP),
-      color = pelsa_volcano_color_column(bg, color_mode),
+      data = bg, ggplot2::aes(x = .data$logFC, y = .data$logP,
+                              color = .data$legend_cat),
       alpha = .PELSA_VOLCANO_BG_ALPHA, size = 1)
-  }
-  if (nrow(mk) > 0L) {
-    gg <- gg + ggplot2::geom_point(
-      data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP),
-      fill = .PELSA_VOLCANO_MARKER_COLOR, color = .PELSA_VOLCANO_MARKER_EDGE,
-      shape = 21, size = 2.4, stroke = 0.5)
   }
   y_cut <- attr(full_df, "y_cutoff")
   if (!is.null(y_cut) && is.finite(y_cut)) {
     gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
                                    color = "grey40")
+    # cutoff annotation: small + bold, flush to the right panel edge, just below
+    # the dashed line. Label derives from sig_cutoff so it stays consistent with
+    # the threshold the df was built with.
+    gg <- gg + ggplot2::annotate(
+      "text", x = Inf, y = y_cut,
+      label = paste0("adj.P < ", format(sig_cutoff, scientific = FALSE,
+                                        trim = TRUE)),
+      hjust = 1.15, vjust = 1.5, size = 2, fontface = "bold",
+      color = "grey30")
+  }
+  if (nrow(mk) > 0L) {
+    gg <- gg + ggplot2::geom_point(
+      data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP, fill = "Marker"),
+      shape = 21, size = 2.4, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
   }
   # Bake peptide labels per the in-app label mode (the on-screen labels are
-  # plotly annotations; the static export draws them as repelled text).
+  # plotly annotations; the static export draws them as repelled boxed labels:
+  # white box, black outline + text, black segment; force=20 to spread them).
   if (!identical(label_mode, "none") && "label" %in% colnames(df)) {
     idx <- tryCatch(
       pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
@@ -1173,13 +1228,54 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
       lab <- df[idx, , drop = FALSE]
       lab <- lab[!is.na(lab$label) & nzchar(lab$label), , drop = FALSE]
       if (nrow(lab) > 0L) {
-        gg <- gg + ggrepel::geom_text_repel(
+        gg <- gg + ggrepel::geom_label_repel(
           data = lab,
           ggplot2::aes(x = .data$logFC, y = .data$logP, label = .data$label),
-          size = 2.6, max.overlaps = Inf, min.segment.length = 0,
-          segment.size = 0.2, segment.color = "grey60")
+          size = 2.6, force = 20, max.overlaps = Inf,
+          fill = "white", color = "black",
+          label.size = 0.3, label.padding = 0.18,
+          min.segment.length = 0, segment.size = 0.3, segment.color = "black")
       }
     }
   }
-  gg + ggplot2::labs(x = "logFC", y = "-log10(P.Value)") + ggplot2::theme_bw()
+
+  title_txt <- if (is.null(contrast)) NULL else
+    gsub("_over_", " vs ", contrast, fixed = TRUE)
+  subtitle_txt <- if (is.null(volcano_label)) spec$method else
+    paste0(volcano_label, " | ", spec$method)
+
+  gg +
+    ggplot2::scale_color_manual(name = NULL, values = spec$values,
+                                drop = FALSE) +
+    ggplot2::scale_fill_manual(name = NULL,
+                               values = c("Marker" = .PELSA_VOLCANO_MARKER_COLOR)) +
+    ggplot2::guides(
+      color = ggplot2::guide_legend(
+        order = 1, override.aes = list(size = 2, alpha = 1)),
+      fill  = ggplot2::guide_legend(
+        order = 2,
+        override.aes = list(shape = 21, size = 2,
+                            color = .PELSA_VOLCANO_MARKER_EDGE))) +
+    ggplot2::labs(x = "logFC", y = "-log10(P.Value)",
+                  title = title_txt, subtitle = subtitle_txt) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      plot.title.position = "plot",
+      plot.title    = ggplot2::element_text(face = "bold", size = 12,
+                                            hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 10, color = "grey30",
+                                            hjust = 0.5),
+      axis.title = ggplot2::element_text(size = 9, face = "bold"),
+      axis.text  = ggplot2::element_text(size = 6),
+      legend.position = "right",
+      legend.title  = ggplot2::element_blank(),
+      legend.text   = ggplot2::element_text(size = 6),
+      legend.key    = ggplot2::element_blank(),
+      legend.key.size = ggplot2::unit(8, "pt"),
+      legend.spacing.y = ggplot2::unit(2, "pt"),
+      legend.margin = ggplot2::margin(2, 4, 2, 4),
+      legend.box.spacing = ggplot2::unit(4, "pt"),
+      legend.box.background = ggplot2::element_rect(color = "black", fill = NA,
+                                                    linewidth = 0.4),
+      legend.box.margin = ggplot2::margin(2, 2, 2, 2))
 }

@@ -629,3 +629,88 @@ test_that("integration: build volcano df from the synthetic generator", {
   # y_cutoff attribute present.
   expect_true(!is.null(attr(out, "y_cutoff")))
 })
+
+################################################################################
+# .pelsa_export_ggplot + .pelsa_export_color_spec : the static export figure now
+# carries a legend (color-mode categories + a Marker entry) and a title (the
+# contrast) / subtitle (<volcano type> | <coloring method>). These exercise the
+# legend spec for both color modes and that the figure builds without error.
+################################################################################
+
+# Minimal volcano-style frame the export builder consumes.
+.make_export_df <- function() {
+  df <- data.frame(
+    logFC = c(-3, 0.1, 2.5, -1, 0.2),
+    logP  = c(6, 0.5, 5, 1.2, 0.3),
+    adj.P.Val = c(1e-6, 0.5, 1e-5, 0.2, 0.6),
+    sig_direction = c("down", "ns", "up", "ns", "ns"),
+    feature_class_primary = c("folded_domain", "none", "catalytic_domain",
+                              "other", "none"),
+    winning_accession = c("A", "B", "C", "D", "E"),
+    is_marker = c(FALSE, TRUE, FALSE, TRUE, FALSE),
+    label = c(NA, "GENE1_aa2", NA, "GENE2_aa9", NA),
+    stringsAsFactors = FALSE)
+  attr(df, "y_cutoff") <- 2.0
+  df
+}
+
+test_that(".pelsa_export_color_spec: significance mode -> 3 fixed buckets", {
+  bg <- .make_export_df()
+  spec <- .pelsa_export_color_spec(bg, "significance")
+  expect_equal(names(spec$values),
+               c("Downregulated", "Non-significant", "Upregulated"))
+  expect_equal(unname(spec$values["Downregulated"]), .PELSA_SIG_COLOR_DOWN)
+  expect_equal(unname(spec$values["Non-significant"]), .PELSA_SIG_COLOR_NS)
+  expect_equal(unname(spec$values["Upregulated"]), .PELSA_SIG_COLOR_UP)
+  expect_equal(spec$method, "significance coloring")
+  # category maps each row's sig_direction to its label.
+  expect_equal(as.character(spec$category)[1], "Downregulated")
+  expect_equal(as.character(spec$category)[3], "Upregulated")
+})
+
+test_that(".pelsa_export_color_spec: feature mode -> all 9 UniProt classes", {
+  bg <- .make_export_df()
+  spec <- .pelsa_export_color_spec(bg, "feature")
+  expect_equal(length(spec$values), length(PELSA_FEATURE_COLORS))
+  expect_equal(names(spec$values),
+               unname(.PELSA_FEATURE_LABELS[names(PELSA_FEATURE_COLORS)]))
+  expect_equal(unname(spec$values[.PELSA_FEATURE_LABELS[["folded_domain"]]]),
+               unname(PELSA_FEATURE_COLORS[["folded_domain"]]))
+  expect_equal(spec$method, "feature coloring")
+})
+
+test_that(".pelsa_export_ggplot: title from contrast, subtitle from type + mode", {
+  df <- .make_export_df()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance",
+                            label_mode = "all_markers",
+                            contrast = "A_over_B",
+                            volcano_label = "All-peptide volcano")
+  expect_s3_class(g, "ggplot")
+  expect_equal(g$labels$title, "A vs B")
+  expect_equal(g$labels$subtitle, "All-peptide volcano | significance coloring")
+  # the whole figure builds (legend + annotation + label layer) without error.
+  expect_silent(suppressWarnings(ggplot2::ggplot_build(g)))
+})
+
+test_that(".pelsa_export_ggplot: feature mode subtitle + NULL contrast -> no title", {
+  df <- .make_export_df()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "feature",
+                            volcano_label = "Best-peptide volcano")
+  expect_null(g$labels$title)
+  expect_equal(g$labels$subtitle, "Best-peptide volcano | feature coloring")
+  expect_silent(suppressWarnings(ggplot2::ggplot_build(g)))
+})
+
+test_that(".pelsa_export_ggplot: dashed-line annotation tracks sig_cutoff", {
+  df <- .make_export_df()
+  # annotate("text", ...) stores its label as a layer aes_param, not in data.
+  ann_text <- function(g) unlist(lapply(g$layers, function(l) {
+    if (inherits(l$geom, "GeomText")) l$aes_params$label else NULL
+  }))
+  # default cutoff -> default constant text
+  expect_true(paste0("adj.P < ", .PELSA_EXPORT_SIG_CUTOFF) %in%
+                ann_text(.pelsa_export_ggplot(df, df)))
+  # a user-set cutoff flows into the annotation text verbatim (no drift)
+  expect_true("adj.P < 0.01" %in%
+                ann_text(.pelsa_export_ggplot(df, df, sig_cutoff = 0.01)))
+})

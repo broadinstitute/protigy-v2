@@ -1160,27 +1160,40 @@ PELSASection3_Ome_Server <- function(id,
       reg <- if (is.null(label_mode_registry)) list() else
         isolate(label_mode_registry())
       want_best <- isTRUE(isolate(best_show()))
+      # Single significance threshold for the whole export: drives the df build
+      # (Significant / sig_direction / dashed y_cutoff) AND the annotation text,
+      # so the dashed-line label always matches the cutoff in force. Sourced from
+      # the SAME user-set cutoff as the in-app volcano (Statistics > Summary), so
+      # the export mirrors exactly what the user sees on screen.
+      sig_cutoff <- isolate(sig_cutoff_r())
       choices <- contrast_choices()
       for (i in seq_along(choices)) {
         contrast <- unname(choices[[i]])
         key <- pelsa_volcano_contrast_key(ome, contrast)
         lab_mode <- reg[[key]] %||% (isolate(input$pelsa_label_mode) %||% "none")
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
-                                          "all_peptide")
+                                          "all_peptide", sig_cutoff = sig_cutoff)
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
-            .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top),
+            .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top,
+                                 contrast = contrast,
+                                 volcano_label = "All-peptide volcano",
+                                 sig_cutoff = sig_cutoff),
             out, paste0("all_peptide_volcano_", pelsa_safe_name(contrast)),
-            width = 9, height = 7)
+            width = 6, height = 4.5)
         }
         if (want_best) {
           df_best <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
-                                             "best_peptide")
+                                             "best_peptide",
+                                             sig_cutoff = sig_cutoff)
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
-              .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top),
+              .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top,
+                                   contrast = contrast,
+                                   volcano_label = "Best-peptide volcano",
+                                   sig_cutoff = sig_cutoff),
               out, paste0("best_peptide_volcano_", pelsa_safe_name(contrast)),
-              width = 9, height = 7)
+              width = 6, height = 4.5)
           }
         }
       }
