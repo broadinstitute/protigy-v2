@@ -66,81 +66,11 @@ test_that("processGCTs core functions handle edge cases", {
   expect_true(is.matrix(filter_result))
 })
 
-# Test merge_processed_gcts core logic (bypassing Shiny session dependencies)
-test_that("merge_processed_gcts core logic handles edge cases", {
-  # Load test data
-  data(brca_retrospective_v5.0_proteome_gct)
-  data(brca_retrospective_v5.0_phosphoproteome_gct)
-  
-  # Create minimal GCTs for testing
-  proteome_gct <- brca_retrospective_v5.0_proteome_gct
-  proteome_gct@mat <- proteome_gct@mat[1:3, 1:3]
-  proteome_gct@rdesc <- proteome_gct@rdesc[1:3, , drop = FALSE]
-  proteome_gct@cdesc <- proteome_gct@cdesc[1:3, , drop = FALSE]
-  proteome_gct@rid <- proteome_gct@rid[1:3]
-  proteome_gct@cid <- proteome_gct@cid[1:3]
-  rownames(proteome_gct@mat) <- proteome_gct@rid
-  colnames(proteome_gct@mat) <- proteome_gct@cid
-  rownames(proteome_gct@rdesc) <- proteome_gct@rid
-  rownames(proteome_gct@cdesc) <- proteome_gct@cid
-  
-  phospho_gct <- brca_retrospective_v5.0_phosphoproteome_gct
-  phospho_gct@mat <- phospho_gct@mat[1:3, 1:3]
-  phospho_gct@rdesc <- phospho_gct@rdesc[1:3, , drop = FALSE]
-  phospho_gct@cdesc <- phospho_gct@cdesc[1:3, , drop = FALSE]
-  phospho_gct@rid <- phospho_gct@rid[1:3]
-  phospho_gct@cid <- phospho_gct@cid[1:3]
-  rownames(phospho_gct@mat) <- phospho_gct@rid
-  colnames(phospho_gct@mat) <- phospho_gct@cid
-  rownames(phospho_gct@rdesc) <- phospho_gct@rid
-  rownames(phospho_gct@cdesc) <- phospho_gct@cid
-  
-  # Add protigy.ome column (this is what merge_processed_gcts does internally)
-  proteome_gct@rdesc$protigy.ome <- rep("proteome", nrow(proteome_gct@rdesc))
-  phospho_gct@rdesc$protigy.ome <- rep("phosphoproteome", nrow(phospho_gct@rdesc))
-  
-  GCTs_processed <- list(proteome = proteome_gct, phosphoproteome = phospho_gct)
-  
-  # Test the core merging logic (without withProgress wrapper)
-  expect_no_error({
-    GCTs_merged <- Reduce(
-      function(gct1, gct2) {
-        gct1@rdesc$old_id = gct1@rid
-        gct2@rdesc$old_id = gct2@rid
-        
-        # Only apply prefix if not already prefixed (avoid duplication)
-        if (!any(startsWith(gct1@rid, paste0(gct1@rdesc$protigy.ome[1], "_")))) {
-          rownames(gct1@mat) = rownames(gct1@rdesc) = gct1@rdesc$id = gct1@rid = paste(gct1@rdesc$protigy.ome,gct1@rid,sep="_")
-        }
-        if (!any(startsWith(gct2@rid, paste0(gct2@rdesc$protigy.ome[1], "_")))) {
-          rownames(gct2@mat) = rownames(gct2@rdesc) = gct2@rdesc$id = gct2@rid = paste(gct2@rdesc$protigy.ome,gct2@rid,sep="_")
-        }
-        
-        merged <- cmapR::merge_gct(gct1, gct2, dim='row')
-        return(merged)
-      },
-      GCTs_processed)
-    
-    rownames(GCTs_merged@cdesc) <- GCTs_merged@cid
-    rownames(GCTs_merged@rdesc) <- GCTs_merged@rid
-  })
-  
-  # Verify the merged result
-  expect_equal(nrow(GCTs_merged@mat), 6)  # 3 genes from each ome
-  expect_equal(length(GCTs_merged@rid), 6)
-  expect_equal(length(GCTs_merged@cid), 3)
-  
-  # Verify ome prefixes are correctly applied
-  proteome_rids <- GCTs_merged@rid[grepl("^proteome_", GCTs_merged@rid)]
-  phospho_rids <- GCTs_merged@rid[grepl("^phosphoproteome_", GCTs_merged@rid)]
-  
-  expect_equal(length(proteome_rids), 3)
-  expect_equal(length(phospho_rids), 3)
-  
-  # Verify no duplication patterns
-  duplicated_patterns <- GCTs_merged@rid[grepl("_.*_.*_", GCTs_merged@rid)]
-  expect_true(length(duplicated_patterns) <= 3) # Only phosphoproteome IDs should have multiple underscores
-})
+# Note: "merge_processed_gcts core logic handles edge cases" removed (P2.3 FIX B).
+# That test re-implemented the Reduce/merge logic inline and asserted on the copy,
+# never exercising the real merge_processed_gcts function.  Real merge_processed_gcts
+# coverage (conflict-rename, missing-column NA-fill branches) is tracked under P3.6
+# and will be added in a dedicated test file.
 
 # Test merge_processed_gcts input validation
 test_that("merge_processed_gcts input validation", {

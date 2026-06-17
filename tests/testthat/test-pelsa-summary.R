@@ -204,29 +204,65 @@ test_that("pelsa_cv_kde_plot draws curves + dodged median labels when eligible",
 })
 
 # ---- empty unmatched / unannotated shaping (happy path) ----------------------
+# FIX C (P2.3): the old test rebuilt the data.frame shaping inline and asserted
+# on its own construction (never calling output$unmatched_table or
+# output$unannotated_table). Replaced with a testServer test that drives the
+# real render code via a good cache entry that has zero failed rows.
 
-test_that("empty unmatched / unannotated produce empty-but-valid tables", {
-  # An empty unmatched df (zero failed matches) and an empty unannotated vector
-  # are the HAPPY path; the DT shaping must yield a 0-row frame WITH the headers.
-  um <- data.frame(peptide_sequence = character(0), accession = character(0),
-                   gene = character(0), pep_position = character(0),
-                   reason = character(0), stringsAsFactors = FALSE)
-  display <- data.frame(
-    `Peptide`          = um$peptide_sequence,
-    `Accession`        = um$accession,
-    `Gene`             = um$gene,
-    `Peptide position` = um$pep_position,
-    `Reason`           = um$reason,
-    check.names = FALSE, stringsAsFactors = FALSE
+test_that("output$unmatched_table and output$unannotated_table render as 0-row DT for a good entry", {
+  # Use the standard synthetic cache and zero-out unmatched/unannotated to create
+  # the "zero failed rows" happy path that the old tautological test described but
+  # never actually exercised via the module.
+  cache <- .summary_build_cache("ds1")
+  expect_false(pelsa_analysis_failed(cache$ds1))
+
+  # Inject empty unmatched / unannotated so the tables must render with 0 rows.
+  cache$ds1$unmatched <- data.frame(
+    peptide_sequence = character(0), accession = character(0),
+    gene = character(0), pep_position = character(0), reason = character(0),
+    stringsAsFactors = FALSE
   )
-  expect_equal(nrow(display), 0L)
-  expect_setequal(names(display),
-                  c("Peptide", "Accession", "Gene", "Peptide position", "Reason"))
+  cache$ds1$unannotated <- character(0)
 
-  ua <- as.character(character(0) %||% character(0))
-  ua_display <- data.frame(Accession = ua, stringsAsFactors = FALSE)
-  expect_equal(nrow(ua_display), 0L)
-  expect_identical(names(ua_display), "Accession")
+  GCTs_and_params  <- shiny::reactiveVal(list(GCTs = list(ds1 = NULL),
+                                              parameters = list(ds1 = list())))
+  globals          <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original    <- shiny::reactiveVal(list(ds1 = NULL))
+  active_dataset   <- shiny::reactive("ds1")
+  pelsa_analysis   <- shiny::reactiveVal(cache)
+  pelsa_setup_state <- shiny::reactive(list(
+    sample_order    = list(ds1 = character(0)),
+    condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN"))
+  ))
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis,
+                pelsa_setup_state = pelsa_setup_state),
+    {
+      # unmatched_table: the real render code (tab_pelsa_section2.R:290) builds a
+      # 5-col DT from entry$unmatched.  A non-NULL JSON confirms the render ran
+      # (req(entry) did not abort).  DT serializes to JSON in testServer; we parse
+      # the columnDefs to assert the schema without inspecting pixel output.
+      expect_false(is.null(output$unmatched_table))
+      um_json <- jsonlite::fromJSON(output$unmatched_table)
+      um_col_names <- um_json$x$options$columnDefs$name
+      expect_setequal(um_col_names,
+                      c("Peptide", "Accession", "Gene", "Peptide position", "Reason"))
+      # 0 rows: the $x$data element is absent / NULL when the table is empty.
+      expect_null(um_json$x$data)
+
+      # unannotated_table: the real render code (tab_pelsa_section2.R:310) builds a
+      # 1-col DT from entry$unannotated.
+      expect_false(is.null(output$unannotated_table))
+      ua_json <- jsonlite::fromJSON(output$unannotated_table)
+      ua_col_names <- ua_json$x$options$columnDefs$name
+      expect_identical(ua_col_names, "Accession")
+      expect_null(ua_json$x$data)
+    }
+  )
 })
 
 # ---- pelsa_section2_exports_for ----------------------------------------------
