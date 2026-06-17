@@ -148,6 +148,32 @@ test_that("track + panel builders return plots and tolerate empty inputs", {
   expect_identical(p$x$source, "w")
 })
 
+# ---- M3 regression: coverage track for proteins shorter than 10 residues -----
+# seq(10L, prot_len, by=...) errors ("wrong sign in 'by' argument") when
+# prot_len < 10. The builder must guard the upper-tick sequence and still draw.
+
+test_that("M3: coverage track builds for very short proteins (no error)", {
+  iv <- data.frame(start = integer(0), end = integer(0))
+  # prot_len = 5 and 1 previously errored in the tick seq(); must now build.
+  expect_s3_class(pelsa_coverage_track_ggplot(iv, 5L), "ggplot")
+  expect_s3_class(pelsa_coverage_track_ggplot(iv, 1L), "ggplot")
+
+  # with an actual covered interval on a short protein it must still build.
+  iv2 <- data.frame(start = 1L, end = 3L)
+  expect_s3_class(pelsa_coverage_track_ggplot(iv2, 5L), "ggplot")
+})
+
+test_that("M3: coverage ticks unchanged for proteins >= 10 residues", {
+  iv <- data.frame(start = integer(0), end = integer(0))
+  g <- pelsa_coverage_track_ggplot(iv, 50L)
+  expect_s3_class(g, "ggplot")
+  # tick breaks match the original style: unique(c(1, seq(10, 50, by=10))).
+  expected <- unique(c(1L, seq(10L, 50L, by = max(10L, round(50 / 10)))))
+  brks <- ggplot2::ggplot_build(g)$layout$panel_params[[1]]$x$breaks
+  brks <- brks[!is.na(brks)]
+  expect_true(all(expected %in% brks))
+})
+
 test_that("woods builder uses the shared feature-class palette", {
   fl <- pelsa_feature_lanes(data.frame(
     start = c(1L, 40L), end = c(30L, 60L),

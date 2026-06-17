@@ -173,6 +173,133 @@ test_that("hand-built: empty middle accession token is dropped (A;;B -> A,B)", {
   expect_setequal(exploded$accession, c("A", "B"))
 })
 
+# ---- M2 regression: interspersed-empty accession token alignment -------------
+# An empty MIDDLE accession slot must not shift gene/position onto the wrong
+# kept accession. The fix aligns gene/pos against the RAW (pre-prune) accession
+# slots, then applies the same drop-empty mask -- so each kept accession keeps
+# its own gene + position.
+
+test_that("M2: interspersed empty accession keeps each accession's own gene+pos", {
+  # accession="A;;B", gene="GA;GMID;GB", pos="10;99;20"
+  # Correct: A->GA/10, B->GB/20 (NOT B->GMID/99, the pre-fix bug).
+  df <- data.frame(
+    PG.ProteinAccessions = "A;;B",
+    PG.Genes = "GA;GMID;GB",
+    PEP.PeptidePosition = "10;99;20",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("A", "B"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GA", "GB"))
+  expect_equal(exploded$pep_position_token, c("10", "20"))
+})
+
+test_that("M2: trailing empty accession is harmless (A;B; -> A,B aligned)", {
+  df <- data.frame(
+    PG.ProteinAccessions = "A;B;",
+    PG.Genes = "GA;GB;GTRAIL",
+    PEP.PeptidePosition = "10;20;30",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("A", "B"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GA", "GB"))
+  expect_equal(exploded$pep_position_token, c("10", "20"))
+})
+
+test_that("M2: leading empty accession keeps later accessions aligned (;A;B)", {
+  df <- data.frame(
+    PG.ProteinAccessions = ";A;B",
+    PG.Genes = "GLEAD;GA;GB",
+    PEP.PeptidePosition = "5;10;20",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("A", "B"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GA", "GB"))
+  expect_equal(exploded$pep_position_token, c("10", "20"))
+})
+
+test_that("M2: no-empty multi-accession row still aligns 1:1 (unchanged)", {
+  df <- data.frame(
+    PG.ProteinAccessions = "A;B;C",
+    PG.Genes = "GA;GB;GC",
+    PEP.PeptidePosition = "10;20;30",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 3L)
+  exploded <- exploded[match(c("A", "B", "C"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GA", "GB", "GC"))
+  expect_equal(exploded$pep_position_token, c("10", "20", "30"))
+})
+
+test_that("M2: single accession with interspersed empties unaffected", {
+  # all-empty-but-one and a single token: only the real accession survives, with
+  # its own gene/position slot.
+  df <- data.frame(
+    PG.ProteinAccessions = ";B;",
+    PG.Genes = "GX;GB;GY",
+    PEP.PeptidePosition = "1;20;3",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 1L)
+  expect_equal(exploded$accession, "B")
+  expect_equal(exploded$gene, "GB")
+  expect_equal(exploded$pep_position_token, "20")
+})
+
+test_that("M2: interspersed empty with gene/pos shorter than accession count", {
+  # accession="A;;B" (3 raw slots, 2 kept), gene/pos have only 2 tokens.
+  # Index-pad contract on raw slots: slots 1,2 = tokens; slot 3 (B) = NA.
+  df <- data.frame(
+    PG.ProteinAccessions = "A;;B",
+    PG.Genes = "GA;GB",
+    PEP.PeptidePosition = "10;20",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("A", "B"), exploded$accession), , drop = FALSE]
+  # A is raw slot 1 -> first token; B is raw slot 3 -> beyond 2 tokens -> NA.
+  expect_equal(exploded$gene, c("GA", NA))
+  expect_equal(exploded$pep_position_token, c("10", NA))
+})
+
+test_that("M2: single gene token recycles across interspersed-empty accessions", {
+  # one gene token recycles to ALL raw slots; kept accessions A,B both get it.
+  df <- data.frame(
+    PG.ProteinAccessions = "A;;B",
+    PG.Genes = "GONLY",
+    PEP.PeptidePosition = "10;99;20",
+    PEP.StrippedSequence = "PEPK",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_equal(nrow(exploded), 2L)
+  exploded <- exploded[match(c("A", "B"), exploded$accession), , drop = FALSE]
+  expect_equal(exploded$gene, c("GONLY", "GONLY"))
+  # positions still align by raw slot: A->10 (slot1), B->20 (slot3)
+  expect_equal(exploded$pep_position_token, c("10", "20"))
+})
+
 test_that("hand-built: NA accessions are dropped (not emitted as NA rows)", {
   df <- data.frame(
     PG.ProteinAccessions = c("A;B", NA_character_),

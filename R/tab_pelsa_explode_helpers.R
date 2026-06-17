@@ -129,15 +129,17 @@ pelsa_explode_accessions <- function(df,
   n_acc_raw <- lengths(acc_split)
   flat_acc <- trimws(unlist(acc_split, use.names = FALSE))
   if (is.null(flat_acc)) flat_acc <- character(0)
-  # Map each flattened token back to its original row, then keep only non-empty
-  # tokens. Per-row kept counts via tabulate() (vectorized, no per-row loop).
-  flat_row <- rep.int(seq_len(n_row), n_acc_raw)
+  # Map each flattened token back to its original row. Per-row RAW (pre-prune)
+  # accession counts drive the gene/position alignment so each accession slot --
+  # including empty ones -- gets its own gene/position token aligned by index.
+  flat_row_raw <- rep.int(seq_len(n_row), n_acc_raw)
   # Drop empty AND NA accession tokens (strsplit(NA) -> NA, and nzchar(NA) is
   # TRUE, so NA must be excluded explicitly). A row whose accessions are all
   # empty/NA contributes zero exploded rows.
   keep <- !is.na(flat_acc) & nzchar(flat_acc)
   accession <- flat_acc[keep]
-  n_acc <- tabulate(flat_row[keep], nbins = n_row)
+  # Per-row KEPT counts (post-prune) drive the carried-through column expansion.
+  n_acc <- tabulate(flat_row_raw[keep], nbins = n_row)
 
   # Expand all carried-through columns by repeating each original row n_acc times.
   row_idx <- rep.int(seq_len(n_row), n_acc)
@@ -156,9 +158,17 @@ pelsa_explode_accessions <- function(df,
     vector("list", n_row)
   }
 
+  # Align gene/position against the RAW accession slots (including empties), then
+  # apply the SAME keep-mask used for accessions. This keeps each kept accession
+  # paired with its own gene/position even when an empty token is interspersed
+  # (e.g. "A;;B" -> A keeps slot 1, B keeps slot 3, not the dropped middle slot).
+  flat_row_idx_raw <- rep.int(seq_len(n_row), n_acc_raw)
+  gene_raw <- .pelsa_align_tokens(gene_lists, n_acc_raw, flat_row_idx_raw)
+  pos_raw  <- .pelsa_align_tokens(pos_lists,  n_acc_raw, flat_row_idx_raw)
+
   out$accession <- accession
-  out$gene <- .pelsa_align_tokens(gene_lists, n_acc, row_idx)
-  out$pep_position_token <- .pelsa_align_tokens(pos_lists, n_acc, row_idx)
+  out$gene <- gene_raw[keep]
+  out$pep_position_token <- pos_raw[keep]
 
   # Drop the original ;-delimited acc/gene/pos columns? No - carry originals
   # through unchanged per contract; the new columns are additive.

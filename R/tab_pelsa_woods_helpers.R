@@ -267,7 +267,12 @@ pelsa_feature_overlap_peptides <- function(feat_starts, feat_ends,
 # @noRd
 pelsa_coverage_track_ggplot <- function(intervals, prot_len) {
   prot_len <- max(1L, as.integer(prot_len))
-  brks <- unique(c(1L, seq(10L, prot_len, by = max(10L, round(prot_len / 10)))))
+  # Guard the upper-tick sequence: seq(10L, prot_len, by=...) errors with "wrong
+  # sign in 'by' argument" when prot_len < 10 (from > to with positive by). Short
+  # proteins simply get the single tick at residue 1.
+  brks <- unique(c(1L, if (prot_len >= 10L) {
+    seq(10L, prot_len, by = max(10L, round(prot_len / 10)))
+  } else integer(0)))
   gg <- ggplot2::ggplot() +
     ggplot2::geom_rect(
       ggplot2::aes(xmin = 1, xmax = prot_len, ymin = 0, ymax = 1),
