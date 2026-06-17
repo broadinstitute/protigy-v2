@@ -42,3 +42,6 @@ inst/database/*/uniprot_membrane/*.tsv
 #   e.g. volcano visual-diff PNGs from the kaleido consistency check
 # ──────────────────────────────────────────────────────────────────────────
 dev/*.png
+
+# testthat scratch dir (created when a test file is edited mid-run)
+tests/testthat/_problems/
