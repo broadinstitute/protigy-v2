@@ -739,20 +739,21 @@ PELSASection3_Ome_Server <- function(id,
     # trace renders reliably on WebGL scattergl (a per-point marker.color restyle
     # silently fails there, so we do NOT use that).
     #
-    # LABELS - applied via relayout, NOT baked in: the base is built label-free
-    # (label_mode = "none") so a Label-peptides / Top-N change never rebuilds the
-    # cloud. The label observer below pushes the CURRENT annotation set via
-    # plotlyProxyInvoke("relayout", ...) after each (re)render and on every label
-    # change. ONE code path for labels = always a full-list relayout replace.
-    # The base render therefore depends ONLY on plot_df() + color-mode (NOT on
-    # label_mode_for_contrast()/top_n_for_contrast(), NOT on selection/find).
+    # LABELS - baked into the build (same proven path as the best panel + the
+    # static export). The render depends on label_mode_for_contrast() /
+    # top_n_for_contrast(), so a Label-peptides / Top-N change rebuilds the cloud
+    # WITH the labels. (A relayout-proxy fast-path was tried to avoid this rebuild
+    # but did not deliver annotations reliably on the WebGL plot; baking is the
+    # robust path.) Pan / zoom / selection / find do NOT change the label mode, so
+    # they still never rebuild - the gold highlight stays a proxy overlay.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
       validate(need(nrow(df) > 0L, "No peptides to plot for this contrast."))
       pelsa_volcano_build_plot(
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
-        label_mode = "none",
+        label_mode = label_mode_for_contrast(),
+        n_top = top_n_for_contrast(),
         source_id = ns("pelsa_volcano"),
         selection = NULL, find_mask = NULL,
         register_click = TRUE)
@@ -797,61 +798,23 @@ PELSASection3_Ome_Server <- function(id,
       apply_gold_overlay()
     }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
-    # (b) BASE-REBUILD observer. A color-mode/contrast change re-renders the
-    # WHOLE figure, which clears ALL extra traces on the client. So the old gold
-    # trace is GONE - reset gold_present(FALSE) WITHOUT a delete (deleting the
-    # now-absent trace would error / drop the markers), then re-add the current
-    # gold once the new figure has flushed to the client. Covers
-    # click->change-color-mode (gold survives the rebuild as exactly one trace).
-    # NOTE: label_mode/top_n are NOT here - they no longer rebuild the base (the
-    # base is label-free; labels go via relayout), so the gold trace persists
-    # untouched across a label change and must not be re-added.
+    # (b) BASE-REBUILD observer. Anything that re-renders the WHOLE figure clears
+    # ALL extra traces on the client, so the old gold trace is GONE - reset
+    # gold_present(FALSE) WITHOUT a delete (deleting the now-absent trace would
+    # error / drop the markers), then re-add the current gold once the new figure
+    # has flushed. The base now rebuilds on color-mode / contrast AND on
+    # label-mode / Top-N (labels are baked into the build, not relayout-applied),
+    # so all four are triggers here - otherwise a label change would silently drop
+    # the gold highlight.
     observeEvent(
-      list(input$pelsa_color_mode, active_contrast()),
+      list(input$pelsa_color_mode, active_contrast(),
+           label_mode_for_contrast(), top_n_for_contrast()),
       {
         session$onFlushed(function() {
           gold_present(FALSE)   # the rebuild already cleared the gold trace
           apply_gold_overlay()
         }, once = TRUE)
       }, ignoreNULL = FALSE, ignoreInit = TRUE)
-
-    ## ------------------------------------------------------------------------
-    ## LABEL ANNOTATIONS (proxy relayout - no rebuild; full-list replace)
-    ## ------------------------------------------------------------------------
-    # The base figure is built label-free, so labels live ONLY as layout
-    # annotations applied via relayout. apply_labels() computes the COMPLETE
-    # authoritative annotation list for the current Label-peptides mode + Top-N
-    # and sends it WHOLE: Plotly.relayout({annotations: <full list>}) REPLACES
-    # the layout annotations, so any label not in the new set is dropped, and an
-    # EMPTY list clears ALL labels. This guarantees old labels never linger when
-    # the user picks a new mode / Top-N - there is no append, always a replace.
-    label_proxy <- plotly::plotlyProxy("pelsa_volcano_plot", session)
-
-    apply_labels <- function() {
-      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
-      if (is.null(df) || nrow(df) == 0L) {
-        # Still send an empty replace so any stale labels are cleared.
-        plotly::plotlyProxyInvoke(label_proxy, "relayout",
-                                  list(annotations = list()))
-        return()
-      }
-      anns <- pelsa_volcano_current_annotations(
-        df, label_mode_for_contrast(), top_n_for_contrast(),
-        input$pelsa_color_mode %||% "significance")
-      plotly::plotlyProxyInvoke(label_proxy, "relayout",
-                                list(annotations = anns))
-    }
-
-    # Re-apply labels: on label-mode / Top-N change, AND after a base rebuild
-    # (a color-mode / contrast re-render clears the client-side annotations),
-    # AND on first paint. onFlushed so the relayout lands AFTER the (re)render
-    # has reached the client. ignoreInit = FALSE so the FIRST paint gets labels.
-    observeEvent(
-      list(label_mode_for_contrast(), top_n_for_contrast(),
-           input$pelsa_color_mode, active_contrast()),
-      {
-        session$onFlushed(function() apply_labels(), once = TRUE)
-      }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
     output$pelsa_marker_count <- renderText({
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
