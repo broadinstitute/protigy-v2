@@ -379,14 +379,17 @@ PELSASection3_Ome_Server <- function(id,
     # not this cache - persist user-facing settings across switches.
     volcano_df_cache <- reactiveVal(list())
 
-    # M5: when the marker list changes, drop the cached volcano df so the active
-    # contrast rebuilds with the updated markers. active_volcano_df() reads
-    # volcano_df_cache(), so clearing it invalidates and forces a rebuild (which
-    # reads the current markers at build time). Without this, the cached df keeps
-    # the old markers and a newly-added marker is not flagged on the live view
-    # until a contrast / color-mode switch.
+    # M5: when the marker list changes, drop the cached volcano dfs so the active
+    # contrast rebuilds with the updated markers. active_volcano_df() and
+    # best_volcano_df() each read their own cache and bake the markers in at build
+    # time, so BOTH must be cleared - otherwise a newly-added marker is not flagged
+    # on the live view (all-peptide or best-peptide panel) until a contrast /
+    # color-mode switch happens to free that cache. best_volcano_df_cache is
+    # defined later (it is only referenced when this observer fires, so the forward
+    # reference is safe).
     observeEvent(marker_accessions(), {
       volcano_df_cache(list())
+      best_volcano_df_cache(list())
     }, ignoreInit = TRUE)
 
     # Significance cutoff: SINGLE source of truth shared with the Statistics tab.

@@ -1039,6 +1039,40 @@ test_that("M5: changing markers clears the volcano cache so the active view rebu
   })
 })
 
+# M5 (best-panel half): the same marker change must also clear the BEST-peptide
+# cache. best_volcano_df() bakes isolate(marker_accessions()) at build time and
+# caches per contrast; without clearing best_volcano_df_cache the best panel keeps
+# stale is_marker flags until a contrast / color-mode switch frees it.
+test_that("M5: changing markers clears the best-peptide cache so the best panel rebuilds", {
+  ss <- shiny::reactiveVal(.mk_setup_state_full())  # marker_rows = ACC1
+  args <- .full_args()
+  args$pelsa_setup_state <- ss
+  shiny::testServer(PELSASection3_Ome_Server, args = args, {
+    session$setInputs(pelsa_color_mode = "significance",
+                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_volcano_contrast = "A_over_B",
+                      pelsa_show_best_panel = TRUE)  # best panel ON
+    bdf1 <- best_volcano_df()
+    expect_equal(names(best_volcano_df_cache()), "A_over_B")
+    expect_setequal(marker_accessions(), "ACC1")
+
+    # Add ACC2 to the marker list while the best panel is shown.
+    st_two_markers <- .mk_setup_state_full()
+    st_two_markers$marker_rows <- data.frame(
+      accession = c("ACC1", "ACC2"), gene = c("G1", "G2"),
+      stringsAsFactors = FALSE)
+    ss(st_two_markers)
+    session$flushReact()
+    expect_setequal(marker_accessions(), c("ACC1", "ACC2"))
+
+    # Observable contract: the rebuilt best df flags STRICTLY more peptides as
+    # markers. Were the stale best cache kept, the count would not change.
+    bdf2 <- best_volcano_df()
+    expect_equal(names(best_volcano_df_cache()), "A_over_B")
+    expect_gt(sum(bdf2$is_marker, na.rm = TRUE), sum(bdf1$is_marker, na.rm = TRUE))
+  })
+})
+
 # ---------------------------------------------------------------------------
 # Shared-cutoff wiring (source-level regression guard)
 #
