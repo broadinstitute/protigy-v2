@@ -141,9 +141,14 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       sample_order    = list()   # [[ds]] -> chr (canonical sample order)
     )
 
-    # Re-read the compound presets on Setup entry (and whenever the box renders)
-    # so user edits to compound_markers.yaml show up without an app restart.
+    # Bumping this forces compound_markers() to re-read the YAML (after an in-app
+    # add-compound / set-default write) without re-rendering the whole Setup box.
+    compound_markers_version <- reactiveVal(0)
+
+    # Re-read the compound presets on Setup entry, whenever the box renders, and
+    # whenever a write bumps the version, so user edits show up without a restart.
     compound_markers <- reactive({
+      compound_markers_version()
       pelsa_read_compound_markers(pelsa_compound_markers_path())
     })
 
@@ -208,7 +213,10 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
       pelsa_setup_box_ui(
         species   = species_choices,
-        compounds = names(compound_markers()$compounds),
+        # isolate(): the dropdown is driven by a targeted updateSelectInput after
+        # a write, so renderUI must NOT take a dependency on compound_markers()
+        # (that would re-render the entire Setup box on every preset write).
+        compounds = isolate(names(compound_markers()$compounds)),
         ns        = ns,
         selected_species  = sel_species,
         selected_compound = sel_compound,
