@@ -192,12 +192,12 @@ pelsa_refresh_accession_universe <- function(gcts, existing_cache,
 # "normally" with FEWER features. Writing ONLY the fresh frame would then
 # PERMANENTLY DROP the previously-cached annotations for those accessions.
 #
-# RULE:
-#   - For every accession the fetch RESOLVED (i.e. present in `fresh` OR in the
-#     universe but NOT in `unresolved`): take the FRESH rows. This is correct
-#     even when UniProt genuinely REMOVED a feature for a resolved accession
-#     (the fresh rows replace the old ones; a resolved-but-now-empty accession
-#     correctly drops to zero rows).
+# RULE (driven solely by `fresh` + `unresolved`; there is no `universe` arg):
+#   - For every accession NOT in `unresolved`: take the FRESH rows (which may be
+#     none). This is correct even when UniProt genuinely REMOVED a feature for a
+#     resolved accession (the fresh rows replace the old ones; a resolved-but-
+#     now-empty accession has no fresh rows and is not retained, so it correctly
+#     drops to zero rows).
 #   - For accessions in `unresolved` that EXIST in the old cache: RETAIN the old
 #     rows (coverage preserved across a flaky fetch).
 #   - Accessions in neither contribute nothing.

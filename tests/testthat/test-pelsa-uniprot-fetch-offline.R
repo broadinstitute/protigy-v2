@@ -121,6 +121,20 @@ test_that("an input secondary accession returned under its primary is RESOLVED",
   expect_length(res$unresolved, 0L)
 })
 
+test_that("multiple secondary accessions on one entry all resolve", {
+  # Real UniProt entries carry secondaryAccessions as a multi-element array.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      e <- fake_entry("Q99PRI")
+      e$secondaryAccessions <- list("SEC1", "SEC2", "SEC3")
+      list(entries = list(e), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("SEC1", "SEC3"), batch_size = 2L)
+  expect_length(res$unresolved, 0L)
+})
+
 test_that("a genuinely-absent accession is still reported unresolved", {
   # Control: an accession UniProt never returns stays unresolved.
   testthat::local_mocked_bindings(
