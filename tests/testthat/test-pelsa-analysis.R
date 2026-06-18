@@ -22,8 +22,8 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
 # Created under tempfile() (auto-cleaned at session end); cheap and isolated.
 .mk_database_dir <- function() {
   tmp <- tempfile("pelsa_db_")
-  dir.create(file.path(tmp, "human", "fasta"), recursive = TRUE)
-  writeLines(c(">sp|P1|X", "MABC"), file.path(tmp, "human", "fasta", "x.fasta"))
+  dir.create(file.path(tmp, "9606", "fasta"), recursive = TRUE)
+  writeLines(c(">sp|P1|X", "MABC"), file.path(tmp, "9606", "fasta", "x.fasta"))
   dir.create(file.path(tmp, "fishless", "fasta"), recursive = TRUE)  # empty
   tmp
 }
@@ -60,17 +60,17 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
 
 test_that("pelsa_species_fasta_path finds a fasta or returns NA", {
   db <- .mk_database_dir()
-  expect_true(!is.na(pelsa_species_fasta_path(db, "human")))
+  expect_true(!is.na(pelsa_species_fasta_path(db, "9606")))
   expect_true(is.na(pelsa_species_fasta_path(db, "fishless")))   # no fasta file
   expect_true(is.na(pelsa_species_fasta_path(db, "absent")))     # no folder
-  expect_true(is.na(pelsa_species_fasta_path("", "human")))
+  expect_true(is.na(pelsa_species_fasta_path("", "9606")))
 })
 
 # ---- pelsa_validate_setup (closed-form) --------------------------------------
 
 test_that("validate fails when no dataset is checked", {
   db <- .mk_database_dir()
-  snap <- list(datasets = character(0), species = "human",
+  snap <- list(datasets = character(0), species = "9606",
                condition_col = list(), condition_order = list())
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
@@ -79,7 +79,7 @@ test_that("validate fails when no dataset is checked", {
 
 test_that("validate fails when a checked dataset lacks a condition column", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = "human",
+  snap <- list(datasets = "ds1", species = "9606",
                condition_col = list(), condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
@@ -88,7 +88,7 @@ test_that("validate fails when a checked dataset lacks a condition column", {
 
 test_that("validate fails when condition order is not confirmed", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = "human",
+  snap <- list(datasets = "ds1", species = "9606",
                condition_col = list(ds1 = "cond"),
                condition_order = list())          # no order
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
@@ -120,7 +120,7 @@ test_that("validate flags a condition column missing from a dataset's cdesc", {
   db <- .mk_database_dir()
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)  # cdesc has only 'condition'
-  snap <- list(datasets = "ds1", species = "human",
+  snap <- list(datasets = "ds1", species = "9606",
                condition_col = list(ds1 = "NOT_A_COLUMN"),
                condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
@@ -132,7 +132,7 @@ test_that("validate passes with everything present (empty markers still ok)", {
   db <- .mk_database_dir()
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)
-  snap <- list(datasets = "ds1", species = "human",
+  snap <- list(datasets = "ds1", species = "9606",
                marker_rows = pelsa_empty_marker_rows(),   # EMPTY markers
                condition_col = list(ds1 = "condition"),
                condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN")))
@@ -568,7 +568,7 @@ test_that("run_analysis threads per-ds log_base into the CV delinearize", {
   cmap <- stats::setNames(sub("_R[0-9]+$", "", sc), sc)
   gct <- .mk_gct_from_mat(log_mat)
 
-  snap <- list(datasets = "ds1", species = "human",
+  snap <- list(datasets = "ds1", species = "9606",
                condition_col = list(ds1 = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(ds1 = gct), gcts_original = list(ds1 = gct),
@@ -626,7 +626,7 @@ test_that("run_analysis returns a per-dataset keyed list for >1 dataset", {
   feat_df <- .mk_feat_df()
 
   snap <- list(
-    datasets = c("dsA", "dsB"), species = "human",
+    datasets = c("dsA", "dsB"), species = "9606",
     condition_col = list(dsA = "condition", dsB = "condition")
   )
   res <- pelsa_run_analysis(
@@ -645,7 +645,7 @@ test_that("run_analysis returns a per-dataset keyed list for >1 dataset", {
 test_that("run_analysis only analyzes checked datasets present in gcts", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 4)
   g <- .mk_gct(syn)
-  snap <- list(datasets = c("dsA", "ghost"), species = "human",
+  snap <- list(datasets = c("dsA", "ghost"), species = "9606",
                condition_col = list(dsA = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(dsA = g), gcts_original = list(dsA = g),
@@ -657,7 +657,7 @@ test_that("run_analysis only analyzes checked datasets present in gcts", {
 test_that("run_analysis captures a per-dataset error (with stage) without aborting others", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 4)
   g <- .mk_gct(syn)
-  snap <- list(datasets = c("good", "bad"), species = "human",
+  snap <- list(datasets = c("good", "bad"), species = "9606",
                condition_col = list(good = "condition", bad = "condition"))
   # 'bad' gets a non-GCT/non-df value -> pelsa_dataset_peptide_frame stop ->
   # captured as list(error=, stage=).
@@ -679,7 +679,7 @@ test_that("run_analysis captures the failing STAGE on a deep mid-pipeline error"
   # inside the explode/map stage -> stage == "Mapping peptide positions".
   pf <- syn$peptides
   pf$PG.ProteinAccessions <- NULL
-  snap <- list(datasets = "d", species = "human",
+  snap <- list(datasets = "d", species = "9606",
                condition_col = list(d = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(d = pf), gcts_original = list(d = NULL),
@@ -691,7 +691,7 @@ test_that("run_analysis captures the failing STAGE on a deep mid-pipeline error"
 
 test_that("run_analysis errors when no checked dataset is present", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
-  snap <- list(datasets = character(0), species = "human",
+  snap <- list(datasets = character(0), species = "9606",
                condition_col = list())
   expect_error(
     pelsa_run_analysis(gcts = list(), gcts_original = list(),

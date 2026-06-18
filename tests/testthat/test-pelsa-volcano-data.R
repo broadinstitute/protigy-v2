@@ -208,6 +208,33 @@ test_that("empty gene token -> label uses the accession (2C/2I fallback)", {
   expect_equal(out$label, "NOGENEACC_aa5")
 })
 
+test_that("is_self_curated forces <accession>_aa<pos> label even when a gene is present", {
+  # A self-curated run whose input report DID carry a gene must still label by
+  # accession (genes are ignored for self-curated species) and blank winning_gene.
+  stat <- .make_stat_df(
+    seq = "PEPSC", acc = "BalskusLab_HoyT_0001", genes = "SOMEGENE",
+    logfc = 1.0, adjp = 0.20, pval = 0.10,
+    pep_start = 7L, pep_end = 11L, row_id = 1L
+  )
+  matched <- .make_matched("PEPSC", "BalskusLab_HoyT_0001", "SOMEGENE",
+                           7L, 11L, row_id = 1L)
+
+  out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+                                markers = character(0), contrast = "C1",
+                                is_self_curated = TRUE)
+
+  expect_equal(out$label, "BalskusLab_HoyT_0001_aa7")
+  expect_equal(out$winning_gene, "")
+})
+
+test_that(".pelsa_volcano_labels(is_self_curated=TRUE) forces accession over gene", {
+  matched <- .make_matched("PEPSC", "ACC1", "GENE1", 7L, 11L, row_id = 1L)
+  lab_uniprot <- .pelsa_volcano_labels(matched, ".row_id")
+  lab_self    <- .pelsa_volcano_labels(matched, ".row_id", is_self_curated = TRUE)
+  expect_equal(lab_uniprot$label, "GENE1_aa7")
+  expect_equal(lab_self$label, "ACC1_aa7")
+})
+
 # --- is_marker via 2J ---------------------------------------------------------
 
 test_that("peptide on a marker accession (incl. isoform) -> is_marker TRUE", {
@@ -653,6 +680,27 @@ test_that("integration: build volcano df from the synthetic generator", {
   attr(df, "y_cutoff") <- 2.0
   df
 }
+
+test_that("pelsa_volcano_export_df forces accession label + blank gene when self-curated", {
+  # The export re-derive is a SEPARATE label path from the on-screen build; it
+  # must apply the same self-curated forcing so the exported figure matches the
+  # screen (no gene labels for a self-curated species).
+  stat <- .make_stat_df(
+    seq = "PEPSC", acc = "BalskusLab_HoyT_0001", genes = "SOMEGENE",
+    logfc = 1.0, adjp = 0.20, pval = 0.10,
+    pep_start = 7L, pep_end = 11L, row_id = 1L
+  )
+  matched <- .make_matched("PEPSC", "BalskusLab_HoyT_0001", "SOMEGENE",
+                           7L, 11L, row_id = 1L)
+
+  ex <- pelsa_volcano_export_df(
+    stat_raw = stat, matched = matched, feat_df = NULL,
+    markers = character(0), contrast = "C1", panel = "all_peptide",
+    is_self_curated = TRUE
+  )
+  expect_equal(ex$label, "BalskusLab_HoyT_0001_aa7")
+  expect_equal(ex$winning_gene, "")
+})
 
 test_that(".pelsa_export_color_spec: significance mode -> 3 fixed buckets", {
   bg <- .make_export_df()

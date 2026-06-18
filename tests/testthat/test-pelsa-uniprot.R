@@ -120,7 +120,7 @@ test_that("pelsa_feature_to_class is vectorized and case/space-insensitive", {
 test_that("SCORES equals the cache schema feature_class_scores", {
   scores <- pelsa_feature_class_scores()
   schema_path <- testthat::test_path(
-    "..", "..", "inst", "database", "human", "uniprot_features", "schema.json"
+    "..", "..", "inst", "database", "9606", "uniprot_features", "schema.json"
   )
   skip_if_not(file.exists(schema_path), "schema.json not found")
   schema <- jsonlite::fromJSON(schema_path, simplifyVector = TRUE)

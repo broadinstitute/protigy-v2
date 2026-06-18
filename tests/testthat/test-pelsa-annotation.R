@@ -425,13 +425,13 @@ test_that("pelsa_read_feature_cache errors clearly when the file is missing", {
   expect_error(pelsa_read_feature_cache(tmp), "uniprot_features\\.tsv")
 })
 
-test_that("pelsa_read_feature_cache smoke-reads the committed human cache (fast)", {
-  species_dir <- system.file("database", "human", package = "Protigy")
+test_that("pelsa_read_feature_cache smoke-reads the committed 9606 cache (fast)", {
+  species_dir <- system.file("database", "9606", package = "Protigy")
   if (!nzchar(species_dir)) {
-    species_dir <- testthat::test_path("..", "..", "inst", "database", "human")
+    species_dir <- testthat::test_path("..", "..", "inst", "database", "9606")
   }
   tsv <- file.path(species_dir, "uniprot_features", "uniprot_features.tsv")
-  skip_if_not(file.exists(tsv), "human feature cache not available")
+  skip_if_not(file.exists(tsv), "9606 feature cache not available")
   # Read only a few rows to keep it fast (26MB file).
   out <- pelsa_read_feature_cache(species_dir, n_max = 100L)
   expect_true(all(c("accession", "start", "end", "feature_class") %in%

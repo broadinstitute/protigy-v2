@@ -85,6 +85,59 @@ test_that("pelsa_read_fasta emits no warning when accessions are unique", {
   expect_warning(pelsa_read_fasta(tmp), NA)
 })
 
+test_that("mode='self_curated' keys on the first whitespace token, never the pipe", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(
+    c(
+      ">BalskusLab_HoyT_0001 hypothetical protein OS=Hoylesella",
+      "MKLV",
+      "PTIDE",
+      # A self-curated header that *contains* a pipe must still key on the first
+      # whitespace token, NOT the pipe field (folder type drives the mode).
+      ">contig7|gene42 some annotation here",
+      "AAAA"
+    ),
+    tmp
+  )
+  out <- pelsa_read_fasta(tmp, mode = "self_curated")
+  expect_identical(names(out),
+                   c("BalskusLab_HoyT_0001", "contig7|gene42"))
+  expect_identical(out[["BalskusLab_HoyT_0001"]], "MKLVPTIDE")
+  expect_identical(out[["contig7|gene42"]], "AAAA")
+})
+
+test_that("self-curated map: first-token accessions resolve peptide positions e2e", {
+  # End-to-end: a self-curated FASTA parsed in self_curated mode feeds the same
+  # position-mapping path. The exploded frame keys on the first-token accession.
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(c(">BalskusLab_HoyT_0001 hypothetical protein", "MKLVPTIDESEQ"), tmp)
+  fasta <- pelsa_read_fasta(tmp, mode = "self_curated")
+
+  exploded <- data.frame(
+    PEP.StrippedSequence = "PTIDE",
+    accession            = "BalskusLab_HoyT_0001",
+    gene                 = NA_character_,
+    pep_position_token   = NA_character_,
+    stringsAsFactors     = FALSE
+  )
+  res <- pelsa_map_peptide_positions(exploded, fasta)
+  expect_equal(nrow(res$matched), 1L)
+  expect_equal(res$matched$pep_start, 5L)   # MKLV|PTIDE -> starts at residue 5
+  expect_equal(res$matched$pep_end, 9L)
+  expect_equal(nrow(res$unmatched), 0L)
+})
+
+test_that("mode='uniprot' (default) is unchanged: sp|...| keys on the pipe field", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(c(">sp|P12345|X_HUMAN desc", "MKLV"), tmp)
+  # Default mode and explicit "uniprot" both take the middle pipe field.
+  expect_identical(names(pelsa_read_fasta(tmp)), "P12345")
+  expect_identical(names(pelsa_read_fasta(tmp, mode = "uniprot")), "P12345")
+})
+
 # ---- pelsa_map_peptide_positions --------------------------------------------
 
 # Build the exploded long frame once per test from the synthetic generator.

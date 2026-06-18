@@ -283,7 +283,7 @@ test_that("refresh_species_cache fetches via injected stub + writes + counts", {
   }
 
   res <- pelsa_refresh_species_cache(
-    species = "human", universe = universe, species_dir = species_dir,
+    species = "9606", universe = universe, species_dir = species_dir,
     fetch_fn = fake_fetch
   )
 
@@ -318,7 +318,7 @@ test_that("refresh_species_cache MERGES over an existing cache (no data loss)", 
   fake_fetch <- function(accessions) list(features = fresh, unresolved = "P3")
 
   res <- pelsa_refresh_species_cache(
-    species = "human", universe = c("P1", "P2", "P3"),
+    species = "9606", universe = c("P1", "P2", "P3"),
     species_dir = species_dir, fetch_fn = fake_fetch, existing = existing
   )
   expect_identical(res$n_retained_from_cache, 1L)
@@ -341,7 +341,7 @@ test_that("refresh_species_cache drives a Progress-like object's $set", {
   }
 
   pelsa_refresh_species_cache(
-    species = "mouse", universe = "P00001", species_dir = species_dir,
+    species = "10090", universe = "P00001", species_dir = species_dir,
     fetch_fn = fake_fetch, progress = fake_progress
   )
   expect_gte(length(calls), 2L)               # at least fetch + write stages
@@ -351,7 +351,7 @@ test_that("refresh_species_cache drives a Progress-like object's $set", {
 test_that("refresh_species_cache errors on an empty universe", {
   species_dir <- withr::local_tempdir()
   expect_error(
-    pelsa_refresh_species_cache("human", character(0), species_dir,
+    pelsa_refresh_species_cache("9606", character(0), species_dir,
                                 fetch_fn = function(a) list(features = NULL)),
     "empty accession universe"
   )
@@ -360,7 +360,7 @@ test_that("refresh_species_cache errors on an empty universe", {
 test_that("refresh_species_cache rejects a malformed fetch_fn return", {
   species_dir <- withr::local_tempdir()
   expect_error(
-    pelsa_refresh_species_cache("human", "P1", species_dir,
+    pelsa_refresh_species_cache("9606", "P1", species_dir,
                                 fetch_fn = function(a) list(nope = 1)),
     "must return a list with a `features`"
   )
@@ -370,8 +370,8 @@ test_that("refresh_species_cache rejects a malformed fetch_fn return", {
 
 test_that("run_species_refresh refreshes multiple species + captures errors", {
   db <- withr::local_tempdir()
-  dir.create(file.path(db, "human"))
-  dir.create(file.path(db, "mouse"))
+  dir.create(file.path(db, "9606"))
+  dir.create(file.path(db, "10090"))
 
   # Stub: human succeeds; mouse "fetches" features whose schema is broken so the
   # write fails -> per-species error captured, the other species still ok.
@@ -385,16 +385,16 @@ test_that("run_species_refresh refreshes multiple species + captures errors", {
 
   progressed <- c()
   results <- pelsa_run_species_refresh(
-    species = c("human", "mouse"), database_dir = db, uploaded_gcts = gcts,
+    species = c("9606", "10090"), database_dir = db, uploaded_gcts = gcts,
     fetch_fn = fake_fetch,
     set_progress = function(value, detail) progressed <<- c(progressed, value)
   )
 
   expect_length(results, 2L)
-  expect_identical(results[[1]]$species, "human")
+  expect_identical(results[[1]]$species, "9606")
   expect_null(results[[1]]$error)
   expect_identical(results[[1]]$n_features, 3L)
-  expect_true(file.exists(file.path(db, "human", "uniprot_features",
+  expect_true(file.exists(file.path(db, "9606", "uniprot_features",
                                     "uniprot_features.tsv")))
   # Progress advanced and reached the end.
   expect_gt(length(progressed), 0L)
@@ -403,7 +403,7 @@ test_that("run_species_refresh refreshes multiple species + captures errors", {
 
 test_that("run_species_refresh captures a per-species error without aborting", {
   db <- withr::local_tempdir()
-  dir.create(file.path(db, "human"))
+  dir.create(file.path(db, "9606"))
 
   # Stub returns a malformed (missing-schema) feature frame -> write fails.
   bad_fetch <- function(accessions) {
@@ -414,7 +414,7 @@ test_that("run_species_refresh captures a per-species error without aborting", {
                               stringsAsFactors = FALSE))
 
   results <- pelsa_run_species_refresh(
-    species = "human", database_dir = db, uploaded_gcts = gcts,
+    species = "9606", database_dir = db, uploaded_gcts = gcts,
     fetch_fn = bad_fetch
   )
   expect_length(results, 1L)
@@ -426,9 +426,9 @@ test_that("run_species_refresh captures a per-species error without aborting", {
 
 test_that("notifications: error + lossy-warning + success summary", {
   results <- list(
-    list(species = "human", n_features = 100L, n_unresolved = 2L,
+    list(species = "9606", n_features = 100L, n_unresolved = 2L,
          n_retained_from_cache = 2L, had_existing = TRUE, error = NULL),
-    list(species = "mouse", error = "UniProt unavailable"),
+    list(species = "10090", error = "UniProt unavailable"),
     list(species = "rat", n_features = 50L, n_unresolved = 0L,
          n_retained_from_cache = 0L, had_existing = FALSE, error = NULL)
   )
@@ -443,14 +443,14 @@ test_that("notifications: error + lossy-warning + success summary", {
   expect_match(warn$message, "retained")
   # The success summary covers both successful species.
   msg <- notes[[which(types == "message")]]
-  expect_match(msg$message, "human")
+  expect_match(msg$message, "9606")
   expect_match(msg$message, "rat")
 })
 
 test_that("notifications: a fresh-cache species with unresolved does NOT warn", {
   # No prior cache -> unresolved is expected, not lossy; no warning.
   results <- list(
-    list(species = "human", n_features = 10L, n_unresolved = 3L,
+    list(species = "9606", n_features = 10L, n_unresolved = 3L,
          n_retained_from_cache = 0L, had_existing = FALSE, error = NULL)
   )
   types <- vapply(pelsa_refresh_notifications(results),
@@ -475,15 +475,15 @@ test_that("Setup UI exposes the refresh species checklist + button ids", {
 
 test_that("universe_size sums per-species universes (datasets union cache)", {
   db <- withr::local_tempdir()
-  dir.create(file.path(db, "human")); dir.create(file.path(db, "mouse"))
+  dir.create(file.path(db, "9606")); dir.create(file.path(db, "10090"))
   gcts <- list(
     d = data.frame(PG.ProteinAccessions = c("P1;P2", "P3"),
                    stringsAsFactors = FALSE)
   )
-  sz <- pelsa_refresh_universe_size(c("human", "mouse"), db, gcts)
+  sz <- pelsa_refresh_universe_size(c("9606", "10090"), db, gcts)
   # Both species share the same dataset universe (3 accessions); no caches yet.
-  expect_equal(unname(sz$per_species[["human"]]), 3L)
-  expect_equal(unname(sz$per_species[["mouse"]]), 3L)
+  expect_equal(unname(sz$per_species[["9606"]]), 3L)
+  expect_equal(unname(sz$per_species[["10090"]]), 3L)
   expect_equal(sz$total, 6L)
 })
 
@@ -498,7 +498,7 @@ test_that("eta_text formats count + a coarse ETA (sec vs min)", {
 
 test_that("species_cache honors a pre-fetch cancel: no write, cache intact", {
   db <- withr::local_tempdir()
-  species_dir <- file.path(db, "human")
+  species_dir <- file.path(db, "9606")
   dir.create(species_dir)
   existing <- .fake_feature_df()
 
@@ -508,7 +508,7 @@ test_that("species_cache honors a pre-fetch cancel: no write, cache intact", {
     list(features = .fake_feature_df(), unresolved = character(0)) }
 
   res <- pelsa_refresh_species_cache(
-    species = "human", universe = c("P1", "P2"), species_dir = species_dir,
+    species = "9606", universe = c("P1", "P2"), species_dir = species_dir,
     fetch_fn = fake_fetch, existing = existing,
     should_cancel = function() TRUE
   )
@@ -520,7 +520,7 @@ test_that("species_cache honors a pre-fetch cancel: no write, cache intact", {
 
 test_that("species_cache honors a mid-fetch cancel flag from the fetcher", {
   db <- withr::local_tempdir()
-  species_dir <- file.path(db, "human")
+  species_dir <- file.path(db, "9606")
   dir.create(species_dir)
 
   # Fetcher reports canceled = TRUE (as the real one does when stopped at a page
@@ -530,7 +530,7 @@ test_that("species_cache honors a mid-fetch cancel flag from the fetcher", {
          canceled = TRUE)
   }
   res <- pelsa_refresh_species_cache(
-    species = "human", universe = c("P1", "P2"), species_dir = species_dir,
+    species = "9606", universe = c("P1", "P2"), species_dir = species_dir,
     fetch_fn = canceling_fetch, existing = NULL
   )
   expect_true(isTRUE(res$canceled))
@@ -570,14 +570,14 @@ test_that("progress_ui clamps + shows percent and detail", {
 })
 
 test_that("result_ui colors by worst status (ok / warn / error)", {
-  ok <- list(list(species = "human", n_features = 100L, n_unresolved = 0L,
+  ok <- list(list(species = "9606", n_features = 100L, n_unresolved = 0L,
                   n_retained_from_cache = 0L, had_existing = TRUE,
                   canceled = FALSE, error = NULL))
-  warn <- list(list(species = "human", n_features = 100L, n_unresolved = 3L,
+  warn <- list(list(species = "9606", n_features = 100L, n_unresolved = 3L,
                     n_retained_from_cache = 5L, had_existing = TRUE,
                     canceled = FALSE, error = NULL))
-  err <- list(list(species = "human", error = "boom"))
-  cancel <- list(list(species = "human", canceled = TRUE, error = NULL))
+  err <- list(list(species = "9606", error = "boom"))
+  cancel <- list(list(species = "9606", canceled = TRUE, error = NULL))
 
   expect_match(as.character(pelsa_refresh_result_ui(ok)), "#5cb85c")     # green
   expect_match(as.character(pelsa_refresh_result_ui(warn)), "#f0ad4e")   # amber
@@ -592,10 +592,10 @@ test_that("result_ui colors by worst status (ok / warn / error)", {
 
 test_that("notifications report a canceled species + exclude it from 'complete'", {
   results <- list(
-    list(species = "human", n_features = 100L, n_unresolved = 0L,
+    list(species = "9606", n_features = 100L, n_unresolved = 0L,
          n_retained_from_cache = 0L, had_existing = TRUE, canceled = FALSE,
          error = NULL),
-    list(species = "mouse", canceled = TRUE, not_run = TRUE, error = NULL)
+    list(species = "10090", canceled = TRUE, not_run = TRUE, error = NULL)
   )
   notes <- pelsa_refresh_notifications(results)
   msgs <- vapply(notes, function(n) n$message, character(1))
@@ -603,6 +603,6 @@ test_that("notifications report a canceled species + exclude it from 'complete'"
   # The success summary mentions human but NOT mouse.
   complete <- msgs[grepl("refresh complete", msgs, ignore.case = TRUE)]
   expect_length(complete, 1L)
-  expect_match(complete, "human")
-  expect_false(grepl("mouse", complete))
+  expect_match(complete, "9606")
+  expect_false(grepl("10090", complete))
 })
