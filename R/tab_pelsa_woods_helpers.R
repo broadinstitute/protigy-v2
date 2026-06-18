@@ -85,12 +85,14 @@
 # @param stat_df    a pelsa_volcano_stat_df() frame (PEP.StrippedSequence + the
 #                   contrast-suffixed logFC/adj.P.Val columns).
 # @param contrast   the contrast suffix (e.g. "A_over_B").
-# @param sig_cutoff adj.P.Val significance threshold (default 0.05).
+# @param sig_cutoff adj.P.Val significance threshold. Defaults to the shared
+#   .PELSA_EXPORT_SIG_CUTOFF; live module callers thread the user-set
+#   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
 # @return data.frame(peptide_seq, pep_start, pep_end, logFC, adj.P.Val, sig),
 #         sorted by pep_start; 0-row frame (same columns) when nothing matches.
 # @noRd
 pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
-                                     sig_cutoff = 0.05) {
+                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   empty <- data.frame(
     peptide_seq = character(0), pep_start = integer(0), pep_end = integer(0),
     logFC = numeric(0), adj.P.Val = numeric(0), sig = logical(0),

@@ -247,3 +247,10 @@ test_that("feature legend UI lists every PELSA_FEATURE_COLORS class", {
     expect_true(grepl(col, html, fixed = TRUE))
   }
 })
+
+test_that("pelsa_woods_peptide_data default sig_cutoff is the shared constant symbol", {
+  # Default REFERENCES the shared export constant, not a stray literal 0.05;
+  # live callers still thread isolate(sig_cutoff_r()) for the user-set cutoff.
+  expect_identical(formals(Protigy:::pelsa_woods_peptide_data)$sig_cutoff,
+                   as.symbol(".PELSA_EXPORT_SIG_CUTOFF"))
+})

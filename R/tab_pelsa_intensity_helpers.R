@@ -102,11 +102,14 @@
 #   carrying `accession` plus the same peptide key.
 # @param markers        character vector of marker accessions (isoforms ok).
 # @param contrast       contrast key; selects adj.P.Val.<contrast>.
-# @param sig_cutoff     significance threshold on adj.P.Val (default 0.05).
+# @param sig_cutoff     significance threshold on adj.P.Val. Defaults to the
+#   shared .PELSA_EXPORT_SIG_CUTOFF; live module callers thread the user-set
+#   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
 # @return data.frame(accession, is_marker), zero-row when the union is empty.
 # @noRd
 pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
-                                     contrast, sig_cutoff = 0.05) {
+                                     contrast,
+                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (!is.data.frame(stat_df)) {
     stop("pelsa_intensity_proteins: stat_df must be a data.frame", call. = FALSE)
@@ -248,7 +251,9 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 #   for the x-axis); conditions with no samples are dropped from rows but kept
 #   as levels.
 # @param contrast         contrast key; selects adj.P.Val.<contrast>.
-# @param sig_cutoff       significance threshold on adj.P.Val (default 0.05).
+# @param sig_cutoff       significance threshold on adj.P.Val. Defaults to the
+#   shared .PELSA_EXPORT_SIG_CUTOFF; live module callers thread the user-set
+#   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
 # @param is_marker        TRUE -> include BOTH significant + non-significant
 #   occurrences (panel-tagged); FALSE -> only significant occurrences.
 # @return tidy long data.frame, one row per (occurrence, condition-with-samples),
@@ -259,7 +264,8 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
                                       processed_mat, condition_map,
                                       condition_order, contrast,
-                                      sig_cutoff = 0.05, is_marker = FALSE,
+                                      sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
+                                      is_marker = FALSE,
                                       show_all = FALSE) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (length(accession) != 1L || is.na(accession) || !nzchar(accession)) {

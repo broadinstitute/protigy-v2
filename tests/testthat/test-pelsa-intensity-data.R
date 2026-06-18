@@ -687,3 +687,25 @@ test_that("pelsa_plotted_intensities_df sig_cutoff defaults to the export consta
   expect_s3_class(out, "data.frame")
   expect_setequal(unique(out$accession), "P_MID")
 })
+
+# =============================================================================
+# sig_cutoff default sources the shared constant (single source of truth)
+#
+# The pure helpers cannot read the reactive stat_params() cutoff themselves;
+# live module callers thread isolate(sig_cutoff_r()) explicitly (matching the
+# volcano). The DEFAULT must REFERENCE the shared constant .PELSA_EXPORT_SIG_CUTOFF
+# rather than a stray literal 0.05, so the constant is the single source of truth
+# at every layer. Asserting the default EXPRESSION is the constant's symbol makes
+# reverting to `sig_cutoff = 0.05` fail (a value-only check would not, since
+# 0.05 == the constant).
+# =============================================================================
+
+test_that("pelsa_intensity_proteins default sig_cutoff is the shared constant symbol", {
+  expect_identical(formals(Protigy:::pelsa_intensity_proteins)$sig_cutoff,
+                   as.symbol(".PELSA_EXPORT_SIG_CUTOFF"))
+})
+
+test_that("pelsa_intensity_line_data default sig_cutoff is the shared constant symbol", {
+  expect_identical(formals(Protigy:::pelsa_intensity_line_data)$sig_cutoff,
+                   as.symbol(".PELSA_EXPORT_SIG_CUTOFF"))
+})
