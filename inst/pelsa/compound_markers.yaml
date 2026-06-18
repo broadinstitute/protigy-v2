@@ -1,62 +1,26 @@
-# ==============================================================================
-# PELSA preset marker proteins per treatment compound
-#
-# Drives the PELSA Setup tab: when the user selects a treatment compound from the
-# dropdown, the marker-protein reactive table is autofilled with that compound's
-# preset markers (the user can still add/remove markers afterwards).
-#
-# HOW TO EXTEND (no code change needed):
-#   - Add a new top-level entry under `compounds:` keyed by the compound name
-#     (the name shown in the Setup dropdown).
-#   - Under it, give a `markers:` list; each marker has:
-#       accession    UniProt accession (REQUIRED — the canonical/primary form;
-#                    used for matching peptides to marker proteins).
-#       gene         Gene symbol (optional but recommended; if omitted the app
-#                    falls back to the accession for labels).
-#   - `aliases:` (optional) lets a compound be found under alternative names.
-#   - Keep accessions as quoted strings so YAML never coerces them to numbers.
-#
-# Notes:
-#   - Accessions are matched case-insensitively by leading UniProt accession,
-#     consistent with the volcano marker-matching rule.
-#   - This file is read at app start (and re-read when Setup opens) so edits here
-#     show up without rebuilding the package. Path: inst/pelsa/compound_markers.yaml
-#   - The three compounds below are examples; add real project compounds freely.
-# ==============================================================================
-
 metadata:
   description: Preset PELSA marker proteins per treatment compound.
-  schema_version: 1
-
+  schema_version: 1.0
 compounds:
-
   Rapamycin:
-    aliases:
-      - Sirolimus
     markers:
-      - accession: 'P42345'   # mTOR — mechanistic target of rapamycin
-        gene: 'MTOR'
-      - accession: 'P62942'   # FKBP1A — rapamycin-binding immunophilin
-        gene: 'FKBP1A'
-      - accession: 'Q13451'   # FKBP5
-        gene: 'FKBP5'
-
+    - accession: P42345
+      gene: MTOR
+    - accession: P62942
+      gene: FKBP1A
+    - accession: Q13451
+      gene: FKBP5
   AY9944:
-    aliases:
-      - 'AY-9944'
     markers:
-      - accession: 'Q9UBM7'   # DHCR7 — 7-dehydrocholesterol reductase (primary target)
-        gene: 'DHCR7'
-      - accession: 'Q15125'   # EBP — emopamil-binding protein (sterol isomerase)
-        gene: 'EBP'
-
+    - accession: Q9UBM7
+      gene: DHCR7
+    - accession: Q15125
+      gene: EBP
   U-18666A:
-    aliases:
-      - 'U18666A'
     markers:
-      - accession: 'O15118'   # NPC1 — Niemann-Pick C1 (cholesterol transport)
-        gene: 'NPC1'
-      - accession: 'Q9UHC9'   # NPC1L1
-        gene: 'NPC1L1'
-      - accession: 'Q15125'   # EBP — also engaged by U-18666A
-        gene: 'EBP'
+    - accession: O15118
+      gene: NPC1
+    - accession: Q9UHC9
+      gene: NPC1L1
+    - accession: Q15125
+      gene: EBP
