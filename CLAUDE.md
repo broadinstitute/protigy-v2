@@ -37,6 +37,16 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   restyle and `plotlyProxyInvoke("relayout", annotations=)` do NOT reliably render on
   WebGL — bake labels/annotations into `pelsa_volcano_build_plot()` and do highlights
   as addTraces/deleteTraces overlay traces (only pan/zoom/select avoid a rebuild).
+- **PELSA species convention**: a species is a subfolder of `inst/database/`. Its NAME
+  is the sole signal (`R/tab_pelsa_species_resolve.R::pelsa_resolve_species`): an
+  all-digits name (`9606`, `10090`) is a UniProt taxon code (pipe-aware FASTA parse +
+  UniProt annotation fetch + name validated via `rest.uniprot.org/taxonomy/{id}`); any
+  other name is a self-curated species (first-token FASTA parse, NO annotation fetch,
+  annotation UI disabled, accession-based labels). Verdicts cache in a gitignored
+  `inst/database/species_meta.json`. The reactive render path resolves CACHE-ONLY
+  (`allow_fetch = FALSE`); network is touched only at Start-Analysis and once per app
+  start (`pelsa_refresh_species_meta_on_start`). `pelsa_read_fasta(path, mode=)` picks
+  the parse mode from the resolved type.
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -56,6 +66,10 @@ Export functions re-generate their output from scratch at export time (they do n
 on-screen rendered objects). See `dev/module_requirements.md` → "Exporting from a Module".
 
 ## Conventions / gotchas
+- **Uploads are read with `readr::read_tsv`/`read_delim`** (`R/sidebar_setup_helpers_csv-excel-processing.R`),
+  which renders a missing cell as `NA`, not `""`. When reproducing a setup/PELSA
+  data-handling bug, read with `readr` (NOT `read.delim`, which gives `""`) or the
+  NA-vs-blank divergence will hide the failure.
 - **`ns()`**: required for every `inputId`/`outputId` in module UI and inside `renderUI()`;
   do NOT use it when referencing `input$`/`output$` or in `update*Input()`. Rules + examples
   in `dev/README.md`.

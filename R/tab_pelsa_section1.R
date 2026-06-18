@@ -127,6 +127,16 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       pelsa_read_compound_markers(pelsa_compound_markers_path())
     })
 
+    # Once per session, OFF the reactive path: re-attempt taxonomy validation for
+    # any structurally-numeric species folder whose cached verdict is missing or
+    # unvalidated (e.g. the first run was offline / the API was down), promoting
+    # + persisting it on success. Best-effort -- a failure must not break the
+    # species listing, so it is wrapped and ignored.
+    tryCatch(
+      pelsa_refresh_species_meta_on_start(pelsa_database_dir()),
+      error = function(e) NULL
+    )
+
     ## SETUP UI ##
     # The Setup box's PURE markup lives in pelsa_setup_box_ui() (helpers); this
     # renderUI just gates on a valid active dataset, gathers the live choices,
@@ -141,10 +151,36 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       # active-dataset switch re-renders the box at hardcoded defaults, whose
       # re-emitted values clobber setup_state$datasets/species/compound via the
       # control observers below. Defaults (first load) fall back when unset.
-      species_choices <- pelsa_list_species(pelsa_database_dir())
+      # Live folder list. Resolve each folder to its typed struct (reading the
+      # cached species_meta registry -- NO network on this render path) so the
+      # picker shows display names while the stored VALUE stays the folder name.
+      db_dir <- pelsa_database_dir()
+      species_folders <- pelsa_list_species(db_dir)
+      species_structs <- lapply(species_folders, function(f) {
+        # Cache-only (allow_fetch = FALSE): the render path must never touch the
+        # network. Validation/promotion is driven once by
+        # pelsa_refresh_species_meta_on_start() above.
+        tryCatch(pelsa_resolve_species(db_dir, f, allow_fetch = FALSE),
+                 error = function(e) NULL)
+      })
+      species_structs <- Filter(Negate(is.null), species_structs)
+      # Named vector: display label -> folder name (value).
+      species_choices <- stats::setNames(
+        vapply(species_structs, function(s) s$folder, character(1)),
+        vapply(species_structs, function(s) s$display, character(1))
+      )
+      # Refresh checklist: UniProt (taxon-code) species only -- self-curated
+      # species have no UniProt annotations to refresh.
+      uniprot_structs <- Filter(function(s) identical(s$type, "uniprot"),
+                                species_structs)
+      refresh_choices <- stats::setNames(
+        vapply(uniprot_structs, function(s) s$folder, character(1)),
+        vapply(uniprot_structs, function(s) s$display, character(1))
+      )
+
       sel_datasets <- isolate(setup_state$datasets) %||% all_omes()
       sel_species  <- isolate(setup_state$species) %||%
-        (if (length(species_choices)) species_choices[[1]] else NULL)
+        (if (length(species_choices)) unname(species_choices)[[1]] else NULL)
       sel_compound <- isolate(setup_state$compound) %||% ""
 
       pelsa_setup_box_ui(
@@ -154,7 +190,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         ns        = ns,
         selected_datasets = sel_datasets,
         selected_species  = sel_species,
-        selected_compound = sel_compound
+        selected_compound = sel_compound,
+        refresh_species   = refresh_choices
       )
     })
 
@@ -918,20 +955,34 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           # Read the species FASTA + feature cache ONCE (shared across datasets
           # of the same species). Off the per-dataset loop.
           setProgress(value = 0.05, detail = "Loading FASTA")
+          # Resolve the species TYPE once: a UniProt (taxon-code) species parses
+          # its FASTA pipe-aware + reads its feature cache; a self-curated species
+          # parses first-token + skips annotation entirely (empty feature frame).
+          sp_struct <- pelsa_resolve_species(database_dir, snapshot$species)
+          fasta_mode <- if (identical(sp_struct$type, "self_curated"))
+            "self_curated" else "uniprot"
           fasta_path <- pelsa_species_fasta_path(database_dir, snapshot$species)
           # Surface any reader warning (e.g. duplicated accessions) to the user,
           # then muffle it so it does not abort the progress block.
           fasta_map  <- withCallingHandlers(
-            pelsa_read_fasta(fasta_path),
+            pelsa_read_fasta(fasta_path, mode = fasta_mode),
             warning = function(w) {
               showNotification(conditionMessage(w), type = "warning", duration = NULL)
               invokeRestart("muffleWarning")
             }
           )
 
-          setProgress(value = 0.15, detail = "Reading feature annotation cache")
+          # A self-curated species has no UniProt feature cache: use an empty
+          # feature frame so annotation overlap yields zero features (blank Woods
+          # track, no feature coloring) without looking for a cache that does not
+          # exist.
           species_dir <- file.path(database_dir, snapshot$species)
-          feat_df <- pelsa_read_feature_cache(species_dir)
+          feat_df <- if (identical(sp_struct$type, "self_curated")) {
+            pelsa_empty_feature_frame()
+          } else {
+            setProgress(value = 0.15, detail = "Reading feature annotation cache")
+            pelsa_read_feature_cache(species_dir)
+          }
 
           pelsa_run_analysis(
             gcts           = gcts_processed,

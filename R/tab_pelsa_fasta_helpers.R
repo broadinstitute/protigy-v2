@@ -23,18 +23,28 @@
 
 # Read a FASTA file into a named list: accession -> amino-acid string.
 #
-# Parses UniProt-style headers (">sp|P12345|NAME ...", ">tr|A0A...|...") and
-# bare headers (">ACC ..."). The accession key is the pipe-delimited second
-# field for sp|/tr| headers, else the first whitespace-delimited token. Sequence
-# blocks spanning multiple lines are concatenated into one upper-cased string.
+# Two parse modes, chosen by the caller from the resolved species TYPE (never by
+# header content):
+#   "uniprot"      Parses UniProt-style headers (">sp|P12345|NAME ...",
+#                  ">tr|A0A...|...") and bare headers (">ACC ..."). The accession
+#                  key is the pipe-delimited second field for sp|/tr| headers,
+#                  else the first whitespace-delimited token.
+#   "self_curated" The accession key is ALWAYS the first whitespace-delimited
+#                  token, even when the header contains a pipe (custom databases
+#                  whose headers are not UniProt-formatted). Everything after the
+#                  first field is the protein description and is ignored.
+# Sequence blocks spanning multiple lines are concatenated into one upper-cased
+# string.
 #
 # Vectorized: readLines() once, then header lines are located vectorized and
 # sequence blocks grouped with cumsum(); no char-by-char scan.
 #
 # @param path  path to a FASTA file
+# @param mode  "uniprot" (default; pipe-aware) or "self_curated" (first-token).
 # @return named list accession -> upper-cased amino-acid string
 # @noRd
-pelsa_read_fasta <- function(path) {
+pelsa_read_fasta <- function(path, mode = c("uniprot", "self_curated")) {
+  mode <- match.arg(mode)
   if (length(path) != 1L || is.na(path) || !nzchar(path) || !file.exists(path)) {
     stop("pelsa_read_fasta: FASTA file not found: ", path)
   }
@@ -58,10 +68,17 @@ pelsa_read_fasta <- function(path) {
   headers <- sub("^>", "", lines[header_idx])
   # First whitespace-delimited token (e.g. "sp|P12345|NAME_HUMAN" or "BARE").
   first_tok <- sub("\\s.*$", "", headers)
-  # sp|P12345|... or tr|A0A...|... -> take the middle pipe field; else the token.
-  pipe_acc <- sub("^[^|]*\\|([^|]*)\\|.*$", "\\1", first_tok)
-  has_pipes <- grepl("\\|", first_tok)
-  keys <- ifelse(has_pipes, pipe_acc, first_tok)
+  if (identical(mode, "self_curated")) {
+    # Self-curated: the first whitespace token IS the accession, regardless of
+    # any pipe in the header. Trailing fields (description) are ignored.
+    keys <- first_tok
+  } else {
+    # UniProt: sp|P12345|... or tr|A0A...|... -> take the middle pipe field; else
+    # the token.
+    pipe_acc <- sub("^[^|]*\\|([^|]*)\\|.*$", "\\1", first_tok)
+    has_pipes <- grepl("\\|", first_tok)
+    keys <- ifelse(has_pipes, pipe_acc, first_tok)
+  }
 
   # ---- Sequence blocks per group (vectorized split, not char-by-char) -----
   seq_lines <- lines[!is_header]

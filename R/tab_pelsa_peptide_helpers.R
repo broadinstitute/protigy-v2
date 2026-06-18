@@ -88,7 +88,8 @@ pelsa_peptide_length <- function(seq) {
 # @param accessions  character vector of protein accessions (gene fallback)
 # @return character scalar label for the peptide
 # @noRd
-pelsa_build_multilabel <- function(genes, positions, accessions) {
+pelsa_build_multilabel <- function(genes, positions, accessions,
+                                   is_self_curated = FALSE) {
   if (length(genes) == 0L) return(NA_character_)
 
   # Fail fast on length mismatch: a silent scalar recycle would emit a
@@ -98,11 +99,13 @@ pelsa_build_multilabel <- function(genes, positions, accessions) {
     length(genes) == length(accessions)
   )
 
-  # Gene -> accession fallback when the gene is missing/empty.
+  # Gene -> accession fallback when the gene is missing/empty. Self-curated
+  # species have no UniProt gene: force the accession label unconditionally.
   genes <- as.character(genes)
   accessions <- as.character(accessions)
   empty_gene <- is.na(genes) | !nzchar(trimws(genes))
-  label_id <- ifelse(empty_gene, accessions, genes)
+  label_id <- if (isTRUE(is_self_curated)) accessions else
+    ifelse(empty_gene, accessions, genes)
 
   entries <- paste0(label_id, "_aa", as.character(positions))
 

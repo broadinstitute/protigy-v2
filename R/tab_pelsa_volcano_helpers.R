@@ -92,7 +92,7 @@
 # @param key_col   the join key column name present in matched ("..key")
 # @return data.frame(key, label) one row per distinct key
 # @noRd
-.pelsa_volcano_labels <- function(matched, key_col) {
+.pelsa_volcano_labels <- function(matched, key_col, is_self_curated = FALSE) {
   dt <- data.table::data.table(
     .key      = matched[[key_col]],
     gene      = as.character(matched[["gene"]]),
@@ -106,9 +106,15 @@
   # Per-mapping entry string, VECTORIZED over the whole column (no per-peptide
   # call). fifelse: empty/NA gene -> accession fallback, then "<id>_aa<pos>".
   # This is byte-identical to pelsa_build_multilabel()'s per-entry construction.
-  lid <- data.table::fifelse(
-    is.na(dt$gene) | !nzchar(trimws(dt$gene)), dt$accession, dt$gene
-  )
+  # Self-curated species have no UniProt genes: force the accession label even
+  # when the input report carried a gene token.
+  lid <- if (isTRUE(is_self_curated)) {
+    dt$accession
+  } else {
+    data.table::fifelse(
+      is.na(dt$gene) | !nzchar(trimws(dt$gene)), dt$accession, dt$gene
+    )
+  }
   dt[, entry := paste0(lid, "_aa", pep_start)]
 
   # Collapse per peptide: unique() preserves first-occurrence (sorted) order,
@@ -168,7 +174,8 @@
 #   (best_peptide), with attr(.,"y_cutoff").
 # @noRd
 pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
-                                   contrast, opts = list()) {
+                                   contrast, opts = list(),
+                                   is_self_curated = FALSE) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (!is.data.frame(stat_df)) {
     stop("pelsa_build_volcano_df: stat_df must be a data.frame")
@@ -211,17 +218,18 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   if (panel == "best_peptide") {
     return(.pelsa_build_volcano_best(stat_df, matched_cache, feat_df, markers,
                                      contrast, stat_cols, sig_cutoff,
-                                     logfc_cap))
+                                     logfc_cap, is_self_curated))
   }
   .pelsa_build_volcano_all(stat_df, matched_cache, feat_df, markers,
-                           stat_cols, sig_cutoff, logfc_cap)
+                           stat_cols, sig_cutoff, logfc_cap, is_self_curated)
 }
 
 # ---- all-peptide panel (one dot per source peptide, no explode) -------------
 
 # @noRd
 .pelsa_build_volcano_all <- function(stat_df, matched_cache, feat_df, markers,
-                                     stat_cols, sig_cutoff, logfc_cap) {
+                                     stat_cols, sig_cutoff, logfc_cap,
+                                     is_self_curated = FALSE) {
   n <- nrow(stat_df)
 
   # Determine the peptide<->matched join key: `.row_id` when present on BOTH
@@ -267,7 +275,14 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
     PELSA_FEATURE_COLORS[df$feature_class_primary]
   )
   df$winning_accession <- annotated$winning_accession
-  df$winning_gene <- annotated$winning_gene
+  # Self-curated species have no UniProt gene: blank the winning gene so the
+  # fixed tooltip's gene field renders empty (consistent with the forced
+  # accession label below).
+  df$winning_gene <- if (isTRUE(is_self_curated)) {
+    rep("", nrow(df))
+  } else {
+    annotated$winning_gene
+  }
 
   # ---- 2J marker flag over the ;-accession tokens --------------------------
   df$is_marker <- pelsa_match_markers(df$PG.ProteinAccessions, markers)
@@ -278,7 +293,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   } else {
     df$id
   }
-  labels <- .pelsa_volcano_labels(matched_cache, key_col)
+  labels <- .pelsa_volcano_labels(matched_cache, key_col, is_self_curated)
   # Left-join the label by key, preserving stat_df row order. match() gives the
   # first label per key (one label per distinct key by construction).
   df$label <- labels$label[match(df[[key_col]], labels[[key_col]])]
@@ -371,7 +386,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 # @noRd
 .pelsa_build_volcano_best <- function(stat_df, matched_cache, feat_df, markers,
                                       contrast, stat_cols, sig_cutoff,
-                                      logfc_cap) {
+                                      logfc_cap, is_self_curated = FALSE) {
   # Build the exploded+stat frame the 2G rollup consumes: one row per
   # (peptide, accession), carrying the contrast's adj.P.Val / logFC under the
   # rollup's default names plus accession / gene / pep_start. The matched cache
@@ -393,7 +408,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
     m$PEP.StrippedSequence <- as.character(stat_df[["PEP.StrippedSequence"]])[idx]
   }
 
-  rolled <- pelsa_best_peptide_rollup(m)
+  rolled <- pelsa_best_peptide_rollup(m, is_self_curated = is_self_curated)
 
   # H2 FIX: derive the dot's protein/gene/span + raw P.Value from the rollup's
   # WON accession (consistent with the label + coordinate), NOT from an arbitrary
@@ -432,7 +447,12 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   df$feature_class_primary <- annotated$feature_class_primary
   df$feature_color <- unname(PELSA_FEATURE_COLORS[df$feature_class_primary])
   df$winning_accession <- annotated$winning_accession
-  df$winning_gene <- annotated$winning_gene
+  # Self-curated: blank the gene so the tooltip's gene field renders empty.
+  df$winning_gene <- if (isTRUE(is_self_curated)) {
+    rep("", nrow(df))
+  } else {
+    annotated$winning_gene
+  }
 
   # 2J marker flag on the WON accession (consistent with the dot's protein).
   df$is_marker <- pelsa_match_markers(back$won_accession, markers)

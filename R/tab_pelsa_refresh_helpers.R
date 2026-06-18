@@ -523,7 +523,11 @@ pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
       character(0)
     }
     if (length(fastas) > 0L) {
-      fasta_map <- tryCatch(pelsa_read_fasta(fastas[[1]]), error = function(e) NULL)
+      # Refresh only ever runs for UniProt (taxon-code) species -- the refresh
+      # checklist filters out self-curated species -- so the FASTA is parsed in
+      # UniProt mode (pipe-aware). Explicit for intent.
+      fasta_map <- tryCatch(pelsa_read_fasta(fastas[[1]], mode = "uniprot"),
+                            error = function(e) NULL)
     }
   }
   list(existing = existing, fasta_map = fasta_map)

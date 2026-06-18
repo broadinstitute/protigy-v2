@@ -1070,11 +1070,15 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
 # @param panel     "all_peptide" | "best_peptide".
 # @param sig_cutoff the adj.P significance threshold (drives Significant /
 #                  sig_direction and the empirical y_cutoff dashed line).
+# @param is_self_curated TRUE for a self-curated species: forces accession labels
+#                  + blanks the gene, so the exported figure matches the on-screen
+#                  volcano (the export is a SEPARATE re-derive of the same df).
 # @return a 3A volcano df, or NULL.
 # @noRd
 pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
                                     contrast, panel,
-                                    sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
+                                    sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
+                                    is_self_curated = FALSE) {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (is.null(contrast) ||
       !pelsa_volcano_has_contrast(stat_raw, contrast)) return(NULL)
@@ -1088,7 +1092,8 @@ pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
       matched_cache = if (nrow(matched) > 0L) matched else
         pelsa_volcano_empty_matched(),
       feat_df = fdf, markers = markers, contrast = contrast,
-      opts = list(panel = panel, sig_cutoff = sig_cutoff)
+      opts = list(panel = panel, sig_cutoff = sig_cutoff),
+      is_self_curated = is_self_curated
     ),
     error = function(e) NULL
   )

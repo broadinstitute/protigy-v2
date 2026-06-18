@@ -268,6 +268,25 @@ PELSASection3_Ome_Server <- function(id,
       )
     })
 
+    # Whether the selected species is self-curated (no UniProt annotations). Read
+    # off the cached species_meta registry via the resolver -- NO network on this
+    # reactive path (a numeric folder's verdict was cached at listing / app
+    # start). Gates the annotation-dependent UI + forces accession labels. We gate
+    # on the RESOLVED TYPE, never on the display label.
+    is_self_curated_r <- reactive({
+      species <- species_r()
+      if (is.null(species) || length(species) != 1L || is.na(species) ||
+          !nzchar(species)) {
+        return(FALSE)
+      }
+      struct <- tryCatch(
+        pelsa_resolve_species(pelsa_database_dir(), species,
+                              allow_fetch = FALSE),
+        error = function(e) NULL
+      )
+      isTRUE(!is.null(struct) && identical(struct$type, "self_curated"))
+    })
+
     ## ------------------------------------------------------------------------
     ## 7B - CONTRAST SELECTOR + PER-CONTRAST REGISTRIES + LAZY LOADING
     ## ------------------------------------------------------------------------
@@ -420,7 +439,8 @@ PELSASection3_Ome_Server <- function(id,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
           opts          = list(panel = "all_peptide",
-                               sig_cutoff = sig_cutoff_r())
+                               sig_cutoff = sig_cutoff_r()),
+          is_self_curated = is_self_curated_r()
         ),
         error = function(e) {
           showNotification(
@@ -480,7 +500,8 @@ PELSASection3_Ome_Server <- function(id,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
           opts          = list(panel = "best_peptide",
-                               sig_cutoff = sig_cutoff_r())
+                               sig_cutoff = sig_cutoff_r()),
+          is_self_curated = is_self_curated_r()
         ),
         error = function(e) {
           showNotification(
@@ -646,12 +667,26 @@ PELSASection3_Ome_Server <- function(id,
         uiOutput(ns("pelsa_find_notice")),
         hr(),
         # SINGLE color toggle (one source of truth) - NOT two checkboxes.
-        radioButtons(
-          ns("pelsa_color_mode"), "Color points by:",
-          choices = c("Significance (two-sided)" = "significance",
-                      "UniProt feature class"     = "feature"),
-          selected = "significance"
-        ),
+        # Self-curated species have no UniProt feature classes: disable the
+        # feature option and force Significance. Gated on the RESOLVED TYPE.
+        if (isTRUE(is_self_curated_r())) {
+          tagList(
+            radioButtons(
+              ns("pelsa_color_mode"), "Color points by:",
+              choices = c("Significance (two-sided)" = "significance"),
+              selected = "significance"
+            ),
+            helpText("UniProt feature-class coloring is unavailable for a ",
+                     "self-curated database.")
+          )
+        } else {
+          radioButtons(
+            ns("pelsa_color_mode"), "Color points by:",
+            choices = c("Significance (two-sided)" = "significance",
+                        "UniProt feature class"     = "feature"),
+            selected = "significance"
+          )
+        },
         hr(),
         strong("Label peptides:"),
         radioButtons(
@@ -698,10 +733,17 @@ PELSASection3_Ome_Server <- function(id,
           # RIGHT column: the COMPLETE UniProt feature color reference - every
           # class in the palette, shown even when absent from this protein, so the
           # user has a full key to the Woods feature track. Wider than the color
-          # key (7 vs 5) - its labels wrap ("low complexity / disorder").
+          # key (7 vs 5) - its labels wrap ("low complexity / disorder"). For a
+          # self-curated species there are no UniProt features, so the full color
+          # key would map to nothing -- replace it with a short note instead.
           column(7,
             tags$strong("UniProt feature colors"),
-            .pelsa_feature_legend_ui()
+            if (isTRUE(is_self_curated_r())) {
+              tags$p(class = "text-muted",
+                     "Feature annotations unavailable - self-curated database.")
+            } else {
+              .pelsa_feature_legend_ui()
+            }
           )
         )
       )
@@ -1131,7 +1173,8 @@ PELSASection3_Ome_Server <- function(id,
       pelsa_volcano_export_df(
         stat_results()[[ome]],
         if (is.null(entry)) NULL else entry$matched,
-        feat_df(), isolate(marker_accessions()), active_contrast(), panel)
+        feat_df(), isolate(marker_accessions()), active_contrast(), panel,
+        is_self_curated = isolate(is_self_curated_r()))
     }
 
     # Common tryCatch wrapper: log the failure (with the ome + a label) and
@@ -1166,13 +1209,15 @@ PELSASection3_Ome_Server <- function(id,
       # the SAME user-set cutoff as the in-app volcano (Statistics > Summary), so
       # the export mirrors exactly what the user sees on screen.
       sig_cutoff <- isolate(sig_cutoff_r())
+      self_curated <- isolate(is_self_curated_r())
       choices <- contrast_choices()
       for (i in seq_along(choices)) {
         contrast <- unname(choices[[i]])
         key <- pelsa_volcano_contrast_key(ome, contrast)
         lab_mode <- reg[[key]] %||% (isolate(input$pelsa_label_mode) %||% "none")
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
-                                          "all_peptide", sig_cutoff = sig_cutoff)
+                                          "all_peptide", sig_cutoff = sig_cutoff,
+                                          is_self_curated = self_curated)
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
             .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top,
@@ -1185,7 +1230,8 @@ PELSASection3_Ome_Server <- function(id,
         if (want_best) {
           df_best <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
                                              "best_peptide",
-                                             sig_cutoff = sig_cutoff)
+                                             sig_cutoff = sig_cutoff,
+                                             is_self_curated = self_curated)
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
               .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top,

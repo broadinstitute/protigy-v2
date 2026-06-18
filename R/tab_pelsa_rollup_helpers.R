@@ -54,7 +54,8 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
                                       pep_col   = "PEP.StrippedSequence",
                                       acc_col   = "accession",
                                       gene_col  = "gene",
-                                      pos_col   = "pep_start") {
+                                      pos_col   = "pep_start",
+                                      is_self_curated = FALSE) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (!is.data.frame(exploded_stat_df)) {
     stop("pelsa_best_peptide_rollup: exploded_stat_df must be a data.frame")
@@ -113,7 +114,8 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
       # carries that same coordinate -- the first row is representative.
       adj_p          = adj_p[1L],
       logFC          = logFC[1L],
-      label          = pelsa_build_multilabel(gene, pep_start, accession),
+      label          = pelsa_build_multilabel(gene, pep_start, accession,
+                                               is_self_curated),
       won_accessions = paste(accession, collapse = ";"),
       n_won          = .N
     )

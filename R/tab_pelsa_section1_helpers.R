@@ -619,15 +619,21 @@ pelsa_section_head <- function(icon_name, label) {
 # via the passed `ns`.
 #
 # @param datasets  character vector of dataset (ome) names (checkbox choices).
-# @param species   character vector of species (live inst/database/ subfolders).
+# @param species   species selectInput choices. Pass a NAMED vector
+#                  (display label -> folder name) so the picker shows resolved
+#                  display names while the stored value stays the folder name.
 # @param compounds character vector of compound preset names.
 # @param ns        the module namespacer (session$ns / NS(id)).
+# @param refresh_species choices for the UniProt-refresh checklist. Pass only
+#                  UniProt (taxon-code) species here -- self-curated species have
+#                  no UniProt annotations to refresh. Defaults to `species`.
 # @return a shiny tag (the Setup box).
 # @noRd
 pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
                                selected_datasets = datasets,
                                selected_species  = if (length(species)) species[[1]] else NULL,
-                               selected_compound = "") {
+                               selected_compound = "",
+                               refresh_species   = species) {
   # The Setup box is split into two equal columns. Each logical group is wrapped
   # in a .pelsa-section card whose LAYER class color-codes it so the user can
   # parse the form at a glance (see inst/custom.css "PELSA Setup"):
@@ -749,7 +755,7 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
     shiny::checkboxGroupInput(
       ns("pelsa_refresh_species"),
       label   = "Species to refresh",
-      choices = species
+      choices = refresh_species
     ),
     shiny::actionButton(
       ns("pelsa_refresh_btn"),

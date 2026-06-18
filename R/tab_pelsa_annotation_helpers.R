@@ -115,7 +115,7 @@ PELSA_FEATURE_COLORS <- c(
 # coord_quality). Boundary-validates the file exists; clear error otherwise.
 #
 # @param species_dir directory holding "uniprot_features/uniprot_features.tsv"
-#                     (e.g. system.file("database","human", package="Protigy"))
+#                     (e.g. system.file("database","9606", package="Protigy"))
 # @param n_max        optional row cap (for fast tests on the 26MB file)
 # @return data.frame with at least accession/start/end/feature_class
 # @noRd
