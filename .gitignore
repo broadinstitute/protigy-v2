@@ -18,6 +18,13 @@ rsconnect/
 pkg.lock
 .github/pkg.lock
 
+# httr2/OAuth token cache (the PELSA UniProt fetch uses httr2; never commit creds)
+.httr-oauth
+
+# knitr/R Markdown render caches + figure scratch (vignettes, dev notebooks)
+*_cache/
+/cache/
+
 # ──────────────────────────────────────────────────────────────────────────
 # OS / editor / agent / tooling cruft
 # ──────────────────────────────────────────────────────────────────────────
@@ -52,5 +59,9 @@ dev/*.png
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds
 
-# local Claude Code session artifacts (plans, reviews, settings)
-.claude/
+# Claude Code: ignore per-developer/runtime cruft (settings, locks, history) but
+# KEEP the shared PRP plans/reviews under .claude/PRPs/, which the repo commits.
+# A blanket `.claude/` ignore would silently hide NEW plans even though sibling
+# plans are already tracked.
+.claude/*
+!.claude/PRPs/
