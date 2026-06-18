@@ -149,6 +149,36 @@ pelsa_refresh_accession_universe <- function(gcts, existing_cache,
   sort(unique(c(fasta_acc, cache_acc)))
 }
 
+# Subset uploaded datasets to those whose SELECTED SPECIES matches `species`.
+#
+# Defect #1 guard: a species refresh must only fetch accessions belonging to that
+# species. Multiple uploaded datasets of the SAME species all match (so their
+# accessions UNION downstream via pelsa_refresh_accession_universe, which already
+# unions across every GCT it is handed); datasets of OTHER species are dropped
+# (otherwise their accessions would be fetched into the wrong species' cache --
+# the human-into-mouse spillover). A dataset whose species is unset ("(none)") or
+# absent never matches a real species code.
+#
+# Pure + name-keyed (uploaded_gcts and species_by_ds share dataset-name keys).
+#
+# @param uploaded_gcts named list of uploaded datasets (or NULL/empty).
+# @param species_by_ds named list ds -> selected-species chr scalar
+#                      (setup_state$species). May be missing keys.
+# @param species       the single refresh-target species code.
+# @return the name-keyed subset of uploaded_gcts (NULL/empty passed through).
+# @noRd
+pelsa_gcts_for_species <- function(uploaded_gcts, species_by_ds, species) {
+  if (is.null(uploaded_gcts) || length(uploaded_gcts) == 0L) {
+    return(uploaded_gcts)
+  }
+  keep <- vapply(
+    names(uploaded_gcts),
+    function(ds) identical(species_by_ds[[ds]], species),
+    logical(1)
+  )
+  uploaded_gcts[keep]
+}
+
 # ---- Helper 2: write the feature cache ---------------------------------------
 
 # The canonical 8-column schema order (parity-locked to schema.json::columns and
@@ -743,7 +773,7 @@ pelsa_refresh_universe_size <- function(species, database_dir, uploaded_gcts) {
 # @param page_secs   modelled seconds per page request (RTT-bound).
 # @return a single character string, e.g. "69,845 accessions (~2 min)".
 # @noRd
-pelsa_refresh_eta_text <- function(total, batch_size = 200L, page_secs = 0.9) {
+pelsa_refresh_eta_text <- function(total, batch_size = 100L, page_secs = 0.9) {
   total <- as.integer(total)
   n_pages <- ceiling(max(total, 0L) / batch_size)
   secs <- n_pages * page_secs

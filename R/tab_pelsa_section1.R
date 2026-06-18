@@ -930,6 +930,14 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       uploaded_gcts <- if (is.null(gp)) NULL else gp$GCTs
       database_dir  <- pelsa_database_dir()
 
+      # Defect #1 guard: only fetch accessions from datasets of the SELECTED
+      # species (union across all same-species datasets); never fan another
+      # species' accessions into this species' cache. The single-select control
+      # makes `selected` length-1.
+      species_by_ds <- isolate(setup_state$species)
+      uploaded_gcts <- pelsa_gcts_for_species(uploaded_gcts, species_by_ds,
+                                              selected)
+
       # Size the universe up front; confirm before a large (proteome) fetch.
       size <- tryCatch(
         pelsa_refresh_universe_size(selected, database_dir, uploaded_gcts),

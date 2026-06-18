@@ -282,15 +282,31 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 # circuit breaker: stop after this many CONSECUTIVE failed BATCHES (network/5xx
 # after retries) so a UniProt outage surfaces a clear error instead of grinding.
 .PELSA_BREAKER_LIMIT <- 5L
-# Accessions OR'd into one /search query. Kept modest so the query string stays
-# well within URL limits; the per-page `size` matches it so one page usually
-# covers a whole batch (the cursor handles any spillover).
-.PELSA_BATCH_SIZE <- 200L
+# Accessions OR'd into one /search query. HARD-CAPPED at 100: UniProt's /search
+# rejects a query with more than 100 OR conditions ("Too many OR conditions in
+# query. Maximum allowed is 100." -> HTTP 400), which would silently drop every
+# accession in an over-sized batch. The per-page `size` matches it so one page
+# usually covers a whole batch (the cursor handles any spillover).
+.PELSA_BATCH_SIZE <- 100L
 
 # Transient predicate for req_retry: UniProt rate limit + gateway errors.
 # @noRd
 .pelsa_is_transient <- function(resp) {
   httr2::resp_status(resp) %in% c(429L, 500L, 502L, 503L, 504L)
+}
+
+# Syntactically-valid UniProtKB accession (base or "-<n>" isoform). Non-UniProt
+# FASTA keys (smORFs, contaminants like "B99901", or "smORF_G1|X") fail this and
+# MUST be excluded from a query: a single malformed `accession:` filter value
+# makes UniProt reject the WHOLE /search batch with HTTP 400 (dropping every valid
+# accession in that batch). Two accession shapes per UniProt's spec.
+# @noRd
+.PELSA_ACCESSION_RE <- paste0(
+  "^([OPQ][0-9][A-Z0-9]{3}[0-9]|",
+  "[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})(-[0-9]+)?$"
+)
+.pelsa_is_valid_accession <- function(x) {
+  !is.na(x) & grepl(.PELSA_ACCESSION_RE, x)
 }
 
 # Build the /search query value for ONE batch of accessions:
@@ -409,7 +425,8 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 # @param base       UniProt REST base URL (override for testing)
 # @param max_tries  per-request retry attempts (default 5)
 # @param rate       throttle capacity per second (default 10)
-# @param batch_size accessions per /search query (default 200)
+# @param batch_size accessions per /search query (default .PELSA_BATCH_SIZE = 100,
+#                   UniProt's max OR-conditions per query)
 # @param on_batch   optional function(done, total) called after each batch.
 # @param should_cancel optional function() -> logical; TRUE stops at the next
 #                   batch boundary.
@@ -431,6 +448,22 @@ pelsa_fetch_uniprot <- function(accessions,
   if (length(accessions) == 0L) {
     return(list(features = pelsa_empty_feature_frame(),
                 unresolved = character(0),
+                transient_unresolved = character(0), canceled = FALSE))
+  }
+  # INPUT universe (`accessions`) drives resolved/unresolved accounting and may
+  # contain isoform suffixes + non-UniProt FASTA keys. The QUERY universe is what
+  # we actually OR into /search: isoform-base (UniProt's accession: filter indexes
+  # only the base, so "P12345-3" matches nothing), valid-format only (a single
+  # malformed term 400s the whole batch), and deduped. An isoform input still
+  # counts resolved via the entry's base primaryAccession (see the resolved diff
+  # below, which matches on pelsa_isoform_base(accessions)).
+  query_accs <- unique(pelsa_isoform_base(
+    accessions[.pelsa_is_valid_accession(accessions)]
+  ))
+  if (length(query_accs) == 0L) {
+    # All inputs were non-UniProt keys -> nothing to fetch; all unresolved.
+    return(list(features = pelsa_empty_feature_frame(),
+                unresolved = accessions,
                 transient_unresolved = character(0), canceled = FALSE))
   }
   batch_size <- max(1L, as.integer(batch_size))
@@ -456,10 +489,11 @@ pelsa_fetch_uniprot <- function(accessions,
     is_error = function(resp) httr2::resp_status(resp) >= 500
   )
 
-  # Chunk the accessions into batches.
-  n <- length(accessions)
+  # Chunk the QUERY accessions into batches (base/valid/deduped, <= batch_size
+  # each so the OR-count stays within UniProt's /search limit of 100).
+  n <- length(query_accs)
   n_batches <- ceiling(n / batch_size)
-  batches <- split(accessions, rep(seq_len(n_batches),
+  batches <- split(query_accs, rep(seq_len(n_batches),
                                    each = batch_size, length.out = n))
 
   entries <- list()
@@ -531,7 +565,7 @@ pelsa_fetch_uniprot <- function(accessions,
   entry_acc <- .pelsa_entry_accessions(entries)
   resolved <- accessions[
     accessions %in% entry_acc |
-      .pelsa_isoform_base(accessions) %in% entry_acc
+      pelsa_isoform_base(accessions) %in% entry_acc
   ]
   unresolved <- setdiff(accessions, resolved)
   # The TRANSIENT subset of unresolved (failed-batch accessions). The caller only

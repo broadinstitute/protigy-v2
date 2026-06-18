@@ -811,10 +811,15 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
       "annotation. This fetches from UniProt and can take several ",
       "minutes per species. It is independent of Start Analysis."
     ),
-    shiny::checkboxGroupInput(
+    # SINGLE-select (radioButtons, not checkboxGroupInput): a refresh fetches the
+    # uploaded datasets' accessions, so allowing multiple species would fan ONE
+    # dataset's accessions into every checked species' cache (the human-into-mouse
+    # spillover). Restricting to one species at a time makes that impossible.
+    shiny::radioButtons(
       ns("pelsa_refresh_species"),
-      label   = "Species to refresh",
-      choices = refresh_species
+      label    = "Species to refresh",
+      choices  = refresh_species,
+      selected = character(0)
     ),
     shiny::actionButton(
       ns("pelsa_refresh_btn"),
