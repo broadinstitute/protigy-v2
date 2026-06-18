@@ -530,6 +530,33 @@ test_that("out-of-range .row_id AND no rownames -> clear error (guard pinned)", 
   )
 })
 
+# ---- STATIC export intensity line plot: left margin ------------------------
+# A long, rotated leftmost condition label (e.g. "AY9944_U18666A_DMSO") clipped
+# off the left panel edge. The export builder must reserve a left plot.margin
+# gutter larger than ggplot's 5.5pt default so the label is fully visible.
+
+.intensity_export_ld <- function() {
+  conds <- c("AY9944_U18666A_DMSO", "AY9944_1uM", "AY9944_10uM")
+  data.frame(
+    condition = factor(rep(conds, times = 2L), levels = conds),
+    mean_log2 = c(9.7, 3.7, 4.0, 12.3, 12.2, 12.1),
+    peptide_seq = rep(c("pA", "pB"), each = 3L),
+    pep_occurrence_idx = 1L,
+    panel = rep(c("Significant", "Non-significant"), each = 3L),
+    aa_label = rep(c("aa462", "aa14"), each = 3L),
+    stringsAsFactors = FALSE)
+}
+
+test_that("intensity export reserves an enlarged left plot.margin", {
+  g <- pelsa_intensity_export_ggplot(.intensity_export_ld(),
+                                     gene = "DHCR7", accession = "Q9UBM7")
+  m <- g$theme$plot.margin
+  expect_false(is.null(m))                      # margin explicitly set
+  # ggplot default is unit(5.5, "pt") on every side; left must exceed that.
+  left_pt <- as.numeric(grid::convertUnit(m[4], "pt"))
+  expect_gt(left_pt, 5.5)
+})
+
 # =============================================================================
 # Integration: generator -> explode -> FASTA-map -> build line data
 # =============================================================================

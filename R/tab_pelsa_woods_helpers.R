@@ -509,14 +509,19 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
       legend.text   = ggplot2::element_text(size = 7.5),
       legend.background = ggplot2::element_rect(color = "black", fill = NA,
                                                linewidth = 0.3),
-      legend.margin = ggplot2::margin(4, 6, 4, 6))
+      legend.margin = ggplot2::margin(4, 6, 4, 6),
+      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
   if (nrow(pk) == 0L) {
     return(
       ggplot2::ggplot() +
         ggplot2::annotate("text", x = prot_len / 2, y = 0,
                           label = "no mapped peptides", color = "grey50") +
-        ggplot2::scale_x_continuous(limits = c(1, prot_len),
-                                    breaks = seq(0L, prot_len, by = 10L)) +
+        ggplot2::scale_x_continuous(
+          limits = c(1, prot_len),
+          # always keep the protein end as a break so short proteins (< 20 aa,
+          # where seq(0, len, 20) is just {0} and 0 sits below the axis) are not
+          # left with a bare, label-less x-axis.
+          breaks = unique(c(seq(0L, prot_len, by = 20L), prot_len))) +
         ggplot2::labs(title = title, subtitle = sprintf("Wood's plot: %s", contrast),
                       x = "Residue position", y = "log2FC") +
         base_theme)
@@ -609,9 +614,10 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
     ggplot2::scale_color_gradient(
       low = "grey80", high = "#B2182B", limits = c(0, .PELSA_WOODS_NEGLOG_CAP),
       name = "-log10(adj.P)", guide = ggplot2::guide_colourbar(order = 2)) +
-    ggplot2::scale_x_continuous(limits = c(1, prot_len),
-                                expand = ggplot2::expansion(mult = 0.01),
-                                breaks = seq(0L, prot_len, by = 10L)) +
+    ggplot2::scale_x_continuous(
+      limits = c(1, prot_len), expand = ggplot2::expansion(mult = 0.01),
+      # always keep the protein end as a break (see empty-data path above).
+      breaks = unique(c(seq(0L, prot_len, by = 20L), prot_len))) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.04, 0.16))) +
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(

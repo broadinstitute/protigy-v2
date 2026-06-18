@@ -762,3 +762,21 @@ test_that(".pelsa_export_ggplot: dashed-line annotation tracks sig_cutoff", {
   expect_true("adj.P < 0.01" %in%
                 ann_text(.pelsa_export_ggplot(df, df, sig_cutoff = 0.01)))
 })
+
+test_that(".pelsa_export_ggplot: marker points drawn same size as background points", {
+  # Marker peptides previously rendered LARGER (size 2.4) than the gray
+  # background points (size 1); they must now match the background point size so
+  # the only distinguishing cue is the magenta shape-21 ring, not the dot size.
+  df <- .make_export_df()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  # background layer = the first GeomPoint (no fill aes); marker layer = the
+  # GeomPoint whose mapping carries `fill`.
+  pt_layers <- Filter(function(l) inherits(l$geom, "GeomPoint"), g$layers)
+  is_marker_layer <- vapply(pt_layers,
+    function(l) "fill" %in% names(l$mapping), logical(1))
+  bg_size  <- pt_layers[[which(!is_marker_layer)[1]]]$aes_params$size
+  mk_size  <- pt_layers[[which(is_marker_layer)[1]]]$aes_params$size
+  expect_equal(mk_size, bg_size)
+  # the magenta ring (shape 21) is retained as the distinguishing cue.
+  expect_equal(pt_layers[[which(is_marker_layer)[1]]]$aes_params$shape, 21)
+})

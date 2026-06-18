@@ -1151,7 +1151,10 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
       strip.text  = ggplot2::element_text(face = "bold"),
       strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
       panel.spacing = ggplot2::unit(1.4, "lines"),
-      panel.grid.minor = ggplot2::element_blank())
+      panel.grid.minor = ggplot2::element_blank(),
+      # Reserve a wider left gutter so a long rotated leftmost condition label
+      # (e.g. "AY9944_U18666A_DMSO") is not clipped off the panel edge.
+      plot.margin = ggplot2::margin(t = 5.5, r = 5.5, b = 5.5, l = 40))
 }
 
 # Re-derive a volcano df for export (all_peptide / best_peptide), from plain
@@ -1321,7 +1324,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   if (nrow(mk) > 0L) {
     gg <- gg + ggplot2::geom_point(
       data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP, fill = "Marker"),
-      shape = 21, size = 2.4, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
+      shape = 21, size = 1, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
   }
   # Bake peptide labels per the in-app label mode (the on-screen labels are
   # plotly annotations; the static export draws them as repelled boxed labels:

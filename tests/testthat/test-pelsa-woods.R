@@ -254,3 +254,58 @@ test_that("pelsa_woods_peptide_data default sig_cutoff is the shared constant sy
   expect_identical(formals(Protigy:::pelsa_woods_peptide_data)$sig_cutoff,
                    as.symbol(".PELSA_EXPORT_SIG_CUTOFF"))
 })
+
+# ---- STATIC export Woods plot: x-axis ticks every 20 + 45-degree rotation ----
+# The exported (PNG) Woods plot crowds/overlaps when ticks step by 10 and sit
+# horizontal. Ticks must step by 20 and the x labels rotate 45 degrees. This is
+# the EXPORT builder only (pelsa_woods_export_ggplot); the interactive coverage
+# track (pelsa_coverage_track_ggplot, test "M3" above) is intentionally untouched.
+
+.woods_export_pep <- function() data.frame(
+  peptide_seq = c("A", "B"), pep_start = c(10L, 80L), pep_end = c(20L, 95L),
+  logFC = c(-2.0, 1.5), adj.P.Val = c(1e-6, 0.4),
+  stringsAsFactors = FALSE)
+
+test_that("woods export x ticks step by 20 (not 10)", {
+  # seq(0, prot_len, by = 20) -> 0,20,...; the 0 break is below the axis lower
+  # limit (1) so it renders as NA and drops out, leaving 20,40,60,80,100.
+  g <- pelsa_woods_export_ggplot(.woods_export_pep(), features = NULL,
+                                 prot_len = 100L, gene = "GENE", accession = "ACC",
+                                 contrast = "AvB")
+  brks <- ggplot2::ggplot_build(g)$layout$panel_params[[1]]$x$breaks
+  brks <- sort(brks[!is.na(brks)])
+  expect_true(all(c(20, 40, 60, 80, 100) %in% brks))
+  expect_false(any(c(10, 30, 50, 70, 90) %in% brks))
+})
+
+test_that("woods export rotates x-axis text 45 degrees", {
+  g <- pelsa_woods_export_ggplot(.woods_export_pep(), features = NULL,
+                                 prot_len = 100L, gene = "GENE", accession = "ACC",
+                                 contrast = "AvB")
+  expect_equal(g$theme$axis.text.x$angle, 45)
+  expect_equal(g$theme$axis.text.x$hjust, 1)
+})
+
+test_that("woods export empty-data placeholder also steps ticks by 20", {
+  g <- pelsa_woods_export_ggplot(data.frame(), features = NULL, prot_len = 100L,
+                                 gene = "GENE", accession = "ACC", contrast = "AvB")
+  brks <- ggplot2::ggplot_build(g)$layout$panel_params[[1]]$x$breaks
+  brks <- sort(brks[!is.na(brks)])
+  expect_true(all(c(20, 40) %in% brks))
+  expect_false(any(c(10, 30) %in% brks))
+})
+
+test_that("woods export still labels the protein end for short proteins (< 20 aa)", {
+  # by = 20 alone yields only {0} for prot_len < 20, and 0 is below the axis
+  # lower limit (1) -> a bare x-axis with no ticks. The protein end must always
+  # remain a visible break so the axis is never blank.
+  for (L in c(8L, 15L)) {
+    g <- pelsa_woods_export_ggplot(.woods_export_pep(), features = NULL,
+                                   prot_len = L, gene = "G", accession = "A",
+                                   contrast = "AvB")
+    brks <- ggplot2::ggplot_build(g)$layout$panel_params[[1]]$x$breaks
+    brks <- brks[!is.na(brks)]
+    expect_true(L %in% brks,
+                info = sprintf("prot_len=%d must keep a visible end tick", L))
+  }
+})
