@@ -1165,9 +1165,8 @@ PELSASection3_Ome_Server <- function(id,
       w  <- tryCatch(pinned_woods(), error = function(e) NULL)
       if (is.null(ev) || is.null(w) || nrow(w$pep) == 0L) return()
       pep <- w$pep
-      in_span <- !is.na(ev$x) & pep$pep_start <= ev$x & ev$x <= pep$pep_end
-      cand <- which(in_span); if (!length(cand)) cand <- seq_len(nrow(pep))
-      j <- cand[which.min(abs(pep$logFC[cand] - (ev$y %||% pep$logFC[cand])))]
+      j <- .pelsa_woods_click_index(pep, ev$x, ev$y)
+      if (is.null(j)) return()
       sel_seq <- pep$peptide_seq[[j]]
       cur <- selection()
       selection(list(origin = "click",

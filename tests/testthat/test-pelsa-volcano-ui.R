@@ -1067,3 +1067,67 @@ test_that("pinned panels + exports thread sig_cutoff_r(), never a hardcoded 0.05
   expect_false(any(grepl("\\.PELSA_ANY_CONTRAST,\\s*\\.PELSA_EXPORT_SIG_CUTOFF", src)),
                info = "intensity/Woods exports must use the user cutoff, not the export constant")
 })
+
+# ---------------------------------------------------------------------------
+# .pelsa_woods_click_index: resolve which Woods peptide a click selected.
+# Pure helper extracted from the plotly_click observer so the candidate-
+# selection arithmetic is unit-testable (the observer is otherwise reactive).
+# ---------------------------------------------------------------------------
+test_that(".pelsa_woods_click_index picks the in-span peptide nearest the click y", {
+  fn <- get(".pelsa_woods_click_index", envir = asNamespace("Protigy"))
+  pep <- data.frame(
+    peptide_seq = c("pA", "pB", "pC"),
+    pep_start   = c(1L, 10L, 100L),
+    pep_end     = c(9L, 20L, 120L),
+    logFC       = c(-2, 1, 3),
+    stringsAsFactors = FALSE
+  )
+  # x lands in pB's span; y nearest pB's logFC -> index 2.
+  expect_equal(fn(pep, ev_x = 15, ev_y = 1.1), 2L)
+})
+
+test_that(".pelsa_woods_click_index handles an NA click y without error (regression)", {
+  # Regression: `ev$y %||% pep$logFC[cand]` only guarded NULL. With ev_y = NA,
+  # abs(logFC - NA) was all-NA, which.min returned integer(0), and pep[[integer(0)]]
+  # errored. NA y must be treated like NULL (fall back to the candidate's own
+  # logFC), yielding a valid index, not an error.
+  fn <- get(".pelsa_woods_click_index", envir = asNamespace("Protigy"))
+  pep <- data.frame(
+    peptide_seq = c("pA", "pB"),
+    pep_start   = c(1L, 10L),
+    pep_end     = c(9L, 20L),
+    logFC       = c(-2, 1),
+    stringsAsFactors = FALSE
+  )
+  idx <- expect_no_error(fn(pep, ev_x = 15, ev_y = NA_real_))
+  expect_equal(idx, 2L)            # x in pB's span -> pB
+})
+
+test_that(".pelsa_woods_click_index falls back to all peptides when x is in no span", {
+  fn <- get(".pelsa_woods_click_index", envir = asNamespace("Protigy"))
+  pep <- data.frame(
+    peptide_seq = c("pA", "pB"),
+    pep_start   = c(1L, 10L),
+    pep_end     = c(9L, 20L),
+    logFC       = c(-2, 1),
+    stringsAsFactors = FALSE
+  )
+  # x=500 in no span; y nearest pA's -2 -> index 1.
+  expect_equal(fn(pep, ev_x = 500, ev_y = -1.9), 1L)
+  # NULL x also falls back to all peptides.
+  expect_equal(fn(pep, ev_x = NULL, ev_y = 0.9), 2L)
+})
+
+test_that(".pelsa_woods_click_index returns NULL (not integer(0)) when all candidate logFC are NA", {
+  # Honors the documented length-1-or-NULL contract: all-NA logFC would make
+  # which.min collapse to integer(0); the caller's is.null(j) guard must catch it.
+  fn <- get(".pelsa_woods_click_index", envir = asNamespace("Protigy"))
+  pep <- data.frame(
+    peptide_seq = c("pA", "pB"),
+    pep_start   = c(1L, 10L),
+    pep_end     = c(9L, 20L),
+    logFC       = c(NA_real_, NA_real_),
+    stringsAsFactors = FALSE
+  )
+  expect_null(fn(pep, ev_x = 15, ev_y = 1.0))
+})

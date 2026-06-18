@@ -41,6 +41,44 @@
 
 # ---- contrast key + label/suffix mapping ------------------------------------
 
+# Resolve which Woods peptide a plotly_click selected, by coordinate.
+#
+# Candidates are the peptides whose [pep_start, pep_end] span contains the click
+# x; if the click x is NULL/NA or in no span, ALL peptides are candidates. Among
+# the candidates, pick the one whose logFC is nearest the click y. A NULL OR NA
+# click y falls back to each candidate's own logFC (distance 0), so the first
+# candidate is chosen -- never letting an NA y collapse which.min() to
+# integer(0) (the bug this guards).
+#
+# @param pep   data.frame with pep_start, pep_end, logFC (the Woods peptide set).
+# @param ev_x  click x coordinate (numeric scalar) or NULL.
+# @param ev_y  click y coordinate (numeric scalar), or NULL/NA.
+# @return integer row index into `pep` (length 1), or NULL when pep is empty.
+# @noRd
+.pelsa_woods_click_index <- function(pep, ev_x, ev_y) {
+  n <- nrow(pep)
+  if (is.null(n) || n == 0L) return(NULL)
+  in_span <- if (is.null(ev_x) || length(ev_x) != 1L || is.na(ev_x)) {
+    rep(FALSE, n)
+  } else {
+    pep$pep_start <= ev_x & ev_x <= pep$pep_end
+  }
+  cand <- which(in_span)
+  if (!length(cand)) cand <- seq_len(n)
+  # NA or NULL y -> use each candidate's own logFC (distance 0 everywhere).
+  y_ref <- if (is.null(ev_y) || length(ev_y) != 1L || is.na(ev_y)) {
+    pep$logFC[cand]
+  } else {
+    ev_y
+  }
+  j <- cand[which.min(abs(pep$logFC[cand] - y_ref))]
+  # which.min returns integer(0) when every candidate distance is NA (e.g. all
+  # candidate logFC are NA); honor the "length-1 or NULL" contract so the caller
+  # never indexes pep with integer(0).
+  if (!length(j)) return(NULL)
+  j
+}
+
 # Build the registry key "<ome>::<contrast>" for a per-contrast registry slot.
 #
 # `contrast` is the STAT-COLUMN SUFFIX (e.g. "A_over_B"), not the display label,
