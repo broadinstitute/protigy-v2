@@ -111,7 +111,12 @@ pelsa_export_prot_len <- function(coverage, acc, peptides = NULL) {
   }
   if ((is.na(plen) || plen < 1L) && is.data.frame(peptides) &&
       "pep_end" %in% colnames(peptides) && nrow(peptides) > 0L) {
-    plen <- max(as.integer(peptides$pep_end), na.rm = TRUE)
+    # Filter NAs BEFORE max() -- max(all-NA, na.rm = TRUE) warns
+    # ("no non-missing arguments to max; returning -Inf"). pep_end can be all-NA
+    # for older caches lacking span columns; fall through to the 1L default.
+    ends <- as.integer(peptides$pep_end)
+    ends <- ends[!is.na(ends)]
+    if (length(ends) > 0L) plen <- max(ends)
   }
   if (is.na(plen) || plen < 1L) 1L else plen
 }
