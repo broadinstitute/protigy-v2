@@ -58,7 +58,8 @@ jobs:
       # required when pak falls back to source builds (R-devel and certain
       # Bioconductor packages with no Linux binary on RSPM, e.g. Rhdf5lib).
       # Headers used by: curl/openssl/websocket (libcurl, libssl), fs (libuv),
-      # stringi (libicu), png (libpng), clipr (libx11), httpuv (zlib).
+      # stringi (libicu), png (libpng), clipr (libx11), httpuv (zlib),
+      # systemfonts/textshaping/ragg (fontconfig, freetype, harfbuzz, fribidi).
       - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -70,7 +71,13 @@ jobs:
             libicu-dev \
             libpng-dev \
             libx11-dev \
-            zlib1g-dev
+            zlib1g-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libtiff5-dev \
+            libjpeg-dev
 
       - uses: r-lib/actions/setup-pandoc@v2
 
