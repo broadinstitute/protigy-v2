@@ -30,7 +30,7 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   `sidebar_setup*.R` = upload/processing pipeline. Keep this split when adding code.
 - Templates for new modules: `R/tab_TEMPLATE.R` and `R/tab_TEMPLATE_SINGLE-OME.R`.
   Full guide: `dev/module_requirements.md`.
-- **PELSA** is the largest subsystem (~1/3 of `R/`, 27 files): a `tab_pelsa_container.R` tab with
+- **PELSA** is the largest subsystem (~1/3 of `R/`, 28 files): a `tab_pelsa_container.R` tab with
   numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus many `tab_pelsa_*_helpers.R`.
   It extends the naming rule above — follow the existing `section`/`_helpers` split there.
   The volcano is a native plotly `scattergl` (WebGL) build: per-point `marker.color`
