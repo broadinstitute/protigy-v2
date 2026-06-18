@@ -114,6 +114,53 @@ test_that("no-overlap gene fallback falls back to accession when gene empty", {
   expect_equal(out$winning_gene, "PA")   # empty gene -> accession
 })
 
+test_that("a feature cache row with NA start/end does not abort annotation", {
+  # Regression: foverlaps() hard-errors on NA in the lookup (y) range columns.
+  # readr reads a blank/unparseable coord in uniprot_features.tsv as NA, so one
+  # malformed cached feature aborts the entire annotation step. The feature (y)
+  # side must drop NA/inverted ranges, mirroring the grid (x) side -- the other
+  # features still annotate.
+  feat <- rbind(
+    .feat_df(),
+    data.frame(accession = "PB", start = NA_integer_, end = NA_integer_,
+               feature_class = "folded_domain", stringsAsFactors = FALSE)
+  )
+  # PB [1,30] active_or_binding_site; peptide [5,15] overlaps it. The NA-coord
+  # PB row must be ignored, not crash, and not change the result.
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "PB",
+    PG.Genes             = "GB",
+    pep_start            = 5L,
+    pep_end              = 15L,
+    stringsAsFactors     = FALSE
+  )
+  # The dropped-row warning is part of the "surface a corrupt cache" contract.
+  expect_warning(
+    out <- pelsa_annotate_features(plot_df, feat),
+    "dropped 1 feature row"
+  )
+  expect_equal(out$feature_class_primary, "active_or_binding_site")
+  expect_equal(out$winning_accession, "PB")
+})
+
+test_that("a feature cache of ONLY NA-coord rows falls back to 'none' (no crash)", {
+  # If every feature row is dropped (all NA coords), foverlaps sees an empty
+  # lookup -> no hits -> the 'none' + leading-accession fallback, not an error.
+  feat <- data.frame(
+    accession = c("PB", "PB"), start = c(NA_integer_, NA_integer_),
+    end = c(NA_integer_, NA_integer_),
+    feature_class = c("folded_domain", "region_or_motif"),
+    stringsAsFactors = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "PB", PG.Genes = "GB",
+    pep_start = 5L, pep_end = 15L, stringsAsFactors = FALSE
+  )
+  out <- expect_no_error(suppressWarnings(pelsa_annotate_features(plot_df, feat)))
+  expect_equal(out$feature_class_primary, "none")
+  expect_equal(out$winning_accession, "PB")
+})
+
 test_that("single overlap on leading accession resolves to that class", {
   feat <- .feat_df()
   # PB [1,30] active_or_binding_site; peptide [5,15] overlaps it.

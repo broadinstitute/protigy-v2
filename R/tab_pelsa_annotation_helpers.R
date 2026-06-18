@@ -440,6 +440,18 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
     end           = as.integer(feat_df$end),
     feature_class = as.character(feat_df$feature_class)
   )
+  # Drop feature (y-side) rows with NA or inverted ranges before the join.
+  # foverlaps() hard-errors on NA in y's range columns, and the regenerable
+  # on-disk feature cache is untrusted input (a blank/unparseable coord parses
+  # to NA). Mirror the grid (x) side: drop them with a one-time warning so a
+  # corrupt cache surfaces in logs (soft-fail posture used in PELSA).
+  feat_bad <- is.na(feat$start) | is.na(feat$end) | (feat$start > feat$end)
+  if (any(feat_bad)) {
+    warning("pelsa_annotate_features: dropped ", sum(feat_bad),
+            " feature row(s) with NA or inverted (start > end) coordinates ",
+            "from the feature cache.", call. = FALSE)
+    feat <- feat[!feat_bad]
+  }
   data.table::setkey(qry, accession, pep_start, pep_end)
   data.table::setkey(feat, accession, start, end)
 
