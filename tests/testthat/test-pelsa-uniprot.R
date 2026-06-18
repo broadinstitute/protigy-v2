@@ -295,11 +295,11 @@ test_that("pelsa_fetch_uniprot returns empty result for empty input (no network)
 test_that("pelsa_fetch_uniprot cancels before the first batch (no network)", {
   # should_cancel TRUE -> the loop breaks at the first boundary before any
   # request, so NO network is touched. All accessions are unresolved, canceled.
-  res <- pelsa_fetch_uniprot(c("P1", "P2", "P3"),
+  res <- pelsa_fetch_uniprot(c("P00001", "P00002", "P00003"),
                              should_cancel = function() TRUE)
   expect_true(res$canceled)
   expect_equal(nrow(res$features), 0L)
-  expect_setequal(res$unresolved, c("P1", "P2", "P3"))
+  expect_setequal(res$unresolved, c("P00001", "P00002", "P00003"))
 })
 
 # ---- batched /search parse parity (no network) ------------------------------
@@ -346,7 +346,7 @@ test_that("pelsa_fetch_uniprot live smoke test (batched)", {
   testthat::skip_if_offline()
 
   res <- pelsa_fetch_uniprot("P04637")  # TP53
-  expect_named(res, c("features", "unresolved", "canceled"))
+  expect_named(res, c("features", "unresolved", "transient_unresolved", "canceled"))
   expect_gt(nrow(res$features), 0L)
   expect_true(all(res$features$accession == "P04637"))
   expect_true(all(
@@ -367,8 +367,9 @@ test_that("batched fetch matches per-accession ground truth for known accessions
 
   accs <- c("P04637", "P00533", "P38398", "P00761")  # TP53, EGFR, BRCA1, Trypsin
 
-  # (A) batched (one /search query, cursor-paginated)
-  batched <- pelsa_fetch_uniprot(accs, batch_size = 200L)$features
+  # (A) batched (one /search query, cursor-paginated). 4 accessions fit one
+  # batch under UniProt's 100-OR cap; use the default batch size.
+  batched <- pelsa_fetch_uniprot(accs)$features
 
   # (B) ground truth: per-accession .json, parsed by the same pure parser
   manual_one <- function(acc) {

@@ -638,3 +638,40 @@ test_that("notifications report a canceled species + exclude it from 'complete'"
   expect_match(complete, "9606")
   expect_false(grepl("10090", complete))
 })
+
+# ---- pelsa_gcts_for_species (Defect #1: species-dataset accession guard) -----
+
+test_that("pelsa_gcts_for_species keeps ALL same-species datasets (union), drops others", {
+  gcts <- list(
+    ome_h1 = data.frame(PG.ProteinAccessions = "P10000", stringsAsFactors = FALSE),
+    ome_h2 = data.frame(PG.ProteinAccessions = "P20000", stringsAsFactors = FALSE),
+    ome_m1 = data.frame(PG.ProteinAccessions = "Q30000", stringsAsFactors = FALSE)
+  )
+  species_by_ds <- list(ome_h1 = "9606", ome_h2 = "9606", ome_m1 = "10090")
+
+  human <- pelsa_gcts_for_species(gcts, species_by_ds, "9606")
+  expect_setequal(names(human), c("ome_h1", "ome_h2"))   # both human datasets
+  # The union of accessions across both same-species datasets is preserved.
+  expect_setequal(pelsa_refresh_accession_universe(human, NULL),
+                  c("P10000", "P20000"))
+  # Mouse dataset excluded from the human universe (no spillover).
+  expect_false("Q30000" %in% pelsa_refresh_accession_universe(human, NULL))
+
+  mouse <- pelsa_gcts_for_species(gcts, species_by_ds, "10090")
+  expect_setequal(names(mouse), "ome_m1")
+})
+
+test_that("pelsa_gcts_for_species: '(none)'/unset species never matches a real species", {
+  gcts <- list(
+    ome_a = data.frame(PG.ProteinAccessions = "P10000", stringsAsFactors = FALSE),
+    ome_b = data.frame(PG.ProteinAccessions = "P20000", stringsAsFactors = FALSE)
+  )
+  species_by_ds <- list(ome_a = "9606", ome_b = "(none)")
+  out <- pelsa_gcts_for_species(gcts, species_by_ds, "9606")
+  expect_setequal(names(out), "ome_a")
+})
+
+test_that("pelsa_gcts_for_species returns NULL/empty input unchanged", {
+  expect_null(pelsa_gcts_for_species(NULL, list(), "9606"))
+  expect_length(pelsa_gcts_for_species(list(), list(), "9606"), 0L)
+})

@@ -52,8 +52,8 @@ test_that("on_batch fires once per batch with (done, total)", {
     .package = "Protigy"
   )
   res <- pelsa_fetch_uniprot(
-    c("P1", "P2", "P3", "P4", "P5"),
-    batch_size = 2L,                      # -> 3 batches: (P1,P2)(P3,P4)(P5)
+    c("P00001", "P00002", "P00003", "P00004", "P00005"),
+    batch_size = 2L,                      # -> 3 batches of 2,2,1
     on_batch = function(done, total) seen[[length(seen) + 1L]] <<- c(done, total)
   )
   # 3 batches -> 3 callbacks, done = 1,2,3 and total = 3 each time
@@ -61,7 +61,8 @@ test_that("on_batch fires once per batch with (done, total)", {
   expect_equal(seen[[1]], c(1L, 3L))
   expect_equal(seen[[3]], c(3L, 3L))
   # all accessions resolved (the fake entries carry each accession)
-  expect_setequal(res$features$accession, c("P1", "P2", "P3", "P4", "P5"))
+  expect_setequal(res$features$accession,
+                  c("P00001", "P00002", "P00003", "P00004", "P00005"))
   expect_length(res$unresolved, 0L)
   expect_false(res$canceled)
 })
@@ -77,8 +78,8 @@ test_that("a 4xx-style empty batch yields unresolved, NOT a breaker trip", {
   )
   # 10 accessions / batch_size 1 -> 10 empty batches. If empties counted toward
   # the breaker (limit 5) this would error; it must NOT.
-  res <- pelsa_fetch_uniprot(paste0("P", 1:10), batch_size = 1L)
-  expect_setequal(res$unresolved, paste0("P", 1:10))
+  res <- pelsa_fetch_uniprot(sprintf("P%05d", 1:10), batch_size = 1L)
+  expect_setequal(res$unresolved, sprintf("P%05d", 1:10))
   expect_equal(nrow(res$features), 0L)
   expect_false(res$canceled)
 })
@@ -90,18 +91,18 @@ test_that("a returned-but-feature-less entry is RESOLVED, not unresolved", {
   # feature presence, defines resolved.
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      # P1 has features, P2 is returned but feature-less.
-      ent <- list(fake_entry("P1"), fake_entry_no_features("P2"))
+      # P00001 has features, P00002 is returned but feature-less.
+      ent <- list(fake_entry("P00001"), fake_entry_no_features("P00002"))
       list(entries = ent, failed = FALSE)
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P1", "P2"), batch_size = 2L)
-  # P2 was returned (resolved) even though it contributed no feature rows.
-  expect_false("P2" %in% res$unresolved)
+  res <- pelsa_fetch_uniprot(c("P00001", "P00002"), batch_size = 2L)
+  # P00002 was returned (resolved) even though it contributed no feature rows.
+  expect_false("P00002" %in% res$unresolved)
   expect_length(res$unresolved, 0L)
-  # P1 still produced its feature row.
-  expect_true("P1" %in% res$features$accession)
+  # P00001 still produced its feature row.
+  expect_true("P00001" %in% res$features$accession)
 })
 
 test_that("an input secondary accession returned under its primary is RESOLVED", {
@@ -110,14 +111,14 @@ test_that("an input secondary accession returned under its primary is RESOLVED",
   # secondary must be marked resolved, not unresolved.
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      # input was the secondary "P0SEC"; UniProt returns it as primary "Q99PRI".
-      list(entries = list(fake_entry_with_secondary("Q99PRI", "P0SEC")),
+      # input was the secondary "P0SEC1"; UniProt returns it as primary "Q99999".
+      list(entries = list(fake_entry_with_secondary("Q99999", "P0SEC1")),
            failed = FALSE)
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P0SEC"), batch_size = 2L)
-  expect_false("P0SEC" %in% res$unresolved)
+  res <- pelsa_fetch_uniprot(c("P0SEC1"), batch_size = 2L)
+  expect_false("P0SEC1" %in% res$unresolved)
   expect_length(res$unresolved, 0L)
 })
 
@@ -125,13 +126,13 @@ test_that("multiple secondary accessions on one entry all resolve", {
   # Real UniProt entries carry secondaryAccessions as a multi-element array.
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      e <- fake_entry("Q99PRI")
-      e$secondaryAccessions <- list("SEC1", "SEC2", "SEC3")
+      e <- fake_entry("Q99999")
+      e$secondaryAccessions <- list("Q0SEC1", "Q0SEC2", "Q0SEC3")
       list(entries = list(e), failed = FALSE)
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("SEC1", "SEC3"), batch_size = 2L)
+  res <- pelsa_fetch_uniprot(c("Q0SEC1", "Q0SEC3"), batch_size = 2L)
   expect_length(res$unresolved, 0L)
 })
 
@@ -157,14 +158,14 @@ test_that("a genuinely-absent accession is still reported unresolved", {
   # Control: an accession UniProt never returns stays unresolved.
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      # only P1 comes back; P_GHOST is absent.
-      list(entries = list(fake_entry("P1")), failed = FALSE)
+      # only P00001 comes back; P00098 is absent.
+      list(entries = list(fake_entry("P00001")), failed = FALSE)
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P1", "P_GHOST"), batch_size = 2L)
-  expect_true("P_GHOST" %in% res$unresolved)
-  expect_false("P1" %in% res$unresolved)
+  res <- pelsa_fetch_uniprot(c("P00001", "P00098"), batch_size = 2L)
+  expect_true("P00098" %in% res$unresolved)
+  expect_false("P00001" %in% res$unresolved)
 })
 
 test_that("a genuinely-absent isoform accession is still reported unresolved", {
@@ -172,11 +173,11 @@ test_that("a genuinely-absent isoform accession is still reported unresolved", {
   # it stays unresolved (the base-match must not resolve an absent isoform).
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      list(entries = list(fake_entry("P1")), failed = FALSE)  # P99999 base absent
+      list(entries = list(fake_entry("P00001")), failed = FALSE)  # P99999 base absent
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P1", "P99999-3"), batch_size = 2L)
+  res <- pelsa_fetch_uniprot(c("P00001", "P99999-3"), batch_size = 2L)
   expect_true("P99999-3" %in% res$unresolved)
 })
 
@@ -187,18 +188,18 @@ test_that("transient_unresolved separates failed-batch accs from genuinely-absen
   # should drive the "re-run when reachable" refresh warning.
   testthat::local_mocked_bindings(
     .pelsa_fetch_one_batch = function(base_req, accs, size) {
-      if ("P_FAIL" %in% accs) {
+      if ("P00097" %in% accs) {
         list(entries = list(), failed = TRUE)            # transient failure
       } else {
-        # succeeded batch: P_OK returned, P_GONE genuinely absent
-        list(entries = list(fake_entry("P_OK")), failed = FALSE)
+        # succeeded batch: P00096 returned, P00095 genuinely absent
+        list(entries = list(fake_entry("P00096")), failed = FALSE)
       }
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P_FAIL", "P_OK", "P_GONE"), batch_size = 1L)
-  expect_setequal(res$unresolved, c("P_FAIL", "P_GONE"))
-  expect_setequal(res$transient_unresolved, "P_FAIL")    # NOT P_GONE
+  res <- pelsa_fetch_uniprot(c("P00097", "P00096", "P00095"), batch_size = 1L)
+  expect_setequal(res$unresolved, c("P00097", "P00095"))
+  expect_setequal(res$transient_unresolved, "P00097")    # NOT P00095
 })
 
 test_that("transient_unresolved is empty on a fully successful fetch", {
@@ -208,7 +209,7 @@ test_that("transient_unresolved is empty on a fully successful fetch", {
     },
     .package = "Protigy"
   )
-  res <- pelsa_fetch_uniprot(c("P1", "P2"), batch_size = 2L)
+  res <- pelsa_fetch_uniprot(c("P00001", "P00002"), batch_size = 2L)
   expect_length(res$transient_unresolved, 0L)
 })
 
@@ -224,7 +225,7 @@ test_that("breaker trips after .PELSA_BREAKER_LIMIT consecutive failed batches",
   expect_true(limit >= 1L)
   # Enough batches to exceed the limit.
   expect_error(
-    pelsa_fetch_uniprot(paste0("P", seq_len(limit + 2L)), batch_size = 1L),
+    pelsa_fetch_uniprot(sprintf("P%05d", seq_len(limit + 2L)), batch_size = 1L),
     "UniProt unavailable"
   )
 })
@@ -247,7 +248,7 @@ test_that("breaker resets after a successful batch (failures must be consecutive
   )
   # 3*limit batches alternating fail/success -> never `limit` failures in a row.
   n <- 3L * limit
-  res <- pelsa_fetch_uniprot(paste0("P", seq_len(n)), batch_size = 1L)
+  res <- pelsa_fetch_uniprot(sprintf("P%05d", seq_len(n)), batch_size = 1L)
   # the successful (even-numbered) batches resolve their accessions; the rest are
   # unresolved -- but crucially no breaker error was thrown.
   expect_gt(nrow(res$features), 0L)
@@ -265,15 +266,15 @@ test_that("should_cancel stops at a batch boundary and reports canceled = TRUE",
   )
   # cancel AFTER the first batch has run (so n >= 1 -> stop before batch 2)
   res <- pelsa_fetch_uniprot(
-    paste0("P", 1:6), batch_size = 2L,
+    sprintf("P%05d", 1:6), batch_size = 2L,
     should_cancel = function() calls$n >= 1L
   )
   expect_true(res$canceled)
   # only the first batch's two accessions resolved
   expect_equal(calls$n, 1L)
-  expect_setequal(res$features$accession, c("P1", "P2"))
+  expect_setequal(res$features$accession, c("P00001", "P00002"))
   # the not-yet-fetched accessions are unresolved
-  expect_true(all(c("P3", "P4", "P5", "P6") %in% res$unresolved))
+  expect_true(all(c("P00003", "P00004", "P00005", "P00006") %in% res$unresolved))
 })
 
 # ===========================================================================
@@ -388,4 +389,93 @@ test_that("the failed-condition block keeps the req_error(>=500) policy + NA/5xx
   # The behavioral guard (network NA OR server 5xx -> batch failed) is unchanged.
   expect_true(grepl("if (is.na(status) || status >= 500L) batch_failed <- TRUE",
                     src, fixed = TRUE))
+})
+
+# ===========================================================================
+# Defect #2/#4 fix: query universe is valid-format, isoform-base, deduped.
+# ===========================================================================
+
+test_that(".pelsa_is_valid_accession accepts UniProt accessions, rejects non-UniProt keys", {
+  # Valid: SwissProt (P/Q/O...) + TrEMBL forms, with optional isoform suffix.
+  expect_equal(
+    .pelsa_is_valid_accession(c("P12345", "Q6ZWR6", "A2ASS6", "A0A0N4SVQ2", "P12345-3")),
+    rep(TRUE, 5L)
+  )
+  # Invalid: smORF/contaminant keys + obviously malformed.
+  expect_equal(
+    .pelsa_is_valid_accession(c("smORF_G035940|LINC02081.2", "B99901", "", "lowercase1", NA)),
+    rep(FALSE, 5L)
+  )
+})
+
+test_that("pelsa_fetch_uniprot queries base+valid+deduped terms, never isoform/invalid keys", {
+  captured <- list()
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      captured[[length(captured) + 1L]] <<- accs
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # Input mixes: a base, its isoform, a duplicate, an invalid smORF, a contaminant.
+  pelsa_fetch_uniprot(
+    c("P00001", "P00001-2", "P00001", "smORF_G1|X", "B99901", "Q6ZWR6-3"),
+    batch_size = 100L
+  )
+  terms <- unlist(captured, use.names = FALSE)
+  # Isoform suffix stripped to base; duplicates collapsed.
+  expect_true("P00001" %in% terms)
+  expect_false(any(grepl("-[0-9]+$", terms)))       # no isoform-suffixed query terms
+  expect_equal(sum(terms == "P00001"), 1L)          # deduped (P00001 + P00001-2 -> one)
+  # Non-UniProt keys never queried.
+  expect_false("smORF_G1|X" %in% terms)
+  expect_false("B99901" %in% terms)
+  # Q6ZWR6-3 -> Q6ZWR6 base present.
+  expect_true("Q6ZWR6" %in% terms)
+})
+
+test_that("pelsa_fetch_uniprot never sends more than batch_size (<=100) terms per batch", {
+  seen_sizes <- integer(0)
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      seen_sizes[[length(seen_sizes) + 1L]] <<- length(accs)
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # 250 distinct valid base accessions -> with batch_size 100 -> batches of <=100.
+  accs <- sprintf("P%05d", 1:250)
+  pelsa_fetch_uniprot(accs, batch_size = 100L)
+  expect_true(all(seen_sizes <= 100L))
+  expect_equal(sum(seen_sizes), 250L)
+})
+
+test_that("an isoform input resolves via its base entry (not falsely unresolved)", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # UniProt returns the entry under the BASE primaryAccession only.
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001-2"), batch_size = 100L)
+  expect_false("P00001-2" %in% res$unresolved)
+})
+
+test_that("an invalid-format input is unresolved but does not error or trip the breaker", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "smORF_G1|X"), batch_size = 100L)
+  expect_true("P00001" %in% res$features$accession)
+  expect_true("smORF_G1|X" %in% res$unresolved)
+  expect_false(res$canceled)
+})
+
+test_that(".PELSA_BATCH_SIZE stays within UniProt's 100-OR /search cap", {
+  bs <- get(".PELSA_BATCH_SIZE", envir = asNamespace("Protigy"))
+  expect_lte(bs, 100L)
 })
