@@ -155,8 +155,9 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   expect_setequal(
     names(cache),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "coverage_by_condition", "peptide_metrics",
-      "length_by_condition", "annotation_features", "unannotated", "qc")
+      "coverage", "coverage_by_condition", "n_peptides_by_condition",
+      "peptide_metrics", "length_by_condition", "annotation_features",
+      "unannotated", "qc")
   )
   # The full-duplicate `annotation` frame is NOT stored (~27MB/dataset saved).
   expect_false("annotation" %in% names(cache))

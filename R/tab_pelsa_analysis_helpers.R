@@ -648,7 +648,7 @@ pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
 #
 # @section Cache contract:
 # The returned named list is the load-bearing contract Phases 6 (Summary) and 7
-# (Volcano) READ (never recompute). On SUCCESS it has exactly these 12
+# (Volcano) READ (never recompute). On SUCCESS it has exactly these 13
 # components (EXACT names + shapes as implemented):
 #   (NOTE: the former full-duplicate `annotation` frame is no longer stored; the
 #   cache now carries `annotation_features` - just the 3 feature columns,
@@ -680,6 +680,11 @@ pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
 #                  condition when quantified in >= 1 of its samples). Empty frame
 #                  when no usable processed condition column. Feeds the Summary
 #                  coverage panel's per-condition toggle mode.
+#   n_peptides_by_condition NAMED integer vector (condition -> count) of peptides
+#                  QUANTIFIED (canonical finite & non-zero) in >= 1 sample of the
+#                  condition -- the same membership coverage_by_condition uses.
+#                  Empty when no usable processed condition column. Feeds the
+#                  Summary condition table's n_peptides_quantified column.
 #   peptide_metrics data.frame, one row per peptide-frame row. Cols:
 #                  PEP.StrippedSequence, missed_cleavages, peptide_length.
 #   length_by_condition data.frame(condition, peptide_length), peptide lengths
@@ -867,6 +872,12 @@ pelsa_run_analysis_one <- function(gct,
   coverage_by_condition <- data.frame(condition = character(0),
                                       coverage = numeric(0),
                                       stringsAsFactors = FALSE)
+  # Per-condition QUANTIFIED peptide count (canonical finite & non-zero in >= 1
+  # sample), counted from the same membership the coverage/length panels use, so
+  # the Summary "n_peptides_quantified" column means the same "quantified" as the
+  # per-sample summary. NAMED integer vector (condition -> count); empty when no
+  # usable condition column.
+  n_peptides_by_condition <- integer(0)
   if (has_cond_col) {
     cmap_proc <- pelsa_condition_map_for(cdesc_cond, colnames(proc_mat),
                                          condition_col)
@@ -876,6 +887,11 @@ pelsa_run_analysis_one <- function(gct,
                                                        peptide_metrics)
       coverage_by_condition <- pelsa_coverage_by_condition(membership, matched,
                                                            fasta_map)
+      if (is.data.frame(membership) && nrow(membership) > 0L) {
+        n_peptides_by_condition <- table(as.character(membership$condition))
+        n_peptides_by_condition <- stats::setNames(
+          as.integer(n_peptides_by_condition), names(n_peptides_by_condition))
+      }
     }
   }
 
@@ -903,6 +919,7 @@ pelsa_run_analysis_one <- function(gct,
     depth_summary       = depth_summary,
     coverage            = coverage,
     coverage_by_condition = coverage_by_condition,
+    n_peptides_by_condition = n_peptides_by_condition,
     peptide_metrics     = peptide_metrics,
     length_by_condition = length_by_condition,
     annotation_features = annotation_features,

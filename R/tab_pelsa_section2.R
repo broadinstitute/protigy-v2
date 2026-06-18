@@ -807,12 +807,22 @@ pelsa_qc_condition_summary <- function(entry, condition_order = NULL) {
     ordered <- intersect(condition_order, conds)
     conds <- c(ordered, setdiff(conds, ordered))
   }
-  n_pep <- if (is.data.frame(cv) && "condition" %in% colnames(cv))
-    table(as.character(cv$condition)) else integer(0)
+  # n_peptides_quantified = peptides QUANTIFIED (canonical finite & non-zero) in
+  # >= 1 sample of the condition, taken from the cache entry's per-condition
+  # membership count (pelsa_condition_membership). This matches the per-sample
+  # summary's "quantified" semantics; it is NOT a count of all CV rows (which
+  # includes peptides that are non-finite / all-NA within the condition).
+  n_pep <- entry$n_peptides_by_condition %||% integer(0)
+  # A condition can appear in `conds` (it has CV samples) yet have ZERO quantified
+  # peptides, so it is absent from the membership-derived n_pep -> n_pep[conds]
+  # would be NA. That count is genuinely 0 (no peptide quantified in the
+  # condition), not "unknown", so coerce the missing case to 0L.
+  n_quant <- as.integer(n_pep[conds])
+  n_quant[is.na(n_quant)] <- 0L
 
   data.frame(
     condition             = conds,
-    n_peptides_quantified = as.integer(n_pep[conds]),
+    n_peptides_quantified = n_quant,
     median_cv_pct         = unname(med_cv[conds]),
     mean_cv_pct           = unname(mean_cv[conds]),
     median_coverage       = unname(med_cov[conds]),

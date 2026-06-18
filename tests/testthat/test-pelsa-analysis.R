@@ -268,8 +268,9 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_setequal(
     names(one),
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
-      "coverage", "coverage_by_condition", "peptide_metrics",
-      "length_by_condition", "annotation_features", "unannotated", "qc")
+      "coverage", "coverage_by_condition", "n_peptides_by_condition",
+      "peptide_metrics", "length_by_condition", "annotation_features",
+      "unannotated", "qc")
   )
   # The full-duplicate `annotation` frame is NOT stored (memory win).
   expect_false("annotation" %in% names(one))
@@ -325,6 +326,19 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
                     one$coverage_by_condition$coverage <= 1))
   expect_true(all(unique(one$length_by_condition$condition) %in%
                     unique(one$cv$condition)))
+
+  # n_peptides_by_condition: a NAMED integer vector of QUANTIFIED-in->=1-sample
+  # peptide counts (the membership coverage/length use). Each condition's count
+  # must be <= that condition's total CV rows (CV has one row per peptide x
+  # condition for ALL peptides, including non-quantified ones), and > 0 here.
+  expect_type(one$n_peptides_by_condition, "integer")
+  expect_true(length(one$n_peptides_by_condition) > 0L)
+  expect_true(all(one$n_peptides_by_condition > 0L))
+  cv_rows_per_cond <- table(as.character(one$cv$condition))
+  shared <- intersect(names(one$n_peptides_by_condition), names(cv_rows_per_cond))
+  expect_true(length(shared) > 0L)
+  expect_true(all(one$n_peptides_by_condition[shared] <=
+                    as.integer(cv_rows_per_cond[shared])))
 
   # Annotation (2I): only the 3 feature columns are stored, row-aligned to
   # matched; the full annotated frame is reconstructable via the accessor.

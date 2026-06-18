@@ -628,3 +628,61 @@ test_that("per-condition median labels disclose n", {
   expect_true(any(grepl("median = .* \\(n=12\\)", txt)))
   expect_true(any(grepl("median = .* \\(n=3\\)", txt)))
 })
+
+# ---------------------------------------------------------------------------
+# pelsa_qc_condition_summary: n_peptides_quantified counts peptides QUANTIFIED
+# in >= 1 sample of the condition (canonical finite & non-zero membership),
+# NOT every CV row. The count is sourced from the cache entry's
+# n_peptides_by_condition (computed once from pelsa_condition_membership),
+# matching the per-sample summary's "quantified" semantics.
+# ---------------------------------------------------------------------------
+test_that("condition summary n_peptides_quantified uses membership count, not CV row count", {
+  # cv has 3 rows for A and 2 for B (one row per peptide x condition, including
+  # non-quantified peptides). The TRUE quantified counts are fewer: 2 for A, 1
+  # for B. The old code returned table(cv$condition) = c(A=3, B=2) (wrong).
+  cv <- data.frame(
+    condition = c("A", "A", "A", "B", "B"),
+    cv_pct    = c(10, 20, NA, 5, NA),
+    stringsAsFactors = FALSE
+  )
+  entry <- list(
+    cv = cv,
+    coverage_by_condition = data.frame(condition = character(0),
+                                       coverage = numeric(0)),
+    length_by_condition   = data.frame(condition = character(0),
+                                       peptide_length = numeric(0)),
+    # canonical per-condition quantified counts (finite & non-zero in >=1 sample)
+    n_peptides_by_condition = c(A = 2L, B = 1L)
+  )
+
+  out <- pelsa_qc_condition_summary(entry)
+  expect_true("n_peptides_quantified" %in% colnames(out))
+  got <- stats::setNames(out$n_peptides_quantified, out$condition)
+  expect_equal(got[["A"]], 2L)   # NOT 3 (the CV-row count)
+  expect_equal(got[["B"]], 1L)   # NOT 2
+})
+
+test_that("condition with CV data but zero quantified peptides reports 0, not NA", {
+  # Condition "C" has CV rows (it has samples) but is absent from
+  # n_peptides_by_condition (no peptide quantified in any of its samples). Its
+  # count is genuinely 0, not NA ("unknown").
+  cv <- data.frame(
+    condition = c("A", "A", "C", "C"),
+    cv_pct    = c(10, 20, NA, NA),   # C's CVs are all NA (nothing quantified)
+    stringsAsFactors = FALSE
+  )
+  entry <- list(
+    cv = cv,
+    coverage_by_condition = data.frame(condition = character(0),
+                                       coverage = numeric(0)),
+    length_by_condition   = data.frame(condition = character(0),
+                                       peptide_length = numeric(0)),
+    n_peptides_by_condition = c(A = 2L)   # C absent -> 0 quantified
+  )
+  out <- pelsa_qc_condition_summary(entry)
+  got <- stats::setNames(out$n_peptides_quantified, out$condition)
+  expect_true("C" %in% out$condition)
+  expect_equal(got[["C"]], 0L)            # 0, NOT NA
+  expect_false(anyNA(out$n_peptides_quantified))
+  expect_equal(got[["A"]], 2L)
+})
