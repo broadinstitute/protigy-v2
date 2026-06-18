@@ -269,6 +269,36 @@ test_that("pelsa_set_compound_markers errors on unknown compound", {
   )
 })
 
+# ---- pelsa_write_compound_markers --------------------------------------------
+
+test_that("pelsa_write_compound_markers round-trips and preserves metadata", {
+  tmp  <- withr::local_tempdir()
+  path <- file.path(tmp, "compound_markers.yaml")
+  cm <- list(
+    metadata  = list(description = "test", schema_version = 1),
+    compounds = list(Rapamycin = list(markers = list(
+      list(accession = "P42345", gene = "MTOR")
+    )))
+  )
+  expect_true(pelsa_write_compound_markers(path, cm))
+
+  back <- pelsa_read_compound_markers(path)
+  rows <- pelsa_compound_marker_rows(back, "Rapamycin")
+  expect_identical(rows$accession, "P42345")
+  expect_identical(rows$gene, "MTOR")
+
+  raw <- yaml::read_yaml(path)
+  expect_identical(raw$metadata$description, "test")
+  expect_equal(raw$metadata$schema_version, 1)  # round-trips as numeric, not int
+})
+
+test_that("pelsa_write_compound_markers returns FALSE for a non-writable dir", {
+  cm <- list(metadata = list(), compounds = list())
+  # A path inside a directory that does not exist -> dirname not a real dir.
+  bad <- file.path(tempfile(), "nope", "compound_markers.yaml")
+  expect_false(pelsa_write_compound_markers(bad, cm))
+})
+
 # ---- pelsa_marker_rows_from_input --------------------------------------------
 
 test_that("pelsa_marker_rows_from_input: gene NA when resolver is NULL", {

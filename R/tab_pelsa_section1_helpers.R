@@ -265,6 +265,35 @@ pelsa_set_compound_markers <- function(compound_markers, name, marker_rows) {
   out
 }
 
+# Atomically write the parsed compound-marker list back to `path` as YAML.
+#
+# Mirrors pelsa_write_species_meta(): write a tempfile in the SAME directory as
+# the target (so file.rename is atomic on one filesystem), then rename onto the
+# target. The directory must exist and be writable; otherwise this returns FALSE
+# without attempting a write (the caller surfaces a user-facing error). Plain
+# yaml::write_yaml is used (comments are NOT preserved). The metadata block is
+# written verbatim from the list. Returns TRUE on success, FALSE on any failure.
+# @noRd
+pelsa_write_compound_markers <- function(path, compound_markers) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) || !nzchar(path)) {
+    return(FALSE)
+  }
+  dir <- dirname(path)
+  if (!dir.exists(dir) || file.access(dir, mode = 2L) != 0L) {
+    return(FALSE)
+  }
+  payload <- list(
+    metadata  = compound_markers$metadata %||% list(),
+    compounds = compound_markers$compounds %||% list()
+  )
+  ok <- tryCatch({
+    tmp <- tempfile(tmpdir = dir, fileext = ".yaml")
+    yaml::write_yaml(payload, tmp)
+    file.rename(tmp, path)
+  }, error = function(e) FALSE)
+  isTRUE(ok)
+}
+
 # Build the marker rows (accession, gene) for one compound's presets.
 #
 # Aliases are honored: `compound_name` may be the primary name OR any alias.
