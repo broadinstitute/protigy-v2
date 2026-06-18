@@ -244,3 +244,33 @@ test_that("create_cv_violin_plot keeps box fill transparent and supports y_range
   expect_s3_class(p$coordinates, "CoordCartesian")
   expect_equal(p$coordinates$limits$y, c(0.05, 0.40))
 })
+
+# ---------------------------------------------------------------------------
+# CV intensity-source wording (source-level guard)
+#
+# compute_cv_table receives GCT_processed()@mat, which is log-transformed AND
+# normalized. pelsa_delinearize reverses only the log base, NOT normalization,
+# so the CV is computed on delinearized-but-still-normalized intensities -- NOT
+# strictly "raw" intensities. The UI note (tab_qc_cv.R) and the helper comment
+# (tab_qc_cv_helpers.R) must not over-claim "raw", and must acknowledge that
+# normalization stays applied. Reverting either to the "raw (linear)" wording
+# fails this test.
+# ---------------------------------------------------------------------------
+
+test_that("CV note + comment do not over-claim 'raw' intensities", {
+  note <- paste(readLines(testthat::test_path("..", "..", "R", "tab_qc_cv.R"),
+                          warn = FALSE), collapse = "\n")
+  helper <- paste(readLines(testthat::test_path("..", "..", "R",
+                                                "tab_qc_cv_helpers.R"),
+                            warn = FALSE), collapse = "\n")
+
+  # The misleading "raw (linear)" claim must be gone from the user-facing note.
+  expect_false(grepl("raw \\(linear\\)", note),
+               info = "tab_qc_cv.R UI note must not claim CV is on raw (linear) intensities")
+  # The note must acknowledge that normalization remains applied.
+  expect_true(grepl("normaliz", note, ignore.case = TRUE),
+              info = "tab_qc_cv.R UI note must mention normalization still applies")
+  # The helper comment must not assert the matrix is RAW LINEAR.
+  expect_false(grepl("RAW\\s*\\n?\\s*#?\\s*LINEAR|raw linear", helper, ignore.case = TRUE),
+               info = "compute_cv_table comment must not claim raw linear intensities")
+})

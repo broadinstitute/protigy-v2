@@ -180,7 +180,7 @@ QCCV_Ome_Server <- function(id,
             style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
             icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
             strong("Note: ", style = "color: #495057;"),
-            "CV is computed on raw (linear) intensities; log2/log10-transformed datasets are delinearized automatically before the calculation.",
+            "CV is computed on linear intensities: log2/log10-transformed datasets are delinearized automatically before the calculation. Any normalization applied during setup remains in effect (it is not reversed), so CVs reflect the normalized intensities.",
             style = "color: #495057;"
           ),
           uiOutput(ns("qc_cv_controls")),

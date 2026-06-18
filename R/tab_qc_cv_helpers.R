@@ -28,13 +28,15 @@ combine_cdesc_cols <- function(cdesc, cols, sep = "_") {
 
 # Compute CV (sd / mean) per group per feature.
 #
-# CV is NOT invariant under log transformation, so it must be computed on RAW
+# CV is NOT invariant under log transformation, so it must be computed on
 # LINEAR intensities. Protigy's processed matrix is log-transformed when the
 # dataset's setup selected log2/log10, so the matrix is DELINEARIZED by the
 # declared base before sd/mean (mirroring the PELSA CV path, which delinearizes
-# for the same reason). `log_base` comes from the dataset's setup parameter
-# `log_transformation` in {"None","log2","log10"}; "None"/NA passes through
-# unchanged (the matrix is already linear).
+# for the same reason). NOTE: delinearization only reverses the log base -- any
+# normalization applied during setup is NOT undone here, so CVs reflect the
+# normalized (then delinearized) intensities, not strictly raw ones. `log_base`
+# comes from the dataset's setup parameter `log_transformation` in
+# {"None","log2","log10"}; "None"/NA passes through unchanged (already linear).
 #
 # @param mat       numeric matrix, features (rows) x samples (cols).
 #                  rownames(mat) are used as feature IDs.
