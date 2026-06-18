@@ -451,8 +451,18 @@ QCPCA_Ome_Server <- function(id,
     ## EXPORTS (single bundle per ome) ##
     
     qc_PCA_export_bundle <- function(dir_name) {
+      # PCA may be unrunnable: a single-sample ome (sample-count gate) or a PCA
+      # that errored on a degenerate matrix (cached_pca_result()$error). In both
+      # cases the on-screen panels grey out and the export reactives carry the same
+      # validate(need(...)) gates. Skip the exports cleanly (mirrors the CV tab's
+      # cv_export_available guard) so the bundle does not raise a shiny.silent.error
+      # inside ggsave()/write.csv() that tab_export.R would surface as a misleading
+      # "Could not save" failure.
+      if (!is.null(pca_min_samples_msg())) return(invisible(NULL))
+      if (!is.null(cached_pca_result()$error)) return(invisible(NULL))
+
       ggsave_params <- get_ggsave_params()
-      
+
       ggsave(
         filename = paste0("qc_PCA_scores_", ome, ".pdf"),
         plot = qc_PCA_plot_reactive(),
