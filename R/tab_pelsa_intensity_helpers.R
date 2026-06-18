@@ -347,6 +347,13 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
   # over peptide rows). condition_order conditions with no sample columns are
   # dropped from the rows but kept as factor levels.
   conditions_present <- intersect(condition_order, unique(cond))
+  # No condition in condition_order matches the data's conditions: return the
+  # full-contract empty frame (do.call(rbind, list()) below would be NULL, and
+  # out$condition <- factor(...) on NULL would coerce `out` into a malformed
+  # bare list that drops the contracted columns).
+  if (length(conditions_present) == 0L) {
+    return(.pelsa_intensity_empty(condition_order))
+  }
   n_occ <- nrow(m)
   parts <- vector("list", length(conditions_present))
   for (i in seq_along(conditions_present)) {

@@ -595,3 +595,37 @@ test_that("integration: build line data for a synthetic protein with 2 occurrenc
   expect_true("P12345-2" %in% pset_mk$accession)
   expect_true(pset_mk$is_marker[pset_mk$accession == "P12345-2"])
 })
+
+# =============================================================================
+# Empty condition intersection -> full-contract empty frame (not malformed list)
+# =============================================================================
+test_that("pelsa_intensity_line_data returns the empty frame when no condition matches", {
+  # Regression: when condition_order is disjoint from the data's conditions,
+  # conditions_present is empty -> parts is empty -> do.call(rbind, list()) is
+  # NULL -> out$condition <- factor(...) coerced `out` into a malformed bare
+  # list, dropping the contracted columns. It must return .pelsa_intensity_empty
+  # (a zero-row data.frame with the full column contract) instead.
+  proc <- .mk_proc()
+  stat <- .mk_stat(seq = c("pSIG", "pOTHER"), acc = c("PROT", "PROT"),
+                   adjp = c(0.001, 0.40), row_id = 1:2)
+  matched <- .mk_matched(seq = c("pSIG", "pOTHER"),
+                         accession = c("PROT", "PROT"),
+                         pep_start = c(100L, 250L), row_id = 1:2)
+
+  out <- pelsa_intensity_line_data(
+    accession = "PROT", stat_df = stat, matched_cache = matched,
+    processed_mat = proc, condition_map = .cond_map,
+    condition_order = c("ZZZ"),          # disjoint from the data's A/B
+    contrast = "C1", sig_cutoff = 0.05, is_marker = TRUE
+  )
+
+  expect_s3_class(out, "data.frame")     # NOT a bare list
+  expect_equal(nrow(out), 0L)
+  # full column contract preserved (matches .pelsa_intensity_empty)
+  expect_setequal(
+    colnames(out),
+    c("accession", "peptide_seq", "pep_start", "pep_end", "pep_occurrence_idx",
+      "aa_label", "panel", "condition", "mean_log2", "n_rep_nonNA")
+  )
+  expect_s3_class(out$condition, "factor")
+})
