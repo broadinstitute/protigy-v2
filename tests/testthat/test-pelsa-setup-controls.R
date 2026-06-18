@@ -142,14 +142,26 @@ test_that("pelsa_compound_marker_rows returns accession+gene rows for a compound
   expect_true("MTOR" %in% rows$gene)
 })
 
-test_that("pelsa_compound_marker_rows honors aliases", {
-  path <- system.file("pelsa", "compound_markers.yaml", package = "Protigy")
-  skip_if(path == "", "compound_markers.yaml not installed")
-  cm <- pelsa_read_compound_markers(path)
+# ---- .pelsa_resolve_compound_name (case-insensitive, no aliases) -------------
 
-  # "Sirolimus" is an alias of "Rapamycin".
-  rows <- pelsa_compound_marker_rows(cm, "Sirolimus")
-  expect_setequal(rows$accession, c("P42345", "P62942", "Q13451"))
+test_that(".pelsa_resolve_compound_name matches case-insensitively on key", {
+  cm <- list(compounds = list(Rapamycin = list(markers = list()),
+                              AY9944    = list(markers = list())))
+  expect_identical(.pelsa_resolve_compound_name(cm, "Rapamycin"), "Rapamycin")
+  expect_identical(.pelsa_resolve_compound_name(cm, "rapamycin"), "Rapamycin")
+  expect_identical(.pelsa_resolve_compound_name(cm, "RAPAMYCIN"), "Rapamycin")
+})
+
+test_that(".pelsa_resolve_compound_name ignores aliases and returns NA on miss", {
+  cm <- list(compounds = list(
+    Rapamycin = list(aliases = list("Sirolimus"), markers = list())
+  ))
+  expect_true(is.na(.pelsa_resolve_compound_name(cm, "Sirolimus")))
+  expect_true(is.na(.pelsa_resolve_compound_name(cm, "Nonexistent")))
+})
+
+test_that(".pelsa_resolve_compound_name returns NA for empty compound set", {
+  expect_true(is.na(.pelsa_resolve_compound_name(list(compounds = list()), "X")))
 })
 
 test_that("pelsa_compound_marker_rows returns empty frame for unknown compound", {

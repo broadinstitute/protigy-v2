@@ -166,22 +166,17 @@ pelsa_read_compound_markers <- function(path) {
   list(compounds = compounds)
 }
 
-# Resolve a (possibly aliased) compound name to its primary key in the parsed
-# compound-marker list. Exact name match wins; otherwise an alias match (any
-# compound whose `aliases` contains the name) is honored. Returns NA_character_
-# when nothing matches.
+# Resolve a compound name to its primary key in the parsed compound-marker list.
+# Matching is by primary key, CASE-INSENSITIVE. Aliases are NOT consulted (the
+# preset model is name-keyed only). Returns NA_character_ when nothing matches.
 # @noRd
 .pelsa_resolve_compound_name <- function(compound_markers, compound_name) {
   compounds <- compound_markers$compounds
   if (length(compounds) == 0L) return(NA_character_)
-  if (compound_name %in% names(compounds)) return(compound_name)
-  for (cname in names(compounds)) {
-    aliases <- compounds[[cname]]$aliases
-    if (!is.null(aliases) && compound_name %in% as.character(aliases)) {
-      return(cname)
-    }
-  }
-  NA_character_
+  keys <- names(compounds)
+  hit <- which(tolower(keys) == tolower(compound_name))
+  if (length(hit) == 0L) return(NA_character_)
+  keys[[hit[[1]]]]
 }
 
 # Build the marker rows (accession, gene) for one compound's presets.
