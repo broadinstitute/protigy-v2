@@ -588,6 +588,59 @@ test_that("M6: re-adding the same accession after removal re-fires the channel",
   )
 })
 
+test_that("add-compound rejects an invalid name without writing the YAML", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  path <- pelsa_compound_markers_path()
+  skip_if(path == "", "compound_markers.yaml not installed")
+  before <- readLines(path)
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      # A name with a space is rejected by pelsa_validate_compound_name; the
+      # handler returns before any write.
+      session$setInputs(pelsa_new_compound = "Bad Name")
+      session$setInputs(pelsa_add_compound_btn = 1)
+      session$flushReact()
+    }
+  )
+  expect_identical(readLines(path), before)
+})
+
+test_that("add-compound blocks a duplicate name and selects the existing one", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  path <- pelsa_compound_markers_path()
+  skip_if(path == "", "compound_markers.yaml not installed")
+  before <- readLines(path)
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      # "rapamycin" already exists (case-insensitive) -> blocked, no write.
+      session$setInputs(pelsa_new_compound = "rapamycin")
+      session$setInputs(pelsa_add_compound_btn = 1)
+      session$flushReact()
+    }
+  )
+  expect_identical(readLines(path), before)
+})
+
 test_that("compound selection REPLACES existing user-pasted rows", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)

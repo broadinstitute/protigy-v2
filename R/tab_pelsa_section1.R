@@ -244,6 +244,15 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     }
     set_markers <- function(ome, rows) set_ds("marker_rows", ome, rows)
 
+    # Shared message when a preset write fails (read-only package library). Note:
+    # ASCII-only; the repo link lets the user clone + run from source to persist
+    # presets. Reused by the add-compound and set-default handlers.
+    pelsa_readonly_save_msg <- paste0(
+      "Could not save the preset: the package library is not writable. ",
+      "Run Protigy from the source tree (devtools::load_all) to manage presets. ",
+      "Source: https://github.com/broadinstitute/protigy-v2.git"
+    )
+
     observeEvent(input$pelsa_species, {
       ome <- active_setup_ome(); req(ome)
       set_ds("species", ome, input$pelsa_species)
@@ -311,6 +320,46 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       new_rows <- pelsa_marker_rows_from_input(tokens, resolver = NULL)
       set_markers(ome, pelsa_merge_marker_rows(cur_markers(ome), new_rows))
       updateTextAreaInput(session, "pelsa_marker_input", value = "")
+    })
+
+    # Add a brand-new compound (empty preset) and persist it to the YAML. On
+    # success the dropdown is updated + the new compound selected (which the
+    # existing pelsa_compound observers then persist + autofill-empty); on a
+    # read-only library the write fails and we surface the actionable error.
+    observeEvent(input$pelsa_add_compound_btn, {
+      req(active_setup_ome())
+      v <- pelsa_validate_compound_name(input$pelsa_new_compound)
+      if (!isTRUE(v$ok)) {
+        showNotification(v$message, type = "warning", duration = 5)
+        return()
+      }
+      cm <- compound_markers()
+      if (pelsa_compound_exists(cm, v$name)) {
+        # Block + select the existing one (by its primary key) so the user can
+        # edit its markers instead.
+        existing <- .pelsa_resolve_compound_name(cm, v$name)
+        showNotification(
+          sprintf("Compound '%s' already exists.", existing),
+          type = "warning", duration = 5
+        )
+        updateSelectInput(session, "pelsa_compound", selected = existing)
+        return()
+      }
+      new_cm <- pelsa_add_compound(cm, v$name)
+      ok <- pelsa_write_compound_markers(pelsa_compound_markers_path(), new_cm)
+      if (!ok) {
+        showNotification(pelsa_readonly_save_msg, type = "error", duration = 10)
+        return()
+      }
+      # Re-read, refresh the dropdown choices, select the new compound (rides the
+      # existing pelsa_compound observers), and clear the text field.
+      compound_markers_version(compound_markers_version() + 1)
+      choices <- c("(none)" = "", names(compound_markers()$compounds))
+      updateSelectInput(session, "pelsa_compound",
+                        choices = choices, selected = v$name)
+      updateTextInput(session, "pelsa_new_compound", value = "")
+      showNotification(sprintf("Added compound '%s'.", v$name),
+                       type = "message", duration = 4)
     })
 
     # Cross-module: the Volcano (Section 3) requests an accession be added via the
