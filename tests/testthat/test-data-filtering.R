@@ -22,7 +22,7 @@ test_that("sd.filter works with basic input", {
 })
 
 test_that("sd.filter NAs more rows at a higher percentile cutoff (real effect, not nrow)", {
-  # sd.filter sets rows whose SD falls below the percentile threshold to NA —
+  # sd.filter sets rows whose SD falls below the percentile threshold to NA  - 
   # it NEVER drops rows, so nrow is always 4 regardless of the cutoff.
   # Asserting nrow(result_25) <= nrow(result_75) was therefore always TRUE (P2.5).
   #

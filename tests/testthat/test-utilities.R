@@ -328,7 +328,7 @@ test_that("is.continuous handles edge cases", {
 
 # INT-3 regression: is.discrete/is.continuous dropped the internal sort(unique())
 # in favor of unique(). The classification depends only on the COUNT of unique
-# values and whether they are all numeric — both order-independent — so the result
+# values and whether they are all numeric  -  both order-independent  -  so the result
 # must be invariant to input ordering and identical to the pre-optimization output.
 test_that("is.discrete is invariant to input order (INT-3)", {
   # 1. Column with multiple NA values

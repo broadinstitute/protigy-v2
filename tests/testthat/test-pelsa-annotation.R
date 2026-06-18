@@ -1,5 +1,5 @@
 ################################################################################
-# Tests for the PELSA feature-class annotation helpers (Task 2I) — the
+# Tests for the PELSA feature-class annotation helpers (Task 2I)  -  the
 # data.table::foverlaps overlap join + multi-protein priority resolution.
 #
 # This is the HIGHEST-parity-risk helper. Gold standard = HAND-SET synthetic
@@ -18,7 +18,7 @@
 #
 # Gold-standard source: notebook plots/volcano_annotate.py::annotate_feature_class
 # + pick_primary_feature_class + FEATURE_PRIORITY/FEATURE_COLORS, ported verbatim.
-# NOTE the priority ORDER is the NOTEBOOK's (TM before repeat) — notebook wins
+# NOTE the priority ORDER is the NOTEBOOK's (TM before repeat)  -  notebook wins
 # over the planning doc / schema.json level order.
 ################################################################################
 
@@ -273,7 +273,7 @@ test_that("tie on rank+token broken by earliest feature start within accession",
   out <- pelsa_annotate_features(plot_df, feat)
   expect_equal(out$feature_class_primary, "folded_domain")
   expect_equal(out$winning_accession, "PZ")
-  # Winner row's underlying feature start should be the earliest (10) — assert
+  # Winner row's underlying feature start should be the earliest (10)  -  assert
   # indirectly: the function picks deterministically, so re-running is stable.
   out2 <- pelsa_annotate_features(plot_df, feat)
   expect_equal(out2$feature_class_primary, out$feature_class_primary)

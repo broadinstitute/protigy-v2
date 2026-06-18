@@ -1,13 +1,13 @@
 ################################################################################
-# Tests for pelsa_thin_background() — density-proportional volcano background
+# Tests for pelsa_thin_background()  -  density-proportional volcano background
 # thinning (Task 3B). Pure, no Shiny.
 #
 # The PELSA volcano can carry 100k+ points. We thin ONLY the uninformative
-# background cloud — points that are ALL of: non-significant, |logFC| <= thresh,
+# background cloud  -  points that are ALL of: non-significant, |logFC| <= thresh,
 # and NOT a marker-protein peptide. Everything else (significant peptides,
 # sizeable-effect peptides with |logFC| > thresh, marker peptides) is NEVER
 # thinned. Thinning is DENSITY-PROPORTIONAL (a fixed fraction kept per 2-D bin),
-# so dense regions stay dense and sparse regions stay sparse — NOT a flat
+# so dense regions stay dense and sparse regions stay sparse  -  NOT a flat
 # uniform decimation that would wash the cloud's shape out.
 ################################################################################
 
@@ -44,12 +44,12 @@ mixed_volcano <- function() {
     Significant = TRUE, is_marker = FALSE,
     id = c("sig1", "sig2", "sig3")
   )
-  bigeff <- make_volcano(  # non-sig but |logFC| > thresh — must be retained
+  bigeff <- make_volcano(  # non-sig but |logFC| > thresh  -  must be retained
     logFC = c(0.9, -1.2), logP = c(0.3, 0.4),
     Significant = FALSE, is_marker = FALSE,
     id = c("big1", "big2")
   )
-  mk <- make_volcano(  # marker peptide, small effect, non-sig — must be retained
+  mk <- make_volcano(  # marker peptide, small effect, non-sig  -  must be retained
     logFC = c(0.1, -0.2), logP = c(0.2, 0.5),
     Significant = FALSE, is_marker = TRUE,
     id = c("mk1", "mk2")
@@ -114,7 +114,7 @@ test_that("thinning is density-proportional: dense bins keep proportionally more
 
   # PROPORTIONALITY: retained-count ratio (100:1) MIRRORS the original-count
   # ratio, NOT flattened toward 1:1 as a uniform sample would. This is the
-  # defining property — dense stays dense, sparse stays sparse.
+  # defining property  -  dense stays dense, sparse stays sparse.
   ratio <- n_dense_kept / n_sparse_kept
   expect_true(ratio > 80 && ratio < 120)
 })
@@ -212,7 +212,7 @@ test_that("a thinnable row with NA coords is retained untouched", {
 test_that("a thinnable row with non-finite coords does not crash and is retained", {
   # logP = Inf is reachable: 3A builds logP = -log10(P.Value), so a P.Value of 0
   # (permutation p-values / numeric underflow) yields logP = Inf. range() on it
-  # would make seq(length.out=) throw — the binner must fold non-finite into the
+  # would make seq(length.out=) throw  -  the binner must fold non-finite into the
   # "can't be binned" set and RETAIN the row untouched. logFC = -Inf likewise.
   # inf_lp: thinnable (small |logFC|) but logP = Inf -> can't be binned, retained.
   # neginf_fc: logFC = -Inf, so logP is irrelevant; with logP = 0.3 it is a true
@@ -231,7 +231,7 @@ test_that("a thinnable row with non-finite coords does not crash and is retained
   # non-finite-coord rows are retained untouched: inf_lp / neginf_lp are
   # thinnable-but-unbinnable (retained via the coord path); neginf_fc has
   # |logFC| > thresh so it is a big-effect row retained via the non-thinnable
-  # path — either way it must NOT crash and MUST survive.
+  # path  -  either way it must NOT crash and MUST survive.
   expect_true(all(c("inf_lp", "neginf_lp", "neginf_fc") %in% out$df$id))
   # 4 thinnable (the two finite-coord oks + the two with a non-finite COORD but
   # small |logFC|); neginf_fc is big-effect, not thinnable.

@@ -3,18 +3,18 @@
 #
 # Tests the 20 conditionalPanel instances, prioritised by risk:
 #
-# Tier 1 (highest) — sidebar_setup_helpers_shiny.R, use ns = ns pattern
-#   - data_normalization != 'None' → group_normalization checkbox visible
-#   - data_normalization != 'None' && group_normalization → column selector visible
-#   - data_filter == 'StdDev' → percentile input visible
-#   - sample_filter_enabled → column selector visible
-#   - sample_filter_enabled && column != '' → values selector visible
-#   - row_filter_enabled → column selector visible
-#   - row_filter_enabled && column != '' → values selector visible
+# Tier 1 (highest)  -  sidebar_setup_helpers_shiny.R, use ns = ns pattern
+#   - data_normalization != 'None' -> group_normalization checkbox visible
+#   - data_normalization != 'None' && group_normalization -> column selector visible
+#   - data_filter == 'StdDev' -> percentile input visible
+#   - sample_filter_enabled -> column selector visible
+#   - sample_filter_enabled && column != '' -> values selector visible
+#   - row_filter_enabled -> column selector visible
+#   - row_filter_enabled && column != '' -> values selector visible
 #   - 2-component normalization absent for >20 samples
 #   - intensity_data toggle updates normalization choices and max_missing bounds
 #
-# Tier 2 — sidebar_setup_helpers_csv-excel-processing.R
+# Tier 2  -  sidebar_setup_helpers_csv-excel-processing.R
 #   - delimit_id_<file_id> toggle (CSV step 2)
 #   - use_condition_setup_<file_id> toggle (requires spectronaut flag ON)
 #
@@ -59,7 +59,7 @@ test_that("data_normalization != None reveals group normalization checkbox", {
 
   # Default: data_normalization is "Median" (non-None), so group normalization
   # checkbox should already be visible. First set to None, verify hidden.
-  # wait_for_panel_hidden/visible throw on timeout — that IS the assertion.
+  # wait_for_panel_hidden/visible throw on timeout  -  that IS the assertion.
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization"),
@@ -83,14 +83,14 @@ test_that("group normalization checkbox reveals column selector", {
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median", wait_ = FALSE)
   wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization")
 
-  # Disable group normalization — column selector should be hidden
+  # Disable group normalization  -  column selector should be hidden
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization_column"),
     message = "Group normalization column selector should be hidden when group_normalization = FALSE"
   )
 
-  # Enable group normalization — column selector should appear
+  # Enable group normalization  -  column selector should appear
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization_column"),
@@ -103,14 +103,14 @@ test_that("data_filter StdDev reveals percentile input", {
   app <- reach_gct_setup_step()
   on.exit(app$stop(), add = TRUE)
 
-  # None selected — percentile input should be hidden
+  # None selected  -  percentile input should be hidden
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_data_filter_sd_pct"),
     message = "Percentile input should be hidden when data_filter = None"
   )
 
-  # StdDev selected — percentile input should appear
+  # StdDev selected  -  percentile input should appear
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
@@ -146,7 +146,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
   # Enable filter and select a column
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE, wait_ = FALSE)
   app$wait_for_idle(duration = 600)
-  # The dataset has a "Type" column — use first available column
+  # The dataset has a "Type" column  -  use first available column
   # The values selector should appear once a non-empty column is selected
   current_col <- app$get_value(input = "setupSidebar-Proteome_sample_filter_column")
   if (is.null(current_col) || identical(current_col, "")) {
@@ -166,7 +166,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
     )
   }
 
-  # Clear the column — values selector should hide
+  # Clear the column  -  values selector should hide
   app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "", wait_ = FALSE)
   app$wait_for_idle(duration = 600)
   expect_false(
@@ -426,7 +426,7 @@ test_that("INT-1: intensity toggle preserves in-progress edits and still recompu
 
 test_that("CSV identifier delimiter toggle reveals source column input", {
   skip_if_no_shinytest2()
-  # delimit_id UI is not yet implemented in the app — skip until feature lands
+  # delimit_id UI is not yet implemented in the app  -  skip until feature lands
   skip("delimit_id_<file_id> checkbox not yet implemented in sidebar_setup")
   app <- make_app_driver(testthat::test_path("apps/full-app"))
   on.exit(app$stop(), add = TRUE)
@@ -463,7 +463,7 @@ test_that("CSV identifier delimiter toggle reveals source column input", {
     info = "Source column input should be hidden when delimiter checkbox is unchecked"
   )
 
-  # Check it — source column input should appear
+  # Check it  -  source column input should appear
   checked_args <- list(wait_ = FALSE)
   checked_args[[checkbox_id]] <- TRUE
   do.call(app$set_inputs, checked_args)

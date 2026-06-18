@@ -2,13 +2,13 @@
 # Tests for the PELSA Summary section (Phase 6).
 #
 #   PURE helpers (closed-form, NO Shiny):
-#     pelsa_dodge_offsets        — vertically-dodged annotation y positions
-#     pelsa_cv_kde_eligibility   — per-condition KDE eligibility (<20 finite skip)
-#     pelsa_sample_bar_order     — per-sample bar order (sample_order, alpha fallback)
-#     pelsa_depth_bar_data       — ordered per-sample bar data
+#     pelsa_dodge_offsets         -  vertically-dodged annotation y positions
+#     pelsa_cv_kde_eligibility    -  per-condition KDE eligibility (<20 finite skip)
+#     pelsa_sample_bar_order      -  per-sample bar order (sample_order, alpha fallback)
+#     pelsa_depth_bar_data        -  ordered per-sample bar data
 #     pelsa_coverage_values / pelsa_over_length_count / pelsa_length_values /
-#       pelsa_missed_cleavage_data — cache-table shaping
-#     pelsa_section2_exports_for — re-derive CSVs from a cache entry
+#       pelsa_missed_cleavage_data  -  cache-table shaping
+#     pelsa_section2_exports_for  -  re-derive CSVs from a cache entry
 #
 #   testServer (light): a synthetic pelsa_analysis cache (built via
 #     pelsa_run_analysis on the generator) injected; assert the NULL-cache /

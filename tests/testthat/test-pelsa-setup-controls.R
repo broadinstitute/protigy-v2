@@ -312,7 +312,7 @@ test_that("Tab_Server returns list(exports, setup_state, analysis)", {
                ignore.order = TRUE)
   expect_true(is.function(ret$exports))                 # a reactiveVal IS a function
   # SEAM: setup_state is a REACTIVE (is.function TRUE) that yields a plain
-  # snapshot LIST — NOT a bare reactiveValues (which would fail the consumers'
+  # snapshot LIST  -  NOT a bare reactiveValues (which would fail the consumers'
   # is.function() guard and be downgraded to reactive(NULL) in production).
   expect_true(is.function(ret$setup_state))
   expect_true(shiny::is.reactive(ret$setup_state))

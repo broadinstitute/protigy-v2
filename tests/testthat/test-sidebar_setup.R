@@ -611,7 +611,7 @@ test_that("summary_dataset reports original and post-filtering expression column
 
 # INT-1 structural guard (runs without a browser): the intensity-toggle observer
 # must NOT call collectInputs(). collectInputs() writes parameters_internal_reactive,
-# which output$sideBarMain reads — so calling it on toggle forces a full panel
+# which output$sideBarMain reads  -  so calling it on toggle forces a full panel
 # rebuild (the grey-out INT-1 removes). The behavioral proof that no in-progress
 # edit is lost lives in the shinytest2 test "INT-1: intensity toggle preserves
 # in-progress edits..."; this lightweight check prevents the slow call from being

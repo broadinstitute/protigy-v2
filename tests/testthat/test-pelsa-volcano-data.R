@@ -1,11 +1,11 @@
 ################################################################################
-# Tests for pelsa_build_volcano_df() — the PELSA volcano data-frame builder (3A).
+# Tests for pelsa_build_volcano_df()  -  the PELSA volcano data-frame builder (3A).
 #
 # ONE tidy row per SOURCE peptide for the all-peptide panel (no explode), with:
 #   - id / logFC / adj.P.Val / P.Value / logP (mirrors build_volcano_df),
 #   - Significant (adj.P.Val < sig_cutoff),
 #   - sig_direction {up,down,ns} + sig_color (TWO-SIDED: up=darkred, down=blue,
-#     ns=gray) — Decision #4,
+#     ns=gray)  -  Decision #4,
 #   - feature_class_primary / feature_color (via 2I pelsa_annotate_features),
 #   - label (;-joined multilabel via 2C pelsa_build_multilabel, accession
 #     fallback when the gene token is empty),
@@ -392,13 +392,13 @@ test_that("best_peptide panel uses 2G rollup (one dot per distinct best-peptide)
 
 test_that("H2: best-peptide dot for a non-unique stripped seq is mutually consistent", {
   # A stripped sequence "SHARED" appears in TWO stat_df rows (the same peptide
-  # shared across two protein groups — common in DIA), with DIFFERENT
+  # shared across two protein groups  -  common in DIA), with DIFFERENT
   # accession / logFC / P.Value / adj.P.Val per row:
   #   row1 (FIRST): A1, logFC +3, P.Value 0.5,   adj 0.5   (NOT the rollup winner)
   #   row2:         A2, logFC -1, P.Value 0.001, adj 0.001 (the rollup winner)
   # The OLD builder back-mapped "SHARED" to the FIRST stat_df row (A1), so the
   # dot's protein/gene/span/color/y-height came from A1 while its logFC came from
-  # the rollup (A2) — a dot whose label, color, and HEIGHT belonged to different
+  # the rollup (A2)  -  a dot whose label, color, and HEIGHT belonged to different
   # proteins. The fix derives ALL of those from the rollup's WON accession (A2).
   stat <- data.frame(
     PEP.StrippedSequence = c("SHARED", "SHARED", "OTHER"),
@@ -431,7 +431,7 @@ test_that("H2: best-peptide dot for a non-unique stripped seq is mutually consis
   shared <- out[out$id == "SHARED", , drop = FALSE]
   expect_equal(nrow(shared), 1L)
 
-  # The coordinate is the peptide's OWN (rollup) stats — the won (A2) row.
+  # The coordinate is the peptide's OWN (rollup) stats  -  the won (A2) row.
   expect_equal(shared$logFC, -1.0)
   expect_equal(shared$adj.P.Val, 0.001)
   # raw-p / logP come from the SAME won accession (A2), NOT A1's 0.5.

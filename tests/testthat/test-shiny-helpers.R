@@ -54,7 +54,7 @@ extract_select_input_choices_by_id <- function(tag_list, input_id) {
     return(character(0))
   }
 
-  # Current Shiny/htmltools: <select> often has one child — an `html()` blob of all
+  # Current Shiny/htmltools: <select> often has one child  -  an `html()` blob of all
   # <option> tags, not separate shiny.tag "option" nodes. Walking only tags yields
   # character(0) and makes tests look "broken" while the app is fine.
   ch <- select_input$children

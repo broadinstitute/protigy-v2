@@ -229,7 +229,7 @@ test_that("perform_data_normalization does NOT disable 2-component for datasets 
 })
 
 test_that("perform_data_normalization does NOT disable 2-component for datasets with 19 samples", {
-  # Belt-and-suspenders: strictly fewer than 20 samples — the guard must not fire.
+  # Belt-and-suspenders: strictly fewer than 20 samples  -  the guard must not fire.
   test_data <- matrix(rnorm(76), nrow = 4, ncol = 19)
   rownames(test_data) <- paste0("gene_", 1:4)
   colnames(test_data) <- paste0("sample_", 1:19)

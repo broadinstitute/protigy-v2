@@ -341,7 +341,7 @@ test_that("apply-all copies source dataset config to compatible datasets", {
       expect_identical(setup_state$condition_order[["rna"]], c("drug", "ctrl"))
 
       # MED-2 (honest apply-all): the toast says replicate ordering uses each
-      # dataset's default — so rna's replicate_order must reference ITS OWN
+      # dataset's default  -  so rna's replicate_order must reference ITS OWN
       # samples (r_c1 / r_d1), never the source's (p_c1 / p_c2 / p_dA / p_dB).
       rna_rep <- setup_state$replicate_order[["rna"]]
       rna_samples <- unlist(rna_rep, use.names = FALSE)
@@ -458,7 +458,7 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
 
       seam <- session$returned$setup_state
 
-      # (1) The seam is a FUNCTION / reactive (is.function TRUE) — the exact
+      # (1) The seam is a FUNCTION / reactive (is.function TRUE)  -  the exact
       # property the consumer is.function() guards on. A bare reactiveValues
       # would FAIL this and be downgraded to reactive(NULL) in production.
       expect_true(is.function(seam))
@@ -478,7 +478,7 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
   )
 })
 
-# ---- REGRESSION: H1 — replicate order survives a condition-column switch -----
+# ---- REGRESSION: H1  -  replicate order survives a condition-column switch -----
 # Switching a dataset's condition column must RE-WIRE the per-condition replicate
 # observers to the NEW column's conditions, so user replicate ordering for the
 # new column is RETAINED (not silently dropped to default because a stale

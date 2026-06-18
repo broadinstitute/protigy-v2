@@ -28,7 +28,7 @@ spectronaut_condition_setup_file <- function() {
   ))
 }
 
-# The file_id for the Spectronaut pivot TSV (gsub "[^a-zA-Z0-9_]" → "_")
+# The file_id for the Spectronaut pivot TSV (gsub "[^a-zA-Z0-9_]" -> "_")
 spectronaut_file_id <- function() {
   gsub(
     "[^a-zA-Z0-9_]", "_",
@@ -54,7 +54,7 @@ is_visible <- function(app, selector) {
 }
 
 # ---------------------------------------------------------------------------
-# Test 1: Flag OFF — condition setup UI should be absent
+# Test 1: Flag OFF  -  condition setup UI should be absent
 # ---------------------------------------------------------------------------
 
 test_that("condition setup UI is absent when protigy.enable_spectronaut = FALSE", {
@@ -88,12 +88,12 @@ test_that("condition setup UI is absent when protigy.enable_spectronaut = FALSE"
 })
 
 # ---------------------------------------------------------------------------
-# Test 2: Flag ON — condition setup UI should appear and work
+# Test 2: Flag ON  -  condition setup UI should appear and work
 # ---------------------------------------------------------------------------
 
 test_that("condition setup checkbox appears when protigy.enable_spectronaut = TRUE", {
   skip_if_no_shinytest2()
-  # use_condition_setup UI not yet implemented in the app — skip until feature lands
+  # use_condition_setup UI not yet implemented in the app  -  skip until feature lands
   skip("use_condition_setup_<file_id> checkbox not yet implemented in sidebar_setup")
 
   app <- make_app_driver(testthat::test_path("apps/full-app-spectronaut"))
@@ -143,7 +143,7 @@ test_that("condition setup checkbox appears when protigy.enable_spectronaut = TR
 
 test_that("Spectronaut workflow completes with condition setup file", {
   skip_if_no_shinytest2()
-  # conditionSetupFile UI not yet implemented in the app — skip until feature lands
+  # conditionSetupFile UI not yet implemented in the app  -  skip until feature lands
   skip("Spectronaut condition setup workflow not yet implemented in sidebar_setup")
 
   app <- make_app_driver(testthat::test_path("apps/full-app-spectronaut"))

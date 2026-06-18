@@ -1,5 +1,5 @@
 ################################################################################
-# Tests for pelsa_explode_accessions() — the ;-accession explode helper.
+# Tests for pelsa_explode_accessions()  -  the ;-accession explode helper.
 #
 # Explodes a peptide-level frame on its ;-delimited PG.ProteinAccessions into
 # one row per (peptide, accession), keeping the ;-aligned PG.Genes and

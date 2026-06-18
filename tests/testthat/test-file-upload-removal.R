@@ -2,7 +2,7 @@
 
 # ---------------------------------------------------------------------------
 # FIX A (P2.4): rewritten to call the REAL gct_remove_btn_id function.
-# The previous tests asserted gsub("[^a-zA-Z0-9_]","_",name) — the known-
+# The previous tests asserted gsub("[^a-zA-Z0-9_]","_",name)  -  the known-
 # buggy approach that gct_remove_btn_id was written to replace.  These tests
 # would pass even if gct_remove_btn_id were deleted.  The new tests drive the
 # real function and assert injectivity, stability, and Shiny inputId validity.
@@ -35,7 +35,7 @@ test_that("gct_remove_btn_id produces a valid Shiny inputId", {
     "file with spaces.gct",
     "file(1).gct",
     "file[2].gct",
-    "unicodeé.gct"
+    "unicode\u00e9.gct"
   )
   for (fn in fns) {
     id <- gct_remove_btn_id(fn)

@@ -3,7 +3,7 @@
 #
 # These cover the PURE helpers (accession universe, write/round-trip) and the
 # orchestration helper with an INJECTED fake fetcher. NO LIVE NETWORK is ever
-# touched: pelsa_fetch_uniprot is never called here — the orchestration test
+# touched: pelsa_fetch_uniprot is never called here  -  the orchestration test
 # substitutes a stub returning a canned 8-col feature frame.
 ################################################################################
 

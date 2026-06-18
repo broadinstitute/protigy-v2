@@ -1,8 +1,8 @@
 ################################################################################
-# PELSA Phase 8 — end-to-end SYNTHETIC integration check.
+# PELSA Phase 8  -  end-to-end SYNTHETIC integration check.
 #
 # This is the ONE test that runs the ASSEMBLED PELSA pipeline on a larger
-# synthetic frame and asserts the FINAL artifacts are COHERENT — catching
+# synthetic frame and asserts the FINAL artifacts are COHERENT  -  catching
 # integration drift (column ordering, join semantics, sample-order handling,
 # cross-helper contract mismatches) that the per-helper unit tests miss. It does
 # NOT re-test each helper's internals; it asserts the SEAMS between components.
@@ -217,7 +217,7 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   expect_true(any(exp_sig))
   expect_true(is.finite(attr(vdf, "y_cutoff")))
   # is_marker flags the seeded ISOFORM marker peptide (P12345-2 -> ISOPEPTIDEK)
-  # AND the TIE-protein marker peptides — via the SAME isoform-base rule used
+  # AND the TIE-protein marker peptides  -  via the SAME isoform-base rule used
   # everywhere (pelsa_match_markers).
   expect_true(vdf$is_marker[vdf$id == "ISOPEPTIDEK"])
   expect_true(all(vdf$is_marker[vdf$id %in% syn$tie_peptides]))
@@ -237,7 +237,7 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   # The FASTA-unmatched peptide (absent from its FASTA) lands in unmatched.
   expect_true(syn$absent_peptide %in% cache$unmatched$peptide_sequence)
   # The seeded missed-cleavage peptide: SHAREDPEPTIDEK has one INTERNAL K
-  # (…PEPTIDE-K-…) before the C-terminal K -> exactly 1 missed cleavage.
+  # (...PEPTIDE-K-...) before the C-terminal K -> exactly 1 missed cleavage.
   pm <- cache$peptide_metrics
   shp_mc <- pm$missed_cleavages[pm$PEP.StrippedSequence == syn$shared_peptide]
   expect_equal(shp_mc, 1L)
@@ -262,7 +262,7 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   expect_setequal(unique(as.character(ld$panel)),
                   c("Significant", "Non-significant"))
   # aa<pos> labels come from the FASTA-derived pep_start (TIEPROT: TIEPEPONEK@3,
-  # TIEPEPTWOK@15) — NOT PEP.PeptidePosition.
+  # TIEPEPTWOK@15)  -  NOT PEP.PeptidePosition.
   expect_setequal(unique(ld$aa_label), c("aa3", "aa15"))
   # condition factor levels = the requested condition_order (stable x-axis).
   expect_identical(levels(ld$condition), corder)

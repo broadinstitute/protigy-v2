@@ -1,8 +1,8 @@
 ################################################################################
 # Tests for the PELSA peptide helpers:
-#   pelsa_missed_cleavages() — tryptic missed-cleavage count, notebook parity
-#   pelsa_peptide_length()   — peptide residue count
-#   pelsa_build_multilabel() — canonical ;-joined gene_aa<pos> label builder
+#   pelsa_missed_cleavages()  -  tryptic missed-cleavage count, notebook parity
+#   pelsa_peptide_length()    -  peptide residue count
+#   pelsa_build_multilabel()  -  canonical ;-joined gene_aa<pos> label builder
 #
 # Missed-cleavage is parity-gated against the analysis notebook's exact rule:
 #   core = peptide[:-1]; len(re.findall(r'[KR](?!P)', core))

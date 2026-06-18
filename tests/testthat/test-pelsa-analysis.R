@@ -2,14 +2,14 @@
 # Tests for the PELSA Start-Analysis validation + compute-pipeline assembly (5D).
 #
 #   pelsa_validate_setup(setup_snapshot, gcts, database_dir)
-#       -> list(ok, errors)  — closed-form pre-flight checklist.
+#       -> list(ok, errors)   -  closed-form pre-flight checklist.
 #   pelsa_run_analysis(gcts, gcts_original, setup_snapshot, fasta_map, feat_df)
 #       -> named-by-dataset list of per-dataset cache objects.
-#   pelsa_run_analysis_one(...) — the single-dataset assembly.
-#   pelsa_condition_map_for / pelsa_dataset_peptide_frame — assembly seams.
+#   pelsa_run_analysis_one(...)  -  the single-dataset assembly.
+#   pelsa_condition_map_for / pelsa_dataset_peptide_frame  -  assembly seams.
 #
 # NO LIVE NETWORK: the pipeline uses an INJECTED fasta_map + a hand-set feat_df
-# (and never calls pelsa_fetch_uniprot — cache-as-is). Validation tests use a
+# (and never calls pelsa_fetch_uniprot  -  cache-as-is). Validation tests use a
 # temp database dir with fake species/fasta folders (no network, no real DB).
 ################################################################################
 
@@ -725,7 +725,7 @@ test_that("run_analysis errors when no checked dataset is present", {
 })
 
 # ---- observer: invalid setup -> errors shown, NO compute, seam not driven ----
-# (The VALID compute path is exercised directly via pelsa_run_analysis above —
+# (The VALID compute path is exercised directly via pelsa_run_analysis above  - 
 # driving the real observer's compute would read the large bundled FASTA. We
 # test the observer's GATE: an invalid click must surface validation + not
 # touch the analysis cache nor the analyzed-datasets seam.)

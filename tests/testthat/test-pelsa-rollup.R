@@ -1,9 +1,9 @@
 ################################################################################
-# Tests for pelsa_best_peptide_rollup() — best-peptide-per-protein rollup.
+# Tests for pelsa_best_peptide_rollup()  -  best-peptide-per-protein rollup.
 #
 # Two-step logic (Protigy refinement over the notebook's per-accession dots):
 #   Step 1 (notebook _rollup_to_proteins): per accession, keep the FIRST row
-#     after a STABLE sort on [adj.P.Val, logFC, peptide_seq, accession] — the
+#     after a STABLE sort on [adj.P.Val, logFC, peptide_seq, accession]  -  the
 #     last two keys are a deterministic total-ordering tiebreak so the chosen
 #     "best" peptide is fully reproducible even on exact (adj.P.Val, logFC) ties.
 #   Step 2 (regroup by peptide): a peptide has ONE (adj.P.Val, logFC) coordinate,

@@ -1,5 +1,5 @@
 ################################################################################
-# Tests for the PELSA marker-matching helpers (Task 2J) — isoform-aware,
+# Tests for the PELSA marker-matching helpers (Task 2J)  -  isoform-aware,
 # any-token, case-insensitive accession matching + marker paste-box parsing.
 #
 # The matching rule under test (documented in tab_pelsa_marker_helpers.R):

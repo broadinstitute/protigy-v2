@@ -1,5 +1,5 @@
 ################################################################################
-# Tests: PELSA Section 3 (Volcano) — 7A-7C
+# Tests: PELSA Section 3 (Volcano)  -  7A-7C
 #
 # Pure helpers (closed-form): contrast-key builder, label->suffix, contrast
 # choices, stat_df span attach, color-mode column pick, marker-trace split,
@@ -707,7 +707,7 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
       # equals active_volcano_df row-for-row. The thin-note output is gone.
       expect_equal(nrow(plot_df()), nrow(active_volcano_df()))
       expect_identical(plot_df(), active_volcano_df())
-      # The thin-note output was removed entirely — referencing it now errors.
+      # The thin-note output was removed entirely  -  referencing it now errors.
       expect_error(output$pelsa_thin_note, "hasn't been defined")
 
       # Plot output exists (renders without error).
@@ -739,7 +739,7 @@ test_that("cache NULL + stats present: section shows Start-Analysis notice, no d
       html <- as.character(output$section_contents$html %||%
                              output$section_contents)
       expect_match(html, "Start Analysis", fixed = TRUE)
-      # active_volcano_df carries a validate() (the cache guard) — it does not
+      # active_volcano_df carries a validate() (the cache guard)  -  it does not
       # silently half-build a df.
       err <- tryCatch({ session$setInputs(pelsa_volcano_contrast = "A_over_B");
                         active_volcano_df(); "NO_ERROR" },
@@ -805,7 +805,7 @@ test_that("zero-significant contrast: y_cutoff is Inf", {
                                             sig_cutoff = 0.05))
   expect_false(any(out$Significant))
   expect_true(is.infinite(attr(out, "y_cutoff")))
-  # The module only draws geom_hline when is.finite(y_cutoff) — Inf -> no line.
+  # The module only draws geom_hline when is.finite(y_cutoff)  -  Inf -> no line.
   expect_false(is.finite(attr(out, "y_cutoff")))
 })
 
@@ -903,7 +903,7 @@ test_that("7E: a simulated pin populates metadata + computes 3C line data", {
     expect_setequal(as.character(unique(ld$condition)), c("A", "B"))
 
     # The metadata table renders (the intensity plot's validate-gated render is
-    # exercised via pinned_line_data() above — accessing the output directly
+    # exercised via pinned_line_data() above  -  accessing the output directly
     # would raise the no-pin validate when line data is transiently empty).
     expect_false(is.null(output$pelsa_pin_metadata))
   })
