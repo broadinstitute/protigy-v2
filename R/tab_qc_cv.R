@@ -251,7 +251,7 @@ QCCV_Ome_Server <- function(id,
               ),
               ns = ns
             ),
-            # Filter options — only visible when filter is enabled
+            # Filter options  -  only visible when filter is enabled
             # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
             conditionalPanel(
               condition = "input.qc_cv_filter_enabled == true",

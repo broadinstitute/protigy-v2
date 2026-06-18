@@ -63,15 +63,15 @@ compute_cv_table <- function(mat, grouping, log_base = "None") {
     mu   <- rowMeans(sub, na.rm = TRUE)
     sdv  <- apply(sub, 1L, function(x) sd(x, na.rm = TRUE))
     cv   <- sdv / mu
-    # Guard: zero or NA mean → NA CV (avoids Inf / NaN leaking downstream)
+    # Guard: zero or NA mean -> NA CV (avoids Inf / NaN leaking downstream)
     cv[is.nan(cv) | is.infinite(cv)] <- NA_real_
     cv
   }, numeric(nrow(mat)))
   # vapply returns:
-  #   nrow>1, groups>1 → matrix (nrow x ngroups), colnames = group names
-  #   nrow>1, groups==1 → named numeric vector (length = nrow)
-  #   nrow==1, groups>1 → named numeric vector (length = ngroups)
-  #   nrow==1, groups==1 → single named scalar
+  #   nrow>1, groups>1 -> matrix (nrow x ngroups), colnames = group names
+  #   nrow>1, groups==1 -> named numeric vector (length = nrow)
+  #   nrow==1, groups>1 -> named numeric vector (length = ngroups)
+  #   nrow==1, groups==1 -> single named scalar
   # Normalize to matrix with features as rows, groups as columns.
   if (!is.matrix(cv_cols)) {
     if (nrow(mat) == 1L) {
@@ -94,8 +94,8 @@ compute_cv_table <- function(mat, grouping, log_base = "None") {
 # Filter a CV table by a cutoff value.
 # Features (rows) are kept if their CV satisfies the cutoff according to the
 # min_groups rule:
-#   "one" — at least one group's CV is strictly below the cutoff
-#   "all" — every group's CV is strictly below the cutoff
+#   "one"  -  at least one group's CV is strictly below the cutoff
+#   "all"  -  every group's CV is strictly below the cutoff
 # NA CVs are treated as "not satisfying" the cutoff.
 #
 # @param cv_df      data.frame returned by compute_cv_table()
