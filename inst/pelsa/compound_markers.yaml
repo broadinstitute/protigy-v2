@@ -1,6 +1,6 @@
 metadata:
   description: Preset PELSA marker proteins per treatment compound.
-  schema_version: 1.0
+  schema_version: 1
 compounds:
   Rapamycin:
     markers:

@@ -64,6 +64,14 @@ test_that("pelsa_read_compound_markers parses the real preset file", {
   expect_true(all(c("P42345", "P62942", "Q13451") %in% accs))
 })
 
+test_that("pelsa_read_compound_markers preserves the metadata block", {
+  path <- system.file("pelsa", "compound_markers.yaml", package = "Protigy")
+  skip_if(path == "", "compound_markers.yaml not installed")
+  cm <- pelsa_read_compound_markers(path)
+  expect_false(is.null(cm$metadata))
+  expect_equal(cm$metadata$schema_version, 1)
+})
+
 test_that("pelsa_read_compound_markers returns empty for a missing file", {
   expect_identical(
     pelsa_read_compound_markers(tempfile(fileext = ".yaml")),
@@ -289,7 +297,15 @@ test_that("pelsa_write_compound_markers round-trips and preserves metadata", {
 
   raw <- yaml::read_yaml(path)
   expect_identical(raw$metadata$description, "test")
-  expect_equal(raw$metadata$schema_version, 1)  # round-trips as numeric, not int
+  expect_equal(raw$metadata$schema_version, 1)
+
+  # schema_version serializes as the YAML integer "1" (not "1.0"), so a
+  # read->write round-trip is byte-stable.
+  expect_true(any(grepl("schema_version: 1$", readLines(path))))
+  back <- pelsa_read_compound_markers(path)
+  tmp2 <- file.path(tmp, "roundtrip.yaml")
+  expect_true(pelsa_write_compound_markers(tmp2, back))
+  expect_true(any(grepl("schema_version: 1$", readLines(tmp2))))
 })
 
 test_that("pelsa_write_compound_markers returns FALSE for a non-writable dir", {
@@ -665,6 +681,90 @@ test_that("set-default with no compound selected does not write the YAML", {
     }
   )
   expect_identical(readLines(path), before)
+})
+
+# The two WRITE-success paths (add-compound, set-default confirm) target the
+# live preset file via pelsa_compound_markers_path(). We redirect that resolver
+# to a writable tempdir (seeded from the real file) so the handlers exercise a
+# genuine round-trip WITHOUT mutating the committed inst/pelsa/compound_markers.yaml.
+test_that("add-compound success path persists a new compound to the YAML", {
+  real <- system.file("pelsa", "compound_markers.yaml", package = "Protigy")
+  skip_if(real == "", "compound_markers.yaml not installed")
+
+  tmpdir <- withr::local_tempdir()
+  tmp    <- file.path(tmpdir, "compound_markers.yaml")
+  file.copy(real, tmp)
+  testthat::local_mocked_bindings(
+    pelsa_compound_markers_path = function() tmp,
+    .package = "Protigy"
+  )
+
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      session$setInputs(pelsa_new_compound = "MyNewCompound")
+      session$setInputs(pelsa_add_compound_btn = 1)
+      session$flushReact()
+    }
+  )
+
+  written <- pelsa_read_compound_markers(tmp)
+  expect_true("MyNewCompound" %in% names(written$compounds))
+  # A brand-new compound starts with no preset markers.
+  expect_length(written$compounds$MyNewCompound$markers, 0L)
+})
+
+test_that("set-default confirm persists the current table as the compound preset", {
+  real <- system.file("pelsa", "compound_markers.yaml", package = "Protigy")
+  skip_if(real == "", "compound_markers.yaml not installed")
+
+  tmpdir <- withr::local_tempdir()
+  tmp    <- file.path(tmpdir, "compound_markers.yaml")
+  file.copy(real, tmp)
+  testthat::local_mocked_bindings(
+    pelsa_compound_markers_path = function() tmp,
+    .package = "Protigy"
+  )
+
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      # Select Rapamycin (replaces table with its 3 presets), then paste one more
+      # marker, then confirm "set as default" -> the preset becomes those 4.
+      session$setInputs(pelsa_compound = "Rapamycin")
+      session$flushReact()
+      session$setInputs(pelsa_marker_input = "P99999")
+      session$setInputs(pelsa_add_markers = 1)
+      session$flushReact()
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 4L)
+
+      session$setInputs(pelsa_set_default_markers_btn = 1)
+      session$setInputs(pelsa_confirm_set_default = 1)
+      session$flushReact()
+    }
+  )
+
+  written <- pelsa_read_compound_markers(tmp)
+  rows <- pelsa_compound_marker_rows(written, "Rapamycin")
+  expect_setequal(rows$accession, c("P42345", "P62942", "Q13451", "P99999"))
 })
 
 test_that("compound selection REPLACES existing user-pasted rows", {

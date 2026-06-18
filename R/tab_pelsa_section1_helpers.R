@@ -97,10 +97,9 @@ pelsa_list_species <- function(database_dir) {
 
 # Read + validate the PELSA compound-marker preset file (compound_markers.yaml).
 #
-# Structure contract (documented in the yaml header):
+# Structure contract:
 #   compounds:
 #     <Compound Name>:
-#       aliases:  [optional list of alternative names]
 #       markers:  [ {accession: <chr REQUIRED>, gene: <chr optional>}, ... ]
 #
 # A MISSING file returns an empty result (list(compounds = list())) rather than
@@ -110,7 +109,7 @@ pelsa_list_species <- function(database_dir) {
 #
 # @param path character scalar path to the yaml file.
 # @return list(compounds = <named list of compound entries>). Each entry keeps
-#   its `markers` (and `aliases` if present).
+#   its `markers`.
 # @noRd
 pelsa_read_compound_markers <- function(path) {
   if (!is.character(path) || length(path) != 1L) {
@@ -168,7 +167,12 @@ pelsa_read_compound_markers <- function(path) {
     }
   }
 
-  list(compounds = compounds)
+  # Preserve the `metadata` block (description, schema_version, ...) so a
+  # read -> mutate -> write round-trip is lossless; the writer needs it to
+  # re-emit the metadata it once carried.
+  out <- list(compounds = compounds)
+  if (!is.null(parsed$metadata)) out$metadata <- parsed$metadata
+  out
 }
 
 # Resolve a compound name to its primary key in the parsed compound-marker list.
@@ -287,8 +291,17 @@ pelsa_write_compound_markers <- function(path, compound_markers) {
   if (!dir.exists(dir) || file.access(dir, mode = 2L) != 0L) {
     return(FALSE)
   }
+  metadata <- compound_markers$metadata %||% list()
+  # Keep schema_version a YAML integer (1, not 1.0) so a read->write round-trip
+  # is byte-stable: yaml::read_yaml parses an unquoted "1" back as a numeric, and
+  # re-serializing a numeric would drift to "1.0". Coerce whole numbers to int.
+  sv <- metadata$schema_version
+  if (!is.null(sv) && is.numeric(sv) && length(sv) == 1L && !is.na(sv) &&
+      sv == as.integer(sv)) {
+    metadata$schema_version <- as.integer(sv)
+  }
   payload <- list(
-    metadata  = compound_markers$metadata %||% list(),
+    metadata  = metadata,
     compounds = compound_markers$compounds %||% list()
   )
   ok <- tryCatch({
@@ -301,12 +314,12 @@ pelsa_write_compound_markers <- function(path, compound_markers) {
 
 # Build the marker rows (accession, gene) for one compound's presets.
 #
-# Aliases are honored: `compound_name` may be the primary name OR any alias.
-# When the compound is unknown or has no markers, returns the empty 2-col frame.
-# A marker without a `gene` gets NA in the gene column.
+# `compound_name` is resolved case-insensitively to its primary key. When the
+# compound is unknown or has no markers, returns the empty 2-col frame. A marker
+# without a `gene` gets NA in the gene column.
 #
 # @param compound_markers parsed list from pelsa_read_compound_markers().
-# @param compound_name    character scalar compound name (or alias).
+# @param compound_name    character scalar compound name.
 # @return data.frame(accession, gene) - one row per preset marker.
 # @noRd
 pelsa_compound_marker_rows <- function(compound_markers, compound_name) {
