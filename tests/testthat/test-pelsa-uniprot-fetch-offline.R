@@ -308,3 +308,23 @@ test_that("5xx on a LATE page preserves the good pages already fetched (no data 
   expect_true(res$failed)
   expect_length(res$entries, 2L)  # P1 and P2 survived the late-page failure
 })
+
+# ---------------------------------------------------------------------------
+# Source-level guard for the failed-condition block. The 4xx-vs-5xx BEHAVIOR is
+# already covered by the behavioral tests above (4xx -> no throw; 5xx -> failed;
+# late-page 5xx preserves good pages). This guard pins only the two structural
+# invariants the corrected comment documents -- the req_error(>=500) policy and
+# the unchanged behavioral guard line -- without coupling to exact prose.
+# ---------------------------------------------------------------------------
+test_that("the failed-condition block keeps the req_error(>=500) policy + NA/5xx guard", {
+  src <- paste(
+    readLines(testthat::test_path("..", "..", "R", "tab_pelsa_uniprot_fetch.R"),
+              warn = FALSE),
+    collapse = "\n"
+  )
+  # base_req must keep the >= 500 error policy that makes 4xx a normal response.
+  expect_true(grepl("resp_status(resp) >= 500", src, fixed = TRUE))
+  # The behavioral guard (network NA OR server 5xx -> batch failed) is unchanged.
+  expect_true(grepl("if (is.na(status) || status >= 500L) batch_failed <- TRUE",
+                    src, fixed = TRUE))
+})

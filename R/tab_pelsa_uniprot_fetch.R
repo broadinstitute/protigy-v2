@@ -358,8 +358,13 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 
   # A retry-exhausted transient/5xx (or network) error surfaces as a trailing
   # error condition; flag the batch failed so the caller's breaker can count it.
-  # Only SERVER/network failures count -- a 4xx is a healthy server rejecting the
-  # query, not a breaker trip.
+  # NOTE: under base_req's req_error(is_error = status >= 500) policy, httr2
+  # returns a 4xx as a NORMAL response (never a condition), so `failed` can only
+  # ever contain 5xx (status >= 500) or network errors (no $resp -> NA status).
+  # 4xx pages are handled instead by the `resp_status >= 400` skip above. The
+  # `is.na(status)` arm therefore only fires for genuine network errors; the
+  # `status >= 500L` arm only for server errors -- there is no reachable 4xx
+  # case here (a 4xx is a healthy server rejecting the query, not a breaker trip).
   failed <- Filter(function(r) inherits(r, "error") || inherits(r, "condition"),
                    resps)
   batch_failed <- FALSE
