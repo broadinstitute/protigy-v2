@@ -460,6 +460,61 @@ test_that("Summary renders metrics + exports for a good cache entry", {
   )
 })
 
+test_that("exports work when pelsa_setup_state is NULL (the legacy/default wiring)", {
+  # all_exports must read setup_state through the in-scope NULL-safe wrapper
+  # (setup_state_r), so the module produces exports even when pelsa_setup_state
+  # is the literal NULL default (no setup-state reactive supplied). Ordering
+  # falls back to NULL; no error.
+  cache <- .summary_build_cache("ds1")
+  expect_false(pelsa_analysis_failed(cache$ds1))
+
+  GCTs_and_params <- shiny::reactiveVal(list(GCTs = list(ds1 = NULL),
+                                             parameters = list(ds1 = list())))
+  globals <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original <- shiny::reactiveVal(list(ds1 = NULL))
+  active_dataset <- shiny::reactive("ds1")
+  pelsa_analysis <- shiny::reactiveVal(cache)
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    # pelsa_setup_state intentionally OMITTED -> defaults to NULL.
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis),
+    {
+      exp_all <- session$returned()
+      expect_identical(names(exp_all), "ds1")
+      expect_setequal(names(exp_all$ds1), "qc")
+    }
+  )
+})
+
+test_that("all_exports does NOT swallow a thrown setup_state error", {
+  # The setup_state read in all_exports must NOT be wrapped in a blanket
+  # tryCatch(error -> NULL): a genuinely throwing setup_state reactive should
+  # propagate, not silently degrade to "no ordering". (Guards the intent of the
+  # setup_state_r() refactor against a future re-introduced tryCatch.)
+  cache <- .summary_build_cache("ds1")
+  GCTs_and_params <- shiny::reactiveVal(list(GCTs = list(ds1 = NULL),
+                                             parameters = list(ds1 = list())))
+  globals <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original <- shiny::reactiveVal(list(ds1 = NULL))
+  active_dataset <- shiny::reactive("ds1")
+  pelsa_analysis <- shiny::reactiveVal(cache)
+  pelsa_setup_state <- shiny::reactive(stop("setup_state boom"))
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis,
+                pelsa_setup_state = pelsa_setup_state),
+    {
+      expect_error(session$returned(), "setup_state boom")
+    }
+  )
+})
+
 test_that("Summary renders + exports for a good entry whose cv is NULL", {
   # 5D contract allows entry$cv = NULL (no raw GCT / all-NA condition). The whole
   # dashboard must still render through the render layer (CV panel short-circuits

@@ -330,7 +330,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       if (is.null(cache)) return(list())
       datasets <- names(cache)
       datasets <- datasets[!vapply(cache, pelsa_analysis_failed, logical(1))]
-      ss <- tryCatch(pelsa_setup_state(), error = function(e) NULL)
+      ss <- setup_state_r()
       stats::setNames(lapply(datasets, function(ome) {
         co <- if (is.null(ss)) NULL else ss$condition_order[[ome]]
         so <- if (is.null(ss)) NULL else ss$sample_order[[ome]]
