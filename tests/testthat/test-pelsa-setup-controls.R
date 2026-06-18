@@ -588,7 +588,7 @@ test_that("M6: re-adding the same accession after removal re-fires the channel",
   )
 })
 
-test_that("compound autofill merges into existing user-pasted rows", {
+test_that("compound selection REPLACES existing user-pasted rows", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
   globals <- shiny::reactiveValues(default_ome = "proteome",
@@ -606,11 +606,21 @@ test_that("compound autofill merges into existing user-pasted rows", {
       session$setInputs(pelsa_add_markers = 1)
       expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 1L)
 
-      # Selecting a compound MERGES presets into the existing user row.
+      # Selecting a compound REPLACES the table with that compound's presets
+      # (the manually-pasted P55555 is wiped).
       session$setInputs(pelsa_compound = "Rapamycin")
-      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 4L)
-      expect_true("P55555" %in% setup_state$marker_rows[["proteome"]]$accession)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 3L)
+      expect_false("P55555" %in% setup_state$marker_rows[["proteome"]]$accession)
       expect_true("P42345" %in% setup_state$marker_rows[["proteome"]]$accession)
+
+      # Switching to another compound fully replaces again (AY9944 has 2).
+      session$setInputs(pelsa_compound = "AY9944")
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 2L)
+      expect_false("P42345" %in% setup_state$marker_rows[["proteome"]]$accession)
+
+      # Selecting "(none)" clears the table.
+      session$setInputs(pelsa_compound = "")
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
     }
   )
 })

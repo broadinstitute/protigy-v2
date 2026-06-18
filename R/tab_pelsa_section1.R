@@ -275,24 +275,31 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # autofill, paste box, remove/clear, and the cross-module add-request all
     # read/write setup_state$marker_rows[[active ome]].
 
-    # Compound selection AUTOFILLS this ome's table with the compound's preset
-    # markers, merged into existing rows.
+    # Compound selection REPLACES this ome's table with the compound's preset
+    # markers (a genuine reselect wipes any prior rows; "(none)" clears).
     #
     # ECHO GUARD (per-ome): input$pelsa_compound re-emits whenever output$setup_box
     # re-renders (e.g. a setup-tab switch recreates the selectInput). Left
-    # unguarded, that would RESURRECT autofilled markers the user had cleared. We
-    # track the last-autofilled compound PER OME and only merge when the value
-    # genuinely changes for THIS ome. The tracker is NOT reset by "Clear all" (so
-    # a same-value re-emit after a clear cannot resurrect cleared markers).
+    # unguarded, that would CLOBBER markers the user edited after autofill. We
+    # track the last-applied compound PER OME and only act when the value
+    # genuinely changes for THIS ome. The tracker is NOT reset by "Clear all".
     last_autofilled_compound <- reactiveVal(list())  # [[ome]] -> compound
     observeEvent(input$pelsa_compound, {
       ome <- active_setup_ome(); req(ome)
       compound <- input$pelsa_compound
-      if (is.null(compound) || !nzchar(compound)) return()
-      tracker <- last_autofilled_compound()
-      if (identical(compound, tracker[[ome]])) return()  # echo / re-pick
-      new_rows <- pelsa_compound_marker_rows(compound_markers(), compound)
-      set_markers(ome, pelsa_merge_marker_rows(cur_markers(ome), new_rows))
+      tracker  <- last_autofilled_compound()
+      # Skip when unchanged FOR THIS OME, so a re-emit cannot clobber edits.
+      if (identical(compound, tracker[[ome]])) return()
+
+      if (is.null(compound) || !nzchar(compound)) {
+        # "(none)" -> clear the table entirely.
+        set_markers(ome, pelsa_empty_marker_rows())
+      } else {
+        # A genuine reselect REPLACES the table with this compound's presets
+        # (a brand-new compound has none -> empty table).
+        new_rows <- pelsa_compound_marker_rows(compound_markers(), compound)
+        set_markers(ome, new_rows)
+      }
       tracker[[ome]] <- compound
       last_autofilled_compound(tracker)
     })
