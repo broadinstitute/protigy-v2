@@ -1204,11 +1204,16 @@ pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
 # @param pm        the processed/log2 GCT matrix, or NULL.
 # @param cmap      sample -> condition map (named char), or NULL.
 # @param corder    condition order (factor levels), or NULL/empty.
+# @param sig_cutoff significance threshold on adj.P.Val. Defaults to the export
+#   constant; callers in the module thread the SHARED cutoff (isolate(sig_cutoff_r()))
+#   so this export matches the on-screen volcano/intensity views rather than a
+#   hardcoded 0.05.
 # @return tidy long data.frame (rbind of pelsa_intensity_line_data over the
 #   pelsa_intensity_proteins set), or NULL.
 # @noRd
 pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
-                                         pm, cmap, corder) {
+                                         pm, cmap, corder,
+                                         sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (!is.data.frame(matched) || nrow(matched) == 0L) return(NULL)
   if (is.null(contrast) || is.null(pm) || is.null(cmap) ||
@@ -1217,7 +1222,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   }
   stat_df <- pelsa_volcano_stat_df(stat_raw, matched)
   prot <- pelsa_intensity_proteins(stat_df, matched, markers, contrast,
-                                   sig_cutoff = 0.05)
+                                   sig_cutoff = sig_cutoff)
   if (nrow(prot) == 0L) return(NULL)
   rows <- lapply(seq_len(nrow(prot)), function(i) {
     tryCatch(
@@ -1225,7 +1230,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
         accession = prot$accession[i], stat_df = stat_df,
         matched_cache = matched, processed_mat = pm,
         condition_map = cmap, condition_order = corder,
-        contrast = contrast, sig_cutoff = 0.05,
+        contrast = contrast, sig_cutoff = sig_cutoff,
         is_marker = prot$is_marker[i]
       ),
       error = function(e) NULL

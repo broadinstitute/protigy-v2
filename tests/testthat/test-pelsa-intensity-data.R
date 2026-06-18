@@ -629,3 +629,61 @@ test_that("pelsa_intensity_line_data returns the empty frame when no condition m
   )
   expect_s3_class(out$condition, "factor")
 })
+
+# =============================================================================
+# pelsa_plotted_intensities_df: sig_cutoff is parameterized (shared cutoff)
+# =============================================================================
+
+test_that("pelsa_plotted_intensities_df honors a sig_cutoff parameter", {
+  # Two NON-marker proteins; the only thing that decides inclusion is the
+  # significance cutoff applied to each peptide's adj.P.Val. P_MID's peptide sits
+  # at 0.03: included at cutoff 0.05, excluded at cutoff 0.01. A hardcoded 0.05
+  # would ignore the argument and always include it.
+  proc <- matrix(
+    c(1, 3, 10, 12,    # row1 P_MID peptide
+      5, 5, 8,  9),    # row2 P_HIGH peptide
+    nrow = 2L, byrow = TRUE,
+    dimnames = list(NULL, c("A_R1", "A_R2", "B_R1", "B_R2"))
+  )
+  stat <- .mk_stat(
+    seq = c("pMID", "pHIGH"), acc = c("P_MID", "P_HIGH"),
+    adjp = c(0.03, 0.30), row_id = 1:2
+  )
+  matched <- .mk_matched(
+    seq = c("pMID", "pHIGH"), accession = c("P_MID", "P_HIGH"),
+    pep_start = c(100L, 250L), row_id = 1:2
+  )
+
+  loose <- pelsa_plotted_intensities_df(
+    stat_raw = stat, matched = matched, markers = character(0),
+    contrast = "C1", pm = proc, cmap = .cond_map, corder = .cond_order,
+    sig_cutoff = 0.05
+  )
+  expect_s3_class(loose, "data.frame")
+  expect_setequal(unique(loose$accession), "P_MID")  # 0.03 < 0.05
+
+  strict <- pelsa_plotted_intensities_df(
+    stat_raw = stat, matched = matched, markers = character(0),
+    contrast = "C1", pm = proc, cmap = .cond_map, corder = .cond_order,
+    sig_cutoff = 0.01
+  )
+  expect_null(strict)  # 0.03 is NOT < 0.01 -> no protein qualifies -> NULL
+})
+
+test_that("pelsa_plotted_intensities_df sig_cutoff defaults to the export constant", {
+  default_cut <- get(".PELSA_EXPORT_SIG_CUTOFF", envir = asNamespace("Protigy"))
+  expect_equal(default_cut, 0.05)
+  proc <- matrix(
+    c(1, 3, 10, 12), nrow = 1L, byrow = TRUE,
+    dimnames = list(NULL, c("A_R1", "A_R2", "B_R1", "B_R2"))
+  )
+  stat <- .mk_stat(seq = "pMID", acc = "P_MID", adjp = 0.03, row_id = 1L)
+  matched <- .mk_matched("pMID", "P_MID", 100L, 1L)
+  # No sig_cutoff arg -> default constant (0.05) -> 0.03 qualifies.
+  out <- pelsa_plotted_intensities_df(
+    stat_raw = stat, matched = matched, markers = character(0),
+    contrast = "C1", pm = proc, cmap = .cond_map, corder = .cond_order
+  )
+  expect_s3_class(out, "data.frame")
+  expect_setequal(unique(out$accession), "P_MID")
+})
