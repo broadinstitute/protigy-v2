@@ -258,11 +258,15 @@ test_that("create_cv_violin_plot keeps box fill transparent and supports y_range
 # ---------------------------------------------------------------------------
 
 test_that("CV note + comment do not over-claim 'raw' intensities", {
-  note <- paste(readLines(testthat::test_path("..", "..", "R", "tab_qc_cv.R"),
-                          warn = FALSE), collapse = "\n")
-  helper <- paste(readLines(testthat::test_path("..", "..", "R",
-                                                "tab_qc_cv_helpers.R"),
-                            warn = FALSE), collapse = "\n")
+  note_path   <- testthat::test_path("..", "..", "R", "tab_qc_cv.R")
+  helper_path <- testthat::test_path("..", "..", "R", "tab_qc_cv_helpers.R")
+  # R/ source is absent under R CMD check (installed package); skip like the
+  # other source-level guard tests rather than erroring on a missing file.
+  skip_if_not(file.exists(note_path) && file.exists(helper_path),
+              "tab_qc_cv.R / tab_qc_cv_helpers.R source not found")
+
+  note   <- paste(readLines(note_path, warn = FALSE), collapse = "\n")
+  helper <- paste(readLines(helper_path, warn = FALSE), collapse = "\n")
 
   # The misleading "raw (linear)" claim must be gone from the user-facing note.
   expect_false(grepl("raw \\(linear\\)", note),
