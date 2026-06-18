@@ -686,3 +686,26 @@ test_that("condition with CV data but zero quantified peptides reports 0, not NA
   expect_false(anyNA(out$n_peptides_quantified))
   expect_equal(got[["A"]], 2L)
 })
+
+# ---------------------------------------------------------------------------
+# pelsa_missed_cleavage_plot: integer peptide counts must render as plain
+# integers, not scientific notation (label_scientific turned 5 -> "5e+00").
+# ---------------------------------------------------------------------------
+test_that("missed-cleavage y-axis uses plain integer labels, not scientific", {
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:6),
+    missed_cleavages = c(0L, 0L, 0L, 1L, 1L, 2L),
+    peptide_length = rep(8L, 6L),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_missed_cleavage_plot(pm)
+  expect_s3_class(p, "ggplot")
+  # Pull the y continuous scale's label formatter and apply it to typical counts.
+  y_scale <- p$scales$scales[[which(vapply(p$scales$scales,
+    function(s) "y" %in% s$aesthetics, logical(1)))[1]]]
+  labs <- y_scale$get_labels(c(5, 20, 1000))
+  # Plain integers, NOT scientific ("5e+00").
+  expect_false(any(grepl("e\\+", labs)),
+               info = paste("got scientific labels:", paste(labs, collapse = ", ")))
+  expect_true(grepl("5", labs[1], fixed = TRUE))
+})

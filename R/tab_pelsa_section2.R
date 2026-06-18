@@ -657,7 +657,7 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
   ggplot(df, aes(x = .data$missed, y = .data$count)) +
     geom_col(fill = "#f28e2b") +
-    scale_y_continuous(labels = scales::label_scientific()) +
+    scale_y_continuous(labels = scales::label_comma()) +
     labs(x = "Missed cleavages", y = "# of peptides",
          title = "Missed-cleavage distribution") +
     theme_bw()
