@@ -13,6 +13,11 @@
 #   pelsa_marker_rows_from_input(tokens, ...)   parsed paste-box tokens -> marker rows
 #   pelsa_merge_marker_rows(existing, new)      de-duplicated union by accession
 #   pelsa_empty_marker_rows()                   the canonical empty 2-col marker frame
+#   pelsa_validate_compound_name(name)          structured ok/message validation
+#   pelsa_compound_exists(cm, name)             case-insensitive primary-key match
+#   pelsa_add_compound(cm, name)                add compound w/ empty markers
+#   pelsa_set_compound_markers(cm, name, rows)  replace a compound's preset markers
+#   pelsa_write_compound_markers(path, cm)      atomic YAML write (read-only -> FALSE)
 #
 # Section-1 ORDERING helpers (Task 5B) - also pure/testable:
 #   pelsa_distinct_conditions(cdesc, col)          distinct condition values (occurrence order)
