@@ -56,6 +56,62 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
   )
 }
 
+# ---- pelsa_setup_snapshot (per-dataset species/compound/markers/skip) --------
+
+test_that("snapshot carries per-ome species/compound/marker_rows/skip", {
+  # Per-dataset setup: species/compound/markers are NAMED LISTS keyed by ome
+  # (joining the already-per-ome condition/replicate fields), plus a skip flag.
+  state <- list(
+    datasets        = c("A", "B"),
+    species         = list(A = "9606", B = "10090"),
+    compound        = list(A = "Rapamycin", B = "AY9944"),
+    marker_rows     = list(
+      A = data.frame(accession = "P1", gene = "G1", stringsAsFactors = FALSE),
+      B = data.frame(accession = "Q2", gene = "G2", stringsAsFactors = FALSE)
+    ),
+    skip            = list(A = FALSE, B = TRUE),
+    condition_col   = list(A = "cond", B = "cond"),
+    replicate_col   = list(A = "rep", B = "rep"),
+    condition_order = list(A = c("X", "Y"), B = c("X", "Y")),
+    replicate_order = list(),
+    sample_order    = list()
+  )
+  snap <- pelsa_setup_snapshot(state)
+
+  expect_identical(snap$species[["A"]], "9606")
+  expect_identical(snap$species[["B"]], "10090")
+  expect_identical(snap$compound[["A"]], "Rapamycin")
+  expect_identical(snap$marker_rows[["A"]]$accession, "P1")
+  expect_identical(snap$marker_rows[["B"]]$accession, "Q2")
+  expect_false(snap$skip[["A"]])
+  expect_true(snap$skip[["B"]])
+})
+
+test_that("snapshot defaults per-ome fields to empty lists when unset", {
+  # A fresh setup_state with nothing configured: the per-ome fields must be
+  # empty lists (not NULL, not a scalar), so downstream [[ome]] indexing is safe.
+  state <- list(
+    datasets        = character(0),
+    species         = NULL,
+    compound        = NULL,
+    marker_rows     = NULL,
+    skip            = NULL,
+    condition_col   = NULL,
+    replicate_col   = NULL,
+    condition_order = NULL,
+    replicate_order = NULL,
+    sample_order    = NULL
+  )
+  snap <- pelsa_setup_snapshot(state)
+
+  expect_identical(snap$species, list())
+  expect_identical(snap$compound, list())
+  expect_identical(snap$marker_rows, list())
+  expect_identical(snap$skip, list())
+  # indexing a missing ome yields NULL (safe), not an error
+  expect_null(snap$species[["nope"]])
+})
+
 # ---- pelsa_species_fasta_path ------------------------------------------------
 
 test_that("pelsa_species_fasta_path finds a fasta or returns NA", {
@@ -70,17 +126,19 @@ test_that("pelsa_species_fasta_path finds a fasta or returns NA", {
 
 test_that("validate fails when no dataset is checked", {
   db <- .mk_database_dir()
-  snap <- list(datasets = character(0), species = "9606",
-               condition_col = list(), condition_order = list())
+  snap <- list(datasets = character(0), species = list(),
+               condition_col = list(), replicate_col = list(),
+               condition_order = list())
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
-  expect_true(any(grepl("at least one dataset", v$errors)))
+  expect_true(any(grepl("at least one", v$errors)))
 })
 
 test_that("validate fails when a checked dataset lacks a condition column", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = "9606",
-               condition_col = list(), condition_order = list(ds1 = "A"))
+  snap <- list(datasets = "ds1", species = list(ds1 = "9606"),
+               condition_col = list(), replicate_col = list(ds1 = "cond"),
+               condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
   expect_true(any(grepl("condition grouping column", v$errors)))
@@ -88,8 +146,9 @@ test_that("validate fails when a checked dataset lacks a condition column", {
 
 test_that("validate fails when condition order is not confirmed", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = "9606",
+  snap <- list(datasets = "ds1", species = list(ds1 = "9606"),
                condition_col = list(ds1 = "cond"),
+               replicate_col = list(ds1 = "cond"),
                condition_order = list())          # no order
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
@@ -98,30 +157,33 @@ test_that("validate fails when condition order is not confirmed", {
 
 test_that("validate emits the No-FASTA message when the species has no fasta", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = "fishless",
+  snap <- list(datasets = "ds1", species = list(ds1 = "fishless"),
                condition_col = list(ds1 = "cond"),
+               replicate_col = list(ds1 = "cond"),
                condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
   expect_true(any(grepl("^No FASTA for fishless", v$errors)))
 })
 
-test_that("validate fails when no species is selected", {
+test_that("validate fails when no species is selected for a dataset", {
   db <- .mk_database_dir()
-  snap <- list(datasets = "ds1", species = NULL,
+  snap <- list(datasets = "ds1", species = list(),     # no species for ds1
                condition_col = list(ds1 = "cond"),
+               replicate_col = list(ds1 = "cond"),
                condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
-  expect_true(any(grepl("Select a species", v$errors)))
+  expect_true(any(grepl("species", v$errors)))
 })
 
 test_that("validate flags a condition column missing from a dataset's cdesc", {
   db <- .mk_database_dir()
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)  # cdesc has only 'condition'
-  snap <- list(datasets = "ds1", species = "9606",
+  snap <- list(datasets = "ds1", species = list(ds1 = "9606"),
                condition_col = list(ds1 = "NOT_A_COLUMN"),
+               replicate_col = list(ds1 = "condition"),
                condition_order = list(ds1 = "A"))
   v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
   expect_false(v$ok)
@@ -132,9 +194,10 @@ test_that("validate passes with everything present (empty markers still ok)", {
   db <- .mk_database_dir()
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)
-  snap <- list(datasets = "ds1", species = "9606",
-               marker_rows = pelsa_empty_marker_rows(),   # EMPTY markers
+  snap <- list(datasets = "ds1", species = list(ds1 = "9606"),
+               marker_rows = list(ds1 = pelsa_empty_marker_rows()),  # EMPTY ok
                condition_col = list(ds1 = "condition"),
+               replicate_col = list(ds1 = "condition"),
                condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN")))
   v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
   expect_true(v$ok)
@@ -143,13 +206,104 @@ test_that("validate passes with everything present (empty markers still ok)", {
 
 test_that("validate accumulates ALL failures at once", {
   db <- .mk_database_dir()
-  snap <- list(datasets = c("ds1", "ds2"), species = "fishless",
+  snap <- list(datasets = c("ds1", "ds2"),
+               species = list(ds1 = "fishless", ds2 = "fishless"),
                condition_col = list(ds1 = "cond"),    # ds2 missing
+               replicate_col = list(),                 # both missing
                condition_order = list())               # both missing order
   v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
   expect_false(v$ok)
-  # ds2 missing column + both missing order + no fasta = several errors
+  # ds2 missing column + both missing replicate + both missing order + no fasta
   expect_gt(length(v$errors), 3L)
+})
+
+# ---- pelsa_validate_setup: per-ome species, "(none)", replicate, skip --------
+
+test_that("validate treats \"(none)\" species/condition/replicate as unset", {
+  db <- .mk_database_dir()
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  gct <- .mk_gct(syn)
+  snap <- list(
+    datasets        = "ds1",
+    species         = list(ds1 = "(none)"),
+    condition_col   = list(ds1 = "(none)"),
+    replicate_col   = list(ds1 = "(none)"),
+    condition_order = list(ds1 = c("AY9944_10uM", "DMSO"))
+  )
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
+  expect_false(v$ok)
+  expect_true(any(grepl("ds1", v$errors) & grepl("species", v$errors)))
+  expect_true(any(grepl("ds1", v$errors) & grepl("condition grouping", v$errors)))
+  expect_true(any(grepl("ds1", v$errors) & grepl("replicate", v$errors)))
+})
+
+test_that("validate fails when a non-skipped dataset lacks a replicate column", {
+  db <- .mk_database_dir()
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  gct <- .mk_gct(syn)
+  snap <- list(
+    datasets        = "ds1",
+    species         = list(ds1 = "9606"),
+    condition_col   = list(ds1 = "condition"),
+    replicate_col   = list(),                      # missing
+    condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN"))
+  )
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
+  expect_false(v$ok)
+  expect_true(any(grepl("replicate", v$errors)))
+})
+
+test_that("validate blocks when all datasets are skipped (empty analyzed set)", {
+  db <- .mk_database_dir()
+  # datasets = the NON-SKIPPED set; all-skipped => empty.
+  snap <- list(
+    datasets        = character(0),
+    species         = list(),
+    condition_col   = list(),
+    replicate_col   = list(),
+    condition_order = list()
+  )
+  v <- pelsa_validate_setup(snap, gcts = NULL, database_dir = db)
+  expect_false(v$ok)
+  expect_true(any(grepl("at least one", v$errors)))
+})
+
+test_that("validate ignores skipped datasets (only non-skipped are checked)", {
+  db <- .mk_database_dir()
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  gct <- .mk_gct(syn)
+  # ds2 is invalid but SKIPPED, so it is absent from `datasets`; only ds1 (valid)
+  # is checked => ok.
+  snap <- list(
+    datasets        = "ds1",
+    species         = list(ds1 = "9606", ds2 = "(none)"),
+    condition_col   = list(ds1 = "condition", ds2 = "(none)"),
+    replicate_col   = list(ds1 = "condition", ds2 = "(none)"),
+    condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN"))
+  )
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = db)
+  expect_true(v$ok)
+  expect_length(v$errors, 0L)
+})
+
+test_that("validate uses per-ome species FASTA (one ds ok, another no-fasta)", {
+  db <- .mk_database_dir()
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  g1 <- .mk_gct(syn); g2 <- .mk_gct(syn)
+  snap <- list(
+    datasets        = c("ds1", "ds2"),
+    species         = list(ds1 = "9606", ds2 = "fishless"),  # ds2 has no fasta
+    condition_col   = list(ds1 = "condition", ds2 = "condition"),
+    replicate_col   = list(ds1 = "condition", ds2 = "condition"),
+    condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN"),
+                           ds2 = c("AY9944_10uM", "DMSO", "LowN"))
+  )
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = g1, ds2 = g2),
+                            database_dir = db)
+  expect_false(v$ok)
+  expect_true(any(grepl("^No FASTA for fishless", v$errors)))
+  # ds1 (9606, has fasta) must NOT trigger a no-fasta error
+  expect_false(any(grepl("No FASTA for 9606", v$errors)))
 })
 
 # ---- pelsa_condition_map_for -------------------------------------------------
@@ -675,6 +829,67 @@ test_that("run_analysis surfaces a checked dataset absent from gcts as a failure
   expect_true(pelsa_analysis_failed(res$ghost))  # ghost -> structured failure
   expect_match(res$ghost$error, "ghost", fixed = TRUE)
   expect_true("stage" %in% names(res$ghost))
+})
+
+test_that("run_analysis resolves FASTA + feat PER DATASET by species", {
+  # Two datasets of DIFFERENT species. dsA's species FASTA contains its peptides;
+  # dsB's species FASTA is EMPTY. If the loop used ONE shared map for both, dsB
+  # would (wrongly) match against dsA's map. Per-species keying => dsB matches 0.
+  syn1 <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 8)
+  syn2 <- pelsa_make_synthetic(seed = 2, n_extra_peptides = 8)
+  g1 <- .mk_gct(syn1); g2 <- .mk_gct(syn2)
+
+  snap <- list(
+    datasets      = c("dsA", "dsB"),
+    species       = list(dsA = "sp1", dsB = "sp2"),
+    condition_col = list(dsA = "condition", dsB = "condition")
+  )
+
+  seen_species <- character(0)
+  resolve_fasta <- function(species) {
+    seen_species[[length(seen_species) + 1L]] <<- species
+    if (identical(species, "sp1")) syn1$fasta else list()  # sp2 -> empty map
+  }
+  resolve_feat <- function(species) .mk_feat_df()
+
+  res <- pelsa_run_analysis(
+    gcts = list(dsA = g1, dsB = g2),
+    gcts_original = list(dsA = g1, dsB = g2),
+    setup_snapshot = snap,
+    resolve_fasta = resolve_fasta,
+    resolve_feat  = resolve_feat
+  )
+
+  expect_false(pelsa_analysis_failed(res$dsA))
+  expect_false(pelsa_analysis_failed(res$dsB))
+  expect_gt(res$dsA$qc$n_matched_rows, 0L)     # matched against its own fasta
+  expect_equal(res$dsB$qc$n_matched_rows, 0L)   # empty fasta -> nothing matches
+  # both species were resolved (per dataset), not just one shared read
+  expect_setequal(unique(seen_species), c("sp1", "sp2"))
+})
+
+test_that("run_analysis memoizes the per-species resolver (one read per species)", {
+  # Two datasets of the SAME species must resolve that species' FASTA ONCE.
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 6)
+  g1 <- .mk_gct(syn); g2 <- .mk_gct(syn)
+  snap <- list(
+    datasets      = c("dsA", "dsB"),
+    species       = list(dsA = "sp1", dsB = "sp1"),
+    condition_col = list(dsA = "condition", dsB = "condition")
+  )
+  calls <- 0L
+  resolve_fasta <- function(species) { calls <<- calls + 1L; syn$fasta }
+  resolve_feat  <- function(species) .mk_feat_df()
+
+  res <- pelsa_run_analysis(
+    gcts = list(dsA = g1, dsB = g2),
+    gcts_original = list(dsA = g1, dsB = g2),
+    setup_snapshot = snap,
+    resolve_fasta = resolve_fasta, resolve_feat = resolve_feat
+  )
+  expect_false(pelsa_analysis_failed(res$dsA))
+  expect_false(pelsa_analysis_failed(res$dsB))
+  expect_equal(calls, 1L)   # same species -> resolved once (memoized)
 })
 
 test_that("run_analysis captures a per-dataset error (with stage) without aborting others", {

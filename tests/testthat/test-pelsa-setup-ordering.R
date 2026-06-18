@@ -61,6 +61,29 @@ test_that("pelsa_samples_for_condition returns empty for absent condition", {
   )
 })
 
+test_that("pelsa_samples_for_condition falls back to sample-name order when replicate col is unset", {
+  # When the condition column is chosen but the replicate column is still the
+  # blank "(none)" default (or any non-cdesc value), the function must NOT throw
+  # - it falls back to ordering by sample NAME. This is the runtime path when a
+  # user sets the condition column before the replicate column.
+  cdesc <- .ordering_cdesc()
+  # ctrl samples (rownames) sorted by NAME: s_ctrl_1, s_ctrl_2.
+  expect_identical(
+    pelsa_samples_for_condition(cdesc, "cond", "(none)", "ctrl"),
+    c("s_ctrl_1", "s_ctrl_2")
+  )
+  # drug samples sorted by NAME: s_drug_a, s_drug_b, s_drug_c.
+  expect_identical(
+    pelsa_samples_for_condition(cdesc, "cond", "(none)", "drug"),
+    c("s_drug_a", "s_drug_b", "s_drug_c")
+  )
+  # NULL / NA replicate col also degrade gracefully (no throw).
+  expect_identical(
+    pelsa_samples_for_condition(cdesc, "cond", NULL, "ctrl"),
+    c("s_ctrl_1", "s_ctrl_2")
+  )
+})
+
 # ---- pelsa_default_replicate_order -------------------------------------------
 
 test_that("pelsa_default_replicate_order is a named list keyed by condition", {
@@ -233,15 +256,23 @@ test_that("per-dataset condition/replicate columns are stored as named lists", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = c("prot", "rna"))
+      # No checkbox group: both uploaded datasets are non-skipped (analyzed) by
+      # default. Columns default to "(none)" (no auto-seed) - set them per ome.
       session$flushReact()
-
-      # Per-dataset defaults populated for BOTH datasets.
+      expect_setequal(checked_datasets(), c("prot", "rna"))
       expect_true(is.list(setup_state$condition_col))
-      expect_true(!is.null(setup_state$condition_col[["prot"]]))
-      expect_true(!is.null(setup_state$condition_col[["rna"]]))
 
-      # sample_order computed for both.
+      # Set the per-dataset column inputs (observers are registered for all
+      # non-skipped omes at startup). prot is dataset 1 (_d1), rna is 2 (_d2).
+      session$setInputs(pelsa_condition_col_d1 = "grp",
+                        pelsa_replicate_col_d1 = "rid",
+                        pelsa_condition_col_d2 = "grp",
+                        pelsa_replicate_col_d2 = "rid")
+      session$flushReact()
+      expect_identical(setup_state$condition_col[["prot"]], "grp")
+      expect_identical(setup_state$condition_col[["rna"]], "grp")
+
+      # sample_order computed for prot from its chosen columns.
       expect_true(!is.null(setup_state$sample_order[["prot"]]))
       expect_identical(
         sort(setup_state$sample_order[["prot"]]),
@@ -251,7 +282,7 @@ test_that("per-dataset condition/replicate columns are stored as named lists", {
   )
 })
 
-test_that("unchecking a dataset prunes its per-dataset state", {
+test_that("skipping a dataset PRESERVES its per-dataset config (greying only)", {
   gp <- .ordering_test_gp()
   GCTs_and_params <- shiny::reactiveVal(gp)
   globals <- shiny::reactiveValues(default_ome = "prot",
@@ -264,11 +295,47 @@ test_that("unchecking a dataset prunes its per-dataset state", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = c("prot", "rna"))
+      # Both non-skipped by default; give rna a condition column.
+      session$flushReact()
+      session$setInputs(pelsa_condition_col_d2 = "grp",
+                        pelsa_replicate_col_d2 = "rid")
+      session$flushReact()
+      expect_identical(setup_state$condition_col[["rna"]], "grp")
+
+      # SKIP rna: it leaves the analyzed (checked) set, BUT its config column
+      # choices are PRESERVED (greying is purely visual; un-skip restores it).
+      setup_state$skip <- list(rna = TRUE)
+      session$flushReact()
+      expect_false("rna" %in% checked_datasets())
+      expect_identical(setup_state$condition_col[["rna"]], "grp")
+      expect_identical(setup_state$replicate_col[["rna"]], "rid")
+    }
+  )
+})
+
+test_that("a new upload removing a dataset prunes its per-dataset state", {
+  gp <- .ordering_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(gp)
+  globals <- shiny::reactiveValues(default_ome = "prot",
+                                   colors = list(prot = NULL, rna = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("prot")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      session$flushReact()
+      session$setInputs(pelsa_condition_col_d2 = "grp",
+                        pelsa_replicate_col_d2 = "rid")
       session$flushReact()
       expect_true("rna" %in% names(setup_state$condition_col))
 
-      session$setInputs(pelsa_datasets = "prot")
+      # A NEW upload drops rna from the uploaded set (all_omes()) -> its
+      # per-dataset state is pruned (keyed off all_omes(), not skip).
+      GCTs_and_params(list(GCTs = list(prot = gp$GCTs$prot),
+                           parameters = list(prot = gp$parameters$prot)))
       session$flushReact()
       expect_false("rna" %in% names(setup_state$condition_col))
       expect_false("rna" %in% names(setup_state$sample_order))
@@ -289,9 +356,8 @@ test_that("changing a dataset's condition_col reseeds its condition order", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = "prot")
       session$flushReact()
-      # Default cond col is grp -> conditions ctrl, drug.
+      # Choose grp -> conditions ctrl, drug.
       session$setInputs(pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid")
       session$flushReact()
@@ -319,30 +385,35 @@ test_that("apply-all copies source dataset config to compatible datasets", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = c("prot", "rna"))
-      session$flushReact()
-      # Source (active=prot): set cols explicitly.
-      session$setInputs(pelsa_condition_col_d1 = "grp",
+      session$flushReact()  # both datasets non-skipped by default
+      # Source (active=prot): set species/compound/cols explicitly.
+      session$setInputs(pelsa_species = "9606",
+                        pelsa_compound = "Rapamycin",
+                        pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid")
       session$flushReact()
 
-      # Give the source a non-default replicate order so we could detect a
-      # (mis)copy: prot's ctrl samples are p_c2, p_c1.
+      # Give the source a non-default condition order.
       session$setInputs(pelsa_condition_order_d1 = c("drug", "ctrl"))
       session$flushReact()
 
-      session$setInputs(pelsa_apply_all = TRUE)
+      session$setInputs(pelsa_apply_all = 1)
       session$flushReact()
 
+      # Species / compound / markers transfer VERBATIM.
+      expect_identical(setup_state$species[["rna"]], "9606")
+      expect_identical(setup_state$compound[["rna"]], "Rapamycin")
+      expect_equal(nrow(setup_state$marker_rows[["rna"]]),
+                   nrow(setup_state$marker_rows[["prot"]]))
       # Condition + replicate COLUMNS transfer (column names are shared).
       expect_identical(setup_state$condition_col[["rna"]], "grp")
       expect_identical(setup_state$replicate_col[["rna"]], "rid")
       # Condition ORDER transfers (condition VALUES are shared across datasets).
       expect_identical(setup_state$condition_order[["rna"]], c("drug", "ctrl"))
 
-      # MED-2 (honest apply-all): the toast says replicate ordering uses each
-      # dataset's default  -  so rna's replicate_order must reference ITS OWN
-      # samples (r_c1 / r_d1), never the source's (p_c1 / p_c2 / p_dA / p_dB).
+      # Honest apply-all: replicate ordering uses each dataset's own default - so
+      # rna's replicate_order references ITS OWN samples (r_c1 / r_d1), never the
+      # source's (p_c1 / p_c2 / p_dA / p_dB).
       rna_rep <- setup_state$replicate_order[["rna"]]
       rna_samples <- unlist(rna_rep, use.names = FALSE)
       src_samples <- c("p_c1", "p_c2", "p_dA", "p_dB")
@@ -365,11 +436,20 @@ test_that("observer-dedup registry stays bounded across repeated re-renders", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      # Toggle the dataset set many times.
+      # Choose prot's condition/replicate columns so its multi-replicate
+      # conditions exist (columns default to "(none)" now -> no cond observers
+      # until a real column is chosen).
+      session$flushReact()
+      session$setInputs(pelsa_condition_col_d1 = "grp",
+                        pelsa_replicate_col_d1 = "rid")
+      session$flushReact()
+
+      # Toggle the analyzed (non-skipped) set many times via the per-ome skip
+      # flag (the checkbox group is gone; checked_datasets() derives from skip).
       for (k in 1:6) {
-        session$setInputs(pelsa_datasets = c("prot", "rna"))
+        setup_state$skip <- list()            # both analyzed
         session$flushReact()
-        session$setInputs(pelsa_datasets = "prot")
+        setup_state$skip <- list(rna = TRUE)  # rna skipped
         session$flushReact()
       }
       reg <- setup_observer_registry()
@@ -388,7 +468,7 @@ test_that("observer-dedup registry stays bounded across repeated re-renders", {
   )
 })
 
-test_that("apply-all auto-unticks so a target dataset stays editable afterward", {
+test_that("apply-all (button) leaves a target dataset editable afterward", {
   gp <- .ordering_test_gp()  # both compatible (cols grp, rid)
   GCTs_and_params <- shiny::reactiveVal(gp)
   globals <- shiny::reactiveValues(default_ome = "prot",
@@ -401,21 +481,18 @@ test_that("apply-all auto-unticks so a target dataset stays editable afterward",
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = c("prot", "rna"))
-      session$flushReact()
+      session$flushReact()  # both datasets non-skipped
       session$setInputs(pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid")
       session$flushReact()
 
-      session$setInputs(pelsa_apply_all = TRUE)
+      session$setInputs(pelsa_apply_all = 1)
       session$flushReact()
-      # apply-all copied prot's cols to rna.
+      # apply-all (a one-shot button) copied prot's cols to rna.
       expect_identical(setup_state$condition_col[["rna"]], "grp")
 
-      # The server calls updateCheckboxInput(..., value = FALSE) to auto-untick
-      # (no lock-out). In testServer that does not echo back into input$, so we
-      # assert the REAL anti-lockout property instead: after apply-all, a direct
-      # edit to the TARGET dataset (rna, index 2) still takes hold.
+      # After apply-all, a direct edit to the TARGET dataset (rna, index 2) still
+      # takes hold (the button does not lock the target).
       session$setInputs(pelsa_condition_col_d2 = "rid")
       session$flushReact()
       expect_identical(setup_state$condition_col[["rna"]], "rid")
@@ -444,14 +521,13 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = "prot")
-      session$flushReact()
+      session$flushReact()  # prot non-skipped by default
       session$setInputs(pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid",
                         pelsa_species = "homo_sapiens")
       session$flushReact()
 
-      # Set a marker so we can prove it flows through the seam.
+      # Set a marker so we can prove it flows through the seam (per-ome).
       session$setInputs(pelsa_marker_input = "P12345")
       session$setInputs(pelsa_add_markers = 1)
       session$flushReact()
@@ -468,12 +544,13 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
       expect_true(is.list(snap))
       expect_false(shiny::is.reactivevalues(snap))
 
-      # (3) Every field the consumers read is present + populated from live state.
-      expect_identical(snap$species, "homo_sapiens")
+      # (3) Every field the consumers read is present + populated from live state
+      # (species / marker_rows are now PER-OME named lists).
+      expect_identical(snap$species[["prot"]], "homo_sapiens")
       expect_identical(snap$condition_col[["prot"]], "grp")
       expect_setequal(snap$condition_order[["prot"]], c("ctrl", "drug"))
       expect_true(!is.null(snap$sample_order[["prot"]]))
-      expect_true("P12345" %in% snap$marker_rows$accession)
+      expect_true("P12345" %in% snap$marker_rows[["prot"]]$accession)
     }
   )
 })
@@ -512,7 +589,6 @@ test_that("H1: replicate order is retained after switching the condition column"
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = "prot")
       session$flushReact()
 
       # Column A: conditions a1 (s1,s2), a2 (s3,s4). Set a custom replicate order
@@ -589,7 +665,6 @@ test_that("an NA condition value is dropped from the wired sample_order", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = "prot")
       session$flushReact()
       session$setInputs(pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid")

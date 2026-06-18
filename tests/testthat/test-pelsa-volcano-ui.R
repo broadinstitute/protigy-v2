@@ -572,9 +572,10 @@ test_that("intensity_line_plot: two panels render as a subplot (no facet strip)"
 }
 
 .mk_setup_state <- function() {
-  list(species = NULL,  # NULL -> feat_df NULL path (colors "none"); no network
-       marker_rows = data.frame(accession = "ACC1", gene = "G1",
-                                stringsAsFactors = FALSE))
+  # species / marker_rows are PER-OME named lists (keyed by ome "Proteome").
+  list(species = list(Proteome = NULL),  # NULL -> feat_df NULL path; no network
+       marker_rows = list(Proteome = data.frame(
+         accession = "ACC1", gene = "G1", stringsAsFactors = FALSE)))
 }
 
 # A fuller fixture for the 7D/7E/7F testServer paths: matched carries .row_id +
@@ -627,9 +628,9 @@ test_that("intensity_line_plot: two panels render as a subplot (no facet strip)"
 }
 
 .mk_setup_state_full <- function() {
-  list(species = NULL,
-       marker_rows = data.frame(accession = "ACC1", gene = "G1",
-                                stringsAsFactors = FALSE),
+  list(species = list(Proteome = NULL),
+       marker_rows = list(Proteome = data.frame(
+         accession = "ACC1", gene = "G1", stringsAsFactors = FALSE)),
        condition_col = list(Proteome = "condition"),
        condition_order = list(Proteome = c("A", "B")))
 }
@@ -1019,9 +1020,9 @@ test_that("M5: changing markers clears the volcano cache so the active view rebu
     # Replace marker_rows wholesale: modifyList() would recurse into the
     # data.frame (a list) and attempt a column-wise merge onto the 1-row frame.
     st_two_markers <- .mk_setup_state_full()
-    st_two_markers$marker_rows <- data.frame(
+    st_two_markers$marker_rows <- list(Proteome = data.frame(
       accession = c("ACC1", "ACC2"), gene = c("G1", "G2"),
-      stringsAsFactors = FALSE)
+      stringsAsFactors = FALSE))
     ss(st_two_markers)
     session$flushReact()
     expect_setequal(marker_accessions(), c("ACC1", "ACC2"))
@@ -1058,9 +1059,9 @@ test_that("M5: changing markers clears the best-peptide cache so the best panel 
 
     # Add ACC2 to the marker list while the best panel is shown.
     st_two_markers <- .mk_setup_state_full()
-    st_two_markers$marker_rows <- data.frame(
+    st_two_markers$marker_rows <- list(Proteome = data.frame(
       accession = c("ACC1", "ACC2"), gene = c("G1", "G2"),
-      stringsAsFactors = FALSE)
+      stringsAsFactors = FALSE))
     ss(st_two_markers)
     session$flushReact()
     expect_setequal(marker_accessions(), c("ACC1", "ACC2"))

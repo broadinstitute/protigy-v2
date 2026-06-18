@@ -232,6 +232,27 @@ test_that("pelsa_merge_marker_rows accession matching is exact (isoform-sensitiv
   expect_identical(merged$accession, c("P1", "P1-2"))
 })
 
+# ---- pelsa_analyzed_omes (non-skipped set) -----------------------------------
+
+test_that("pelsa_analyzed_omes returns the non-skipped omes in all_omes order", {
+  all_omes <- c("A", "B", "C")
+  skip <- list(A = FALSE, B = TRUE, C = FALSE)
+  expect_identical(pelsa_analyzed_omes(skip, all_omes), c("A", "C"))
+})
+
+test_that("pelsa_analyzed_omes treats a missing/NULL skip entry as NOT skipped", {
+  # A dataset never toggled has no skip entry; default is analyzed (not skipped).
+  all_omes <- c("A", "B")
+  expect_identical(pelsa_analyzed_omes(list(), all_omes), c("A", "B"))
+  expect_identical(pelsa_analyzed_omes(list(A = TRUE), all_omes), "B")
+})
+
+test_that("pelsa_analyzed_omes returns character(0) when all are skipped", {
+  all_omes <- c("A", "B")
+  skip <- list(A = TRUE, B = TRUE)
+  expect_identical(pelsa_analyzed_omes(skip, all_omes), character(0))
+})
+
 # ---- No-browser UI presence --------------------------------------------------
 
 test_that("Setup Tab UI renders the expected control output ids", {
@@ -246,10 +267,11 @@ test_that("Setup control ids are namespaced + wired in the module server", {
   # the deparsed module-server body (closed-form, non-flaky) that each expected
   # control id is present.
   ids <- c(
-    "pelsa_datasets", "pelsa_species", "pelsa_compound",
+    "pelsa_skip", "pelsa_species", "pelsa_compound",
     "pelsa_marker_input", "pelsa_add_markers", "pelsa_marker_table",
     "pelsa_remove_markers", "pelsa_clear_markers",
-    # 5B: per-dataset config replaces the shared condition/replicate selects.
+    # per-dataset config + apply-to-all button (the datasets checkbox is gone;
+    # the per-tab Skip toggle is the single opt-out).
     "pelsa_apply_all", "pelsa_perdataset_config"
   )
   fn_body <- paste(deparse(body(PELSASection1_Tab_Server)), collapse = "\n")
@@ -337,18 +359,18 @@ test_that("marker table: compound autofill, add, remove, clear all flow", {
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
       session$setInputs(pelsa_compound = "Rapamycin")
-      expect_equal(nrow(setup_state$marker_rows), 3L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 3L)
 
       session$setInputs(pelsa_marker_input = "P99999 Q88888")
       session$setInputs(pelsa_add_markers = 1)
-      expect_equal(nrow(setup_state$marker_rows), 5L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 5L)
 
       session$setInputs(pelsa_marker_table_rows_selected = 1)
       session$setInputs(pelsa_remove_markers = 1)
-      expect_equal(nrow(setup_state$marker_rows), 4L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 4L)
 
       session$setInputs(pelsa_clear_markers = 1)
-      expect_equal(nrow(setup_state$marker_rows), 0L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
     }
   )
 })
@@ -368,26 +390,30 @@ test_that("marker_add_request channel: Volcano-requested accession merges in", {
                 GCTs_original = GCTs_original, active_dataset = active_dataset,
                 marker_add_request = marker_add_request),
     {
-      expect_equal(nrow(setup_state$marker_rows), 0L)
+      expect_null(setup_state$marker_rows[["proteome"]])
 
-      # Volcano pushes an accession -> Section 1 observes and merges it.
-      marker_add_request(data.frame(accession = "P77777", gene = "GENEX",
-                                    stringsAsFactors = FALSE))
+      # Volcano pushes an accession (PER-OME payload list(ome, rows)) -> Section 1
+      # observes and merges it into THAT ome's marker list.
+      marker_add_request(list(ome = "proteome",
+        rows = data.frame(accession = "P77777", gene = "GENEX",
+                          stringsAsFactors = FALSE)))
       session$flushReact()
-      expect_equal(nrow(setup_state$marker_rows), 1L)
-      expect_true("P77777" %in% setup_state$marker_rows$accession)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 1L)
+      expect_true("P77777" %in% setup_state$marker_rows[["proteome"]]$accession)
 
       # Re-requesting the SAME accession is idempotent (merge dedupes).
-      marker_add_request(data.frame(accession = "P77777", gene = "GENEX",
-                                    stringsAsFactors = FALSE))
+      marker_add_request(list(ome = "proteome",
+        rows = data.frame(accession = "P77777", gene = "GENEX",
+                          stringsAsFactors = FALSE)))
       session$flushReact()
-      expect_equal(nrow(setup_state$marker_rows), 1L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 1L)
 
       # A different accession adds another row.
-      marker_add_request(data.frame(accession = "Q11111", gene = "GENEY",
-                                    stringsAsFactors = FALSE))
+      marker_add_request(list(ome = "proteome",
+        rows = data.frame(accession = "Q11111", gene = "GENEY",
+                          stringsAsFactors = FALSE)))
       session$flushReact()
-      expect_equal(nrow(setup_state$marker_rows), 2L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 2L)
     }
   )
 })
@@ -407,24 +433,25 @@ test_that("M6: re-adding the same accession after removal re-fires the channel",
                 GCTs_original = GCTs_original, active_dataset = active_dataset,
                 marker_add_request = marker_add_request),
     {
-      req_df <- data.frame(accession = "P88888", gene = "GENEZ",
-                           stringsAsFactors = FALSE)
+      req <- list(ome = "proteome",
+                  rows = data.frame(accession = "P88888", gene = "GENEZ",
+                                    stringsAsFactors = FALSE))
       # 1) Add from the volcano.
-      marker_add_request(req_df); session$flushReact()
-      expect_true("P88888" %in% setup_state$marker_rows$accession)
+      marker_add_request(req); session$flushReact()
+      expect_true("P88888" %in% setup_state$marker_rows[["proteome"]]$accession)
       # M6 fix: the consumer resets the channel to NULL after merging.
       expect_null(marker_add_request())
 
-      # 2) Remove it here in Setup.
-      marker_rows(pelsa_empty_marker_rows()); session$flushReact()
-      expect_equal(nrow(setup_state$marker_rows), 0L)
+      # 2) Remove it here in Setup (clear the active ome).
+      session$setInputs(pelsa_clear_markers = 1); session$flushReact()
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
 
       # 3) Re-add the SAME accession. Pre-fix the identical value would not
       #    re-fire the observer (silent drop); post-fix the NULL reset makes it
       #    a fresh change so it re-adds.
-      marker_add_request(req_df); session$flushReact()
-      expect_true("P88888" %in% setup_state$marker_rows$accession)
-      expect_equal(nrow(setup_state$marker_rows), 1L)
+      marker_add_request(req); session$flushReact()
+      expect_true("P88888" %in% setup_state$marker_rows[["proteome"]]$accession)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 1L)
     }
   )
 })
@@ -445,13 +472,13 @@ test_that("compound autofill merges into existing user-pasted rows", {
       # User pastes a marker first.
       session$setInputs(pelsa_marker_input = "P55555")
       session$setInputs(pelsa_add_markers = 1)
-      expect_equal(nrow(setup_state$marker_rows), 1L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 1L)
 
       # Selecting a compound MERGES presets into the existing user row.
       session$setInputs(pelsa_compound = "Rapamycin")
-      expect_equal(nrow(setup_state$marker_rows), 4L)
-      expect_true("P55555" %in% setup_state$marker_rows$accession)
-      expect_true("P42345" %in% setup_state$marker_rows$accession)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 4L)
+      expect_true("P55555" %in% setup_state$marker_rows[["proteome"]]$accession)
+      expect_true("P42345" %in% setup_state$marker_rows[["proteome"]]$accession)
     }
   )
 })
@@ -471,26 +498,25 @@ test_that("cleared markers STAY cleared across a compound re-render echo (no res
     {
       # 1. Pick Rapamycin -> autofills 3.
       session$setInputs(pelsa_compound = "Rapamycin")
-      expect_equal(nrow(setup_state$marker_rows), 3L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 3L)
 
-      # 2. Clear all -> 0 (and tracker reset).
+      # 2. Clear all -> 0 (and tracker NOT reset, per the echo-safety design).
       session$setInputs(pelsa_clear_markers = 1)
-      expect_equal(nrow(setup_state$marker_rows), 0L)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
 
       # 3. Simulate a re-render echo: the selectInput re-emits the SAME value.
-      #    Bump a co-input so the observer fires, then re-assert pelsa_compound.
       session$setInputs(pelsa_compound = "Rapamycin")
-      expect_equal(nrow(setup_state$marker_rows), 0L,
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L,
                    info = "markers must NOT resurrect on a same-value re-emit")
 
       # 4. A genuine NEW selection still autofills.
       session$setInputs(pelsa_compound = "AY9944")
-      expect_gt(nrow(setup_state$marker_rows), 0L)
+      expect_gt(nrow(setup_state$marker_rows[["proteome"]]), 0L)
     }
   )
 })
 
-test_that("setup_state datasets wiring populates + per-dataset cond/rep (5B)", {
+test_that("per-dataset cond/rep wiring + skip toggle (no checkbox group)", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
   globals <- shiny::reactiveValues(default_ome = "proteome",
@@ -505,11 +531,11 @@ test_that("setup_state datasets wiring populates + per-dataset cond/rep (5B)", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_datasets = "proteome")
       session$flushReact()
-      expect_identical(setup_state$datasets, "proteome")
+      # No checkbox group: a non-skipped dataset is analyzed by default.
+      expect_identical(checked_datasets(), "proteome")
 
-      # 5B: condition/replicate are now PER-DATASET named lists; the per-dataset
+      # condition/replicate are PER-DATASET named lists; the per-dataset
       # selectInput id is index-encoded (proteome is dataset 1 -> _d1).
       expect_true(is.list(setup_state$condition_col))
       session$setInputs(pelsa_condition_col_d1 = cdesc[[1]],
@@ -517,6 +543,35 @@ test_that("setup_state datasets wiring populates + per-dataset cond/rep (5B)", {
       session$flushReact()
       expect_identical(setup_state$condition_col[["proteome"]], cdesc[[1]])
       expect_identical(setup_state$replicate_col[["proteome"]], cdesc[[1]])
+
+      # Skip toggle: setting it flips the per-ome flag and removes the dataset
+      # from the analyzed (checked) set.
+      session$setInputs(pelsa_skip = TRUE)
+      session$flushReact()
+      expect_true(isTRUE(setup_state$skip[["proteome"]]))
+      expect_identical(checked_datasets(), character(0))
+    }
+  )
+})
+
+test_that("per-dataset species/compound wiring writes the active ome's slot", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      session$setInputs(pelsa_species = "9606")
+      session$setInputs(pelsa_compound = "Rapamycin")
+      session$flushReact()
+      expect_identical(setup_state$species[["proteome"]], "9606")
+      expect_identical(setup_state$compound[["proteome"]], "Rapamycin")
     }
   )
 })
@@ -545,47 +600,45 @@ test_that("setup_box render gates on a valid active dataset (NULL / unknown -> n
 })
 
 # ---------------------------------------------------------------------------
-# pelsa_setup_box_ui: re-render must preserve the user's selections
+# pelsa_setup_box_ui: per-dataset form; re-render must preserve selections
 #
-# Regression: output$setup_box depends on active_dataset(), so switching the
-# active dataset re-renders the box. If the recreated inputs reset to their
-# hardcoded defaults, the re-emitted values clobber setup_state datasets/
-# species/compound. The builder must honor seeded selections so a re-render
-# preserves what the user chose.
+# output$setup_box depends on setup_active_dataset(), so switching the active
+# setup tab re-renders the box. The builder must honor seeded selections so a
+# re-render preserves what the user chose for THIS dataset (else the re-emitted
+# values clobber the per-ome setup_state).
 # ---------------------------------------------------------------------------
-test_that("pelsa_setup_box_ui defaults reproduce first-load selections", {
+test_that("pelsa_setup_box_ui defaults: blank species, no compound, not skipped", {
   ns <- shiny::NS("x")
   html <- as.character(pelsa_setup_box_ui(
-    datasets  = c("proteome", "phospho"),
     species   = c("human", "mouse"),
     compounds = c("CompoundA" = "CompoundA"),
     ns        = ns
   ))
-  # default: all datasets checked, first species selected, no compound
-  expect_true(grepl("value=\"proteome\"[^>]*checked", html))
-  expect_true(grepl("value=\"phospho\"[^>]*checked", html))
-  expect_true(grepl("<option value=\"human\" selected>", html))
+  # species defaults to the blank "(none)" entry (user must choose)
+  expect_true(grepl("<option value=\"\\(none\\)\" selected>", html))
   # default compound is the "(none)" = "" entry
   expect_true(grepl("<option value=\"\" selected>", html))
+  # Skip toggle present and NOT checked by default
+  expect_true(grepl("pelsa_skip", html))
+  expect_false(grepl("pelsa_skip[^>]*checked", html))
+  # the datasets checkbox group is gone
+  expect_false(grepl("pelsa_datasets", html))
 })
 
-test_that("pelsa_setup_box_ui honors seeded selections (re-render preserves choices)", {
+test_that("pelsa_setup_box_ui honors seeded species/compound/skip", {
   ns <- shiny::NS("x")
   html <- as.character(pelsa_setup_box_ui(
-    datasets  = c("proteome", "phospho"),
     species   = c("human", "mouse"),
     compounds = c("CompoundA" = "CompoundA"),
     ns        = ns,
-    selected_datasets = "phospho",      # NOT all datasets
-    selected_species  = "mouse",        # NOT the first species
-    selected_compound = "CompoundA"     # NOT "(none)"
+    selected_species  = "mouse",        # NOT the blank default
+    selected_compound = "CompoundA",    # NOT "(none)"
+    selected_skip     = TRUE            # this dataset skipped
   ))
-  # only phospho checked; proteome NOT checked
-  expect_true(grepl("value=\"phospho\"[^>]*checked", html))
-  expect_false(grepl("value=\"proteome\"[^>]*checked", html))
-  # mouse selected, not human
+  # mouse selected, not the blank
   expect_true(grepl("<option value=\"mouse\" selected>", html))
-  expect_false(grepl("<option value=\"human\" selected>", html))
   # the chosen compound is selected
   expect_true(grepl("<option value=\"CompoundA\" selected>", html))
+  # Skip toggle checked
+  expect_true(grepl("pelsa_skip[^>]*checked", html))
 })
