@@ -1131,3 +1131,22 @@ test_that(".pelsa_woods_click_index returns NULL (not integer(0)) when all candi
   )
   expect_null(fn(pep, ev_x = 15, ev_y = 1.0))
 })
+
+# ---------------------------------------------------------------------------
+# Source-level guard: the volcano highlight comments must describe the PRODUCTION
+# addTraces/deleteTraces gold overlay, NOT the abandoned proxy-restyle path or a
+# figure REBUILD. (The pelsa_volcano_recolor helper is kept for unit tests only.)
+# ---------------------------------------------------------------------------
+test_that("section3 highlight comments describe the gold overlay, not proxy-restyle/rebuild", {
+  s3  <- paste(readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3.R"),
+                         warn = FALSE), collapse = "\n")
+  s3h <- paste(readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3_helpers.R"),
+                         warn = FALSE), collapse = "\n")
+  # The stale narratives are gone.
+  expect_false(grepl("ONE interactive highlight mechanism: the", s3h, fixed = TRUE))
+  expect_false(grepl("REBUILDING the figure with the gold", s3, fixed = TRUE))
+  # The production mechanism is documented.
+  expect_true(grepl("addTraces", s3, fixed = TRUE))
+  expect_true(grepl("GOLD OVERLAY", s3, fixed = TRUE) ||
+              grepl("gold overlay", s3, fixed = TRUE))
+})

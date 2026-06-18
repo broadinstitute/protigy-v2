@@ -579,13 +579,15 @@ pelsa_volcano_clicked_label_trace <- function(df, selection = NULL) {
 #   1. background (non-marker)  - the dense cloud
 #   2. markers    (magenta overlay, on top, ALWAYS)
 #   (+ a geom_text label layer + an optional threshold hline)
-# The build ALWAYS emits exactly TWO point traces (background + markers); the
-# bg + marker traces are meta-tagged ("pelsa_bg"/"pelsa_mk") so the selection
-# highlight can be applied client-side via a plotlyProxy "restyle" of their
-# fill/ring arrays (see pelsa_volcano_recolor + .pelsa_volcano_trace_index and
-# the plotly_click observer in tab_pelsa_section3.R) WITHOUT rebuilding the
-# ~100k-point figure. There is exactly ONE interactive highlight mechanism: the
-# proxy restyle.
+# The build ALWAYS emits exactly TWO point traces (background + markers), which
+# are meta-tagged ("pelsa_bg"/"pelsa_mk"). The PRODUCTION selection highlight is
+# a GOLD OVERLAY: a separate scattergl trace (plus an optional label trace) is
+# pushed/removed via plotlyProxyInvoke addTraces/deleteTraces (apply_gold_overlay
+# in tab_pelsa_section3.R), so a click/find never rebuilds the ~100k-point base
+# figure. (The pelsa_volcano_recolor / .pelsa_volcano_trace_index proxy-restyle
+# path is an earlier approach kept only for unit tests -- it is NOT wired into
+# the module; per CLAUDE.md, per-point marker.color restyle does not render
+# reliably on WebGL scattergl, which is why the addTraces overlay is used.)
 #
 # @param df          the FULL volcano frame the plot consumes (every point).
 # @param full_df     the same frame, used for the y_cutoff attr + label-row
@@ -639,10 +641,12 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   #   0. background cloud (sig/feature colors)
   #   1. magenta markers (ALWAYS on top of the cloud)
   #   2+. gold highlight overlays (selection/find), drawn over everything
-  # The marker/background traces are meta-tagged so the recolor proxy restyle
-  # finds them by index (see .pelsa_volcano_trace_index). With a hand-built
-  # figure the trace order is deterministic, so the bg + marker traces are added
-  # FIRST and in that order (always index 0 and 1). The scalar `meta` tag is
+  # The marker/background traces are meta-tagged so the test-only recolor helper
+  # can find them by index (see .pelsa_volcano_trace_index; the PRODUCTION
+  # highlight is the addTraces gold overlay, which does not read these tags).
+  # With a hand-built figure the trace order is deterministic, so the bg +
+  # marker traces are added FIRST and in that order (always index 0 and 1). The
+  # scalar `meta` tag is
   # stamped AFTER plotly_build (a trace-level `meta=` arg would be recycled to a
   # per-point vector by plot_ly's data-mapping); stamping it on the built trace
   # keeps it a true scalar that survives Shiny's serialize-time re-build, so no

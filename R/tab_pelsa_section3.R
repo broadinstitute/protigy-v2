@@ -25,11 +25,12 @@
 #
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
 # 7E a single selection() (a left-click or a Find-accession) drives the volcano
-# highlight by REBUILDING the figure with the gold baked into the point colors
-# (pelsa_volcano_recolor -> gold fill for the selected peptide, gold ring for
-# same-protein peptides; per-point marker.color restyle is unreliable on WebGL
-# scattergl, so the highlight is drawn into the build instead of proxy-restyled)
-# AND opens the per-protein intensity line panel (3C); 7F per-ome exports.
+# highlight via a GOLD OVERLAY: a separate scattergl trace (plus an optional
+# label trace) pushed/removed with plotlyProxyInvoke addTraces/deleteTraces
+# (apply_gold_overlay), so the ~100k-point base figure is NEVER rebuilt on
+# click/find/clear (per-point marker.color restyle is unreliable on WebGL
+# scattergl, so an overlay trace is used rather than a proxy restyle) AND opens
+# the per-protein intensity line panel (3C); 7F per-ome exports.
 #
 # Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
 ################################################################################
