@@ -234,6 +234,41 @@ test_that("pelsa_add_compound errors when the compound already exists", {
   expect_error(pelsa_add_compound(cm, "rapamycin"), "already exists")
 })
 
+# ---- pelsa_set_compound_markers ----------------------------------------------
+
+test_that("pelsa_set_compound_markers fully replaces markers in place", {
+  cm <- list(compounds = list(
+    Rapamycin = list(markers = list(list(accession = "OLD", gene = "OLDGENE")))
+  ))
+  rows <- data.frame(accession = c("P1", "P2"),
+                     gene       = c("G1", NA_character_),
+                     stringsAsFactors = FALSE)
+  out <- pelsa_set_compound_markers(cm, "rapamycin", rows)  # case-insensitive
+
+  mk <- out$compounds$Rapamycin$markers
+  expect_length(mk, 2L)
+  expect_identical(mk[[1]]$accession, "P1")
+  expect_identical(mk[[1]]$gene, "G1")
+  expect_identical(mk[[2]]$accession, "P2")
+  expect_null(mk[[2]]$gene)  # NA gene is dropped, not written as NA
+  # immutability
+  expect_identical(cm$compounds$Rapamycin$markers[[1]]$accession, "OLD")
+})
+
+test_that("pelsa_set_compound_markers accepts an empty table (clears markers)", {
+  cm  <- list(compounds = list(X = list(markers = list(list(accession = "P1")))))
+  out <- pelsa_set_compound_markers(cm, "X", pelsa_empty_marker_rows())
+  expect_identical(out$compounds$X$markers, list())
+})
+
+test_that("pelsa_set_compound_markers errors on unknown compound", {
+  cm <- list(compounds = list())
+  expect_error(
+    pelsa_set_compound_markers(cm, "Ghost", pelsa_empty_marker_rows()),
+    "unknown compound"
+  )
+})
+
 # ---- pelsa_marker_rows_from_input --------------------------------------------
 
 test_that("pelsa_marker_rows_from_input: gene NA when resolver is NULL", {

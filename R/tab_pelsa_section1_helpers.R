@@ -231,6 +231,40 @@ pelsa_add_compound <- function(compound_markers, name) {
   out
 }
 
+# Replace a compound's marker preset list with `marker_rows` (a
+# data.frame(accession, gene)). The compound is resolved to its primary key
+# (case-insensitive) and edited IN PLACE, so any other keys it carries are
+# preserved. An empty data.frame clears the preset (markers = list()). A marker
+# with an NA/empty gene is written with accession only (no `gene` key).
+# Immutable: returns a new parsed list. Errors if the compound is unknown.
+# @noRd
+pelsa_set_compound_markers <- function(compound_markers, name, marker_rows) {
+  key <- .pelsa_resolve_compound_name(compound_markers, name)
+  if (is.na(key)) {
+    stop(sprintf("pelsa_set_compound_markers(): unknown compound '%s'.", name),
+         call. = FALSE)
+  }
+  if (!is.data.frame(marker_rows) ||
+      !all(c("accession", "gene") %in% names(marker_rows))) {
+    stop("pelsa_set_compound_markers(): `marker_rows` must be a data.frame with ",
+         "columns accession and gene.", call. = FALSE)
+  }
+
+  markers <- lapply(seq_len(nrow(marker_rows)), function(i) {
+    acc  <- as.character(marker_rows$accession[[i]])
+    gene <- marker_rows$gene[[i]]
+    entry <- list(accession = acc)
+    if (!is.null(gene) && !is.na(gene) && nzchar(as.character(gene))) {
+      entry$gene <- as.character(gene)
+    }
+    entry
+  })
+
+  out <- compound_markers
+  out$compounds[[key]]$markers <- markers
+  out
+}
+
 # Build the marker rows (accession, gene) for one compound's presets.
 #
 # Aliases are honored: `compound_name` may be the primary name OR any alias.
