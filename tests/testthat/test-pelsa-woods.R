@@ -221,6 +221,21 @@ test_that("feature tooltip uses real feature_type + description, not feature_cla
   expect_false(any(grepl("region_or_motif", tip, fixed = TRUE)))
 })
 
+# ---- doc regression: interactive Woods track has NO gold outline ------------
+# The interactive Woods track encodes significance via the neglogp color
+# gradient only; it never draws a gold underlay. Guard the comments from
+# resurrecting the stale "gold outline" / "thick gold segment underneath" claim.
+
+test_that("woods_helpers source no longer documents a gold-outline Woods track", {
+  src <- paste(
+    readLines(testthat::test_path("..", "..", "R",
+                                  "tab_pelsa_woods_helpers.R"),
+              warn = FALSE),
+    collapse = "\n")
+  expect_false(grepl("gold outline", src, ignore.case = TRUE))
+  expect_false(grepl("thick gold segment", src, ignore.case = TRUE))
+})
+
 test_that("feature legend UI lists every PELSA_FEATURE_COLORS class", {
   html <- as.character(.pelsa_feature_legend_ui())
   # one entry per palette class, including ones absent from any given protein

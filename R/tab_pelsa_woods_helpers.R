@@ -10,8 +10,8 @@
 #   2. FEATURE track   - UniProt features as colored segments (PELSA_FEATURE_COLORS),
 #                        lane-packed so overlapping features stack.
 #   3. WOODS plot      - each peptide a horizontal segment from pep_start..pep_end
-#                        at y = logFC (current contrast); significant peptides get
-#                        a gold outline (a thick gold segment under the colored one).
+#                        at y = logFC (current contrast); significance is encoded
+#                        by the -log10(adj.P) color gradient of that segment.
 #
 # Interval math uses IRanges (reduce = covered union; disjointBins = feature lane
 # packing). The peptide<->feature tooltip join uses data.table::foverlaps (already
@@ -31,7 +31,7 @@
 #   pelsa_woods_track_ggplot / pelsa_woods_panel  -> the plots
 ################################################################################
 
-# The gold used for coverage highlight + the significant-peptide Woods outline.
+# The gold used for the coverage-track highlight.
 # (Shared intent with .PELSA_VOLCANO_GOLD in tab_pelsa_section3_helpers.R.)
 .PELSA_WOODS_GOLD <- .PELSA_GOLD
 
@@ -365,7 +365,7 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
 }
 
 # Woods plot: each peptide a horizontal segment (start..end) at y = logFC;
-# significant peptides get a gold "outline" (a thick gold segment underneath).
+# significance is encoded by the segment's -log10(adj.P) color gradient.
 # @param peptides pelsa_woods_peptide_data() output, optionally with a `.tip`.
 # @param prot_len protein length.
 # @return a ggplot.
