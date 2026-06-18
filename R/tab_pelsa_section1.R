@@ -362,6 +362,62 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                        type = "message", duration = 4)
     })
 
+    # "Set as default marker list for this compound": opens a confirm modal that
+    # names the compound + the marker count, then (on confirm) rewrites that
+    # compound's preset in the YAML to the table's CURRENT markers (full replace,
+    # empty table allowed = clears the preset).
+    observeEvent(input$pelsa_set_default_markers_btn, {
+      ome <- active_setup_ome(); req(ome)
+      compound <- input$pelsa_compound
+      if (is.null(compound) || !nzchar(compound)) {
+        showNotification("Select a compound first.", type = "warning",
+                         duration = 5)
+        return()
+      }
+      n <- nrow(cur_markers(ome))
+      showModal(modalDialog(
+        title = "Set default marker list",
+        sprintf(
+          paste0("This will replace the saved preset for '%s' with the %d ",
+                 "marker(s) currently in the table. This rewrites ",
+                 "compound_markers.yaml. Continue?"),
+          compound, n
+        ),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("pelsa_confirm_set_default"), "Confirm",
+                       class = "btn-primary")
+        ),
+        easyClose = TRUE
+      ))
+    })
+
+    # Confirm: write the current table as the selected compound's preset. The
+    # confirm button id is namespaced via session$ns() in the modal markup, but
+    # input$ references it BARE (the module ns() rule).
+    observeEvent(input$pelsa_confirm_set_default, {
+      ome <- active_setup_ome(); req(ome)
+      compound <- input$pelsa_compound
+      if (is.null(compound) || !nzchar(compound)) {
+        removeModal()
+        return()
+      }
+      new_cm <- pelsa_set_compound_markers(compound_markers(), compound,
+                                           cur_markers(ome))
+      ok <- pelsa_write_compound_markers(pelsa_compound_markers_path(), new_cm)
+      removeModal()
+      if (!ok) {
+        showNotification(pelsa_readonly_save_msg, type = "error", duration = 10)
+        return()
+      }
+      compound_markers_version(compound_markers_version() + 1)
+      showNotification(
+        sprintf("Saved %d marker(s) as the default for '%s'.",
+                nrow(cur_markers(ome)), compound),
+        type = "message", duration = 4
+      )
+    })
+
     # Cross-module: the Volcano (Section 3) requests an accession be added via the
     # shared `marker_add_request` handle. The payload is list(ome=, rows=) so the
     # request targets the SPECIFIC dataset the volcano was viewing (markers are

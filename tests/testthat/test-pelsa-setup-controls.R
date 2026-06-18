@@ -641,6 +641,32 @@ test_that("add-compound blocks a duplicate name and selects the existing one", {
   expect_identical(readLines(path), before)
 })
 
+test_that("set-default with no compound selected does not write the YAML", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+
+  path <- pelsa_compound_markers_path()
+  skip_if(path == "", "compound_markers.yaml not installed")
+  before <- readLines(path)
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      # No compound selected ("(none)" = "") -> handler notifies + returns.
+      session$setInputs(pelsa_compound = "")
+      session$setInputs(pelsa_set_default_markers_btn = 1)
+      session$flushReact()
+    }
+  )
+  expect_identical(readLines(path), before)
+})
+
 test_that("compound selection REPLACES existing user-pasted rows", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
