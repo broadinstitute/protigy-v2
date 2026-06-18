@@ -955,9 +955,12 @@ pelsa_run_analysis_one <- function(gct,
 # @param set_progress   NULL or function(value, detail) advancing an overall
 #                       0..1 progress bar; each dataset occupies an equal slice.
 # @return named-by-dataset list of per-dataset cache objects (see the Cache
-#         contract on pelsa_run_analysis_one). Datasets that error are captured
-#         as list(error = <message>, stage = <last stage label or NA>) so one
-#         failure never aborts the rest; test entries with pelsa_analysis_failed().
+#         contract on pelsa_run_analysis_one), one entry per REQUESTED dataset in
+#         request order. Datasets that error -- OR that were requested but are
+#         absent from `gcts` -- are captured as list(error = <message>, stage =
+#         <last stage label or NA>) so one failure never aborts the rest; test
+#         entries with pelsa_analysis_failed(). Only a genuinely empty request
+#         (no datasets) stops.
 # @noRd
 pelsa_run_analysis <- function(gcts,
                                gcts_original,
@@ -970,7 +973,12 @@ pelsa_run_analysis <- function(gcts,
   datasets <- setup_snapshot$datasets %||% character(0)
   datasets <- as.character(datasets)
   datasets <- datasets[!is.na(datasets) & nzchar(datasets)]
-  datasets <- intersect(datasets, names(gcts))
+  # Keep ALL requested datasets (do NOT silently drop ones absent from `gcts`).
+  # An absent dataset is surfaced as a structured failure entry below, so the
+  # Summary/Volcano sections can label it as failed rather than looking up a
+  # NULL cache with no explanation (the caller advertises every requested
+  # dataset to the switcher). `present` marks which can actually be analyzed.
+  present <- datasets %in% names(gcts)
 
   if (length(datasets) == 0L) {
     stop("pelsa_run_analysis: no checked datasets to analyze.", call. = FALSE)
@@ -983,6 +991,19 @@ pelsa_run_analysis <- function(gcts,
 
   for (k in seq_along(datasets)) {
     ds <- datasets[[k]]
+
+    # A requested dataset with no GCT in `gcts` cannot be analyzed; record a
+    # structured failure entry (same shape as a compute failure) instead of
+    # dropping it, so the Summary surfaces the gap.
+    if (!present[[k]]) {
+      out[[ds]] <- list(
+        error = sprintf("dataset '%s' not found in processed GCTs", ds),
+        stage = NA_character_
+      )
+      if (!is.null(set_progress)) set_progress(k / n, NULL)
+      next
+    }
+
     base_frac <- (k - 1L) / n
     sub_progress <- if (is.null(set_progress)) NULL else function(detail) {
       set_progress(base_frac, sprintf("(%d/%d) %s - %s", k, n, ds, detail))

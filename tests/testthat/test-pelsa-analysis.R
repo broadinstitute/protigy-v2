@@ -656,7 +656,11 @@ test_that("run_analysis returns a per-dataset keyed list for >1 dataset", {
   expect_null(res$dsA$error)
 })
 
-test_that("run_analysis only analyzes checked datasets present in gcts", {
+test_that("run_analysis surfaces a checked dataset absent from gcts as a failure entry", {
+  # A requested dataset missing from `gcts` must NOT be silently dropped (the
+  # caller advertises snapshot$datasets to the switcher, so a dropped one would
+  # show in the UI with a NULL cache and no explanation). It is surfaced as a
+  # structured failure entry, like a compute failure.
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 4)
   g <- .mk_gct(syn)
   snap <- list(datasets = c("dsA", "ghost"), species = "9606",
@@ -665,7 +669,12 @@ test_that("run_analysis only analyzes checked datasets present in gcts", {
     gcts = list(dsA = g), gcts_original = list(dsA = g),
     setup_snapshot = snap, fasta_map = syn$fasta, feat_df = .mk_feat_df()
   )
-  expect_identical(names(res), "dsA")  # ghost (absent from gcts) dropped
+  # both requested datasets are present in the result, in request order
+  expect_identical(names(res), c("dsA", "ghost"))
+  expect_false(pelsa_analysis_failed(res$dsA))   # dsA analyzed normally
+  expect_true(pelsa_analysis_failed(res$ghost))  # ghost -> structured failure
+  expect_match(res$ghost$error, "ghost", fixed = TRUE)
+  expect_true("stage" %in% names(res$ghost))
 })
 
 test_that("run_analysis captures a per-dataset error (with stage) without aborting others", {
