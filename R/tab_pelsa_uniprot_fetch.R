@@ -414,7 +414,8 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
 # @param should_cancel optional function() -> logical; TRUE stops at the next
 #                   batch boundary.
 # @return list(features = <8-col data.frame>, unresolved = <character vector>,
-#              canceled = <logical scalar>).
+#              transient_unresolved = <character vector; the failed-batch subset
+#              of unresolved>, canceled = <logical scalar>).
 # @noRd
 pelsa_fetch_uniprot <- function(accessions,
                                 base = .PELSA_UNIPROT_BASE,
@@ -429,7 +430,8 @@ pelsa_fetch_uniprot <- function(accessions,
   accessions <- unique(accessions[!is.na(accessions) & nzchar(accessions)])
   if (length(accessions) == 0L) {
     return(list(features = pelsa_empty_feature_frame(),
-                unresolved = character(0), canceled = FALSE))
+                unresolved = character(0),
+                transient_unresolved = character(0), canceled = FALSE))
   }
   batch_size <- max(1L, as.integer(batch_size))
   .cancel <- function() {
@@ -463,6 +465,11 @@ pelsa_fetch_uniprot <- function(accessions,
   entries <- list()
   consecutive_batch_failures <- 0L
   canceled <- FALSE
+  # Accessions whose batch FAILED (5xx/network/hard error). These are TRANSIENTLY
+  # unresolved -- re-running the refresh can recover them -- as opposed to
+  # accessions in a SUCCEEDED batch that UniProt simply did not return (genuinely
+  # absent: obsolete/404-equivalent, which re-running will never recover).
+  failed_accessions <- character(0)
 
   for (k in seq_along(batches)) {
     # Cooperative cancel: honor a stop request at the batch boundary (before any
@@ -490,6 +497,7 @@ pelsa_fetch_uniprot <- function(accessions,
     entries <- c(entries, fetched$entries)
 
     if (isTRUE(fetched$failed)) {
+      failed_accessions <- c(failed_accessions, b)
       consecutive_batch_failures <- consecutive_batch_failures + 1L
       if (consecutive_batch_failures >= .PELSA_BREAKER_LIMIT) {
         stop(sprintf(
@@ -514,11 +522,23 @@ pelsa_fetch_uniprot <- function(accessions,
   # that returned with zero usable features is still resolved (so it does not
   # inflate the "failed annotation" QC count or retain stale cache rows). And a
   # demerged/secondary input accession returned under its primaryAccession is
-  # resolved via the entry's secondaryAccessions. We intersect the returned
-  # entry accessions with the input set so `unresolved` stays over the input
-  # universe.
-  resolved <- intersect(accessions, .pelsa_entry_accessions(entries))
+  # resolved via the entry's secondaryAccessions. An ISOFORM input ("P12345-2")
+  # is returned under its base primaryAccession ("P12345") and is NOT listed in
+  # secondaryAccessions, so we also match on the isoform base - otherwise every
+  # isoform input would be wrongly counted unresolved (inflating n_unresolved and
+  # firing a spurious "re-run when UniProt is reachable" refresh warning). We keep
+  # `unresolved` over the input universe.
+  entry_acc <- .pelsa_entry_accessions(entries)
+  resolved <- accessions[
+    accessions %in% entry_acc |
+      .pelsa_isoform_base(accessions) %in% entry_acc
+  ]
   unresolved <- setdiff(accessions, resolved)
+  # The TRANSIENT subset of unresolved (failed-batch accessions). The caller only
+  # prompts "re-run when UniProt is reachable" for these; genuinely-absent
+  # accessions (unresolved but never in a failed batch) get a neutral note.
+  transient_unresolved <- intersect(unresolved, failed_accessions)
 
-  list(features = features, unresolved = unresolved, canceled = canceled)
+  list(features = features, unresolved = unresolved,
+       transient_unresolved = transient_unresolved, canceled = canceled)
 }

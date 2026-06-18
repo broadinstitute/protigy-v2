@@ -135,6 +135,24 @@ test_that("multiple secondary accessions on one entry all resolve", {
   expect_length(res$unresolved, 0L)
 })
 
+test_that("an input isoform accession returned under its base is RESOLVED", {
+  # Regression: an isoform input "P12345-2" is returned by UniProt under its base
+  # primaryAccession "P12345" and is NOT listed in secondaryAccessions, so exact
+  # intersect would always mark it unresolved (inflating n_unresolved and firing a
+  # spurious "re-run when UniProt is reachable" warning on every healthy refresh).
+  # It must resolve via its isoform base.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # input was the isoform "P12345-2"; UniProt returns base "P12345".
+      list(entries = list(fake_entry("P12345")), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P12345-2"), batch_size = 2L)
+  expect_false("P12345-2" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+})
+
 test_that("a genuinely-absent accession is still reported unresolved", {
   # Control: an accession UniProt never returns stays unresolved.
   testthat::local_mocked_bindings(
@@ -147,6 +165,51 @@ test_that("a genuinely-absent accession is still reported unresolved", {
   res <- pelsa_fetch_uniprot(c("P1", "P_GHOST"), batch_size = 2L)
   expect_true("P_GHOST" %in% res$unresolved)
   expect_false("P1" %in% res$unresolved)
+})
+
+test_that("a genuinely-absent isoform accession is still reported unresolved", {
+  # Control for the isoform fallback: if neither the isoform NOR its base returns,
+  # it stays unresolved (the base-match must not resolve an absent isoform).
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(fake_entry("P1")), failed = FALSE)  # P99999 base absent
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P1", "P99999-3"), batch_size = 2L)
+  expect_true("P99999-3" %in% res$unresolved)
+})
+
+test_that("transient_unresolved separates failed-batch accs from genuinely-absent", {
+  # A batch that FAILED (5xx/network) leaves its accessions transiently unresolved
+  # (re-running helps). An accession in a SUCCEEDED batch that UniProt simply did
+  # not return is genuinely absent (re-running will not help). Only the former
+  # should drive the "re-run when reachable" refresh warning.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      if ("P_FAIL" %in% accs) {
+        list(entries = list(), failed = TRUE)            # transient failure
+      } else {
+        # succeeded batch: P_OK returned, P_GONE genuinely absent
+        list(entries = list(fake_entry("P_OK")), failed = FALSE)
+      }
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P_FAIL", "P_OK", "P_GONE"), batch_size = 1L)
+  expect_setequal(res$unresolved, c("P_FAIL", "P_GONE"))
+  expect_setequal(res$transient_unresolved, "P_FAIL")    # NOT P_GONE
+})
+
+test_that("transient_unresolved is empty on a fully successful fetch", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P1", "P2"), batch_size = 2L)
+  expect_length(res$transient_unresolved, 0L)
 })
 
 test_that("breaker trips after .PELSA_BREAKER_LIMIT consecutive failed batches", {

@@ -458,6 +458,38 @@ test_that("notifications: a fresh-cache species with unresolved does NOT warn", 
   expect_false("warning" %in% types)
 })
 
+test_that("notifications: genuinely-absent unresolved (no transient) does NOT prompt re-run", {
+  # Cache existed + unresolved > 0, but ALL unresolved are genuinely absent from
+  # UniProt (n_transient_unresolved == 0). Re-running cannot help, so we must NOT
+  # fire the amber "re-run when reachable" warning. A neutral info note is fine.
+  results <- list(
+    list(species = "9606", n_features = 100L, n_unresolved = 2L,
+         n_transient_unresolved = 0L, n_retained_from_cache = 2L,
+         had_existing = TRUE, error = NULL)
+  )
+  notes <- pelsa_refresh_notifications(results)
+  types <- vapply(notes, function(n) n$type, character(1))
+  expect_false("warning" %in% types)
+  # No note tells the user re-running will help.
+  msgs <- vapply(notes, function(n) n$message, character(1))
+  expect_false(any(grepl("[Rr]e-run when", msgs)))
+})
+
+test_that("notifications: transient unresolved DOES prompt a re-run warning", {
+  # Cache existed + some unresolved came from a FAILED batch (transient): the
+  # amber warning with the re-run instruction is correct here.
+  results <- list(
+    list(species = "9606", n_features = 100L, n_unresolved = 3L,
+         n_transient_unresolved = 3L, n_retained_from_cache = 3L,
+         had_existing = TRUE, error = NULL)
+  )
+  notes <- pelsa_refresh_notifications(results)
+  types <- vapply(notes, function(n) n$type, character(1))
+  expect_true("warning" %in% types)
+  warn <- notes[[which(types == "warning")]]
+  expect_match(warn$message, "[Rr]e-run when")
+})
+
 # ---- UI presence: refresh controls in the Setup tab --------------------------
 
 test_that("Setup UI exposes the refresh species checklist + button ids", {

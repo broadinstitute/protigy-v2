@@ -480,6 +480,10 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   }
   fresh      <- fetched$features
   unresolved <- fetched$unresolved %||% character(0)
+  # Transient (failed-batch) subset of unresolved: re-running can recover these,
+  # so only they justify the "re-run when UniProt is reachable" warning. Older
+  # injected stub fetchers may not return this field; default to character(0).
+  transient_unresolved <- fetched$transient_unresolved %||% character(0)
 
   # MERGE over the prior cache so unresolved accessions keep their old rows.
   merged <- pelsa_merge_feature_cache(existing, fresh, unresolved)
@@ -491,14 +495,16 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   .progress(1.0, sprintf("Done: %s", species), NULL)
 
   list(
-    features              = merged,
-    unresolved            = unresolved,
-    path                  = path,
-    n_features            = nrow(merged),
-    n_unresolved          = length(unresolved),
-    n_accessions          = length(universe),
-    n_retained_from_cache = n_retained,
-    canceled              = FALSE
+    features               = merged,
+    unresolved             = unresolved,
+    transient_unresolved   = transient_unresolved,
+    path                   = path,
+    n_features             = nrow(merged),
+    n_unresolved           = length(unresolved),
+    n_transient_unresolved = length(transient_unresolved),
+    n_accessions           = length(universe),
+    n_retained_from_cache  = n_retained,
+    canceled               = FALSE
   )
 }
 
@@ -606,7 +612,9 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
         should_cancel = should_cancel
       )
       list(species = sp, n_features = res$n_features,
-           n_unresolved = res$n_unresolved, n_accessions = res$n_accessions,
+           n_unresolved = res$n_unresolved,
+           n_transient_unresolved = res$n_transient_unresolved,
+           n_accessions = res$n_accessions,
            n_retained_from_cache = res$n_retained_from_cache,
            had_existing = had_existing, path = res$path,
            canceled = isTRUE(res$canceled), error = NULL)
@@ -624,9 +632,12 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
 # Pure (no Shiny) so it unit-tests without a session: returns a list of
 # list(message=, type=, duration=). The observer just emits each.
 #   - any error -> an "error" notification (sticky).
-#   - a species that HAD a cache and finished with unresolved accessions -> a
-#     "warning" (a partial/lossy-adjacent refresh must not be accepted
-#     silently), reporting how many prior rows were retained.
+#   - a species that HAD a cache and finished with TRANSIENT unresolved
+#     accessions (failed UniProt batches) -> a "warning" prompting a re-run,
+#     reporting how many prior rows were retained.
+#   - a species that HAD a cache and finished with only GENUINELY-ABSENT
+#     unresolved accessions (obsolete/withdrawn; re-running cannot help) ->
+#     a neutral "message" note, NOT a warning.
 #   - a single rolled-up "message" summary of all successes (features /
 #     unresolved / retained counts).
 #
@@ -657,12 +668,35 @@ pelsa_refresh_notifications <- function(results) {
   }
   done <- Filter(function(r) !isTRUE(r$canceled), ok)
   for (r in done) {
-    if (isTRUE(r$had_existing) && isTRUE(r$n_unresolved > 0L)) {
+    if (!isTRUE(r$had_existing) || !isTRUE(r$n_unresolved > 0L)) next
+
+    # Split unresolved into TRANSIENT (failed-batch; re-running recovers them) vs
+    # genuinely-absent (UniProt never returns them: obsolete/404-equivalent). Only
+    # the transient case justifies the amber "re-run when reachable" warning. A
+    # result lacking n_transient_unresolved (e.g. an older injected stub fetcher)
+    # is treated as unknown -> fall back to the conservative warning.
+    n_transient <- r$n_transient_unresolved
+    if (is.null(n_transient)) {
       add(sprintf(paste0("%s refreshed with %d unresolved accession(s); %d ",
                          "previously-cached row(s) retained. Re-run when ",
                          "UniProt is reachable for full coverage."),
                   r$species, r$n_unresolved, r$n_retained_from_cache),
           "warning", NULL)
+    } else if (n_transient > 0L) {
+      add(sprintf(paste0("%s refreshed with %d unresolved accession(s) (%d from ",
+                         "a transient UniProt failure); %d previously-cached ",
+                         "row(s) retained. Re-run when UniProt is reachable for ",
+                         "full coverage."),
+                  r$species, r$n_unresolved, n_transient,
+                  r$n_retained_from_cache),
+          "warning", NULL)
+    } else {
+      # All unresolved are genuinely absent from UniProt -- re-running will not
+      # help. Neutral, non-amber note; no re-run prompt.
+      add(sprintf(paste0("%s: %d accession(s) are not in UniProt (obsolete or ",
+                         "withdrawn); %d previously-cached row(s) retained."),
+                  r$species, r$n_unresolved, r$n_retained_from_cache),
+          "message", 10)
     }
   }
   if (length(done) > 0L) {

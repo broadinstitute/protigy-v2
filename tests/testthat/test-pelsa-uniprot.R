@@ -284,9 +284,11 @@ test_that("pelsa_fetch_uniprot validates accessions input", {
 
 test_that("pelsa_fetch_uniprot returns empty result for empty input (no network)", {
   res <- pelsa_fetch_uniprot(character(0))
-  expect_named(res, c("features", "unresolved", "canceled"))
+  expect_named(res, c("features", "unresolved", "transient_unresolved",
+                      "canceled"))
   expect_equal(nrow(res$features), 0L)
   expect_equal(length(res$unresolved), 0L)
+  expect_equal(length(res$transient_unresolved), 0L)
   expect_false(res$canceled)
 })
 
