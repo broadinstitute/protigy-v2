@@ -179,6 +179,35 @@ pelsa_read_compound_markers <- function(path) {
   keys[[hit[[1]]]]
 }
 
+# Validate a user-typed compound name. Returns a structured result so the server
+# can map failures to a notification without embedding rules in the observer.
+#
+# Rules, in order: trim; reject empty/whitespace-only; reject internal
+# whitespace; reject non-ASCII (only printable ASCII, no spaces, is allowed).
+# Duplicate detection is NOT done here (it needs the live preset list and lives
+# in the server, via pelsa_compound_exists()).
+#
+# @param name a length<=1 character (or NULL/NA) typed name.
+# @return list(ok = TRUE, name = <trimmed>) | list(ok = FALSE, message = <chr>).
+# @noRd
+pelsa_validate_compound_name <- function(name) {
+  if (is.null(name) || length(name) != 1L || is.na(name)) {
+    return(list(ok = FALSE, message = "Enter a compound name."))
+  }
+  name <- trimws(as.character(name))
+  if (!nzchar(name)) {
+    return(list(ok = FALSE, message = "Enter a compound name."))
+  }
+  if (grepl("[[:space:]]", name)) {
+    return(list(ok = FALSE, message = "Compound name cannot contain spaces."))
+  }
+  # Allowed: printable ASCII excluding space (0x21-0x7E).
+  if (!grepl("^[!-~]+$", name)) {
+    return(list(ok = FALSE, message = "Compound name must be ASCII only."))
+  }
+  list(ok = TRUE, name = name)
+}
+
 # Build the marker rows (accession, gene) for one compound's presets.
 #
 # Aliases are honored: `compound_name` may be the primary name OR any alias.

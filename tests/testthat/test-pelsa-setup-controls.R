@@ -164,6 +164,35 @@ test_that(".pelsa_resolve_compound_name returns NA for empty compound set", {
   expect_true(is.na(.pelsa_resolve_compound_name(list(compounds = list()), "X")))
 })
 
+# ---- pelsa_validate_compound_name --------------------------------------------
+
+test_that("pelsa_validate_compound_name trims and accepts a valid name", {
+  res <- pelsa_validate_compound_name("  AY-9944  ")
+  expect_true(res$ok)
+  expect_identical(res$name, "AY-9944")
+})
+
+test_that("pelsa_validate_compound_name rejects empty / whitespace-only", {
+  for (x in list("", "   ", NA_character_, NULL)) {
+    res <- pelsa_validate_compound_name(x)
+    expect_false(res$ok)
+    expect_match(res$message, "Enter a compound name")
+  }
+})
+
+test_that("pelsa_validate_compound_name rejects internal whitespace", {
+  res <- pelsa_validate_compound_name("U 18666A")
+  expect_false(res$ok)
+  expect_match(res$message, "cannot contain spaces")
+})
+
+test_that("pelsa_validate_compound_name rejects non-ASCII", {
+  # Build a non-ASCII name via a code-point escape so this source stays ASCII.
+  res <- pelsa_validate_compound_name(paste0("Rapamycin", "\u00b5"))
+  expect_false(res$ok)
+  expect_match(res$message, "ASCII only")
+})
+
 test_that("pelsa_compound_marker_rows returns empty frame for unknown compound", {
   cm <- list(compounds = list())
   rows <- pelsa_compound_marker_rows(cm, "Nonexistent")
