@@ -169,6 +169,12 @@ pelsa_explode_accessions <- function(df,
   n_acc_raw <- lengths(acc_split)
   flat_acc <- trimws(unlist(acc_split, use.names = FALSE))
   if (is.null(flat_acc)) flat_acc <- character(0)
+  # Strip a single leading FASTA header '>' that some Spectronaut exports carry
+  # verbatim into PG.ProteinAccessions (per ;-token: ">WP_001.1;>WP_002.1").
+  # FASTA keys never include the '>', so a '>'-prefixed token would fail every
+  # downstream lookup (accession_absent). Trim first (above), then strip, so a
+  # "> WP_001.1" with stray space is also handled. A bare accession is untouched.
+  flat_acc <- sub("^>", "", flat_acc)
   # Map each flattened token back to its original row. Per-row RAW (pre-prune)
   # accession counts drive the gene/position alignment so each accession slot --
   # including empty ones -- gets its own gene/position token aligned by index.

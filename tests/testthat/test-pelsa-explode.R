@@ -411,6 +411,40 @@ test_that("a genuinely single token (no separator) still recycles to all accessi
   expect_true(all(exploded$pep_position_token == "42"))
 })
 
+test_that("a leading '>' (Spectronaut self-curated FASTA artifact) is stripped from each accession", {
+  # Some Spectronaut exports searched against a self-curated FASTA carry the
+  # header '>' verbatim into PG.ProteinAccessions, on EVERY ;-token
+  # (">WP_001.1;>WP_002.1"). FASTA keys never have the '>', so the raw token
+  # would fail to map (accession_absent). The explode boundary must clean it.
+  df <- data.frame(
+    PG.ProteinAccessions = c(">WP_004291454.1", ">WP_001.1;>WP_002.1"),
+    PG.Genes = c("NaN", "NaN"),
+    PEP.PeptidePosition = c("1", "1;1"),
+    PEP.StrippedSequence = c("MELLTRNNFEGWMQK", "PEPK"),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_setequal(
+    exploded$accession,
+    c("WP_004291454.1", "WP_001.1", "WP_002.1")
+  )
+  expect_false(any(startsWith(exploded$accession, ">")))
+})
+
+test_that("a bare accession (no '>') is unchanged by the strip", {
+  df <- data.frame(
+    PG.ProteinAccessions = c("P12345", "Q9UBM7;P00533"),
+    PG.Genes = c("G1", "G2;G3"),
+    PEP.PeptidePosition = c("1", "1;1"),
+    PEP.StrippedSequence = c("PEPK", "OTHERK"),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- pelsa_explode_accessions(df)
+  expect_setequal(exploded$accession, c("P12345", "Q9UBM7", "P00533"))
+})
+
 test_that("explicit id_col is used as the stable identifier instead of .row_id", {
   df <- data.frame(
     pep_id = c("p1", "p2"),
