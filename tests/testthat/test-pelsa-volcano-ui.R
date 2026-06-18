@@ -1083,8 +1083,9 @@ test_that("M5: changing markers clears the best-peptide cache so the best panel 
 # any of these call sites back to a literal 0.05 fails this test.
 # ---------------------------------------------------------------------------
 test_that("pinned panels + exports thread sig_cutoff_r(), never a hardcoded 0.05", {
-  src <- readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3.R"),
-                   warn = FALSE)
+  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_section3.R")
+  skip_if_not(file.exists(src_path), "tab_pelsa_section3.R source not found")
+  src <- readLines(src_path, warn = FALSE)
 
   # No literal `sig_cutoff = 0.05` anywhere in the module (the bug pattern).
   expect_false(any(grepl("sig_cutoff\\s*=\\s*0\\.05", src)),
@@ -1172,10 +1173,12 @@ test_that(".pelsa_woods_click_index returns NULL (not integer(0)) when all candi
 # figure REBUILD. (The pelsa_volcano_recolor helper is kept for unit tests only.)
 # ---------------------------------------------------------------------------
 test_that("section3 highlight comments describe the gold overlay, not proxy-restyle/rebuild", {
-  s3  <- paste(readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3.R"),
-                         warn = FALSE), collapse = "\n")
-  s3h <- paste(readLines(testthat::test_path("..", "..", "R", "tab_pelsa_section3_helpers.R"),
-                         warn = FALSE), collapse = "\n")
+  s3_path  <- testthat::test_path("..", "..", "R", "tab_pelsa_section3.R")
+  s3h_path <- testthat::test_path("..", "..", "R", "tab_pelsa_section3_helpers.R")
+  skip_if_not(file.exists(s3_path) && file.exists(s3h_path),
+              "tab_pelsa_section3 source not found")
+  s3  <- paste(readLines(s3_path, warn = FALSE), collapse = "\n")
+  s3h <- paste(readLines(s3h_path, warn = FALSE), collapse = "\n")
   # The stale narratives are gone.
   expect_false(grepl("ONE interactive highlight mechanism: the", s3h, fixed = TRUE))
   expect_false(grepl("REBUILDING the figure with the gold", s3, fixed = TRUE))
