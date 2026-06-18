@@ -208,6 +208,32 @@ test_that("pelsa_compound_marker_rows: missing gene -> NA", {
   expect_true(is.na(rows$gene))
 })
 
+# ---- pelsa_compound_exists ---------------------------------------------------
+
+test_that("pelsa_compound_exists matches case-insensitively, key only", {
+  cm <- list(compounds = list(Rapamycin = list(markers = list())))
+  expect_true(pelsa_compound_exists(cm, "Rapamycin"))
+  expect_true(pelsa_compound_exists(cm, "rapamycin"))
+  expect_false(pelsa_compound_exists(cm, "AY9944"))
+  expect_false(pelsa_compound_exists(list(compounds = list()), "X"))
+})
+
+# ---- pelsa_add_compound ------------------------------------------------------
+
+test_that("pelsa_add_compound adds a compound with empty markers", {
+  cm  <- list(compounds = list())
+  out <- pelsa_add_compound(cm, "NewCmpd")
+  expect_true("NewCmpd" %in% names(out$compounds))
+  expect_identical(out$compounds$NewCmpd$markers, list())
+  # immutability: original untouched
+  expect_length(cm$compounds, 0L)
+})
+
+test_that("pelsa_add_compound errors when the compound already exists", {
+  cm <- list(compounds = list(Rapamycin = list(markers = list())))
+  expect_error(pelsa_add_compound(cm, "rapamycin"), "already exists")
+})
+
 # ---- pelsa_marker_rows_from_input --------------------------------------------
 
 test_that("pelsa_marker_rows_from_input: gene NA when resolver is NULL", {

@@ -208,6 +208,29 @@ pelsa_validate_compound_name <- function(name) {
   list(ok = TRUE, name = name)
 }
 
+# Does a compound named `name` already exist (case-insensitive, primary key)?
+# @noRd
+pelsa_compound_exists <- function(compound_markers, name) {
+  !is.na(.pelsa_resolve_compound_name(compound_markers, name))
+}
+
+# Add a new compound carrying an empty markers list. Immutable: returns a new
+# parsed list. Errors if the compound already exists (the caller is expected to
+# check pelsa_compound_exists() first for a friendly message).
+# @noRd
+pelsa_add_compound <- function(compound_markers, name) {
+  if (pelsa_compound_exists(compound_markers, name)) {
+    stop(sprintf("pelsa_add_compound(): compound '%s' already exists.", name),
+         call. = FALSE)
+  }
+  compounds <- compound_markers$compounds
+  if (is.null(compounds)) compounds <- list()
+  compounds[[name]] <- list(markers = list())
+  out <- compound_markers
+  out$compounds <- compounds
+  out
+}
+
 # Build the marker rows (accession, gene) for one compound's presets.
 #
 # Aliases are honored: `compound_name` may be the primary name OR any alias.
