@@ -666,6 +666,38 @@ test_that("CV experiment-wide mode discloses the pooled CV count in subtitle", {
   expect_match(p$labels$subtitle, "pooled \\(n = 6 CVs\\)")
 })
 
+test_that("CV experiment-wide density clamps x-axis to ~99th pct of ok CVs", {
+  # Mostly 1-20 with a handful of extreme outliers (5000) in the far (<1%) tail.
+  # The pooled density must clamp to the 99th percentile (mirroring the
+  # per-condition KDE), NOT the full range that includes the 5000 outliers.
+  ok_vals <- c(runif(297, 1, 20), 5000, 5000, 5000)
+  cv <- data.frame(
+    row_id    = seq_along(ok_vals),
+    condition = "A",
+    cv_pct    = ok_vals,
+    cv_status = "ok",
+    stringsAsFactors = FALSE
+  )
+  expected_hi <- stats::quantile(ok_vals, 0.99, na.rm = TRUE, names = FALSE)
+
+  p  <- pelsa_cv_overall_plot(cv)
+  pb <- ggplot2::ggplot_build(p)
+  x_range <- pb$layout$panel_params[[1]]$x.range
+  x_hi <- x_range[2]
+
+  # Clamped near the 99th pct (well below the 5000 outlier). coord_cartesian
+  # expands the range slightly, so allow generous slack but still far under 5000.
+  expect_lt(x_hi, 500)
+  expect_lt(abs(x_hi - expected_hi), 0.2 * expected_hi + 5)
+
+  # The coverage/length path (no x_hi arg) must be UNCHANGED: its x-range still
+  # spans the full data (no clamp). Feed it the same outlier-laden values.
+  p2  <- pelsa_overall_density_plot(ok_vals, x_label = "x", title = "t")
+  pb2 <- ggplot2::ggplot_build(p2)
+  x_range2 <- pb2$layout$panel_params[[1]]$x.range
+  expect_gt(x_range2[2], 1000)
+})
+
 test_that("per-condition median labels disclose n", {
   # Condition A has many values, B only a few -> each label surfaces its n.
   df <- data.frame(

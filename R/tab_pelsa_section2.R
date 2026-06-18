@@ -474,10 +474,19 @@ pelsa_blank_plot <- function(message) {
 # @param value_fmt function(value) -> string used in the "mean = .." / "median =
 #                  .." labels (e.g. coverage formats as a percentage).
 # @noRd
+#
+# @param x_hi      optional numeric upper x-limit. When non-NULL and finite,
+#                  the density is clamped to [0, x_hi] via coord_cartesian so a
+#                  long right tail of outliers doesn't blow out the scale (and
+#                  keeps this experiment-wide mode aligned with the per-condition
+#                  KDE, which clamps at the 99th percentile). NULL (the default)
+#                  preserves the un-clamped full-range behavior the coverage and
+#                  peptide-length callers rely on.
 pelsa_overall_density_plot <- function(vals, x_label, title,
                                        value_fmt = function(v) sprintf("%.1f", v),
                                        fill = "#59a14f", subtitle = NULL,
-                                       blank_msg = "Not enough values for a density.") {
+                                       blank_msg = "Not enough values for a density.",
+                                       x_hi = NULL) {
   vals <- vals[is.finite(vals)]
   if (length(vals) < 2L) return(pelsa_blank_plot(blank_msg))
   m  <- mean(vals)
@@ -488,7 +497,7 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   ys <- pelsa_dodge_offsets(2L, y_top = y_top * 0.95, y_range = y_top)
   df <- data.frame(x = vals)
 
-  ggplot(df, aes(x = .data$x)) +
+  p <- ggplot(df, aes(x = .data$x)) +
     geom_density(fill = fill, alpha = 0.4, color = fill) +
     geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
     geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
@@ -499,6 +508,10 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
              color = "#4e79a7", hjust = -0.05, size = 3.2) +
     labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
     theme_bw()
+  if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) {
+    p <- p + coord_cartesian(xlim = c(0, x_hi))
+  }
+  p
 }
 
 # Per-condition DENSITY: one curve per ELIGIBLE condition (>= min_n finite
@@ -642,10 +655,16 @@ pelsa_cv_overall_plot <- function(cv) {
   vals <- pelsa_cv_ok_values(cv)
   subtitle <- if (length(vals) > 0L)
     sprintf("all conditions pooled (n = %d CVs)", length(vals)) else NULL
+  # Clamp the pooled density to the 99th percentile of the same ok CVs, mirroring
+  # the per-condition KDE (pelsa_cv_kde_plot) so the two toggle modes share a
+  # scale. NULL when there are no values, leaving the blank-plot path untouched.
+  x_hi <- if (length(vals) > 0L)
+    stats::quantile(vals, 0.99, na.rm = TRUE, names = FALSE) else NULL
   pelsa_overall_density_plot(
     vals, x_label = "CV (%)", title = "CV distribution", fill = "#af7aa1",
     value_fmt = function(v) sprintf("%.1f%%", v), subtitle = subtitle,
-    blank_msg = "No CV data - a raw GCT + condition column are required.")
+    blank_msg = "No CV data - a raw GCT + condition column are required.",
+    x_hi = x_hi)
 }
 
 # 6A: missed-cleavage bar (0,1,2,...). @noRd
