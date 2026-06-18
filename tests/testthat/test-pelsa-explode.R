@@ -81,6 +81,33 @@ test_that("empty gene token becomes NA", {
   expect_true(all(is.na(nogene_rows$gene)))
 })
 
+test_that("an NA gene/position field does not error (regression)", {
+  # Regression: readr::read_tsv() reads a missing PG.Genes cell as NA (not ""),
+  # and .pelsa_count_slots()'s gregexpr(";", NA) returns NA (not -1), which made
+  # the slot-count if() throw "missing value where TRUE/FALSE needed". A real
+  # mouse PELSA peptide report (277 NA genes) hit this. The NA field must be
+  # treated as a single empty slot -> NA token, exactly like a blank string.
+  df <- data.frame(
+    PG.ProteinAccessions = c("A;B", "C"),
+    PG.Genes = c(NA_character_, "GC"),
+    PEP.PeptidePosition = c("10;20", NA_character_),
+    PEP.StrippedSequence = c("PEPK", "FOOK"),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  exploded <- expect_no_error(pelsa_explode_accessions(df))
+  expect_equal(nrow(exploded), 3L)
+  # Row 1's NA gene field -> NA for both of its accessions (single empty slot,
+  # NOT recycled to a real value); positions still align 1:1.
+  ab <- exploded[exploded$accession %in% c("A", "B"), , drop = FALSE]
+  expect_true(all(is.na(ab$gene)))
+  expect_setequal(ab$pep_position_token, c("10", "20"))
+  # Row 2's NA position field -> NA; its gene is present.
+  c_row <- exploded[exploded$accession == "C", , drop = FALSE]
+  expect_equal(c_row$gene, "GC")
+  expect_true(is.na(c_row$pep_position_token))
+})
+
 test_that("pep_position_token aligns 1:1 to accessions for a multi-accession row", {
   syn <- pelsa_make_synthetic(seed = 1)
   df <- syn$peptides

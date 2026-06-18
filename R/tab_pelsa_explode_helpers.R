@@ -28,10 +28,13 @@
 .pelsa_count_slots <- function(x, n_row) {
   x <- as.character(x)
   if (length(x) != n_row) x <- rep(x, length.out = n_row)
-  # number of ";" in each string; +1 = slot count. NA -> 1 slot.
+  # number of ";" in each string; +1 = slot count. A separator-free string is
+  # 1 slot. An NA field is also 1 slot: gregexpr(";", NA) returns NA (NOT the -1
+  # "no match" sentinel), so an `m[1] == -1L` test yields NA and breaks the
+  # if() -- treat that NA the same as "no separators" (0).
   n_sep <- vapply(
     gregexpr(";", x, fixed = TRUE),
-    function(m) if (length(m) == 1L && m[1] == -1L) 0L else length(m),
+    function(m) if (length(m) == 1L && (is.na(m[1]) || m[1] == -1L)) 0L else length(m),
     integer(1)
   )
   n_sep + 1L
