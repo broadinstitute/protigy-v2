@@ -819,12 +819,27 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
     ),
 
     # 3. Treatment compound (presets from compound_markers.yaml).
-    #    Selecting a compound autofills THIS dataset's marker table.
+    #    Selecting a compound REPLACES THIS dataset's marker table with its
+    #    presets ("(none)" clears the table).
     shiny::selectInput(
       ns("pelsa_compound"),
       label   = "Treatment compound",
       choices = c("(none)" = "", compounds),
       selected = selected_compound
+    ),
+
+    # 3b. Add a new compound (empty preset) to compound_markers.yaml.
+    shiny::tags$div(
+      class = "pelsa-add-compound",
+      shiny::textInput(
+        ns("pelsa_new_compound"),
+        label       = "Add a new compound",
+        placeholder = "e.g. AY-9944 (no spaces, ASCII only)"
+      ),
+      shiny::actionButton(
+        ns("pelsa_add_compound_btn"), "Add compound",
+        icon = shiny::icon("plus")
+      )
     ),
 
     shiny::tags$hr(),
@@ -847,7 +862,12 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
     shiny::div(
       style = "margin-top: 8px;",
       shiny::actionButton(ns("pelsa_remove_markers"), "Remove selected"),
-      shiny::actionButton(ns("pelsa_clear_markers"), "Clear all")
+      shiny::actionButton(ns("pelsa_clear_markers"), "Clear all"),
+      shiny::actionButton(
+        ns("pelsa_set_default_markers_btn"),
+        "Set as default marker list for this compound",
+        icon = shiny::icon("floppy-disk")
+      )
     )
   )
 

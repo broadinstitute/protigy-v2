@@ -774,3 +774,15 @@ test_that("pelsa_setup_box_ui honors seeded species/compound/skip", {
   # Skip toggle checked
   expect_true(grepl("pelsa_skip[^>]*checked", html))
 })
+
+test_that("pelsa_setup_box_ui exposes add-compound + set-default controls", {
+  ns <- shiny::NS("x")
+  html <- as.character(pelsa_setup_box_ui(
+    species   = c("human", "mouse"),
+    compounds = c("CompoundA" = "CompoundA"),
+    ns        = ns
+  ))
+  expect_true(grepl("x-pelsa_new_compound", html))
+  expect_true(grepl("x-pelsa_add_compound_btn", html))
+  expect_true(grepl("x-pelsa_set_default_markers_btn", html))
+})
