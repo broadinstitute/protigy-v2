@@ -108,15 +108,23 @@ pelsa_validation_msg_ui <- function(validation) {
 # (they are themselves plain lists), so the snapshot shares no reference with the
 # live reactiveValues.
 #
+# PER-DATASET FIELDS (all NAMED LISTS keyed by ome): species, compound,
+# marker_rows, skip, condition_col, replicate_col, condition_order,
+# replicate_order, sample_order. `datasets` is the NON-SKIPPED ome set (the Setup
+# observer sets setup_state$datasets to the analyzed subset before snapshotting).
+# Every per-ome field defaults to an empty list() so a fresh / partially-
+# configured setup is safe to index with [[ome]].
+#
 # @param setup_state the live reactiveValues from PELSASection1_Tab_Server.
 # @return a plain named list with the same field names.
 # @noRd
 pelsa_setup_snapshot <- function(setup_state) {
   list(
     datasets        = setup_state$datasets        %||% character(0),
-    species         = setup_state$species,
-    compound        = setup_state$compound,
-    marker_rows     = setup_state$marker_rows,
+    species         = setup_state$species         %||% list(),
+    compound        = setup_state$compound        %||% list(),
+    marker_rows     = setup_state$marker_rows     %||% list(),
+    skip            = setup_state$skip            %||% list(),
     condition_col   = setup_state$condition_col   %||% list(),
     replicate_col   = setup_state$replicate_col   %||% list(),
     condition_order = setup_state$condition_order %||% list(),
@@ -157,15 +165,23 @@ pelsa_species_fasta_path <- function(database_dir, species) {
 
 # Pre-flight checklist for Start-Analysis (PURE, closed-form testable).
 #
+# `setup_snapshot$datasets` is the NON-SKIPPED (analyzed) ome set; the Setup
+# observer derives it from the per-ome skip flags before snapshotting. ONLY these
+# datasets are validated - a skipped dataset's (possibly incomplete) config is
+# never checked.
+#
 # Checks, accumulating ALL failures (so the user sees every missing piece at
 # once, not one-at-a-time):
-#   1. >= 1 dataset checked.
-#   2. Each checked dataset has a condition column chosen AND that column exists
-#      in that dataset's cdesc.
-#   3. Each checked dataset has a confirmed (non-empty) condition order.
-#   4. A species is selected AND its FASTA exists under
-#      inst/database/<species>/fasta/ - else the planning-doc message
-#      "No FASTA for <species>...".
+#   1. >= 1 non-skipped dataset (else "all skipped").
+#   2. Each non-skipped dataset has a species, condition column, and replicate
+#      column chosen. A value of "(none)" (the blank default) / "" / NA counts
+#      as NOT chosen.
+#   3. The chosen condition column exists in that dataset's cdesc.
+#   4. Each non-skipped dataset has a confirmed (non-empty) condition order.
+#   5. Each non-skipped dataset's species has a FASTA under
+#      inst/database/<species>/fasta/ - else "No FASTA for <species>...".
+#
+# species/condition_col/replicate_col are PER-OME named lists keyed by ome.
 #
 # An EMPTY marker table is VALID (markers are a volcano OVERLAY, not a
 # prerequisite) - no marker check here.
@@ -183,23 +199,25 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
   datasets <- as.character(datasets)
   datasets <- datasets[!is.na(datasets) & nzchar(datasets)]
 
-  # 1. >= 1 dataset checked.
+  # 1. >= 1 non-skipped dataset.
   if (length(datasets) == 0L) {
-    errors <- c(errors, "Select at least one dataset to analyze.")
+    errors <- c(errors,
+                "Enable PELSA analysis for at least one dataset (all are skipped).")
   }
 
+  species         <- setup_snapshot$species         %||% list()
   condition_col   <- setup_snapshot$condition_col   %||% list()
+  replicate_col   <- setup_snapshot$replicate_col   %||% list()
   condition_order <- setup_snapshot$condition_order %||% list()
 
-  # 2 + 3. Per-dataset condition column + order.
   for (ds in datasets) {
+    # 2. Condition column (chosen + not the "(none)" default).
     col <- condition_col[[ds]]
-    has_col <- !is.null(col) && length(col) == 1L && !is.na(col) && nzchar(col)
-    if (!has_col) {
+    if (.pelsa_is_unset(col)) {
       errors <- c(errors, sprintf(
         "Dataset '%s': choose a condition grouping column.", ds))
     } else {
-      # Column must exist in that dataset's cdesc (when the GCT is available).
+      # 3. Column must exist in that dataset's cdesc (when the GCT is available).
       gct <- if (is.list(gcts)) gcts[[ds]] else NULL
       cdesc <- .pelsa_gct_cdesc(gct)
       if (!is.null(cdesc) && !(col %in% names(cdesc))) {
@@ -209,6 +227,13 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
       }
     }
 
+    # 2. Replicate column (chosen + not the "(none)" default).
+    if (.pelsa_is_unset(replicate_col[[ds]])) {
+      errors <- c(errors, sprintf(
+        "Dataset '%s': choose a replicate identifier column.", ds))
+    }
+
+    # 4. Confirmed condition order.
     order <- condition_order[[ds]]
     has_order <- !is.null(order) && length(order) >= 1L &&
       any(!is.na(order) & nzchar(as.character(order)))
@@ -216,25 +241,31 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
       errors <- c(errors, sprintf(
         "Dataset '%s': confirm the condition order.", ds))
     }
-  }
 
-  # 4. Species + FASTA.
-  species <- setup_snapshot$species
-  has_species <- !is.null(species) && length(species) == 1L &&
-    !is.na(species) && nzchar(species)
-  if (!has_species) {
-    errors <- c(errors, "Select a species.")
-  } else {
-    fasta <- pelsa_species_fasta_path(database_dir, species)
-    if (is.na(fasta)) {
-      errors <- c(errors, sprintf(
-        paste0("No FASTA for %s. Add a .fasta file under ",
-               "inst/database/%s/fasta/ before running the analysis."),
-        species, species))
+    # 2 + 5. Per-ome species + its FASTA.
+    sp <- species[[ds]]
+    if (.pelsa_is_unset(sp)) {
+      errors <- c(errors, sprintf("Dataset '%s': select a species.", ds))
+    } else {
+      fasta <- pelsa_species_fasta_path(database_dir, sp)
+      if (is.na(fasta)) {
+        errors <- c(errors, sprintf(
+          paste0("No FASTA for %s (dataset '%s'). Add a .fasta file under ",
+                 "inst/database/%s/fasta/ before running the analysis."),
+          sp, ds, sp))
+      }
     }
   }
 
   list(ok = length(errors) == 0L, errors = errors)
+}
+
+# TRUE when a per-ome scalar setting is "not chosen": NULL, non-scalar, NA,
+# empty, or the blank "(none)" default the species/condition/replicate selectors
+# start at. @noRd
+.pelsa_is_unset <- function(v) {
+  is.null(v) || length(v) != 1L || is.na(v) || !nzchar(v) ||
+    identical(as.character(v), "(none)")
 }
 
 # cdesc of a cmapR GCT (or NULL when not a GCT / unavailable). @noRd
@@ -929,9 +960,10 @@ pelsa_run_analysis_one <- function(gct,
 }
 
 # Run the full compute pipeline for ALL checked datasets (the public entry the
-# observer calls under withProgress). PURE-ish: NO Shiny, NO network. The caller
-# reads the FASTA + feature cache off-disk ONCE and passes them in (the FASTA is
-# shared across datasets of the same species; the caller caches it).
+# observer calls under withProgress). PURE-ish: NO Shiny, NO network. Each
+# dataset can be a DIFFERENT species; its FASTA + feature cache are resolved by
+# its own species[[ds]] (see resolve_fasta/resolve_feat), MEMOIZED per species so
+# same-species datasets read once.
 #
 # @param gcts           named list of PROCESSED GCTs (or frames), keyed by ds.
 # @param gcts_original  named list of GCTs (or frames) Protigy stored as
@@ -941,9 +973,21 @@ pelsa_run_analysis_one <- function(gct,
 #                       (pelsa_delinearize) before sum-normalize + CV. May be
 #                       NULL / missing a ds (CV skipped).
 # @param setup_snapshot pelsa_setup_snapshot() list (datasets + per-ds
-#                       condition_col).
-# @param fasta_map      named list accession -> sequence (read once).
-# @param feat_df        species feature cache data.frame (read once, used as-is).
+#                       condition_col + per-ds species).
+# @param fasta_map      LEGACY single-species fallback: a named list accession ->
+#                       sequence used for EVERY dataset when resolve_fasta is NULL
+#                       (a single-species run / the existing tests). Ignored when
+#                       resolve_fasta is supplied.
+# @param feat_df        LEGACY single-species fallback feature cache data.frame,
+#                       used when resolve_feat is NULL. Ignored when resolve_feat
+#                       is supplied.
+# @param resolve_fasta  NULL or function(species) -> fasta map for that species.
+#                       When given, the FASTA is resolved PER DATASET by
+#                       species[[ds]] (memoized per species). The observer wraps
+#                       its off-disk read; tests inject a map lookup.
+# @param resolve_feat   NULL or function(species) -> feature-cache data.frame for
+#                       that species (same per-species memoization as
+#                       resolve_fasta).
 # @param min_nonNA      min non-NA replicates for a finite CV.
 # @param log_base_by_ds named list/character keyed by ds giving each dataset's
 #                       declared log transformation ("None"/NA/"log2"/"log10").
@@ -965,8 +1009,10 @@ pelsa_run_analysis_one <- function(gct,
 pelsa_run_analysis <- function(gcts,
                                gcts_original,
                                setup_snapshot,
-                               fasta_map,
-                               feat_df,
+                               fasta_map = NULL,
+                               feat_df = NULL,
+                               resolve_fasta = NULL,
+                               resolve_feat = NULL,
                                min_nonNA = 3L,
                                log_base_by_ds = NULL,
                                set_progress = NULL) {
@@ -982,6 +1028,23 @@ pelsa_run_analysis <- function(gcts,
 
   if (length(datasets) == 0L) {
     stop("pelsa_run_analysis: no checked datasets to analyze.", call. = FALSE)
+  }
+
+  # PER-DATASET species resolution. Each dataset can be a DIFFERENT species, so
+  # its FASTA + feature cache are resolved by its own species[[ds]] via the
+  # caller's resolve_fasta(species)/resolve_feat(species) closures (the observer
+  # reads off-disk; tests inject maps). Results are MEMOIZED per species so
+  # same-species datasets read once. When no resolvers are given, fall back to a
+  # single shared fasta_map/feat_df (the legacy single-species path the existing
+  # tests + a single-species run use).
+  species_by_ds <- setup_snapshot$species %||% list()
+  fasta_cache <- new.env(parent = emptyenv())
+  feat_cache  <- new.env(parent = emptyenv())
+  resolve_one <- function(cache, resolver, shared, species) {
+    if (is.null(resolver)) return(shared)
+    key <- if (.pelsa_is_unset(species)) "__none__" else as.character(species)
+    if (is.null(cache[[key]])) cache[[key]] <- list(value = resolver(species))
+    cache[[key]]$value
   }
 
   condition_cols <- setup_snapshot$condition_col %||% list()
@@ -1018,12 +1081,21 @@ pelsa_run_analysis <- function(gcts,
     ds_log_base <- if (is.null(log_base_by_ds)) NA_character_
                    else log_base_by_ds[[ds]] %||% NA_character_
 
+    # Per-ome species when `species` is a named list (the per-dataset contract);
+    # a scalar `species` (the legacy single-species snapshot the older tests use)
+    # applies to every dataset. NULL when neither supplies one.
+    ds_species  <- if (is.list(species_by_ds)) species_by_ds[[ds]]
+                   else if (length(species_by_ds) == 1L) species_by_ds
+                   else NULL
+    ds_fasta    <- resolve_one(fasta_cache, resolve_fasta, fasta_map, ds_species)
+    ds_feat     <- resolve_one(feat_cache,  resolve_feat,  feat_df,   ds_species)
+
     out[[ds]] <- tryCatch(
       pelsa_run_analysis_one(
         gct          = gcts[[ds]],
         gct_original = if (is.list(gcts_original)) gcts_original[[ds]] else NULL,
-        fasta_map    = fasta_map,
-        feat_df      = feat_df,
+        fasta_map    = ds_fasta,
+        feat_df      = ds_feat,
         condition_col = condition_cols[[ds]],
         min_nonNA    = min_nonNA,
         log_base     = ds_log_base,

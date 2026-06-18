@@ -198,7 +198,8 @@ PELSASection3_Ome_Server <- function(id,
     # Setup marker accessions (the volcano overlay + POI seed).
     marker_accessions <- reactive({
       ss <- pelsa_setup_state()
-      rows <- if (is.null(ss)) NULL else ss$marker_rows
+      # Markers are PER-OME: read THIS dataset's marker list.
+      rows <- if (is.null(ss)) NULL else ss$marker_rows[[ome]]
       if (is.null(rows) || !is.data.frame(rows) ||
           !"accession" %in% colnames(rows)) {
         return(character(0))
@@ -250,7 +251,8 @@ PELSASection3_Ome_Server <- function(id,
     # feat_df re-reads only when the species actually changes.
     species_r <- reactive({
       ss <- pelsa_setup_state()
-      if (is.null(ss)) NULL else ss$species
+      # Species is PER-OME: read THIS dataset's species.
+      if (is.null(ss)) NULL else ss$species[[ome]]
     })
 
     # Species feature table (2I/3A feat_df), read once per species via the
@@ -258,8 +260,10 @@ PELSASection3_Ome_Server <- function(id,
     # colors everything "none").
     feat_df <- reactive({
       species <- species_r()
+      # "(none)" is the unset default - skip the cache read (avoids a guaranteed
+      # error-path I/O on every reactive eval while setup is incomplete).
       if (is.null(species) || length(species) != 1L || is.na(species) ||
-          !nzchar(species)) {
+          !nzchar(species) || identical(species, "(none)")) {
         return(NULL)
       }
       species_dir <- file.path(pelsa_database_dir(), species)
@@ -277,7 +281,7 @@ PELSASection3_Ome_Server <- function(id,
     is_self_curated_r <- reactive({
       species <- species_r()
       if (is.null(species) || length(species) != 1L || is.na(species) ||
-          !nzchar(species)) {
+          !nzchar(species) || identical(species, "(none)")) {
         return(FALSE)
       }
       struct <- tryCatch(
@@ -1056,7 +1060,11 @@ PELSASection3_Ome_Server <- function(id,
                          type = "message", duration = 3)
         return()
       }
-      if (is.function(marker_add_request)) marker_add_request(mr)
+      # Markers are PER-OME: tag the request with THIS dataset's ome so Setup
+      # routes it to the right per-dataset marker list.
+      if (is.function(marker_add_request)) {
+        marker_add_request(list(ome = ome, rows = mr))
+      }
       showNotification(sprintf("Added %s to the marker list.", acc),
                        type = "message", duration = 3)
     })

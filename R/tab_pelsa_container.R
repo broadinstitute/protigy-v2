@@ -128,15 +128,24 @@ pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
     pelsa_analyzed_datasets()
   })
 
-  # Build the switcher control (or NULL when < 2 datasets, so the bar is hidden
-  # and the sole dataset is implicitly active). Every tab's bar renders this.
+  # ALL uploaded omes (the SETUP switcher's choice-set). Setup must show every
+  # uploaded dataset - including ones the user will skip - so each has a tab to
+  # toggle Skip on. This is a DIFFERENT set from analyzed_datasets() (the
+  # analyzed-only set the Summary/Volcano switcher uses), so Setup gets its own
+  # switcher input (pelsa_setup_active_dataset), NOT the shared one.
+  all_uploaded <- reactive({
+    gp <- GCTs_and_params()
+    if (is.null(gp) || is.null(gp$GCTs)) character(0) else names(gp$GCTs)
+  })
+
+  # The Summary/Volcano switcher control (analyzed-only), or NULL when < 2.
   switcher_control <- reactive({
     datasets <- analyzed_datasets()
     if (length(datasets) < 2) {
       return(NULL)
     }
-    # All bars share one inputId so the input stays the single source of truth.
-    # Selecting in any tab updates pelsa_active_dataset for every section.
+    # The summary + volcano bars share one inputId (the single source of truth);
+    # selecting in either tab updates pelsa_active_dataset for both sections.
     shinyWidgets::radioGroupButtons(
       inputId  = "pelsa_active_dataset",
       label    = NULL,
@@ -147,8 +156,28 @@ pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
     )
   })
 
-  # One uiOutput per PELSA tab (distinct DOM ids), all from switcher_control().
-  for (suffix in c("setup", "summary", "volcano")) {
+  # The SETUP switcher control over ALL uploaded omes (own input id), or NULL
+  # when < 2 uploaded (the sole dataset is implicitly active).
+  setup_switcher_control <- reactive({
+    datasets <- all_uploaded()
+    if (length(datasets) < 2) {
+      return(NULL)
+    }
+    shinyWidgets::radioGroupButtons(
+      inputId  = "pelsa_setup_active_dataset",
+      label    = NULL,
+      choices  = datasets,
+      selected = isolate(input$pelsa_setup_active_dataset) %||% datasets[[1]],
+      status   = "primary",
+      size     = "sm"
+    )
+  })
+
+  # The setup bar renders the all-uploaded switcher; summary + volcano render the
+  # analyzed-only switcher.
+  output[[pelsa_switcher_bar_output_id("setup")]] <-
+    renderUI(setup_switcher_control())
+  for (suffix in c("summary", "volcano")) {
     local({
       out_id <- pelsa_switcher_bar_output_id(suffix)
       output[[out_id]] <- renderUI(switcher_control())
@@ -189,8 +218,25 @@ pelsaContainer_Server <- function(input, output, session, GCTs_and_params) {
     selected
   })
 
+  # The active SETUP dataset: the selected setup-switcher button when shown,
+  # otherwise the sole uploaded dataset. Over ALL uploaded omes (skipped ones
+  # included), so every dataset has a setup tab. Independent of active_dataset().
+  setup_active_dataset <- reactive({
+    datasets <- all_uploaded()
+    req(length(datasets) >= 1)
+    if (length(datasets) < 2) {
+      return(datasets[[1]])
+    }
+    selected <- input$pelsa_setup_active_dataset
+    if (is.null(selected) || !(selected %in% datasets)) {
+      return(datasets[[1]])
+    }
+    selected
+  })
+
   list(
     active_dataset        = active_dataset,
+    setup_active_dataset  = setup_active_dataset,
     set_analyzed_datasets = set_analyzed_datasets
   )
 }

@@ -1,36 +1,46 @@
 ################################################################################
 # Module: PELSA - Section 1 (Setup)
 #
-# The Setup tab of the PELSA workflow. It owns the SHARED/app-wide controls that
-# configure a PELSA run plus the reactive marker-protein table:
+# The Setup tab of the PELSA workflow. It is configured PER DATASET: a dedicated
+# switcher (setup_active_dataset, over ALL uploaded omes) selects which dataset's
+# form is shown, and EVERYTHING is per-ome. The form for the active dataset:
 #
-#   1. Datasets to analyze   (checkboxGroupInput)
-#   2. Species               (selectInput, read LIVE from inst/database/)
-#   3. Treatment compound    (selectInput from compound_markers.yaml; autofills markers)
-#   4. Marker paste box      (textAreaInput + "Add markers" button)
-#   5. Marker reactive table (DT, columns Accession / Gene Symbol)
-#                            + Remove selected / Clear all buttons
-#   6. PER-DATASET condition/replicate configuration (5B): for each CHECKED
-#      dataset, a condition-grouping + replicate-identifier selectInput (driven
-#      by THAT dataset's cdesc), a draggable condition-ORDER widget, and one
-#      draggable replicate-order widget per condition. An "apply the same setup
-#      to all datasets" checkbox copies the source dataset's column choices +
-#      ordering to every checked dataset.
+#   0. Skip toggle           (checkboxInput "Skip PELSA analysis for this
+#                            dataset") - when on, the rest of the form is greyed
+#                            out (.pelsa-skipped on the form wrapper). ALL of the
+#                            dataset's per-ome config (species/compound/markers/
+#                            condition+replicate columns/orders) is PRESERVED, so
+#                            un-skipping restores it unchanged - skipping only
+#                            excludes the dataset from the run and from the
+#                            Summary/Volcano switcher. Per-dataset state is pruned
+#                            ONLY when a new upload removes the dataset.
+#   1. Species               (selectInput, LIVE from inst/database/; default
+#                            "(none)") - PER-OME.
+#   2. Treatment compound    (selectInput from compound_markers.yaml; autofills
+#                            THIS dataset's markers) - PER-OME.
+#   3. Marker paste box      (textAreaInput + "Add markers") - PER-OME.
+#   4. Marker reactive table (DT) + Remove selected / Clear all - PER-OME.
+#   5. Condition/replicate configuration: condition-grouping + replicate-
+#      identifier selectInputs (default "(none)"), a draggable condition-ORDER
+#      widget, and one draggable replicate-order widget per condition.
+#   6. "Apply this dataset's setup to all others" BUTTON: copies the active tab's
+#      species/compound/markers verbatim + condition/replicate columns+order
+#      (best-effort) to every other NON-SKIPPED dataset.
 #
 # The pure, testable logic lives in tab_pelsa_section1_helpers.R; this server
 # stays thin (wiring + reactivity only).
 #
-# SETUP-STATE OBJECT (the documented contract read/extended by 5C/5D + 6/7)
-#   The Tab server exposes a `setup_state` reactiveValues:
-#     setup_state$datasets       chr - checked datasets to analyze (5D drives
-#                                      the container's pelsa_analyzed_datasets
-#                                      off this; see SEAM below)
-#     setup_state$species        chr scalar - selected species (SHARED)
-#     setup_state$compound       chr scalar - selected treatment compound (SHARED)
-#     setup_state$marker_rows    data.frame(accession, gene) - marker table (SHARED)
-#
-#   PER-DATASET fields (5B) - NAMED LISTS keyed by dataset name (ome). Only the
-#   checked datasets have entries; toggling a dataset adds/removes its entry:
+# SETUP-STATE OBJECT (the documented contract read/extended by 6/7)
+#   The Tab server exposes a `setup_state` reactiveValues. EVERY field except
+#   `datasets` is a NAMED LIST keyed by dataset name (ome):
+#     setup_state$datasets       chr - the NON-SKIPPED (analyzed) omes, stamped at
+#                                      Start-Analysis (drives the container's
+#                                      pelsa_analyzed_datasets via
+#                                      set_analyzed_datasets; see SEAM below)
+#     setup_state$species[[ds]]      chr scalar - selected species ("(none)"=unset)
+#     setup_state$compound[[ds]]     chr scalar - selected treatment compound
+#     setup_state$marker_rows[[ds]]  data.frame(accession, gene) - marker table
+#     setup_state$skip[[ds]]         logical - TRUE = skip this dataset
 #     setup_state$condition_col[[ds]]   chr scalar - condition grouping column
 #     setup_state$replicate_col[[ds]]   chr scalar - replicate identifier column
 #     setup_state$condition_order[[ds]] chr - chosen order of that ds's conditions
@@ -47,16 +57,13 @@
 #   wraps the snapshot in reactive() (see the return-block comment for the seam
 #   contract).
 #
-#   APPLY-ALL SOURCE (documented): when "apply to all" is ticked, the SOURCE
-#   dataset is the ACTIVE dataset if it is among the checked datasets, else the
-#   first checked dataset. Only the per-dataset condition/replicate COLUMNS +
-#   ORDERING are copied; species/compound/markers stay shared and untouched.
+#   APPLY-ALL SOURCE: the ACTIVE setup tab. Species/compound/markers copy
+#   verbatim; condition/replicate columns + condition order copy best-effort
+#   (only where the target's cdesc has those columns) to NON-SKIPPED targets.
 #
-# DEFERRED SEAMS (documented; built later)
-#   - 5C: species UniProt-refresh button + progress.
-#   - 5D: Start-Analysis button + validation + withProgress + the compute
-#         pipeline; accession<->gene UniProt/org.db resolution (the marker-table
-#         resolver seam); and DRIVING pelsa_analyzed_datasets(setup_state$datasets).
+# SPECIES IS PER-OME: Start-Analysis resolves FASTA + feature cache PER DATASET
+#   by setup_state$species[[ds]] (memoized per species in pelsa_run_analysis), so
+#   datasets of different species each match against their own FASTA.
 ################################################################################
 
 ################################################################################
@@ -78,6 +85,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                                      globals,
                                      GCTs_original,
                                      active_dataset,
+                                     setup_active_dataset = NULL,
                                      set_analyzed_datasets = NULL,
                                      marker_add_request = NULL,
                                      parent_session = NULL) {
@@ -85,6 +93,17 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
   moduleServer(id, function(input, output, session) {
 
     ns <- session$ns
+
+    # The Setup page has its OWN dataset switcher over ALL uploaded datasets
+    # (pelsa_setup_active_dataset), independent of the analyzed-only switcher the
+    # Summary/Volcano sections share (active_dataset). When not supplied (older
+    # callers / isolated tests), fall back to active_dataset so the module still
+    # works standalone.
+    setup_active_dataset <- if (is.function(setup_active_dataset)) {
+      setup_active_dataset
+    } else {
+      active_dataset
+    }
 
     ## GATHERING INPUTS ##
 
@@ -110,10 +129,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     ## SETUP STATE (the documented per-dataset contract; see header) ##
     # SHARED scalars + per-dataset NAMED LISTS keyed by dataset (ome).
     setup_state <- reactiveValues(
-      datasets        = character(0),
-      species         = NULL,
-      compound        = NULL,
-      marker_rows     = pelsa_empty_marker_rows(),
+      datasets        = character(0), # NON-SKIPPED omes (set at Start-Analysis)
+      species         = list(),  # [[ds]] -> chr scalar ("(none)" when unset)
+      compound        = list(),  # [[ds]] -> chr scalar
+      marker_rows     = list(),  # [[ds]] -> data.frame(accession, gene)
+      skip            = list(),  # [[ds]] -> logical (TRUE = skip this dataset)
       condition_col   = list(),  # [[ds]] -> chr scalar
       replicate_col   = list(),  # [[ds]] -> chr scalar
       condition_order = list(),  # [[ds]] -> chr (condition order)
@@ -143,7 +163,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # and delegates. The per-dataset config (5B) + marker table render into the
     # uiOutput/DT placeholders the builder emits.
     output$setup_box <- renderUI({
-      ome <- active_dataset()
+      ome <- setup_active_dataset()
       req(ome, ome %in% all_omes())
 
       # Seed the recreated inputs from the persisted setup_state (isolated, so
@@ -178,119 +198,150 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         vapply(uniprot_structs, function(s) s$display, character(1))
       )
 
-      sel_datasets <- isolate(setup_state$datasets) %||% all_omes()
-      sel_species  <- isolate(setup_state$species) %||%
-        (if (length(species_choices)) unname(species_choices)[[1]] else NULL)
-      sel_compound <- isolate(setup_state$compound) %||% ""
+      # Seed the per-dataset controls from this ome's persisted setup_state
+      # (isolated, so reading it adds no reactive dependency). species/compound
+      # default to the blank "(none)" so the user must consciously choose (and
+      # the validator can flag a blank). skip defaults to FALSE (analyzed).
+      sel_species  <- isolate(setup_state$species[[ome]])  %||% "(none)"
+      sel_compound <- isolate(setup_state$compound[[ome]]) %||% ""
+      sel_skip     <- isTRUE(isolate(setup_state$skip[[ome]]))
 
       pelsa_setup_box_ui(
-        datasets  = all_omes(),
         species   = species_choices,
         compounds = names(compound_markers()$compounds),
         ns        = ns,
-        selected_datasets = sel_datasets,
         selected_species  = sel_species,
         selected_compound = sel_compound,
+        selected_skip     = sel_skip,
         refresh_species   = refresh_choices
       )
     })
 
-    ## CONTROL -> SETUP STATE WIRING ##
+    ## CONTROL -> SETUP STATE WIRING (PER-DATASET) ##
+    # Every setup control now writes the ACTIVE setup dataset's per-ome slot.
+    # set_ds (defined below in the per-dataset section) is referenced here; it is
+    # only CALLED from inside reactive observers, which fire after the whole
+    # module body has run, so the forward reference resolves fine.
 
-    observeEvent(input$pelsa_datasets, {
-      setup_state$datasets <- input$pelsa_datasets
-    }, ignoreNULL = FALSE)
-
-    observeEvent(input$pelsa_species, {
-      setup_state$species <- input$pelsa_species
-    }, ignoreNULL = FALSE)
-
-    observeEvent(input$pelsa_compound, {
-      setup_state$compound <- input$pelsa_compound
-    }, ignoreNULL = FALSE)
-
-    ## MARKER TABLE ##
-    # Backed by a reactiveVal data.frame; ALWAYS replaced wholesale (immutable),
-    # never mutated in place.
-    marker_rows <- reactiveVal(pelsa_empty_marker_rows())
-
-    # Keep the exposed setup_state in sync with the marker table.
-    observeEvent(marker_rows(), {
-      setup_state$marker_rows <- marker_rows()
-    }, ignoreNULL = FALSE)
-
-    # Compound selection AUTOFILLS the table with that compound's preset markers
-    # (accession + gene both known from the yaml), merged into existing rows.
-    #
-    # IMPORTANT: input$pelsa_compound re-emits its value whenever output$setup_box
-    # re-renders (e.g. an active_dataset() switch recreates the selectInput). Left
-    # unguarded, that would RESURRECT autofilled markers the user had cleared. We
-    # therefore track the last-autofilled compound and only merge when the value
-    # GENUINELY CHANGES (user picked a DIFFERENT compound). Autofilling the same
-    # compound again is a no-op regardless of intervening clears.
-    #
-    # CHOSEN BEHAVIOR (documented): the tracker is NOT reset by "Clear all". This
-    # makes echo-safety robust - a same-value re-emit after a clear (a re-render
-    # echo, indistinguishable from a deliberate re-pick) will NOT resurrect the
-    # cleared markers. To re-autofill the same compound, the user picks a
-    # different compound and then re-picks it (a genuine change each time).
-    last_autofilled_compound <- reactiveVal(NULL)
-    observeEvent(input$pelsa_compound, {
-      compound <- input$pelsa_compound
-      if (is.null(compound) || !nzchar(compound)) return()
-      if (identical(compound, last_autofilled_compound())) return()  # echo / re-pick
-      new_rows <- pelsa_compound_marker_rows(compound_markers(), compound)
-      marker_rows(pelsa_merge_marker_rows(marker_rows(), new_rows))
-      last_autofilled_compound(compound)
+    # The active setup dataset (the tab whose form is on screen). NULL-safe.
+    active_setup_ome <- reactive({
+      ome <- setup_active_dataset()
+      if (is.null(ome) || !(ome %in% all_omes())) NULL else ome
     })
 
-    # Paste box + Add: parse tokens (2J helper) -> rows (gene NA; resolver seam
-    # filled in 5D) -> merged into the table.
+    # This ome's marker rows (always a data.frame; empty when unset).
+    cur_markers <- function(ome) {
+      mr <- setup_state$marker_rows[[ome]]
+      if (is.null(mr) || !is.data.frame(mr)) pelsa_empty_marker_rows() else mr
+    }
+    set_markers <- function(ome, rows) set_ds("marker_rows", ome, rows)
+
+    observeEvent(input$pelsa_species, {
+      ome <- active_setup_ome(); req(ome)
+      set_ds("species", ome, input$pelsa_species)
+    }, ignoreNULL = FALSE)
+
+    observeEvent(input$pelsa_compound, {
+      ome <- active_setup_ome(); req(ome)
+      set_ds("compound", ome, input$pelsa_compound)
+    }, ignoreNULL = FALSE)
+
+    # Skip toggle: write the per-ome flag. Greying of the rest of the form is
+    # handled by the observe() below (CSS class toggle).
+    observeEvent(input$pelsa_skip, {
+      ome <- active_setup_ome(); req(ome)
+      set_ds("skip", ome, isTRUE(input$pelsa_skip))
+    }, ignoreNULL = FALSE)
+
+    # Grey out (disable interaction with) the rest of the form when this dataset
+    # is skipped. A CSS class on the wrapper covers orderInputs + the DT that a
+    # bare :input selector would miss; state underneath is PRESERVED (purely
+    # visual / interaction disable), so un-skipping restores the config.
+    observe({
+      shinyjs::toggleClass(id = "pelsa_setup_form", class = "pelsa-skipped",
+                           condition = isTRUE(input$pelsa_skip))
+    })
+
+    ## MARKER TABLE (PER-DATASET) ##
+    # Markers are per-ome: each setup tab owns its own marker list. The compound
+    # autofill, paste box, remove/clear, and the cross-module add-request all
+    # read/write setup_state$marker_rows[[active ome]].
+
+    # Compound selection AUTOFILLS this ome's table with the compound's preset
+    # markers, merged into existing rows.
+    #
+    # ECHO GUARD (per-ome): input$pelsa_compound re-emits whenever output$setup_box
+    # re-renders (e.g. a setup-tab switch recreates the selectInput). Left
+    # unguarded, that would RESURRECT autofilled markers the user had cleared. We
+    # track the last-autofilled compound PER OME and only merge when the value
+    # genuinely changes for THIS ome. The tracker is NOT reset by "Clear all" (so
+    # a same-value re-emit after a clear cannot resurrect cleared markers).
+    last_autofilled_compound <- reactiveVal(list())  # [[ome]] -> compound
+    observeEvent(input$pelsa_compound, {
+      ome <- active_setup_ome(); req(ome)
+      compound <- input$pelsa_compound
+      if (is.null(compound) || !nzchar(compound)) return()
+      tracker <- last_autofilled_compound()
+      if (identical(compound, tracker[[ome]])) return()  # echo / re-pick
+      new_rows <- pelsa_compound_marker_rows(compound_markers(), compound)
+      set_markers(ome, pelsa_merge_marker_rows(cur_markers(ome), new_rows))
+      tracker[[ome]] <- compound
+      last_autofilled_compound(tracker)
+    })
+
+    # Paste box + Add: parse tokens -> rows (gene NA) -> merged into this ome.
     observeEvent(input$pelsa_add_markers, {
+      ome <- active_setup_ome(); req(ome)
       tokens <- pelsa_parse_markers(input$pelsa_marker_input)
       new_rows <- pelsa_marker_rows_from_input(tokens, resolver = NULL)
-      marker_rows(pelsa_merge_marker_rows(marker_rows(), new_rows))
+      set_markers(ome, pelsa_merge_marker_rows(cur_markers(ome), new_rows))
       updateTextAreaInput(session, "pelsa_marker_input", value = "")
     })
 
     # Cross-module: the Volcano (Section 3) requests an accession be added via the
-    # shared `marker_add_request` handle (data.frame(accession, gene)). Merge it
-    # into the marker table - removal stays here in Setup. Merge is idempotent
-    # (dedupes by accession), so a re-request of an existing marker is a no-op.
+    # shared `marker_add_request` handle. The payload is list(ome=, rows=) so the
+    # request targets the SPECIFIC dataset the volcano was viewing (markers are
+    # per-ome). Merge into that ome's table; removal stays here in Setup. Merge is
+    # idempotent (dedupes by accession), so a re-request is a no-op.
     if (is.function(marker_add_request)) {
       observeEvent(marker_add_request(), {
         req <- marker_add_request()
-        if (is.null(req) || !is.data.frame(req) ||
-            !all(c("accession", "gene") %in% names(req)) || nrow(req) == 0L) {
+        if (is.null(req) || !is.list(req) ||
+            length(req$ome) != 1L || !is.character(req$ome) ||
+            is.null(req$rows) || !is.data.frame(req$rows) ||
+            !all(c("accession", "gene") %in% names(req$rows)) ||
+            nrow(req$rows) == 0L) {
           return()
         }
-        marker_rows(pelsa_merge_marker_rows(marker_rows(), req))
-        # M6: reset the shared channel so an identical re-request (e.g. add A,
-        # remove A here in Setup, then add A again from the volcano) still
-        # registers as a value change and re-fires this observer. ignoreNULL =
-        # TRUE makes this NULL write inert (it will not trigger the observer).
+        ome <- req$ome
+        if (!(ome %in% all_omes())) return()
+        set_markers(ome, pelsa_merge_marker_rows(cur_markers(ome), req$rows))
+        # M6: reset the shared channel so an identical re-request still registers
+        # as a value change and re-fires this observer.
         marker_add_request(NULL)
       }, ignoreNULL = TRUE)
     }
 
-    # Remove selected rows (immutable replace).
+    # Remove selected rows from the active ome (immutable replace).
     observeEvent(input$pelsa_remove_markers, {
+      ome <- active_setup_ome(); req(ome)
       selected <- input$pelsa_marker_table_rows_selected
-      current  <- marker_rows()
+      current  <- cur_markers(ome)
       if (length(selected) == 0L || nrow(current) == 0L) return()
       keep <- setdiff(seq_len(nrow(current)), selected)
-      marker_rows(current[keep, , drop = FALSE])
+      set_markers(ome, current[keep, , drop = FALSE])
     })
 
-    # Clear all. The autofill tracker is intentionally NOT reset here (see the
-    # compound observer above) so a same-value re-emit cannot resurrect cleared
-    # markers.
+    # Clear all for the active ome. The autofill tracker is intentionally NOT
+    # reset (see the compound observer) so a same-value re-emit cannot resurrect.
     observeEvent(input$pelsa_clear_markers, {
-      marker_rows(pelsa_empty_marker_rows())
+      ome <- active_setup_ome(); req(ome)
+      set_markers(ome, pelsa_empty_marker_rows())
     })
 
     output$pelsa_marker_table <- DT::renderDataTable({
-      rows <- marker_rows()
+      ome <- active_setup_ome(); req(ome)
+      rows <- cur_markers(ome)
       display <- data.frame(
         Accession     = rows$accession,
         `Gene Symbol` = rows$gene,
@@ -361,71 +412,67 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       set_ds("replicate_order", ome, by_cond)
     }
 
-    # The currently-checked datasets, intersected with the available omes and
-    # kept in all_omes() order (stable, deterministic).
+    # The ANALYZED (non-skipped) datasets, in all_omes() order. This is the
+    # single source of truth for "which datasets PELSA runs" now that the old
+    # checkbox group is gone - it is derived from the per-ome skip flags. The
+    # per-dataset config machinery (pruning, sample_order, observer registration)
+    # all keys off this, exactly as it used to key off the checkbox subset.
     checked_datasets <- reactive({
-      sel <- input$pelsa_datasets
-      if (is.null(sel)) sel <- character(0)
-      all_omes()[all_omes() %in% sel]
+      pelsa_analyzed_omes(setup_state$skip, all_omes())
     })
 
-    # The apply-all SOURCE dataset (documented): active dataset if checked, else
-    # the first checked dataset. NULL when nothing is checked.
-    apply_all_source <- function() {
-      checked <- checked_datasets()
-      if (length(checked) == 0L) return(NULL)
-      act <- active_dataset()
-      if (!is.null(act) && act %in% checked) act else checked[[1]]
-    }
+    # The apply-all SOURCE dataset: the ACTIVE setup tab (the dataset whose form
+    # is on screen). NULL when there is no valid active dataset.
+    apply_all_source <- function() active_setup_ome()
 
-    # ---- per-dataset config UI (one panel per CHECKED dataset) ----------------
+    # ---- per-dataset config UI (ONLY the active setup tab's panel) ------------
+    # With per-dataset tabs, one dataset's config is shown at a time (the active
+    # setup tab), not a stacked list. The observers + sample_order still iterate
+    # ALL non-skipped datasets (registered as tabs are visited), so summary/
+    # volcano get orders even for not-yet-opened tabs.
     output$pelsa_perdataset_config <- renderUI({
-      checked <- checked_datasets()
-      if (length(checked) == 0L) {
-        return(helpText("Check at least one dataset to configure conditions."))
+      ome <- active_setup_ome()
+      if (is.null(ome)) {
+        return(helpText("Select a dataset to configure conditions."))
+      }
+      i     <- .ds_index(ome)
+      cdesc <- cdesc_for(ome)
+      cols  <- if (is.null(cdesc)) character(0) else names(cdesc)
+
+      # Condition / replicate columns default to the blank "(none)" (the user
+      # must consciously choose; the validator flags a blank). Honor a persisted
+      # choice when it still exists in this dataset's columns.
+      sel_cond <- setup_state$condition_col[[ome]] %||% "(none)"
+      sel_rep  <- setup_state$replicate_col[[ome]] %||% "(none)"
+      if (!identical(sel_cond, "(none)") && length(cols) && !(sel_cond %in% cols)) {
+        sel_cond <- "(none)"
+      }
+      if (!identical(sel_rep, "(none)") && length(cols) && !(sel_rep %in% cols)) {
+        sel_rep <- "(none)"
       }
 
-      panels <- lapply(checked, function(ome) {
-        i     <- .ds_index(ome)
-        cdesc <- cdesc_for(ome)
-        cols  <- if (is.null(cdesc)) character(0) else names(cdesc)
+      # Born-populated condition orderInput (empty until a real column is chosen).
+      available_conds <- if (!is.null(cdesc) && !identical(sel_cond, "(none)") &&
+                              sel_cond %in% names(cdesc)) {
+        pelsa_distinct_conditions(cdesc, sel_cond)
+      } else {
+        character(0)
+      }
+      cond_order <- pelsa_merge_ordering(
+        setup_state$condition_order[[ome]], available_conds
+      )
 
-        sel_cond <- setup_state$condition_col[[ome]] %||%
-          (if (length(cols)) cols[[1]] else NULL)
-        sel_rep  <- setup_state$replicate_col[[ome]] %||%
-          (if (length(cols)) cols[[1]] else NULL)
-        if (length(cols) && !(sel_cond %in% cols)) sel_cond <- cols[[1]]
-        if (length(cols) && !(sel_rep  %in% cols)) sel_rep  <- cols[[1]]
-
-        # Born-populated condition orderInput: compute the initial order HERE so
-        # the drag blocks render with their items already present. Seeding the
-        # widget post-render via updateOrderInput races this renderUI (the
-        # message can arrive before the orderInput element exists, so the blocks
-        # would stay empty until some later input forced a reseed).
-        available_conds <- if (!is.null(cdesc) && !is.null(sel_cond) &&
-                                sel_cond %in% names(cdesc)) {
-          pelsa_distinct_conditions(cdesc, sel_cond)
-        } else {
-          character(0)
-        }
-        cond_order <- pelsa_merge_ordering(
-          setup_state$condition_order[[ome]], available_conds
-        )
-
-        pelsa_dataset_config_panel(
-          ome = ome, cols = cols, sel_cond = sel_cond, sel_rep = sel_rep,
-          ids = list(
-            condition_col   = ns(id_condition_col(i)),
-            replicate_col   = ns(id_replicate_col(i)),
-            condition_order = ns(id_condition_order(i)),
-            condition_reset = ns(id_condition_reset(i)),
-            replicate_cards = ns(sprintf("pelsa_replicate_cards_d%d", i))
-          ),
-          cond_order = cond_order
-        )
-      })
-
-      do.call(tagList, panels)
+      pelsa_dataset_config_panel(
+        ome = ome, cols = cols, sel_cond = sel_cond, sel_rep = sel_rep,
+        ids = list(
+          condition_col   = ns(id_condition_col(i)),
+          replicate_col   = ns(id_replicate_col(i)),
+          condition_order = ns(id_condition_order(i)),
+          condition_reset = ns(id_condition_reset(i)),
+          replicate_cards = ns(sprintf("pelsa_replicate_cards_d%d", i))
+        ),
+        cond_order = cond_order
+      )
     })
 
     # ---- distinct conditions per dataset (reactive on the chosen cond col) ----
@@ -663,105 +710,129 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     observeEvent(checked_datasets(), {
       checked <- checked_datasets()
 
-      # Drop unchecked datasets from every per-dataset field (pure, tested).
+      # Prune per-dataset state to the datasets that STILL EXIST (all_omes()),
+      # NOT to the non-skipped subset: skipping a dataset must PRESERVE its
+      # config (greying is purely visual) so un-skipping restores it. Only a new
+      # upload that removes a dataset should drop its state - that is keyed off
+      # all_omes(), which changes only on a wholesale GCTs replacement.
       fields <- c("condition_col", "replicate_col",
                   "condition_order", "replicate_order", "sample_order")
       pruned <- pelsa_prune_perdataset_state(
         stats::setNames(lapply(fields, function(f) setup_state[[f]]), fields),
-        checked)
+        all_omes())
       for (f in fields) setup_state[[f]] <- pruned[[f]]
 
       for (ome in checked) {
         register_replicate_card_renderer(ome)
         register_dataset_observers(ome)
-
-        # Seed column defaults if not yet set.
-        cols <- cdesc_cols_for(ome)
-        if (length(cols) > 0L) {
-          if (is.null(setup_state$condition_col[[ome]])) set_ds("condition_col", ome, cols[[1]])
-          if (is.null(setup_state$replicate_col[[ome]])) set_ds("replicate_col", ome, cols[[1]])
-        }
+        # NO column auto-seed: condition/replicate columns default to the blank
+        # "(none)" (the user must consciously choose; the validator flags a
+        # blank). Seeding orders is a no-op until a real column is chosen.
         register_condition_observers(ome)
         seed_condition_order(ome)
         seed_replicate_orders(ome)
       }
     }, ignoreNULL = FALSE)
 
-    # ---- APPLY TO ALL ---------------------------------------------------------
-    # Copy the SOURCE dataset's condition/replicate columns + ordering to every
-    # checked dataset whose cdesc has both columns. Species/compound/markers stay
-    # shared and untouched.
+    # Register a dataset's config observers/cards when its setup tab is first
+    # visited (a freshly-uploaded dataset is non-skipped by default, so the
+    # observeEvent(checked_datasets()) above already covers it; this also covers
+    # any tab the user opens directly). Deduped by setup_observer_registry.
+    observeEvent(active_setup_ome(), {
+      ome <- active_setup_ome(); req(ome)
+      register_replicate_card_renderer(ome)
+      register_dataset_observers(ome)
+      register_condition_observers(ome)
+      seed_condition_order(ome)
+      seed_replicate_orders(ome)
+    }, ignoreNULL = TRUE)
+
+    # ---- APPLY THIS DATASET'S SETUP TO ALL OTHERS -----------------------------
+    # A button (not a checkbox): copies the ACTIVE setup tab's full config to
+    # every OTHER non-skipped tab. Species / compound / markers copy VERBATIM
+    # (cross-species copy is the user's choice; non-matching accessions simply
+    # won't match the FASTA). Condition/replicate COLUMNS + condition ORDER copy
+    # best-effort (only where the target's cdesc has those columns). The per-
+    # condition replicate ORDER is NOT copied (it holds the source's SAMPLE names,
+    # which don't exist in the target); each target reseeds its own default.
     #
-    # "Apply to all" is meaningless with a single uploaded dataset (there is no
-    # other dataset to copy the setup TO), so grey the checkbox out in a
-    # single-ome session. The checkbox lives inside the server-rendered setup box,
-    # so re-toggle on every (re)render; updateOrderInput-style races don't apply
-    # to shinyjs::toggleState because shinyjs re-applies disabled state on bind.
+    # Meaningless with a single uploaded dataset, so disable then.
     observe({
       shinyjs::toggleState("pelsa_apply_all", condition = length(all_omes()) > 1L)
     })
 
     observeEvent(input$pelsa_apply_all, {
-      if (!isTRUE(input$pelsa_apply_all)) return()
       src <- apply_all_source()
       if (is.null(src)) {
-        showNotification("Check at least one dataset before applying to all.",
+        showNotification("Select a dataset before applying its setup to others.",
                          type = "warning", duration = 3)
-        updateCheckboxInput(session, "pelsa_apply_all", value = FALSE)
         return()
       }
       i_src    <- .ds_index(src)
+      src_species  <- setup_state$species[[src]]
+      src_compound <- setup_state$compound[[src]]
+      src_markers  <- cur_markers(src)
       src_cond <- input[[id_condition_col(i_src)]] %||% setup_state$condition_col[[src]]
       src_rep  <- input[[id_replicate_col(i_src)]] %||% setup_state$replicate_col[[src]]
       src_cond_order <- setup_state$condition_order[[src]]
 
-      # WHAT TRANSFERS (and what does NOT): the condition/replicate COLUMN
-      # choices and the condition ORDER reference column NAMES + condition VALUES,
-      # which are shared across datasets, so they copy faithfully. The per-
-      # condition replicate ORDER, however, is keyed by condition value but holds
-      # the SOURCE's SAMPLE NAMES - targets have different sample names, so
-      # copying it would be dropped by pelsa_merge_ordering's intersection and
-      # silently fall back to each target's default. We therefore do NOT copy it;
-      # each target keeps its own default replicate ordering. The toast below says
-      # exactly this (honest apply-all - never claim a transfer that didn't happen).
       applied <- FALSE
-      skipped <- character(0)
-      for (ome in checked_datasets()) {
+      col_skipped <- character(0)
+      tracker <- last_autofilled_compound()
+      for (ome in checked_datasets()) {       # non-skipped targets only
         if (identical(ome, src)) next
-        cols <- cdesc_cols_for(ome)
-        if (!(src_cond %in% cols) || !(src_rep %in% cols)) {
-          skipped <- c(skipped, ome)
-          next
+
+        # Species / compound / markers copy verbatim.
+        set_ds("species", ome, src_species)
+        set_ds("compound", ome, src_compound)
+        set_markers(ome, src_markers)
+        # Mark this ome's compound as already-autofilled, so the first visit to
+        # the target tab (which re-emits the copied compound) does NOT re-fire
+        # the autofill and re-merge / resurrect rows.
+        if (!is.null(src_compound) && nzchar(src_compound)) {
+          tracker[[ome]] <- src_compound
         }
-        i <- .ds_index(ome)
-        # Columns + selectInputs.
-        set_ds("condition_col", ome, src_cond)
-        set_ds("replicate_col", ome, src_rep)
-        updateSelectInput(session, id_condition_col(i), selected = src_cond)
-        updateSelectInput(session, id_replicate_col(i), selected = src_rep)
-        # Condition order copies (condition VALUES are shared); replicate order is
-        # NOT copied (source sample names don't exist in the target) - re-seed it
-        # to the target's own default instead.
-        set_ds("condition_order", ome, src_cond_order)
-        set_ds("replicate_order", ome, NULL)
-        seed_condition_order(ome)
-        seed_replicate_orders(ome)
+
+        # Condition/replicate columns + order: best-effort where columns exist.
+        cols <- cdesc_cols_for(ome)
+        cond_ok <- !is.null(src_cond) && !identical(src_cond, "(none)") &&
+          (src_cond %in% cols)
+        rep_ok  <- !is.null(src_rep) && !identical(src_rep, "(none)") &&
+          (src_rep %in% cols)
+        if (cond_ok && rep_ok) {
+          i <- .ds_index(ome)
+          set_ds("condition_col", ome, src_cond)
+          set_ds("replicate_col", ome, src_rep)
+          updateSelectInput(session, id_condition_col(i), selected = src_cond)
+          updateSelectInput(session, id_replicate_col(i), selected = src_rep)
+          set_ds("condition_order", ome, src_cond_order)
+          set_ds("replicate_order", ome, NULL)
+          seed_condition_order(ome)
+          seed_replicate_orders(ome)
+        } else {
+          col_skipped <- c(col_skipped, ome)
+        }
         applied <- TRUE
       }
+      last_autofilled_compound(tracker)
+
       if (applied) {
         showNotification(sprintf(
-          paste0("Applied %s's condition/replicate columns and condition order ",
-                 "to all compatible datasets; replicate ordering uses each ",
-                 "dataset's default."),
+          paste0("Applied %s's species, compound, and markers to all other ",
+                 "datasets; condition/replicate columns copied where present."),
           src), type = "message", duration = 5)
+      } else {
+        showNotification("No other datasets to apply this setup to.",
+                         type = "warning", duration = 3)
       }
-      if (length(skipped)) {
+      if (length(col_skipped)) {
         showNotification(sprintf(
-          "Skipped %d dataset(s) lacking column(s) '%s'/'%s': %s",
-          length(skipped), src_cond, src_rep, paste(skipped, collapse = ", ")
-        ), type = "warning", duration = 5)
+          paste0("Condition/replicate columns not copied to %d dataset(s) ",
+                 "lacking matching columns: %s (species/compound/markers still ",
+                 "applied)."),
+          length(col_skipped), paste(col_skipped, collapse = ", ")
+        ), type = "warning", duration = 6)
       }
-      updateCheckboxInput(session, "pelsa_apply_all", value = FALSE)
     }, ignoreInit = TRUE)
 
     # ---- canonical sample_order (what Summary/Volcano consume) ----------------
@@ -916,6 +987,13 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     observeEvent(input$pelsa_start, {
       if (isTRUE(analysis_in_flight())) return()  # ignore overlapping clicks
 
+      # The datasets to analyze = the NON-SKIPPED omes. Stamp it onto
+      # setup_state$datasets so the snapshot (and everything downstream that reads
+      # snapshot$datasets: validation, run loop, the analyzed-datasets seam) sees
+      # exactly the analyzed set.
+      isolate(setup_state$datasets <- pelsa_analyzed_omes(setup_state$skip,
+                                                          all_omes()))
+
       # Snapshot setup_state under isolate() so mid-compute input edits cannot
       # corrupt this run.
       snapshot <- isolate(pelsa_setup_snapshot(setup_state))
@@ -952,44 +1030,44 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
       result <- tryCatch(
         withProgress(message = "Running PELSA analysis", value = 0, {
-          # Read the species FASTA + feature cache ONCE (shared across datasets
-          # of the same species). Off the per-dataset loop.
           setProgress(value = 0.05, detail = "Loading FASTA")
-          # Resolve the species TYPE once: a UniProt (taxon-code) species parses
-          # its FASTA pipe-aware + reads its feature cache; a self-curated species
-          # parses first-token + skips annotation entirely (empty feature frame).
-          sp_struct <- pelsa_resolve_species(database_dir, snapshot$species)
-          fasta_mode <- if (identical(sp_struct$type, "self_curated"))
-            "self_curated" else "uniprot"
-          fasta_path <- pelsa_species_fasta_path(database_dir, snapshot$species)
-          # Surface any reader warning (e.g. duplicated accessions) to the user,
-          # then muffle it so it does not abort the progress block.
-          fasta_map  <- withCallingHandlers(
-            pelsa_read_fasta(fasta_path, mode = fasta_mode),
-            warning = function(w) {
-              showNotification(conditionMessage(w), type = "warning", duration = NULL)
-              invokeRestart("muffleWarning")
+          # PER-SPECIES resolvers: each dataset can be a DIFFERENT species, so the
+          # FASTA + feature cache are resolved by THAT dataset's species. A
+          # UniProt (taxon-code) species parses pipe-aware + reads its feature
+          # cache; a self-curated species parses first-token + uses an empty
+          # feature frame (no UniProt cache). pelsa_run_analysis memoizes these
+          # per species, so datasets sharing a species read once.
+          resolve_fasta <- function(species) {
+            sp_struct <- pelsa_resolve_species(database_dir, species)
+            fasta_mode <- if (identical(sp_struct$type, "self_curated"))
+              "self_curated" else "uniprot"
+            fasta_path <- pelsa_species_fasta_path(database_dir, species)
+            # Surface any reader warning (e.g. duplicated accessions), then muffle
+            # so it does not abort the progress block.
+            withCallingHandlers(
+              pelsa_read_fasta(fasta_path, mode = fasta_mode),
+              warning = function(w) {
+                showNotification(conditionMessage(w), type = "warning",
+                                 duration = NULL)
+                invokeRestart("muffleWarning")
+              }
+            )
+          }
+          resolve_feat <- function(species) {
+            sp_struct <- pelsa_resolve_species(database_dir, species)
+            if (identical(sp_struct$type, "self_curated")) {
+              pelsa_empty_feature_frame()
+            } else {
+              pelsa_read_feature_cache(file.path(database_dir, species))
             }
-          )
-
-          # A self-curated species has no UniProt feature cache: use an empty
-          # feature frame so annotation overlap yields zero features (blank Woods
-          # track, no feature coloring) without looking for a cache that does not
-          # exist.
-          species_dir <- file.path(database_dir, snapshot$species)
-          feat_df <- if (identical(sp_struct$type, "self_curated")) {
-            pelsa_empty_feature_frame()
-          } else {
-            setProgress(value = 0.15, detail = "Reading feature annotation cache")
-            pelsa_read_feature_cache(species_dir)
           }
 
           pelsa_run_analysis(
             gcts           = gcts_processed,
             gcts_original  = gcts_raw,
             setup_snapshot = snapshot,
-            fasta_map      = fasta_map,
-            feat_df        = feat_df,
+            resolve_fasta  = resolve_fasta,
+            resolve_feat   = resolve_feat,
             log_base_by_ds = log_base_by_ds,
             set_progress   = function(value, detail) {
               # Map the assembly's 0..1 onto the 0.15..1.0 remaining band.
@@ -1057,14 +1135,14 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                      error = function(e) NULL)
       if (is.null(ss)) return(invisible(NULL))
       cfg <- list(
-        species          = ss$species %||% NA,
-        compound         = ss$compound %||% NA,
+        species          = ss$species[[ome]] %||% NA,
+        compound         = ss$compound[[ome]] %||% NA,
         condition_column = ss$condition_col[[ome]] %||% NA,
         condition_order  = as.list(ss$condition_order[[ome]] %||% character(0)),
         sample_order     = as.list(ss$sample_order[[ome]] %||% character(0))
       )
       yaml::write_yaml(cfg, file.path(out, "pelsa_setup.yaml"))
-      mr <- ss$marker_rows
+      mr <- ss$marker_rows[[ome]]
       if (is.data.frame(mr) && nrow(mr) > 0L) {
         utils::write.csv(mr, file.path(out, "pelsa_markers.csv"),
                          row.names = FALSE)

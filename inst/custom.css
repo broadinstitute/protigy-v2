@@ -777,6 +777,18 @@ a[download] {
 .pelsa-layer-config  { --pelsa-accent: #6f42c1; --pelsa-tint: #f8f6fd; }
 .pelsa-layer-action  { --pelsa-accent: #2e7d32; --pelsa-tint: #f4fbf5; }
 .pelsa-layer-maint   { --pelsa-accent: #6c757d; --pelsa-tint: #f8f9fa; }
+.pelsa-layer-skip    { --pelsa-accent: #b58900; --pelsa-tint: #fffaf0; }
+
+/* Skipped dataset: grey out + disable interaction with the rest of the form.
+   Applied to the form wrapper (id ...-pelsa_setup_form) when the Skip toggle is
+   on. pointer-events:none covers orderInputs + the DT that a bare :input
+   disable would miss; the underlying state is PRESERVED (un-skipping restores
+   the config). */
+.pelsa-skipped {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: grayscale(60%);
+}
 
 /* Maintenance reads as clearly SECONDARY: dashed edge + muted surface. */
 .pelsa-layer-maint {

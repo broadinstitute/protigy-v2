@@ -147,6 +147,7 @@ app_server <- function(input, output, session) {
     globals = globals,
     GCTs_original = GCTs_original,
     active_dataset = pelsa_active_dataset,
+    setup_active_dataset = pelsa_container$setup_active_dataset,
     set_analyzed_datasets = pelsa_container$set_analyzed_datasets,
     marker_add_request = pelsa_marker_add_request,
     parent_session = session

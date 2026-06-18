@@ -361,18 +361,34 @@ pelsa_distinct_conditions <- function(cdesc, condition_col) {
 #
 # Ties on the replicate column are broken by sample name for determinism.
 #
+# The replicate column may be UNSET (the blank "(none)" default, NULL, or any
+# value not present in cdesc) - e.g. when the user picks the condition column
+# before the replicate column. In that case there is no replicate key to sort
+# by, so we fall back to ordering the condition's samples by sample NAME (still
+# deterministic). Only a replicate column that IS a real cdesc column drives the
+# replicate sort. The condition column is still required (a real column).
+#
 # @param cdesc         data.frame (rownames = sample names).
 # @param condition_col condition grouping column name.
-# @param replicate_col replicate identifier column name.
+# @param replicate_col replicate identifier column name, or an unset value
+#                      ("(none)"/NULL/absent) -> sort by sample name only.
 # @param condition     the condition value to select.
-# @return character vector of sample names for that condition, replicate-sorted.
+# @return character vector of sample names for that condition, replicate-sorted
+#         (or sample-name-sorted when the replicate column is unset).
 # @noRd
 pelsa_samples_for_condition <- function(cdesc, condition_col, replicate_col,
                                         condition) {
   cond_vals <- .pelsa_col_chr(cdesc, condition_col)
-  rep_vals  <- .pelsa_col_chr(cdesc, replicate_col)
   samples   <- rownames(cdesc)
   if (is.null(samples)) samples <- as.character(seq_len(nrow(cdesc)))
+
+  # Replicate key: only when replicate_col is a REAL cdesc column. Otherwise
+  # (unset / "(none)" / absent) use the sample names as the key, so sorting
+  # falls back to sample-name order without throwing.
+  rep_is_real <- is.character(replicate_col) && length(replicate_col) == 1L &&
+    !is.na(replicate_col) && nzchar(replicate_col) &&
+    (replicate_col %in% names(cdesc))
+  rep_vals <- if (rep_is_real) .pelsa_col_chr(cdesc, replicate_col) else samples
 
   in_cond <- !is.na(cond_vals) & cond_vals == condition
   if (!any(in_cond)) return(character(0))
@@ -545,13 +561,18 @@ pelsa_dataset_config_panel <- function(ome, cols, sel_cond, sel_rep, ids,
     ))
   }
 
+  # Condition / replicate columns offer a leading "(none)" so a fresh dataset
+  # starts unconfigured (the user must consciously choose; the validator flags a
+  # blank). Persisted choices are honored via sel_cond / sel_rep.
+  col_choices <- c("(none)" = "(none)", stats::setNames(cols, cols))
+
   shiny::div(
     class = "pelsa-ds-config",
     shiny::tags$strong(ome),
     shiny::selectInput(ids$condition_col, label = "Condition grouping column",
-                       choices = cols, selected = sel_cond),
+                       choices = col_choices, selected = sel_cond),
     shiny::selectInput(ids$replicate_col, label = "Replicate identifier column",
-                       choices = cols, selected = sel_rep),
+                       choices = col_choices, selected = sel_rep),
 
     shiny::tags$label("Condition order (drag to reorder)"),
     orderInput(inputId = ids$condition_order, label = NULL,
@@ -593,6 +614,27 @@ pelsa_prune_perdataset_state <- function(state_lists, checked) {
   })
 }
 
+# The analyzed (non-skipped) omes, in all_omes() order.
+#
+# A dataset is analyzed unless its per-ome skip flag is explicitly TRUE. A
+# missing / NULL skip entry (a dataset never toggled) defaults to NOT skipped, so
+# a fresh upload analyzes every dataset until the user opts one out. This is the
+# single source of truth for "which datasets does PELSA run" now that the old
+# checkbox group is gone (the per-tab Skip toggle replaces it).
+#
+# @param skip      named list keyed by ome; entry is a logical scalar (TRUE =
+#                  skip). Missing entries default to FALSE (analyzed).
+# @param all_omes  character vector of all uploaded ome names (defines order).
+# @return character vector of non-skipped omes, in all_omes order.
+# @noRd
+pelsa_analyzed_omes <- function(skip, all_omes) {
+  all_omes <- as.character(all_omes)
+  if (length(all_omes) == 0L) return(character(0))
+  skip <- skip %||% list()
+  keep <- vapply(all_omes, function(o) !isTRUE(skip[[o]]), logical(1))
+  all_omes[keep]
+}
+
 # A small uppercase eyebrow header with a leading icon for a Setup section.
 # Color is supplied by the parent .pelsa-layer-* class (CSS var); pairing the
 # icon + text label here means the layer is NEVER signalled by color alone.
@@ -608,67 +650,66 @@ pelsa_section_head <- function(icon_name, label) {
   )
 }
 
-# The PELSA Setup box markup (pure tag constructor).
+# The PELSA Setup box markup for ONE dataset (pure tag constructor).
 #
-# Builds the entire add_css_attributes(box(...)) for the Setup tab: datasets
-# checklist, species + compound selectors, marker paste box + table placeholder,
-# the per-dataset config placeholder (5B, rendered server-side), and the 5C
-# maintenance refresh sub-section (species checklist + button). Kept pure (a
-# function of its choice vectors + `ns`) so the module renderUI stays thin and
-# the markup is testable without a running session. All inputIds are namespaced
-# via the passed `ns`.
+# Builds the per-dataset Setup form: a Skip toggle, species + compound selectors
+# (both defaulting to a blank "(none)"), marker paste box + table placeholder,
+# the per-dataset condition/replicate config placeholder (rendered server-side),
+# an "Apply this dataset's setup to all others" button, the Start-Analysis
+# action layer, and the maintenance refresh sub-section. Kept pure (a function
+# of its choice vectors + `ns`) so the module renderUI stays thin and the markup
+# is testable without a running session. All inputIds are namespaced via `ns`.
 #
-# @param datasets  character vector of dataset (ome) names (checkbox choices).
 # @param species   species selectInput choices. Pass a NAMED vector
 #                  (display label -> folder name) so the picker shows resolved
-#                  display names while the stored value stays the folder name.
+#                  display names while the stored value stays the folder name. A
+#                  leading "(none)" blank default is prepended internally.
 # @param compounds character vector of compound preset names.
 # @param ns        the module namespacer (session$ns / NS(id)).
+# @param selected_species  the persisted species for THIS dataset ("(none)"
+#                  when unset).
+# @param selected_compound the persisted compound for THIS dataset ("" = none).
+# @param selected_skip     persisted Skip flag for THIS dataset (TRUE = skip).
 # @param refresh_species choices for the UniProt-refresh checklist. Pass only
 #                  UniProt (taxon-code) species here -- self-curated species have
 #                  no UniProt annotations to refresh. Defaults to `species`.
 # @return a shiny tag (the Setup box).
 # @noRd
-pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
-                               selected_datasets = datasets,
-                               selected_species  = if (length(species)) species[[1]] else NULL,
+pelsa_setup_box_ui <- function(species, compounds, ns,
+                               selected_species  = "(none)",
                                selected_compound = "",
+                               selected_skip     = FALSE,
                                refresh_species   = species) {
-  # The Setup box is split into two equal columns. Each logical group is wrapped
-  # in a .pelsa-section card whose LAYER class color-codes it so the user can
-  # parse the form at a glance (see inst/custom.css "PELSA Setup"):
-  #   LEFT  - the run configuration the user fills in top-to-bottom:
-  #           data-input layer (datasets, species, compound, markers) then the
+  # The Setup box configures ONE dataset at a time (the active setup tab); the
+  # per-dataset switcher above selects which. Each logical group is wrapped in a
+  # .pelsa-section card whose LAYER class color-codes it (see inst/custom.css):
+  #   LEFT  - the run configuration the user fills in top-to-bottom for THIS
+  #           dataset: data-input layer (species, compound, markers) then the
   #           ordering/config layer (condition / replicate config + reorder).
   #   RIGHT - the action layer (Start Analysis, made dominant) on top, then the
   #           clearly-secondary maintenance layer (UniProt refresh) below it.
+  #
+  # The Skip toggle sits ABOVE the form. When on, the server greys out the form
+  # wrapper (id pelsa_setup_form) via the .pelsa-skipped class - state underneath
+  # is preserved, so un-skipping restores the config.
 
-  # 1 + 2 + 3 + 4 + 5. DATA-INPUT LAYER (blue): what to analyze + markers.
+  # 2 + 3 + 4 + 5. DATA-INPUT LAYER (blue): species, compound, markers for THIS
+  # dataset.
   data_section <- shiny::tags$div(
     class = "pelsa-section pelsa-layer-data",
     pelsa_section_head("table-list", "Data inputs"),
 
-    # 1. Datasets to analyze (FIRST control). `selected_*` defaults reproduce the
-    #    original first-load defaults; the server passes the persisted setup_state
-    #    selections so a setup-box RE-RENDER (e.g. an active-dataset switch) does
-    #    NOT reset the user's choices and re-emit defaults into setup_state.
-    shiny::checkboxGroupInput(
-      ns("pelsa_datasets"),
-      label    = "Datasets to analyze",
-      choices  = datasets,
-      selected = selected_datasets
-    ),
-
-    # 2. Species (live list of inst/database/ subfolders).
+    # 2. Species (live list of inst/database/ subfolders). Defaults to "(none)"
+    #    so the user must consciously choose (the validator flags a blank).
     shiny::selectInput(
       ns("pelsa_species"),
       label   = "Species",
-      choices = species,
+      choices = c("(none)" = "(none)", species),
       selected = selected_species
     ),
 
     # 3. Treatment compound (presets from compound_markers.yaml).
-    #    Selecting a compound autofills the marker table (server observer).
+    #    Selecting a compound autofills THIS dataset's marker table.
     shiny::selectInput(
       ns("pelsa_compound"),
       label   = "Treatment compound",
@@ -688,7 +729,7 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
     ),
     shiny::actionButton(ns("pelsa_add_markers"), "Add markers"),
 
-    # 5. Marker reactive table + remove/clear.
+    # 5. Marker reactive table + remove/clear (this dataset's markers).
     shiny::tags$div(
       style = "margin-top: 10px;",
       DT::dataTableOutput(ns("pelsa_marker_table"))
@@ -700,22 +741,40 @@ pelsa_setup_box_ui <- function(datasets, species, compounds, ns,
     )
   )
 
-  # 6. ORDERING / CONFIG LAYER (purple): per-dataset condition/replicate (5B).
-  #    "Apply to all" copies one dataset's column+order config to every checked
-  #    dataset. The per-dataset panels are rendered server-side (they depend on
-  #    the checked-dataset set and each dataset's cdesc).
+  # 6. ORDERING / CONFIG LAYER (purple): this dataset's condition/replicate
+  #    config. The "Apply this dataset's setup to all others" button copies this
+  #    tab's full config (species/compound/markers + columns/order) to every
+  #    other non-skipped dataset. The per-dataset panel is rendered server-side.
   config_section <- shiny::tags$div(
     class = "pelsa-section pelsa-layer-config",
     pelsa_section_head("sliders", "Condition / replicate configuration"),
-    shiny::checkboxInput(
-      ns("pelsa_apply_all"),
-      label = "Apply the same setup to all datasets",
-      value = FALSE
-    ),
-    shiny::uiOutput(ns("pelsa_perdataset_config"))
+    shiny::uiOutput(ns("pelsa_perdataset_config")),
+    shiny::div(
+      style = "margin-top: 10px;",
+      shiny::actionButton(
+        ns("pelsa_apply_all"),
+        "Apply this dataset's setup to all others",
+        icon = shiny::icon("clone")
+      )
+    )
   )
 
-  left_col <- shiny::tagList(data_section, config_section)
+  # The Skip toggle (above the greyable form) + the greyable form wrapper.
+  skip_toggle <- shiny::tags$div(
+    class = "pelsa-section pelsa-layer-skip",
+    shiny::checkboxInput(
+      ns("pelsa_skip"),
+      label = "Skip PELSA analysis for this dataset",
+      value = selected_skip
+    )
+  )
+  setup_form <- shiny::tags$div(
+    id = ns("pelsa_setup_form"),
+    class = "pelsa-setup-form",
+    data_section, config_section
+  )
+
+  left_col <- shiny::tagList(skip_toggle, setup_form)
 
   # 7. ACTION LAYER (green): START ANALYSIS (5D). The PRIMARY action - placed
   #    first/top of the right column and visually dominant. Gated by a pre-flight
