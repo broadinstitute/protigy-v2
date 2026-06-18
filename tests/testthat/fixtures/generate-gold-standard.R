@@ -54,7 +54,7 @@ params <- list(
 
 # Helper: run code with Shiny session functions mocked out.
 # processGCTs / stat.testing use withProgress, incProgress, setProgress,
-# showNotification — all require a live Shiny session.
+# showNotification  -  all require a live Shiny session.
 mock_shiny <- function(code) {
   testthat::with_mocked_bindings(
     withProgress    = function(expr, ...) { force(expr) },
@@ -67,7 +67,7 @@ mock_shiny <- function(code) {
 }
 
 # ---------------------------------------------------------------------------
-# 1. processGCTs → gold_processed_mat.rds
+# 1. processGCTs -> gold_processed_mat.rds
 # ---------------------------------------------------------------------------
 
 message("Running processGCTs...")
@@ -78,7 +78,7 @@ saveRDS(gold_mat, file.path(outdir, "gold_processed_mat.rds"))
 message(sprintf("Saved gold_processed_mat.rds  (%d x %d)", nrow(gold_mat), ncol(gold_mat)))
 
 # ---------------------------------------------------------------------------
-# 2. summary_dataset → gold_summary_dataset.rds
+# 2. summary_dataset -> gold_summary_dataset.rds
 # ---------------------------------------------------------------------------
 
 message("Running summary_dataset...")
@@ -91,7 +91,7 @@ saveRDS(gold_summary, file.path(outdir, "gold_summary_dataset.rds"))
 message(sprintf("Saved gold_summary_dataset.rds  (%d rows)", nrow(gold_summary)))
 
 # ---------------------------------------------------------------------------
-# 3. stat.testing → gold_stat_results.rds  (Basal vs LumA, T-test)
+# 3. stat.testing -> gold_stat_results.rds  (Basal vs LumA, T-test)
 # ---------------------------------------------------------------------------
 
 message("Running stat.testing...")
