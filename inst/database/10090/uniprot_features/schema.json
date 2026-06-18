@@ -1,0 +1,44 @@
+{
+  "columns": [
+    "accession",
+    "feature_type",
+    "start",
+    "end",
+    "description",
+    "feature_class",
+    "class_score",
+    "coord_quality"
+  ],
+  "dtypes": {
+    "accession": "object",
+    "feature_type": "object",
+    "start": "int32",
+    "end": "int32",
+    "description": "object",
+    "feature_class": "object",
+    "class_score": "int8",
+    "coord_quality": "object"
+  },
+  "classifier_version": "fixed_v1",
+  "feature_class_levels": [
+    "active_or_binding_site",
+    "catalytic_domain",
+    "folded_domain",
+    "region_or_motif",
+    "repeat_or_coiled_coil",
+    "transmembrane_or_signal",
+    "low_complexity_or_disorder",
+    "other"
+  ],
+  "feature_class_scores": {
+    "active_or_binding_site": 5,
+    "catalytic_domain": 3,
+    "folded_domain": 2,
+    "region_or_motif": 1,
+    "repeat_or_coiled_coil": -1,
+    "transmembrane_or_signal": 0,
+    "low_complexity_or_disorder": -3,
+    "other": 0
+  },
+  "generated_at": "2026-06-17T19:18:05.252Z"
+}

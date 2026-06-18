@@ -36,6 +36,9 @@ firebase-debug.log
 inst/database/*/uniprot_features/*.tsv
 inst/database/*/uniprot_features/*.parquet
 inst/database/*/uniprot_membrane/*.tsv
+#   the runtime-generated species classification/display registry (rebuilt on
+#   first run; never committed -- see tab_pelsa_species_resolve.R).
+inst/database/species_meta.json
 
 # ──────────────────────────────────────────────────────────────────────────
 # Dev scratch artifacts (regenerable; not source)
