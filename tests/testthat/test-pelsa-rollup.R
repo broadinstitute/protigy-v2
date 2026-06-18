@@ -90,7 +90,10 @@ test_that("a peptide best for multiple accessions yields ONE multi-labeled dot",
   # X is best for A and B -> ONE row, not two.
   x <- out[out$peptide_seq == "X", ]
   expect_equal(nrow(x), 1L)
-  expect_equal(x$label, "GA_aa120;GB_aa88")
+  # LABEL entries ordered by (pep_start, accession) to match the all_peptide
+  # panel: B@aa88 precedes A@aa120 (88 < 120), regardless of accession alpha order.
+  expect_equal(x$label, "GB_aa88;GA_aa120")
+  # won_accessions stays winner-ordered (A's adj.P .001 < B's .002 -> A first).
   expect_equal(x$won_accessions, "A;B")
   expect_equal(x$n_won, 2L)
   # The dot's single coordinate is the peptide's stats (same row everywhere).
@@ -327,4 +330,28 @@ test_that("integration: tie peptides resolve deterministically per accession", {
   tie_out <- out1[out1$won_accessions == syn$tie_accession, , drop = FALSE]
   expect_equal(nrow(tie_out), 1L)
   expect_equal(tie_out$peptide_seq, "TIEPEPONEK")
+})
+
+# --- Multi-label entry order matches the all_peptide panel: (pep_start, accession)
+test_that("multi-label entries are ordered by (pep_start, accession), not accession", {
+  # Peptide X maps to accessions A (pep_start 200) and B (pep_start 5). The
+  # all_peptide panel orders label entries by (pep_start, accession), so the
+  # canonical order is B's (aa5) BEFORE A's (aa200) even though A < B
+  # alphabetically. The best_peptide rollup must produce the SAME order.
+  df <- .make_exploded(
+    peptide_seq = c("X",   "X"),
+    accession   = c("A",   "B"),
+    gene        = c("GA",  "GB"),
+    pep_start   = c(200L,  5L),
+    adj.P.Val   = c(.001,  .001),
+    logFC       = c(-1,    -1)
+  )
+  out <- pelsa_best_peptide_rollup(df)
+  x <- out[out$peptide_seq == "X", ]
+  expect_equal(nrow(x), 1L)
+  # LABEL entries reorder to (pep_start, accession): B@aa5 first, then A@aa200.
+  expect_equal(x$label, "GB_aa5;GA_aa200")
+  # won_accessions stays in winner/stats-priority order (its first token is the
+  # representative won accession); equal stats here -> accession tie-break -> A;B.
+  expect_equal(x$won_accessions, "A;B")
 })

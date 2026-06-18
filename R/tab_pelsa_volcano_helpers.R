@@ -88,6 +88,11 @@
 # accession) BEFORE the group paste, so the label is identical to
 # pelsa_build_multilabel()'s !duplicated()-on-sorted output.
 #
+# NOTE: this all_peptide label spans ALL of a key's accession mappings; the
+# best_peptide panel (pelsa_best_peptide_rollup) labels only the WON accessions
+# (a subset) but in the SAME (pep_start, accession) order, so the entries that
+# appear in both panels share an identical ordering.
+#
 # @param matched   the 2B $matched cache (peptide x accession x occurrence)
 # @param key_col   the join key column name present in matched ("..key")
 # @return data.frame(key, label) one row per distinct key

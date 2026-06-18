@@ -104,17 +104,23 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
   # multi-label over the accessions it won, the ;-joined won accessions, and the
   # win count. pelsa_build_multilabel runs once per peptide group (small set).
   out_dt <- winners[, {
-    # Within this by="peptide_seq" group the gene/pep_start/accession vectors
-    # preserve the sorted `winners` row order (data.table by-groups keep the
-    # parent table's order), so the label / won_accessions entry order is
-    # deterministic under any input row permutation.
+    # The LABEL's ;-joined entries are ordered by (pep_start, accession) so the
+    # best_peptide multi-label matches the all_peptide panel's entry order
+    # (.pelsa_volcano_labels sorts by (pep_start, accession)); otherwise the two
+    # panels could show the same peptide's ;-joined tokens in a different order.
+    # NOTE: this reorders ONLY the display label. won_accessions stays in the
+    # winners' stats-priority row order because its FIRST token is the
+    # representative won accession (.pelsa_best_back_map drives the dot's
+    # protein/gene/span/P.Value/is_marker from won_accessions[1]).
+    lab_ord <- order(pep_start, accession)
     list(
       # adj_p[1L] / logFC[1L] rely on the per-peptide-single-coordinate
       # invariant: a peptide has ONE (adj_p, logFC), so any winner row for it
       # carries that same coordinate -- the first row is representative.
       adj_p          = adj_p[1L],
       logFC          = logFC[1L],
-      label          = pelsa_build_multilabel(gene, pep_start, accession,
+      label          = pelsa_build_multilabel(gene[lab_ord], pep_start[lab_ord],
+                                               accession[lab_ord],
                                                is_self_curated),
       won_accessions = paste(accession, collapse = ";"),
       n_won          = .N
