@@ -507,30 +507,35 @@ pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
   m <- pelsa_volcano_highlight_mask(df, selection, find_mask)
   if (!any(m)) return(NULL)
   d <- df[m, , drop = FALSE]
+  # as.list() forces x/y/text to serialize as JSON ARRAYS even for a SINGLE
+  # highlighted point (one peptide with no siblings). plotlyProxyInvoke goes
+  # through jsonlite, which collapses a length-1 vector to a scalar; a scattergl
+  # trace then can't index it and the gold dot vanishes. (Same guard as
+  # pelsa_volcano_clicked_point_trace.)
   list(
     type = "scattergl", mode = "markers",
-    x = as.numeric(d$logFC), y = as.numeric(d$logP),
-    text = pelsa_volcano_tip(d), hoverinfo = "text",
+    x = as.list(as.numeric(d$logFC)), y = as.list(as.numeric(d$logP)),
+    text = as.list(pelsa_volcano_tip(d)), hoverinfo = "text",
     marker = list(color = .PELSA_GOLD, size = 7,
                   line = list(color = .PELSA_VOLCANO_MARKER_EDGE, width = 0.5)),
     showlegend = FALSE, meta = "pelsa_gold"
   )
 }
 
-# Build the dark-gold LABEL overlay trace for the CLICKED peptide only (NOT its
-# siblings): a one-point scattergl "text+markers" trace, ready for
-# plotlyProxyInvoke("addTraces", ...). The label is "<gene>_aa<pep_start>" built
-# with the SAME stem logic as pelsa_volcano_tip (gene -> accession fallback;
-# self-curated rows already carry a blanked winning_gene so the accession
-# fallback fires). When pep_start is unknown (NA) the label is the stem alone (no
-# "_aaNA" suffix). Dark-gold text over a white halo marker so the text reads
-# against the gold dot beneath it - the mode is "text+markers" because a
-# text-only scattergl trace draws NO marker, so the halo would not render. (A
-# true boxed annotation is not available on a scattergl trace; proxy
-# relayout(annotations=) is unreliable on this WebGL volcano.) Returns NULL when
-# nothing is selected or the clicked row cannot be resolved (e.g. a
-# multi-accession Find that sets selection() to NULL). @noRd
-pelsa_volcano_clicked_label_trace <- function(df, selection = NULL) {
+# Build the CLICKED-POINT emphasis overlay trace for the clicked peptide only
+# (NOT its siblings): a one-point scattergl "markers" trace, ready for
+# plotlyProxyInvoke("addTraces", ...). It carries the SAME gold fill
+# (.PELSA_GOLD) as the gold highlight of its siblings, but a LARGER dot
+# (.PELSA_CLICK_PT_SIZE) with a THICKER black outline (.PELSA_CLICK_PT_RING_W)
+# so the clicked peptide stands out from the same-protein gold dots beneath it.
+# Drawn on top of the gold overlay at the SAME (logFC, logP), so it reads as one
+# emphasized gold point. Carries the standard 6-line hover (pelsa_volcano_tip).
+#
+# The clicked row is resolved by selection$row (a volcano click) with a
+# peptide_seq fallback (a Woods click carries row=NA). Returns NULL when nothing
+# is selected, the row cannot be resolved (e.g. a multi-accession Find sets
+# selection() to NULL), or the row has NA coordinates. @noRd
+pelsa_volcano_clicked_point_trace <- function(df, selection = NULL) {
   if (!is.data.frame(df) || nrow(df) == 0L || is.null(selection)) return(NULL)
   row <- selection$row
   if (is.null(row) || length(row) != 1L || is.na(row)) {
@@ -548,23 +553,21 @@ pelsa_volcano_clicked_label_trace <- function(df, selection = NULL) {
   d <- df[row, , drop = FALSE]
   if (is.na(d$logFC) || is.na(d$logP)) return(NULL)
 
-  gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
-                    d$PG.Genes, d$winning_gene)
-  acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
-                   d$PG.ProteinAccessions, d$winning_accession)
-  stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
-  if (is.na(stem) || !nzchar(stem)) return(NULL)
-  # No "_aaNA" cruft when the residue position is unknown: stem alone.
-  label <- if (is.na(d$pep_start)) stem else paste0(stem, "_aa", d$pep_start)
-
+  # x/y/text are wrapped in list() so a SINGLE point serializes to a JSON ARRAY
+  # ([5.68]) rather than a scalar (5.68). plotlyProxyInvoke("addTraces", ...)
+  # goes through jsonlite, which collapses a length-1 vector to a scalar; a
+  # scattergl trace then reads x[0] as undefined -> NaN pixel -> the point never
+  # paints. Forcing arrays keeps the one-point overlay renderable. (The gold
+  # overlay escaped this only because it usually has >=2 points; see
+  # pelsa_volcano_gold_trace for the same guard.)
   list(
-    type = "scattergl", mode = "text+markers",
-    x = as.numeric(d$logFC), y = as.numeric(d$logP),
-    text = label, textposition = "top right",
-    textfont = list(color = .PELSA_GOLD_DARK, size = 11, family = "Arial"),
-    marker = list(color = "rgba(255,255,255,0.9)", size = 14,
-                  line = list(width = 0)),
-    hoverinfo = "skip", showlegend = FALSE, meta = "pelsa_gold_label"
+    type = "scattergl", mode = "markers",
+    x = list(as.numeric(d$logFC)), y = list(as.numeric(d$logP)),
+    text = list(pelsa_volcano_tip(d)), hoverinfo = "text",
+    marker = list(color = .PELSA_GOLD, size = .PELSA_CLICK_PT_SIZE,
+                  line = list(color = .PELSA_VOLCANO_MARKER_EDGE,
+                              width = .PELSA_CLICK_PT_RING_W)),
+    showlegend = FALSE, meta = "pelsa_gold_click"
   )
 }
 

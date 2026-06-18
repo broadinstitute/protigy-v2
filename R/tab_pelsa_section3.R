@@ -839,20 +839,21 @@ PELSASection3_Ome_Server <- function(id,
     # The base figure has exactly TWO point traces: index 0 = background
     # (meta "pelsa_bg"), index 1 = markers (meta "pelsa_mk"). The overlay set is
     # pushed on top: the gold highlight at index 2 and, when a peptide is clicked,
-    # its dark-gold label at index 3. overlay_n tracks how many overlay traces
-    # currently exist on the client so we never delete a trace that is not there.
-    overlay_n  <- reactiveVal(0L)  # how many overlay traces (gold, label) on client
+    # its larger emphasized clicked-point dot at index 3. overlay_n tracks how
+    # many overlay traces currently exist on the client so we never delete a
+    # trace that is not there.
+    overlay_n  <- reactiveVal(0L)  # how many overlay traces (gold, click) on client
     gold_proxy   <- plotly::plotlyProxy("pelsa_volcano_plot", session)
 
     # Re-apply the overlay set for the CURRENT selection/find: remove the prior
     # overlay traces (if any) then add the fresh ones. The base build is untouched.
     # The base figure has exactly TWO point traces (bg=0, markers=1), so overlays
-    # start at index 2: the gold highlight is index 2, and the clicked-peptide
-    # dark-gold LABEL (when present) rides on top at index 3.
+    # start at index 2: the gold highlight is index 2, and the emphasized
+    # clicked-point dot (when present) rides on top at index 3.
     apply_gold_overlay <- function() {
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
       if (is.null(df) || nrow(df) == 0L) return()
-      # Delete existing overlays HIGHEST-index-first (label=3, gold=2) so the
+      # Delete existing overlays HIGHEST-index-first (click=3, gold=2) so the
       # remaining indices stay valid mid-delete.
       n <- overlay_n()
       if (n >= 2L) plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(3L))
@@ -866,11 +867,12 @@ PELSASection3_Ome_Server <- function(id,
       if (!is.null(gold_tr)) {
         plotly::plotlyProxyInvoke(gold_proxy, "addTraces", gold_tr)
         added <- added + 1L
-        # The clicked-peptide label only makes sense alongside a gold highlight
-        # (a selected peptide). It rides at index 3, on top of the gold markers.
-        lab_tr <- pelsa_volcano_clicked_label_trace(df, selection())
-        if (!is.null(lab_tr)) {
-          plotly::plotlyProxyInvoke(gold_proxy, "addTraces", lab_tr)
+        # Emphasize the clicked peptide (a larger gold dot with a thicker black
+        # ring) on top of the gold markers, at index 3. Only meaningful when a
+        # single peptide is selected (a click / single-accession Find).
+        click_tr <- pelsa_volcano_clicked_point_trace(df, selection())
+        if (!is.null(click_tr)) {
+          plotly::plotlyProxyInvoke(gold_proxy, "addTraces", click_tr)
           added <- added + 1L
         }
       }

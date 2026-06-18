@@ -181,13 +181,16 @@ test_that("gold_trace: selection -> gold scattergl trace over the right points",
   expect_identical(tr$meta, "pelsa_gold")
   expect_identical(tr$marker$color, .PELSA_GOLD)
   expect_identical(tr$marker$line$color, .PELSA_VOLCANO_MARKER_EDGE)
-  # Two highlighted points (PEPA1 + PEPA2), at their (logFC, logP).
-  expect_equal(tr$x, c(-1, 1))
-  expect_equal(tr$y, c(1, 2))
+  # Two highlighted points (PEPA1 + PEPA2), at their (logFC, logP). x/y/text are
+  # as.list()-wrapped so even a single point serializes to a JSON array (the
+  # proxy auto_unbox scalar-collapse bug); unlist before the value checks.
+  expect_equal(unlist(tr$x), c(-1, 1))
+  expect_equal(unlist(tr$y), c(1, 2))
   # 6-line hover, one per highlighted point.
   expect_length(tr$text, 2L)
-  expect_true(all(grepl("Peptide: ", tr$text, fixed = TRUE)))
-  expect_equal(lengths(regmatches(tr$text, gregexpr("<br>", tr$text))),
+  txt <- unlist(tr$text)
+  expect_true(all(grepl("Peptide: ", txt, fixed = TRUE)))
+  expect_equal(lengths(regmatches(txt, gregexpr("<br>", txt))),
                c(5L, 5L))  # 6 lines => 5 <br> separators
 })
 
@@ -196,9 +199,12 @@ test_that("gold_trace: find_mask alone highlights the matched rows", {
   fm <- df$winning_accession == "ACCB"   # row 3 only
   tr <- pelsa_volcano_gold_trace(df, selection = NULL, find_mask = fm)
   expect_false(is.null(tr))
-  expect_equal(tr$x, 2)     # PEPB1 logFC
-  expect_equal(tr$y, 3)     # PEPB1 logP
+  # Single matched row: as.list keeps x/y as a length-1 list (-> JSON array).
+  expect_equal(unlist(tr$x), 2)     # PEPB1 logFC
+  expect_equal(unlist(tr$y), 3)     # PEPB1 logP
   expect_length(tr$text, 1L)
+  # Regression guard: a length-1 coord must serialize as an ARRAY, not a scalar.
+  expect_equal(as.character(jsonlite::toJSON(tr$x, auto_unbox = TRUE)), "[2]")
 })
 
 test_that("gold_trace size matches the build's gold/marker px (7)", {

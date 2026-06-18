@@ -3,10 +3,15 @@
 ################################################################################
 
 .PELSA_GOLD          <- "#D4AF37"   # selection fill + coverage-track fill
-.PELSA_GOLD_DARK     <- "#8B6914"   # clicked-peptide label text (dark gold)
 .PELSA_GOLD_RING_W   <- 2           # same-protein peptide ring width
 .PELSA_SEL_DARK_RING <- "#333333"   # the selected peptide's dark outline
 .PELSA_SEL_DARK_RING_W <- 1.2
+# Clicked-peptide emphasis on the volcano: SAME gold fill as its siblings, but
+# a larger dot with a thicker black outline so the clicked point stands out
+# (vs. the gold overlay's size 7 / 0.5px ring). Drawn as a one-point overlay
+# trace on top of the gold highlight.
+.PELSA_CLICK_PT_SIZE   <- 11        # clicked-point marker size (gold dot is 7)
+.PELSA_CLICK_PT_RING_W <- 2         # clicked-point black-outline width (gold is 0.5)
 
 # ---- Export tree: stage + sub-stage folder names ----------------------------
 # The PELSA export writes one nested tree per ome: <ome>/pelsa/<stage>/...
