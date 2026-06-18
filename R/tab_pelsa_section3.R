@@ -829,31 +829,44 @@ PELSASection3_Ome_Server <- function(id,
     ## GOLD HIGHLIGHT OVERLAY (proxy addTraces/deleteTraces - no rebuild)
     ## ------------------------------------------------------------------------
     # The base figure has exactly TWO point traces: index 0 = background
-    # (meta "pelsa_bg"), index 1 = markers (meta "pelsa_mk"). The gold highlight,
-    # when present, is ALWAYS the LAST trace, pushed as a third trace at index 2.
-    # gold_present tracks whether that third trace currently exists on the client
-    # so we never delete a trace that is not there.
-    gold_present <- reactiveVal(FALSE)
+    # (meta "pelsa_bg"), index 1 = markers (meta "pelsa_mk"). The overlay set is
+    # pushed on top: the gold highlight at index 2 and, when a peptide is clicked,
+    # its dark-gold label at index 3. overlay_n tracks how many overlay traces
+    # currently exist on the client so we never delete a trace that is not there.
+    overlay_n  <- reactiveVal(0L)  # how many overlay traces (gold, label) on client
     gold_proxy   <- plotly::plotlyProxy("pelsa_volcano_plot", session)
 
-    # Re-apply the gold overlay for the CURRENT selection/find: remove the prior
-    # gold trace (if we added one) then add the fresh one. The base build is
-    # untouched. The gold trace is index 2 (bg=0, markers=1), so we delete the
-    # explicit index 2L rather than rely on a "-1 == last" convention.
+    # Re-apply the overlay set for the CURRENT selection/find: remove the prior
+    # overlay traces (if any) then add the fresh ones. The base build is untouched.
+    # The base figure has exactly TWO point traces (bg=0, markers=1), so overlays
+    # start at index 2: the gold highlight is index 2, and the clicked-peptide
+    # dark-gold LABEL (when present) rides on top at index 3.
     apply_gold_overlay <- function() {
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
       if (is.null(df) || nrow(df) == 0L) return()
-      if (isTRUE(gold_present())) {
-        plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(2L))
-        gold_present(FALSE)
-      }
+      # Delete existing overlays HIGHEST-index-first (label=3, gold=2) so the
+      # remaining indices stay valid mid-delete.
+      n <- overlay_n()
+      if (n >= 2L) plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(3L))
+      if (n >= 1L) plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(2L))
+      overlay_n(0L)
+
       fr <- find_result()
-      tr <- pelsa_volcano_gold_trace(
+      gold_tr <- pelsa_volcano_gold_trace(
         df, selection(), if (is.null(fr)) NULL else fr$mask)
-      if (!is.null(tr)) {
-        plotly::plotlyProxyInvoke(gold_proxy, "addTraces", tr)
-        gold_present(TRUE)
+      added <- 0L
+      if (!is.null(gold_tr)) {
+        plotly::plotlyProxyInvoke(gold_proxy, "addTraces", gold_tr)
+        added <- added + 1L
+        # The clicked-peptide label only makes sense alongside a gold highlight
+        # (a selected peptide). It rides at index 3, on top of the gold markers.
+        lab_tr <- pelsa_volcano_clicked_label_trace(df, selection())
+        if (!is.null(lab_tr)) {
+          plotly::plotlyProxyInvoke(gold_proxy, "addTraces", lab_tr)
+          added <- added + 1L
+        }
       }
+      overlay_n(added)
     }
 
     # (a) SELECTION/FIND observer. The base cloud is unchanged, so the OLD gold
@@ -865,10 +878,10 @@ PELSASection3_Ome_Server <- function(id,
     }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     # (b) BASE-REBUILD observer. Anything that re-renders the WHOLE figure clears
-    # ALL extra traces on the client, so the old gold trace is GONE - reset
-    # gold_present(FALSE) WITHOUT a delete (deleting the now-absent trace would
-    # error / drop the markers), then re-add the current gold once the new figure
-    # has flushed. The base now rebuilds on color-mode / contrast AND on
+    # ALL extra traces on the client, so the old overlay traces are GONE - reset
+    # overlay_n(0L) WITHOUT a delete (deleting the now-absent traces would
+    # error / drop the markers), then re-add the current overlay set once the new
+    # figure has flushed. The base now rebuilds on color-mode / contrast AND on
     # label-mode / Top-N (labels are baked into the build, not relayout-applied),
     # so all four are triggers here - otherwise a label change would silently drop
     # the gold highlight.
@@ -877,7 +890,7 @@ PELSASection3_Ome_Server <- function(id,
            label_mode_for_contrast(), top_n_for_contrast()),
       {
         session$onFlushed(function() {
-          gold_present(FALSE)   # the rebuild already cleared the gold trace
+          overlay_n(0L)   # the rebuild already cleared the overlay traces
           apply_gold_overlay()
         }, once = TRUE)
       }, ignoreNULL = FALSE, ignoreInit = TRUE)

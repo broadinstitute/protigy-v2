@@ -479,6 +479,57 @@ pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
   )
 }
 
+# Build the dark-gold LABEL overlay trace for the CLICKED peptide only (NOT its
+# siblings): a one-point scattergl "text+markers" trace, ready for
+# plotlyProxyInvoke("addTraces", ...). The label is "<gene>_aa<pep_start>" built
+# with the SAME stem logic as pelsa_volcano_tip (gene -> accession fallback;
+# self-curated rows already carry a blanked winning_gene so the accession
+# fallback fires). When pep_start is unknown (NA) the label is the stem alone (no
+# "_aaNA" suffix). Dark-gold text over a white halo marker so the text reads
+# against the gold dot beneath it - the mode is "text+markers" because a
+# text-only scattergl trace draws NO marker, so the halo would not render. (A
+# true boxed annotation is not available on a scattergl trace; proxy
+# relayout(annotations=) is unreliable on this WebGL volcano.) Returns NULL when
+# nothing is selected or the clicked row cannot be resolved (e.g. a
+# multi-accession Find that sets selection() to NULL). @noRd
+pelsa_volcano_clicked_label_trace <- function(df, selection = NULL) {
+  if (!is.data.frame(df) || nrow(df) == 0L || is.null(selection)) return(NULL)
+  row <- selection$row
+  if (is.null(row) || length(row) != 1L || is.na(row)) {
+    seq <- selection$peptide_seq
+    if (is.null(seq) || length(seq) != 1L || is.na(seq) || !nzchar(seq)) {
+      return(NULL)
+    }
+    row <- match(as.character(seq), as.character(df$id))
+  }
+  # selection$row is trusted to index THIS df: the caller (apply_gold_overlay)
+  # reads the same active_volcano_df() the click resolved against, and the
+  # base-rebuild observer re-resolves after any reorder. The Woods path carries
+  # row=NA and is re-resolved by peptide_seq above, so it is never stale.
+  if (is.na(row) || row < 1L || row > nrow(df)) return(NULL)
+  d <- df[row, , drop = FALSE]
+  if (is.na(d$logFC) || is.na(d$logP)) return(NULL)
+
+  gene_fb <- ifelse(is.na(d$winning_gene) | !nzchar(d$winning_gene),
+                    d$PG.Genes, d$winning_gene)
+  acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
+                   d$PG.ProteinAccessions, d$winning_accession)
+  stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
+  if (is.na(stem) || !nzchar(stem)) return(NULL)
+  # No "_aaNA" cruft when the residue position is unknown: stem alone.
+  label <- if (is.na(d$pep_start)) stem else paste0(stem, "_aa", d$pep_start)
+
+  list(
+    type = "scattergl", mode = "text+markers",
+    x = as.numeric(d$logFC), y = as.numeric(d$logP),
+    text = label, textposition = "top right",
+    textfont = list(color = .PELSA_GOLD_DARK, size = 11, family = "Arial"),
+    marker = list(color = "rgba(255,255,255,0.9)", size = 14,
+                  line = list(width = 0)),
+    hoverinfo = "skip", showlegend = FALSE, meta = "pelsa_gold_label"
+  )
+}
+
 # ---- shared plot-assembly (BOTH volcano panels reuse this) ------------------
 
 # Assemble the WebGL volcano plotly object from the FULL volcano frame (every
