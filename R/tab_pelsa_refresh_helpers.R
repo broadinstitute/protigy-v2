@@ -202,11 +202,14 @@ pelsa_refresh_accession_universe <- function(gcts, existing_cache,
 #     rows (coverage preserved across a flaky fetch).
 #   - Accessions in neither contribute nothing.
 #
-# "Resolved" = accession appears in `fresh$accession`. We do NOT need the
-# universe here: an accession with fresh rows is resolved; an accession with no
-# fresh rows is retained from cache ONLY if it is NOT being treated as resolved.
-# Because `unresolved` is exactly the set the fetch failed/returned-empty for,
-# we retain old rows for an accession IFF it is in `unresolved` (and in cache).
+# "Resolved" here means the fetch RETURNED A UNIPROT ENTRY for the accession
+# (pelsa_fetch_uniprot derives `unresolved` from ENTRY presence -- an entry that
+# returned with zero usable features is RESOLVED, so it is NOT in `unresolved`).
+# Therefore a resolved-but-now-feature-less accession has no fresh rows AND is
+# not in `unresolved`, so it is NOT retained -- its stale rows correctly drop to
+# zero. We retain old rows for an accession IFF it is in `unresolved` (the fetch
+# did not return its entry: 404-equivalent, failed batch, or not-yet-fetched)
+# AND it exists in the old cache.
 #
 # Pure + deterministic. Returns rows ordered: fresh rows first (in their order),
 # then retained old rows.

@@ -237,6 +237,29 @@ pelsa_parse_uniprot_json_batch <- function(list_of_entries) {
   out
 }
 
+# Accessions that a set of returned UniProt entries "resolves" -- the union of
+# every entry's primaryAccession AND its secondaryAccessions. Used so an input
+# accession counts as RESOLVED when UniProt returned its entry, regardless of
+# whether that entry yielded any parseable features, and including the demerged
+# case where an input secondary accession comes back under a different primary.
+# @param list_of_entries list of parsed UniProt entries (as resp_body_json yields)
+# @return character vector of accessions (possibly empty, no NAs/empties)
+# @noRd
+.pelsa_entry_accessions <- function(list_of_entries) {
+  if (is.null(list_of_entries) || length(list_of_entries) == 0L) {
+    return(character(0))
+  }
+  accs <- unlist(lapply(list_of_entries, function(e) {
+    if (is.null(e) || !is.list(e)) return(character(0))
+    prim <- .pelsa_chr1(e$primaryAccession)
+    sec  <- if (is.null(e$secondaryAccessions)) character(0) else
+      vapply(e$secondaryAccessions, .pelsa_chr1, character(1))
+    c(prim, sec)
+  }), use.names = FALSE)
+  accs <- accs[!is.na(accs) & nzchar(accs)]
+  unique(accs)
+}
+
 # ---- (B) httr2 fetch ---------------------------------------------------------
 
 # UniProt REST. We fetch in BATCHES via the /search endpoint
@@ -477,15 +500,19 @@ pelsa_fetch_uniprot <- function(accessions,
 
   features <- pelsa_parse_uniprot_json_batch(entries)
 
-  # unresolved = the input accessions NOT present in any returned entry. This
+  # unresolved = the input accessions NOT present in any returned ENTRY. This
   # covers 404-equivalents (absent from UniProt), accessions in a failed batch,
   # and (on cancel) the not-yet-fetched accessions. The caller retains their
   # cached rows and does NOT write a partial cache on cancel.
-  resolved <- if (nrow(features) > 0L) {
-    unique(as.character(features$accession))
-  } else {
-    character(0)
-  }
+  #
+  # IMPORTANT: "resolved" is ENTRY presence, NOT feature presence. A valid entry
+  # that returned with zero usable features is still resolved (so it does not
+  # inflate the "failed annotation" QC count or retain stale cache rows). And a
+  # demerged/secondary input accession returned under its primaryAccession is
+  # resolved via the entry's secondaryAccessions. We intersect the returned
+  # entry accessions with the input set so `unresolved` stays over the input
+  # universe.
+  resolved <- intersect(accessions, .pelsa_entry_accessions(entries))
   unresolved <- setdiff(accessions, resolved)
 
   list(features = features, unresolved = unresolved, canceled = canceled)

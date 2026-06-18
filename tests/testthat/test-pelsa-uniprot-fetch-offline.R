@@ -28,6 +28,21 @@ fake_entry <- function(acc) {
   )
 }
 
+# A VALID UniProt entry that was returned but carries NO usable features
+# (no `features`). It produces zero feature rows, but the protein WAS resolved
+# (UniProt returned it), so its accession must NOT be reported unresolved.
+fake_entry_no_features <- function(acc) {
+  list(primaryAccession = acc, sequence = list(length = 10L))
+}
+
+# An entry returned under `primary`, carrying `secondary` in secondaryAccessions
+# (the demerged-accession case: a /search on the secondary returns this entry).
+fake_entry_with_secondary <- function(primary, secondary) {
+  e <- fake_entry(primary)
+  e$secondaryAccessions <- list(secondary)
+  e
+}
+
 test_that("on_batch fires once per batch with (done, total)", {
   seen <- list()
   testthat::local_mocked_bindings(
@@ -66,6 +81,58 @@ test_that("a 4xx-style empty batch yields unresolved, NOT a breaker trip", {
   expect_setequal(res$unresolved, paste0("P", 1:10))
   expect_equal(nrow(res$features), 0L)
   expect_false(res$canceled)
+})
+
+test_that("a returned-but-feature-less entry is RESOLVED, not unresolved", {
+  # Regression: `resolved` was derived from feature rows, so a valid UniProt
+  # entry with zero parseable features was wrongly marked unresolved (spurious
+  # 'failed annotation' QC count + stale-cache retention). Entry presence, not
+  # feature presence, defines resolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # P1 has features, P2 is returned but feature-less.
+      ent <- list(fake_entry("P1"), fake_entry_no_features("P2"))
+      list(entries = ent, failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P1", "P2"), batch_size = 2L)
+  # P2 was returned (resolved) even though it contributed no feature rows.
+  expect_false("P2" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+  # P1 still produced its feature row.
+  expect_true("P1" %in% res$features$accession)
+})
+
+test_that("an input secondary accession returned under its primary is RESOLVED", {
+  # Regression: UniProt returns a demerged accession's entry under the PRIMARY
+  # accession (with the secondary listed in secondaryAccessions). The input
+  # secondary must be marked resolved, not unresolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # input was the secondary "P0SEC"; UniProt returns it as primary "Q99PRI".
+      list(entries = list(fake_entry_with_secondary("Q99PRI", "P0SEC")),
+           failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P0SEC"), batch_size = 2L)
+  expect_false("P0SEC" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+})
+
+test_that("a genuinely-absent accession is still reported unresolved", {
+  # Control: an accession UniProt never returns stays unresolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # only P1 comes back; P_GHOST is absent.
+      list(entries = list(fake_entry("P1")), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P1", "P_GHOST"), batch_size = 2L)
+  expect_true("P_GHOST" %in% res$unresolved)
+  expect_false("P1" %in% res$unresolved)
 })
 
 test_that("breaker trips after .PELSA_BREAKER_LIMIT consecutive failed batches", {
