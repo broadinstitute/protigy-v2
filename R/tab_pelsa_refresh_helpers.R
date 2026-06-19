@@ -548,8 +548,8 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     list(features = existing, unresolved = universe, path = NA_character_,
          n_features = if (is.data.frame(existing)) nrow(existing) else 0L,
          n_unresolved = length(universe), n_accessions = length(universe),
-         n_retained_from_cache = 0L, n_zero_feature = 0L, mode = mode,
-         canceled = TRUE)
+         n_retained_from_cache = 0L, n_zero_feature = 0L,
+         n_with_features = 0L, mode = mode, canceled = TRUE)
   }
 
   if (length(universe) == 0L) {
@@ -602,6 +602,16 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   # injected stub fetchers may not return this field; default to character(0).
   transient_unresolved <- fetched$transient_unresolved %||% character(0)
   zero_feature <- fetched$zero_feature %||% character(0)
+  # Distinct accessions with >= 1 REAL feature this fetch (the `fresh` frame
+  # BEFORE sentinels are folded in). An ACCESSION count, mutually exclusive with
+  # the zero-feature + unresolved accession counts, so the refresh summary
+  # reports three non-overlapping protein tallies (not a row count that would
+  # double-count sentinels). 0 rows -> 0 accessions.
+  n_with_features <- if (is.data.frame(fresh) && nrow(fresh) > 0L) {
+    length(unique(as.character(fresh$accession)))
+  } else {
+    0L
+  }
 
   # Persist resolved-but-0-feature accessions as SENTINEL rows so they live in
   # cache$accession and an incremental refresh stops re-fetching them. Sentinels
@@ -647,6 +657,7 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     n_unresolved           = length(unresolved),
     n_transient_unresolved = length(transient_unresolved),
     n_zero_feature         = length(zero_feature),
+    n_with_features        = n_with_features,
     n_accessions           = length(universe),
     n_retained_from_cache  = n_retained,
     mode                   = mode,
@@ -781,6 +792,7 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
            n_unresolved = res$n_unresolved,
            n_transient_unresolved = res$n_transient_unresolved,
            n_zero_feature = res$n_zero_feature,
+           n_with_features = res$n_with_features,
            n_accessions = res$n_accessions,
            n_retained_from_cache = res$n_retained_from_cache,
            had_existing = had_existing, mode = mode, path = res$path,
@@ -868,16 +880,18 @@ pelsa_refresh_notifications <- function(results) {
   }
   if (length(done) > 0L) {
     summaries <- vapply(done, function(r) {
+      # All three are mutually-exclusive ACCESSION (protein) counts.
       zf <- r$n_zero_feature %||% 0L
+      wf <- r$n_with_features %||% 0L
       if (identical(r$mode, "full")) {
-        sprintf(paste0("%s: rebuilt - %d with features, %d with no features, ",
-                       "%d unresolved (previous feature + membrane files ",
-                       "cleared)"),
-                r$species, r$n_features, zf, r$n_unresolved)
+        sprintf(paste0("%s: rebuilt - %d proteins with features, %d with no ",
+                       "features, %d unresolved (previous feature + membrane ",
+                       "files cleared)"),
+                r$species, wf, zf, r$n_unresolved)
       } else {
-        sprintf(paste0("%s: topped up - %d with features, %d with no features, ",
-                       "%d unresolved, %d retained"),
-                r$species, r$n_features, zf, r$n_unresolved,
+        sprintf(paste0("%s: topped up - %d proteins with features, %d with no ",
+                       "features, %d unresolved, %d retained"),
+                r$species, wf, zf, r$n_unresolved,
                 r$n_retained_from_cache)
       }
     }, character(1))
@@ -1023,15 +1037,17 @@ pelsa_refresh_result_ui <- function(results) {
       sprintf("%s: canceled - existing cache left unchanged", r$species))))
   }
   for (r in done) {
+    # Mutually-exclusive ACCESSION (protein) counts.
     zf <- r$n_zero_feature %||% 0L
+    wf <- r$n_with_features %||% 0L
     line <- if (identical(r$mode, "full")) {
-      sprintf(paste0("%s: rebuilt - %d with features, %d with no features, ",
-                     "%d unresolved (cache cleared)"),
-              r$species, r$n_features %||% 0L, zf, r$n_unresolved %||% 0L)
+      sprintf(paste0("%s: rebuilt - %d proteins with features, %d with no ",
+                     "features, %d unresolved (cache cleared)"),
+              r$species, wf, zf, r$n_unresolved %||% 0L)
     } else {
-      sprintf(paste0("%s: topped up - %d with features, %d with no features, ",
-                     "%d unresolved, %d retained from cache"),
-              r$species, r$n_features %||% 0L, zf, r$n_unresolved %||% 0L,
+      sprintf(paste0("%s: topped up - %d proteins with features, %d with no ",
+                     "features, %d unresolved, %d retained from cache"),
+              r$species, wf, zf, r$n_unresolved %||% 0L,
               r$n_retained_from_cache %||% 0L)
     }
     items <- c(items, list(shiny::tags$li(line)))

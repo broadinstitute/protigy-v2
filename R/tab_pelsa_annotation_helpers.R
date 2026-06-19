@@ -450,7 +450,11 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
   # corruption (NA/inverted coords on a REAL feature_class) is also dropped but
   # WARNS so a bad cache surfaces in logs.
   feat_bad <- is.na(feat$start) | is.na(feat$end) | (feat$start > feat$end)
-  is_sentinel <- feat_bad & (feat$feature_class == "none") &
+  # NA-safe sentinel test: a blank cache row can have NA feature_class, and
+  # (NA == "none") is NA -- which would make `any(feat_corrupt)` error. Guard the
+  # comparison so an NA feature_class is NOT a sentinel (it is corruption: warn).
+  is_sentinel <- feat_bad &
+    (!is.na(feat$feature_class) & feat$feature_class == "none") &
     is.na(feat$start) & is.na(feat$end)
   feat_corrupt <- feat_bad & !is_sentinel
   if (any(feat_corrupt)) {

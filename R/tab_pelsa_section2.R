@@ -192,7 +192,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         value    = format(n %||% NA_integer_, big.mark = ","),
         subtitle = "Proteins with >=1 annotation",
         icon     = icon("circle-check"),
-        color    = "green"
+        color    = "teal"
       )
     })
 

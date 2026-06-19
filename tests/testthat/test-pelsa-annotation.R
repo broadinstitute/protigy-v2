@@ -191,6 +191,23 @@ test_that("annotate_features STILL warns on genuinely corrupt NA-coord rows", {
   expect_warning(pelsa_annotate_features(plot_df, feat), "NA or inverted")
 })
 
+test_that("annotate_features soft-fails on a row with NA feature_class + NA coords", {
+  # A blank cache row (readr reads a blank feature_class AND blank coords as NA).
+  # The sentinel predicate must be NA-safe: this is NOT a sentinel ("none"), so
+  # it is corruption -> warn + drop, never crash with "missing value where
+  # TRUE/FALSE needed".
+  feat <- data.frame(
+    accession = "PB", start = NA_integer_, end = NA_integer_,
+    feature_class = NA_character_, stringsAsFactors = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "PB", PG.Genes = "GB",
+    pep_start = 5L, pep_end = 15L, stringsAsFactors = FALSE
+  )
+  expect_warning(out <- pelsa_annotate_features(plot_df, feat), "NA or inverted")
+  expect_equal(out$feature_class_primary, "none")  # dropped -> fallback
+})
+
 test_that("single overlap on leading accession resolves to that class", {
   feat <- .feat_df()
   # PB [1,30] active_or_binding_site; peptide [5,15] overlaps it.

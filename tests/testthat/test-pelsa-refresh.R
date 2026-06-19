@@ -532,6 +532,9 @@ test_that("refresh writes sentinel rows for zero-feature accessions", {
     species_dir = species_dir, fetch_fn = fake_fetch, mode = "incremental")
 
   expect_identical(res$n_zero_feature, 1L)
+  # n_with_features is a DISTINCT-accession count from the real feature frame
+  # (excludes the sentinel) -- mutually exclusive with n_zero_feature.
+  expect_identical(res$n_with_features, 1L)  # only P00001 has a real feature
   back <- pelsa_read_feature_cache(species_dir)
   expect_setequal(unique(back$accession), c("P00001", "P00002"))
   sentinel <- back[back$accession == "P00002", ]
@@ -955,26 +958,29 @@ test_that("notifications: incremental mode says 'topped up' + retained count", {
   expect_match(summary, "100")  # retained count surfaced
 })
 
-test_that("notifications report the zero-feature count in the summary", {
+test_that("notifications report 3 mutually-exclusive protein counts", {
+  # 70 with features + 30 with no features + 2 unresolved -- no double-counting.
   results <- list(
-    list(species = "9606", n_features = 100L, n_unresolved = 2L,
-         n_zero_feature = 30L, n_retained_from_cache = 0L, had_existing = FALSE,
-         mode = "incremental", canceled = FALSE, error = NULL))
+    list(species = "9606", n_features = 100L, n_with_features = 70L,
+         n_unresolved = 2L, n_zero_feature = 30L, n_retained_from_cache = 0L,
+         had_existing = FALSE, mode = "incremental", canceled = FALSE,
+         error = NULL))
   msgs <- vapply(pelsa_refresh_notifications(results),
                  function(n) n$message, character(1))
   summary <- msgs[grepl("topped up", msgs, ignore.case = TRUE)]
   expect_length(summary, 1L)
-  expect_match(summary, "30")               # zero-feature count surfaced
-  expect_match(summary, "no features|zero", ignore.case = TRUE)
+  expect_match(summary, "70 proteins with features")  # NOT n_features (100)
+  expect_match(summary, "30 with no features")
 })
 
-test_that("result_ui shows the zero-feature count", {
-  res <- list(list(species = "9606", n_features = 100L, n_unresolved = 2L,
-                   n_zero_feature = 30L, n_retained_from_cache = 0L,
-                   had_existing = FALSE, mode = "incremental",
-                   canceled = FALSE, error = NULL))
+test_that("result_ui shows the with-features + zero-feature counts", {
+  res <- list(list(species = "9606", n_features = 100L, n_with_features = 70L,
+                   n_unresolved = 2L, n_zero_feature = 30L,
+                   n_retained_from_cache = 0L, had_existing = FALSE,
+                   mode = "incremental", canceled = FALSE, error = NULL))
   html <- as.character(pelsa_refresh_result_ui(res))
-  expect_match(html, "30")
+  expect_match(html, "70 proteins with features")
+  expect_match(html, "30 with no features")
 })
 
 test_that("result_ui: full mode line says rebuilt, incremental says topped up", {
