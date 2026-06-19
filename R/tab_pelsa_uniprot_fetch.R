@@ -447,7 +447,7 @@ pelsa_fetch_uniprot <- function(accessions,
   accessions <- unique(accessions[!is.na(accessions) & nzchar(accessions)])
   if (length(accessions) == 0L) {
     return(list(features = pelsa_empty_feature_frame(),
-                unresolved = character(0),
+                unresolved = character(0), zero_feature = character(0),
                 transient_unresolved = character(0), canceled = FALSE))
   }
   # INPUT universe (`accessions`) drives resolved/unresolved accounting and may
@@ -463,7 +463,7 @@ pelsa_fetch_uniprot <- function(accessions,
   if (length(query_accs) == 0L) {
     # All inputs were non-UniProt keys -> nothing to fetch; all unresolved.
     return(list(features = pelsa_empty_feature_frame(),
-                unresolved = accessions,
+                unresolved = accessions, zero_feature = character(0),
                 transient_unresolved = character(0), canceled = FALSE))
   }
   batch_size <- max(1L, as.integer(batch_size))
@@ -573,6 +573,18 @@ pelsa_fetch_uniprot <- function(accessions,
   # accessions (unresolved but never in a failed batch) get a neutral note.
   transient_unresolved <- intersect(unresolved, failed_accessions)
 
+  # zero_feature = RESOLVED accessions that produced no parsed feature row. An
+  # entry can come back valid but featureless; it is NOT unresolved (UniProt
+  # answered), it simply has nothing to annotate. We surface it so the caller can
+  # cache a sentinel (stop re-fetching it) and report it as a distinct category.
+  # Match feature presence with the same isoform-base fallback used for resolved.
+  feat_acc <- if (nrow(features) > 0L) unique(as.character(features$accession))
+              else character(0)
+  has_feature <- resolved %in% feat_acc |
+    pelsa_isoform_base(resolved) %in% feat_acc
+  zero_feature <- unique(resolved[!has_feature])
+
   list(features = features, unresolved = unresolved,
+       zero_feature = zero_feature,
        transient_unresolved = transient_unresolved, canceled = canceled)
 }

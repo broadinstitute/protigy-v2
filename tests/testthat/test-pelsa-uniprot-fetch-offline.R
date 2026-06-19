@@ -103,6 +103,14 @@ test_that("a returned-but-feature-less entry is RESOLVED, not unresolved", {
   expect_length(res$unresolved, 0L)
   # P00001 still produced its feature row.
   expect_true("P00001" %in% res$features$accession)
+  # P00002 is surfaced as a distinct zero-feature category (resolved, 0 feats).
+  expect_setequal(res$zero_feature, "P00002")
+  expect_false("P00001" %in% res$zero_feature)
+})
+
+test_that("fetch zero_feature is empty on the empty-input fast path", {
+  res <- pelsa_fetch_uniprot(character(0))
+  expect_identical(res$zero_feature, character(0))
 })
 
 test_that("an input secondary accession returned under its primary is RESOLVED", {
