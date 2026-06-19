@@ -184,6 +184,30 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       )
     })
 
+    output$annotated_with_features_count <- shinydashboard::renderValueBox({
+      entry <- active_entry()
+      n <- if (is.null(entry)) NA_integer_ else
+        (entry$qc$n_annotated_with_features %||% NA_integer_)
+      shinydashboard::valueBox(
+        value    = format(n %||% NA_integer_, big.mark = ","),
+        subtitle = "Proteins with >=1 annotation",
+        icon     = icon("circle-check"),
+        color    = "green"
+      )
+    })
+
+    output$annotated_zero_feature_count <- shinydashboard::renderValueBox({
+      entry <- active_entry()
+      n <- if (is.null(entry)) NA_integer_ else
+        (entry$qc$n_annotated_zero_feature %||% NA_integer_)
+      shinydashboard::valueBox(
+        value    = format(n %||% NA_integer_, big.mark = ","),
+        subtitle = "Proteins with 0 annotation",
+        icon     = icon("circle-minus"),
+        color    = "yellow"
+      )
+    })
+
     output$failed_annotation_count <- shinydashboard::renderValueBox({
       entry <- active_entry()
       n <- if (is.null(entry)) NA_integer_ else
@@ -385,11 +409,19 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
                                         has_unannotated = FALSE) {
   tagList(
     # 6A value boxes (inline counts incl. the 6D mapping/annotation QC totals).
+    # Row 1: peptide identification + FASTA match. Row 2: the three-way
+    # annotation breakdown (>=1 annotation / 0 annotation / failed annotation).
     fluidRow(
-      shinydashboard::valueBoxOutput(ns("total_peptide_ids"), width = 3),
-      shinydashboard::valueBoxOutput(ns("fully_quantified_count"), width = 3),
-      shinydashboard::valueBoxOutput(ns("failed_match_count"), width = 3),
-      shinydashboard::valueBoxOutput(ns("failed_annotation_count"), width = 3)
+      shinydashboard::valueBoxOutput(ns("total_peptide_ids"), width = 4),
+      shinydashboard::valueBoxOutput(ns("fully_quantified_count"), width = 4),
+      shinydashboard::valueBoxOutput(ns("failed_match_count"), width = 4)
+    ),
+    fluidRow(
+      shinydashboard::valueBoxOutput(ns("annotated_with_features_count"),
+                                     width = 4),
+      shinydashboard::valueBoxOutput(ns("annotated_zero_feature_count"),
+                                     width = 4),
+      shinydashboard::valueBoxOutput(ns("failed_annotation_count"), width = 4)
     ),
 
     # 6C depth bar + 6A missed cleavage.

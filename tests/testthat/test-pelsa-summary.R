@@ -905,3 +905,13 @@ test_that("missed-cleavage plot shows contiguous x positions with an empty-slot 
   expect_true(any(grepl("Peptides: 0", txt, fixed = TRUE)))
   expect_true(any(grepl("Percent: 0.0%", txt, fixed = TRUE)))
 })
+
+# ---- 6A value boxes: three-way annotation QC --------------------------------
+
+test_that("dashboard exposes the three annotation value boxes", {
+  ns <- shiny::NS("PELSASection2Tab")
+  html <- as.character(pelsa_section2_dashboard_ui(ns, ome = "proteome"))
+  expect_match(html, ns("annotated_with_features_count"), fixed = TRUE)
+  expect_match(html, ns("annotated_zero_feature_count"), fixed = TRUE)
+  expect_match(html, ns("failed_annotation_count"), fixed = TRUE)
+})
