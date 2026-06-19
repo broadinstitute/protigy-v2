@@ -883,3 +883,25 @@ test_that("missed-cleavage plot bakes count + percent into a tooltip text aesthe
   expect_true(any(grepl("50.0%", built$text, fixed = TRUE)))
   expect_true(any(grepl("Peptides: 2", built$text, fixed = TRUE)))
 })
+
+test_that("missed-cleavage plot shows contiguous x positions with an empty-slot tooltip", {
+  # Gap at 6 (no peptide has 6 missed cleavages). The plot must reserve an
+  # axis slot at 6 and give it a 'Peptides: 0' tooltip, not collapse 5 -> 7.
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:7),
+    missed_cleavages = c(0L, 1L, 2L, 3L, 4L, 5L, 7L),
+    peptide_length = rep(8L, 7L),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_missed_cleavage_plot(pm)
+  expect_s3_class(p, "ggplot")
+  # X factor levels are contiguous 0..7 (gap value 6 included as a level).
+  built <- ggplot2::ggplot_build(p)
+  expect_identical(levels(built$plot$data$missed),
+                   as.character(0:7))
+  # The gap slot (6) carries an explicit zero-count tooltip.
+  txt <- built$data[[1]]$text
+  expect_true(any(grepl("Missed cleavages: 6", txt, fixed = TRUE)))
+  expect_true(any(grepl("Peptides: 0", txt, fixed = TRUE)))
+  expect_true(any(grepl("Percent: 0.0%", txt, fixed = TRUE)))
+})
