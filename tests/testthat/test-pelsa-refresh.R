@@ -844,6 +844,45 @@ test_that("notifications report a canceled species + exclude it from 'complete'"
   expect_false(grepl("10090", complete))
 })
 
+# ---- notifications + result UI: mode-aware wording --------------------------
+
+test_that("notifications: full mode says 'rebuilt' and notes the wipe", {
+  results <- list(
+    list(species = "10090", n_features = 500L, n_unresolved = 0L,
+         n_retained_from_cache = 0L, had_existing = TRUE, mode = "full",
+         canceled = FALSE, error = NULL))
+  msgs <- vapply(pelsa_refresh_notifications(results),
+                 function(n) n$message, character(1))
+  summary <- msgs[grepl("rebuilt", msgs, ignore.case = TRUE)]
+  expect_length(summary, 1L)
+  expect_match(summary, "cleared")  # wipe note
+})
+
+test_that("notifications: incremental mode says 'topped up' + retained count", {
+  results <- list(
+    list(species = "9606", n_features = 120L, n_unresolved = 0L,
+         n_retained_from_cache = 100L, had_existing = TRUE,
+         mode = "incremental", canceled = FALSE, error = NULL))
+  msgs <- vapply(pelsa_refresh_notifications(results),
+                 function(n) n$message, character(1))
+  summary <- msgs[grepl("topped up", msgs, ignore.case = TRUE)]
+  expect_length(summary, 1L)
+  expect_match(summary, "100")  # retained count surfaced
+})
+
+test_that("result_ui: full mode line says rebuilt, incremental says topped up", {
+  full <- list(list(species = "10090", n_features = 500L, n_unresolved = 0L,
+                    n_retained_from_cache = 0L, had_existing = TRUE,
+                    mode = "full", canceled = FALSE, error = NULL))
+  incr <- list(list(species = "9606", n_features = 120L, n_unresolved = 0L,
+                    n_retained_from_cache = 100L, had_existing = TRUE,
+                    mode = "incremental", canceled = FALSE, error = NULL))
+  expect_match(as.character(pelsa_refresh_result_ui(full)),
+               "rebuilt", ignore.case = TRUE)
+  expect_match(as.character(pelsa_refresh_result_ui(incr)),
+               "topped up", ignore.case = TRUE)
+})
+
 # ---- pelsa_gcts_for_species (Defect #1: species-dataset accession guard) -----
 
 test_that("pelsa_gcts_for_species keeps ALL same-species datasets (union), drops others", {

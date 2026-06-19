@@ -815,9 +815,17 @@ pelsa_refresh_notifications <- function(results) {
     }
   }
   if (length(done) > 0L) {
-    summaries <- vapply(done, function(r) sprintf(
-      "%s: %d features, %d unresolved, %d retained", r$species,
-      r$n_features, r$n_unresolved, r$n_retained_from_cache), character(1))
+    summaries <- vapply(done, function(r) {
+      if (identical(r$mode, "full")) {
+        sprintf(paste0("%s: rebuilt - %d features, %d unresolved (previous ",
+                       "feature + membrane files cleared)"),
+                r$species, r$n_features, r$n_unresolved)
+      } else {
+        sprintf("%s: topped up - %d features, %d unresolved, %d retained",
+                r$species, r$n_features, r$n_unresolved,
+                r$n_retained_from_cache)
+      }
+    }, character(1))
     add(paste0("UniProt annotation refresh complete. ",
                paste(summaries, collapse = "; ")), "message", 10)
   }
@@ -960,10 +968,15 @@ pelsa_refresh_result_ui <- function(results) {
       sprintf("%s: canceled - existing cache left unchanged", r$species))))
   }
   for (r in done) {
-    items <- c(items, list(shiny::tags$li(sprintf(
-      "%s: %d features, %d unresolved, %d retained from cache",
-      r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L,
-      r$n_retained_from_cache %||% 0L))))
+    line <- if (identical(r$mode, "full")) {
+      sprintf("%s: rebuilt - %d features, %d unresolved (cache cleared)",
+              r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L)
+    } else {
+      sprintf("%s: topped up - %d features, %d unresolved, %d retained from cache",
+              r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L,
+              r$n_retained_from_cache %||% 0L)
+    }
+    items <- c(items, list(shiny::tags$li(line)))
   }
 
   shiny::tags$div(
