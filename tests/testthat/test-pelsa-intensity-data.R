@@ -557,6 +557,55 @@ test_that("intensity export reserves an enlarged left plot.margin", {
   expect_gt(left_pt, 5.5)
 })
 
+# ---- in-app two-panel intensity plot: panel titles --------------------------
+# The two-panel pinned intensity plot must label each panel with the full,
+# unambiguous wording AT THE TOP of its own panel. plotly::subplot collapses a
+# per-plot ggtitle to a single overall layout$title (the Significant title was
+# silently dropped, the Non-significant title rendered as one centered top
+# title), so the titles must be paper-referenced subplot annotations instead.
+
+.intensity_inapp_ld <- function() {
+  conds <- c("DMSO", "1uM", "10uM")
+  data.frame(
+    condition = factor(rep(conds, times = 2L), levels = conds),
+    mean_log2 = c(7.5, 3.5, 7.1, 3.5, 3.7, 4.5),
+    peptide_seq = rep(c("AEIITVSDGR", "pOTHER"), each = 3L),
+    pep_start = rep(c(162L, 50L), each = 3L),
+    pep_end   = rep(c(171L, 59L), each = 3L),
+    pep_occurrence_idx = 1L,
+    panel = rep(c("Significant", "Non-significant"), each = 3L),
+    aa_label = rep(c("aa162", "aa50"), each = 3L),
+    n_rep_nonNA = 3L,
+    stringsAsFactors = FALSE)
+}
+
+test_that("two-panel intensity plot titles each panel 'Significant/Non-significant in selected contrast' at the panel top", {
+  p <- pelsa_intensity_line_plot(.intensity_inapp_ld(), pinned_label = "aa162")
+  b <- plotly::plotly_build(p)
+  anns <- b$x$layout$annotations
+  texts <- vapply(anns, function(a) a$text %||% "", character(1))
+
+  expect_true("Significant in selected contrast" %in% texts)
+  expect_true("Non-significant in selected contrast" %in% texts)
+
+  # subplot must NOT collapse a panel title into a single overall plot title.
+  ttl <- b$x$layout$title$text %||% ""
+  expect_false(grepl("Non-significant", ttl))
+
+  # Each title sits at the TOP of its own panel (Significant on top -> higher y;
+  # Non-significant below -> lower y), both paper-referenced.
+  get_y <- function(t) {
+    a <- anns[[which(texts == t)[1]]]
+    expect_identical(a$yref, "paper")
+    a$y
+  }
+  y_sig <- get_y("Significant in selected contrast")
+  y_ns  <- get_y("Non-significant in selected contrast")
+  expect_gt(y_sig, y_ns)              # Significant panel title is higher
+  expect_gt(y_sig, 0.5)               # in the upper (top) panel
+  expect_lt(y_ns, 0.5)               # in the lower (bottom) panel
+})
+
 # =============================================================================
 # Integration: generator -> explode -> FASTA-map -> build line data
 # =============================================================================

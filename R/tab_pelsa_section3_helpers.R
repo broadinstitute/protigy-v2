@@ -1062,11 +1062,13 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
 
   parts <- lapply(panels, function(pn) {
     sub <- ld[as.character(ld$panel) == pn, , drop = FALSE]
+    # NO ggtitle here: plotly::subplot collapses a per-plot ggtitle into a SINGLE
+    # overall layout$title (it keeps only the LAST plot's title, so the top
+    # panel's title is silently dropped and the bottom panel's renders as one
+    # centered overall title). We add the per-panel titles as paper-referenced
+    # subplot annotations below instead.
     gg  <- pelsa_intensity_line_ggplot(sub, pinned_label = pinned_label) +
-      ggplot2::ggtitle(pn) +
-      ggplot2::labs(y = NULL) +           # one shared y-title added below
-      ggplot2::theme(plot.title = ggplot2::element_text(
-        face = "bold", size = 11, hjust = 0.5))
+      ggplot2::labs(y = NULL)             # one shared y-title added below
     # Only the bottom panel keeps the x tick labels (shared axis).
     # Force the build inside suppressWarnings so the deferred ggplot build
     # (which warns "Ignoring unknown aesthetics: text" for the tooltip aes)
@@ -1076,16 +1078,41 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
   # titleY = FALSE so plotly does NOT render the per-panel y-axis titles (they
   # were stripped via labs(y = NULL) but titleY = TRUE would re-add them and they
   # overlap). We add exactly ONE shared, vertically-centered y-title annotation.
+  margin <- 0.06
   p <- plotly::subplot(parts, nrows = length(parts), shareX = TRUE,
-                       titleY = FALSE, margin = 0.06)
+                       titleY = FALSE, margin = margin)
+
+  # Per-panel TITLE at the TOP of each panel (paper coords). subplot stacks the
+  # panels top-to-bottom with `margin` between them; panel i (1-based from the
+  # top) spans [top_i - h, top_i] where h is the per-panel height. The title sits
+  # just above each panel's top edge. Full, unambiguous wording (the short
+  # "Significant"/"Non-significant" was ambiguous about WHAT contrast).
+  n_panel <- length(parts)
+  h <- (1 - (n_panel - 1) * margin) / n_panel
+  title_for <- function(pn) {
+    if (identical(pn, "Significant")) "Significant in selected contrast"
+    else if (identical(pn, "Non-significant")) "Non-significant in selected contrast"
+    else pn
+  }
+  panel_titles <- lapply(seq_len(n_panel), function(i) {
+    top_i <- 1 - (i - 1) * (h + margin)
+    list(
+      text = title_for(panels[i]),
+      x = 0.5, y = min(top_i + 0.02, 1),
+      xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom",
+      showarrow = FALSE, font = list(size = 11, color = "rgba(0,0,0,1)"))
+  })
+  y_title <- list(
+    text = "mean log2 intensity", x = -0.12, y = 0.5,
+    xref = "paper", yref = "paper", textangle = -90,
+    showarrow = FALSE, font = list(size = 12))
+
   p <- plotly::layout(
     p,
+    title = list(text = ""),  # no overall title (per-panel titles cover this)
     showlegend = FALSE,       # tooltip identifies each line; no legend needed
-    margin = list(l = 70),    # room so the single y-title clears the tick labels
-    annotations = list(list(
-      text = "mean log2 intensity", x = -0.12, y = 0.5,
-      xref = "paper", yref = "paper", textangle = -90,
-      showarrow = FALSE, font = list(size = 12))))
+    margin = list(l = 70, t = 40),  # room for the y-title + the top panel title
+    annotations = c(list(y_title), panel_titles))
   suppressWarnings(plotly::plotly_build(p))
 }
 
