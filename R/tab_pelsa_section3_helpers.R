@@ -1094,13 +1094,18 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
     else if (identical(pn, "Non-significant")) "Non-significant in selected contrast"
     else pn
   }
+  # The top panel's top edge is at 1, so its title (yanchor = "bottom") sits
+  # flush against the panel. Adding a +0.02 offset to lower panels pushed their
+  # titles farther from the panel than the top one, so the gap looked uneven.
+  # Anchor every title at its own panel's top edge for matching spacing. Bold
+  # via <b></b> (plotly annotation font has no `face`; text supports HTML).
   panel_titles <- lapply(seq_len(n_panel), function(i) {
     top_i <- 1 - (i - 1) * (h + margin)
     list(
-      text = title_for(panels[i]),
-      x = 0.5, y = min(top_i + 0.02, 1),
+      text = paste0("<b>", title_for(panels[i]), "</b>"),
+      x = 0.5, y = min(top_i, 1),
       xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 11, color = "rgba(0,0,0,1)"))
+      showarrow = FALSE, font = list(size = 13, color = "rgba(0,0,0,1)"))
   })
   y_title <- list(
     text = "mean log2 intensity", x = -0.12, y = 0.5,
