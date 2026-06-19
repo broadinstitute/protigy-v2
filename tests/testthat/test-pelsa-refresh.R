@@ -407,6 +407,88 @@ test_that("refresh_species_cache rejects a malformed fetch_fn return", {
   )
 })
 
+# ---- pelsa_refresh_species_cache: mode = full (wipe + supersede) -------------
+
+test_that("full mode WIPES the species dir before fetch + supersedes cache", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "10090")
+  dir.create(species_dir)
+  # Pre-seed a stale cache + a membrane file + a fasta to spare.
+  pelsa_write_feature_cache(.existing_cache_df(), species_dir)  # P1,P2,P3
+  dir.create(file.path(species_dir, "uniprot_membrane"))
+  writeLines("stale", file.path(species_dir, "uniprot_membrane", "m.tsv"))
+  dir.create(file.path(species_dir, "fasta"))
+  writeLines(">x\nMKV", file.path(species_dir, "fasta", "p.fasta"))
+
+  # Fetch returns a DIFFERENT set (P00001/P00002) -> the old P1/P2/P3 must be gone.
+  fake_fetch <- function(accessions, ...) {
+    list(features = .fake_feature_df(), unresolved = character(0))
+  }
+  res <- pelsa_refresh_species_cache(
+    species = "10090", universe = c("P00001", "P00002"),
+    species_dir = species_dir, fetch_fn = fake_fetch,
+    existing = .existing_cache_df(),  # passed, but full mode must IGNORE it
+    mode = "full"
+  )
+
+  expect_identical(res$mode, "full")
+  expect_identical(res$n_retained_from_cache, 0L)  # nothing retained in full
+  back <- pelsa_read_feature_cache(species_dir)
+  expect_setequal(unique(back$accession), c("P00001", "P00002"))  # P1/2/3 gone
+  expect_false(dir.exists(file.path(species_dir, "uniprot_membrane")))  # wiped
+  expect_true(file.exists(file.path(species_dir, "fasta", "p.fasta")))   # spared
+})
+
+test_that("full mode does NOT wipe when canceled before fetch", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "10090")
+  dir.create(species_dir)
+  pelsa_write_feature_cache(.existing_cache_df(), species_dir)
+
+  called <- FALSE
+  fake_fetch <- function(accessions, ...) { called <<- TRUE
+    list(features = .fake_feature_df(), unresolved = character(0)) }
+
+  res <- pelsa_refresh_species_cache(
+    species = "10090", universe = c("P00001"), species_dir = species_dir,
+    fetch_fn = fake_fetch, existing = .existing_cache_df(),
+    mode = "full", should_cancel = function() TRUE
+  )
+  expect_true(isTRUE(res$canceled))
+  expect_false(called)
+  # Prior cache STILL intact (wipe never ran).
+  back <- pelsa_read_feature_cache(species_dir)
+  expect_setequal(unique(back$accession), c("P1", "P2", "P3"))
+})
+
+# ---- pelsa_refresh_species_cache: mode = incremental (append atop) -----------
+
+test_that("incremental mode merges fresh ATOP existing (no wipe)", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "9606")
+  dir.create(species_dir)
+  pelsa_write_feature_cache(.existing_cache_df(), species_dir)  # P1,P2,P3
+
+  # Incremental fetched only the cache-miss P00001/P00002 (disjoint from cache).
+  fresh <- data.frame(
+    accession = c("P00001", "P00002"), feature_type = c("domain", "domain"),
+    start = c(1L, 1L), end = c(5L, 5L), description = c("n1", "n2"),
+    feature_class = c("folded_domain", "folded_domain"), class_score = c(2L, 2L),
+    coord_quality = c("exact", "exact"), stringsAsFactors = FALSE)
+  fake_fetch <- function(accessions, ...) list(features = fresh,
+                                               unresolved = character(0))
+  res <- pelsa_refresh_species_cache(
+    species = "9606", universe = c("P00001", "P00002"),
+    species_dir = species_dir, fetch_fn = fake_fetch,
+    existing = .existing_cache_df(), mode = "incremental"
+  )
+  expect_identical(res$mode, "incremental")
+  back <- pelsa_read_feature_cache(species_dir)
+  # Old P1/P2/P3 KEPT + new P00001/P00002 added (append atop).
+  expect_setequal(unique(back$accession),
+                  c("P1", "P2", "P3", "P00001", "P00002"))
+})
+
 # ---- pelsa_run_species_refresh (multi-species, injected stub, NO network) ----
 
 test_that("run_species_refresh refreshes multiple species + captures errors", {

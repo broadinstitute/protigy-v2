@@ -483,7 +483,8 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
                                         fetch_fn = pelsa_fetch_uniprot,
                                         existing = NULL,
                                         progress = NULL,
-                                        should_cancel = NULL) {
+                                        should_cancel = NULL,
+                                        mode = "incremental") {
   if (!is.character(species) || length(species) != 1L || !nzchar(species)) {
     stop("pelsa_refresh_species_cache: `species` must be a single non-empty ",
          "string", call. = FALSE)
@@ -496,6 +497,11 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     stop("pelsa_refresh_species_cache: `fetch_fn` must be a function",
          call. = FALSE)
   }
+  mode <- match.arg(mode, c("incremental", "full"))
+  # FULL mode rebuilds from scratch: the wipe (below) clears the prior cache, so
+  # there is nothing to merge against -- force existing = NULL so the fresh frame
+  # fully supersedes (and n_retained_from_cache is 0).
+  if (identical(mode, "full")) existing <- NULL
   universe <- unique(universe[!is.na(universe) & nzchar(universe)])
 
   .progress <- function(value, message, detail = NULL) {
@@ -508,7 +514,7 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     list(features = existing, unresolved = universe, path = NA_character_,
          n_features = if (is.data.frame(existing)) nrow(existing) else 0L,
          n_unresolved = length(universe), n_accessions = length(universe),
-         n_retained_from_cache = 0L, canceled = TRUE)
+         n_retained_from_cache = 0L, mode = mode, canceled = TRUE)
   }
 
   if (length(universe) == 0L) {
@@ -520,6 +526,15 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   # Bail before any network if already canceled.
   if (is.function(should_cancel) && isTRUE(should_cancel())) {
     return(.canceled_result("pre-fetch"))
+  }
+
+  # FULL mode: clean slate BEFORE any network -- delete the prior feature +
+  # membrane caches (sparing fasta/). Done only after the pre-fetch cancel check
+  # above, so a cancel never wipes. A subsequent fetch failure leaves the species
+  # fasta-only (the user re-runs Full refresh); this is the documented, accepted
+  # trade-off for a true clean rebuild.
+  if (identical(mode, "full")) {
+    pelsa_wipe_species_cache(species_dir)
   }
 
   .progress(0.05, sprintf("Fetching UniProt for %s", species),
@@ -552,8 +567,28 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   # injected stub fetchers may not return this field; default to character(0).
   transient_unresolved <- fetched$transient_unresolved %||% character(0)
 
-  # MERGE over the prior cache so unresolved accessions keep their old rows.
-  merged <- pelsa_merge_feature_cache(existing, fresh, unresolved)
+  # MERGE the fresh frame with the prior cache.
+  #   FULL: existing was forced NULL above -> fresh fully supersedes (clean
+  #     rebuild). pelsa_merge_feature_cache(NULL, fresh, ...) returns fresh.
+  #   INCREMENTAL: the universe is DISJOINT from the cache by construction
+  #     (pelsa_incremental_universe subtracts cached accessions), so EVERY prior
+  #     cache row must be retained "atop" the fresh rows -- not just the
+  #     unresolved subset. We therefore retain old rows for every existing
+  #     accession NOT in `fresh` (= the whole prior cache). The supersede-only
+  #     merge (which retains solely `unresolved`) would WRONGLY drop untouched
+  #     cache rows, so incremental routes through retain-all-untouched instead.
+  if (identical(mode, "full")) {
+    merged <- pelsa_merge_feature_cache(existing, fresh, unresolved)
+  } else {
+    retain_acc <- if (is.data.frame(existing) && nrow(existing) > 0L &&
+                      "accession" %in% colnames(existing)) {
+      unique(as.character(existing$accession))
+    } else {
+      character(0)
+    }
+    merged <- pelsa_merge_feature_cache(existing, fresh,
+                                        unresolved = retain_acc)
+  }
   n_retained <- nrow(merged) - nrow(fresh)
 
   .progress(0.85, sprintf("Writing %s cache", species),
@@ -571,6 +606,7 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     n_transient_unresolved = length(transient_unresolved),
     n_accessions           = length(universe),
     n_retained_from_cache  = n_retained,
+    mode                   = mode,
     canceled               = FALSE
   )
 }
