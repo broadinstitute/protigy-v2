@@ -284,10 +284,11 @@ test_that("pelsa_fetch_uniprot validates accessions input", {
 
 test_that("pelsa_fetch_uniprot returns empty result for empty input (no network)", {
   res <- pelsa_fetch_uniprot(character(0))
-  expect_named(res, c("features", "unresolved", "transient_unresolved",
-                      "canceled"))
+  expect_named(res, c("features", "unresolved", "zero_feature",
+                      "transient_unresolved", "canceled"))
   expect_equal(nrow(res$features), 0L)
   expect_equal(length(res$unresolved), 0L)
+  expect_equal(length(res$zero_feature), 0L)
   expect_equal(length(res$transient_unresolved), 0L)
   expect_false(res$canceled)
 })
@@ -346,7 +347,8 @@ test_that("pelsa_fetch_uniprot live smoke test (batched)", {
   testthat::skip_if_offline()
 
   res <- pelsa_fetch_uniprot("P04637")  # TP53
-  expect_named(res, c("features", "unresolved", "transient_unresolved", "canceled"))
+  expect_named(res, c("features", "unresolved", "zero_feature",
+                      "transient_unresolved", "canceled"))
   expect_gt(nrow(res$features), 0L)
   expect_true(all(res$features$accession == "P04637"))
   expect_true(all(
