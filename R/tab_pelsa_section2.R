@@ -708,9 +708,12 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   # Pre-format the per-bar tooltip: count + percentage of all identified
   # peptides. Baked into a `text` aesthetic so ggplotly(tooltip = "text")
   # shows exactly this. \n becomes a line break in the plotly hover box.
+  # prettyNum (NOT format) so each count formats independently: format() on a
+  # vector right-justifies every element to the widest one's width, which would
+  # inject leading spaces into smaller counts ("Peptides:     5").
   df$tooltip <- sprintf(
     "Missed cleavages: %d\nPeptides: %s\nPercent: %.1f%%",
-    df$missed, format(df$count, big.mark = ","), df$percent
+    df$missed, prettyNum(df$count, big.mark = ","), df$percent
   )
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
   ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +

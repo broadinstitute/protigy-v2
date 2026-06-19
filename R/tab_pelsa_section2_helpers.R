@@ -236,7 +236,8 @@ pelsa_cv_ok_values <- function(cv) {
 #         row per integer from min(0, observed) to max(observed) in ascending
 #         order. Values no peptide has are filled with count 0 / percent 0 so the
 #         bar chart shows evenly-spaced bars with a visible empty slot at gaps.
-#         Empty when there are no finite values.
+#         Empty when there are no finite values (or the input is missing the
+#         missed_cleavages column / has zero rows).
 # @noRd
 pelsa_missed_cleavage_data <- function(peptide_metrics) {
   empty <- data.frame(missed = integer(0), count = integer(0),

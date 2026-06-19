@@ -906,6 +906,27 @@ test_that("missed-cleavage plot shows contiguous x positions with an empty-slot 
   expect_true(any(grepl("Percent: 0.0%", txt, fixed = TRUE)))
 })
 
+test_that("missed-cleavage tooltip counts have no stray padding spaces (mixed widths)", {
+  # A lopsided distribution (one big bar at 0, small tail) is the natural shape
+  # of missed-cleavage data. format(vector) right-justifies to a common width,
+  # which would inject leading spaces ("Peptides:     5"). Each count must be
+  # formatted independently so small counts render flush.
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:1205),
+    missed_cleavages = c(rep(0L, 1200L), rep(1L, 5L)),
+    peptide_length = rep(8L, 1205L),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_missed_cleavage_plot(pm)
+  txt <- ggplot2::ggplot_build(p)$data[[1]]$text
+  # Big bar keeps its thousands separator.
+  expect_true(any(grepl("Peptides: 1,200", txt, fixed = TRUE)))
+  # Small bar is flush, NOT padded to the wide bar's width.
+  expect_true(any(grepl("Peptides: 5", txt, fixed = TRUE)))
+  # No tooltip contains a run of consecutive spaces (the padding signature).
+  expect_false(any(grepl("  ", txt, fixed = TRUE)))
+})
+
 # ---- 6A value boxes: three-way annotation QC --------------------------------
 
 test_that("dashboard exposes the three annotation value boxes", {
