@@ -188,6 +188,38 @@ pelsa_wipe_species_cache <- function(species_dir) {
   invisible(to_delete)
 }
 
+# ---- Helper 1c: zero-feature sentinel rows -----------------------------------
+
+# Build SENTINEL feature rows for accessions UniProt resolved with ZERO features.
+# A 0-feature accession has no natural feature row, so without a sentinel it
+# leaves no trace in the cache and an incremental refresh re-fetches it forever.
+# The sentinel marks "resolved, genuinely no features": it puts the accession in
+# cache$accession (so incremental skips it) while carrying NA coordinates +
+# feature_class "none" so the annotation overlap drops it silently (see
+# pelsa_annotate_features) and the Summary QC counts it as "0 annotations"
+# rather than "failed annotation".
+#
+# @param accessions character vector of resolved-but-0-feature accessions.
+# @return 8-col feature data.frame (0 rows for empty input); one row per unique
+#         non-empty accession, in canonical schema column order.
+# @noRd
+pelsa_zero_feature_rows <- function(accessions) {
+  accs <- unique(as.character(accessions))
+  accs <- accs[!is.na(accs) & nzchar(accs)]
+  if (length(accs) == 0L) return(pelsa_empty_feature_frame())
+  data.frame(
+    accession     = accs,
+    feature_type  = "",
+    start         = NA_integer_,
+    end           = NA_integer_,
+    description   = "",
+    feature_class = "none",
+    class_score   = 0L,
+    coord_quality = "",
+    stringsAsFactors = FALSE
+  )
+}
+
 # Subset uploaded datasets to those whose SELECTED SPECIES matches `species`.
 #
 # Defect #1 guard: a species refresh must only fetch accessions belonging to that

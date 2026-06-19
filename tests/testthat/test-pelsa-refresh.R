@@ -121,6 +121,29 @@ test_that("wipe is a no-op on a missing species dir", {
   expect_identical(out, character(0))
 })
 
+# ---- pelsa_zero_feature_rows (sentinel rows for 0-feature accessions) --------
+
+test_that("zero_feature_rows builds one schema-shaped sentinel per accession", {
+  out <- pelsa_zero_feature_rows(c("P00002", "P00003", "P00002"))  # dup dropped
+  expect_setequal(out$accession, c("P00002", "P00003"))
+  expect_identical(nrow(out), 2L)
+  expect_true(all(out$feature_type == ""))
+  expect_true(all(is.na(out$start)))
+  expect_true(all(is.na(out$end)))
+  expect_true(all(out$feature_class == "none"))
+  expect_true(all(out$class_score == 0L))
+  expect_identical(colnames(out),
+                   c("accession", "feature_type", "start", "end",
+                     "description", "feature_class", "class_score",
+                     "coord_quality"))
+})
+
+test_that("zero_feature_rows returns a 0-row schema frame for empty input", {
+  out <- pelsa_zero_feature_rows(character(0))
+  expect_identical(nrow(out), 0L)
+  expect_identical(colnames(out), colnames(pelsa_empty_feature_frame()))
+})
+
 # ---- pelsa_write_feature_cache (round-trip) ----------------------------------
 
 test_that("write_feature_cache round-trips via pelsa_read_feature_cache", {
