@@ -956,8 +956,14 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
     pelsa_section_head("screwdriver-wrench", "Maintenance: UniProt library"),
     shiny::helpText(
       "Rebuild the per-species feature cache used for volcano feature ",
-      "annotation. This fetches from UniProt and can take several ",
-      "minutes per species. It is independent of Start Analysis."
+      "annotation. ",
+      shiny::tags$b("Full library refresh"),
+      " clears the species' existing feature + membrane files and re-fetches ",
+      "the entire FASTA proteome (several minutes). ",
+      shiny::tags$b("Incremental refresh"),
+      " adds only accessions from your uploaded data and FASTA that are not ",
+      "already cached (requires an existing library). Both are independent of ",
+      "Start Analysis."
     ),
     # SINGLE-select (radioButtons, not checkboxGroupInput): a refresh fetches the
     # uploaded datasets' accessions, so allowing multiple species would fan ONE
@@ -969,13 +975,27 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
       choices  = refresh_species,
       selected = character(0)
     ),
-    shiny::actionButton(
-      ns("pelsa_refresh_btn"),
-      "Refresh per-species UniProt annotation library",
-      icon  = shiny::icon("sync"),
-      class = "pelsa-refresh-btn"
+    # Two modes on the ONE selected species. Full = destructive proteome rebuild
+    # (wipe then fetch FASTA). Incremental = non-destructive top-up (fetch only
+    # the cache-miss accessions, append atop). The incremental button is enabled
+    # by the observer ONLY when a populated feature cache already exists for the
+    # selected species (see tab_pelsa_section1.R).
+    shiny::div(
+      class = "pelsa-refresh-buttons",
+      shiny::actionButton(
+        ns("pelsa_refresh_btn"),
+        "Full library refresh",
+        icon  = shiny::icon("rotate"),
+        class = "pelsa-refresh-btn"
+      ),
+      shiny::actionButton(
+        ns("pelsa_incremental_btn"),
+        "Incremental refresh",
+        icon  = shiny::icon("circle-plus"),
+        class = "pelsa-refresh-btn pelsa-incremental-btn"
+      )
     ),
-    # Inline progress + result, rendered DIRECTLY under the button. Unlike a
+    # Inline progress + result, rendered DIRECTLY under the buttons. Unlike a
     # showNotification() toast (which the user can dismiss / which auto-clears),
     # this status persists for the life of the fetch and stays put afterward, so
     # the live progress bar + the final summary can never be cleared off-screen.

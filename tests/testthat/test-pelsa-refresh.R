@@ -678,13 +678,19 @@ test_that("notifications: transient unresolved DOES prompt a re-run warning", {
 
 # ---- UI presence: refresh controls in the Setup tab --------------------------
 
-test_that("Setup UI exposes the refresh species checklist + button ids", {
-  html <- as.character(PELSASection1_Tab_UI("PELSASection1Tab"))
-  # The Tab UI is just the setup_box uiOutput; the refresh controls render
-  # server-side inside renderUI. Construct-smoke is covered by the app_UI test
-  # in test-pelsa-setup-controls.R; here we assert the helper file loaded and
-  # the pure helpers are exported into the package namespace.
-  expect_true(exists("pelsa_refresh_accession_universe"))
+test_that("Setup UI exposes both refresh-mode buttons + pure helpers exist", {
+  ns <- shiny::NS("PELSASection1Tab")
+  html <- as.character(
+    pelsa_setup_box_ui(species = c("Human" = "9606"), compounds = character(0),
+                       ns = ns, refresh_species = c("Human" = "9606")))
+  expect_match(html, ns("pelsa_refresh_btn"), fixed = TRUE)
+  expect_match(html, "Full library refresh", fixed = TRUE)
+  expect_match(html, ns("pelsa_incremental_btn"), fixed = TRUE)
+  expect_match(html, "Incremental refresh", fixed = TRUE)
+
+  expect_true(exists("pelsa_full_universe"))
+  expect_true(exists("pelsa_incremental_universe"))
+  expect_true(exists("pelsa_wipe_species_cache"))
   expect_true(exists("pelsa_write_feature_cache"))
   expect_true(exists("pelsa_refresh_species_cache"))
 })
