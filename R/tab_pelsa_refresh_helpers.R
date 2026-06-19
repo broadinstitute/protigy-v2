@@ -158,6 +158,34 @@ pelsa_incremental_universe <- function(gcts, existing_cache, fasta_map = NULL) {
   sort(setdiff(needed, .pelsa_cache_universe(existing_cache)))
 }
 
+# ---- Helper 1b: full-mode clean-slate wipe -----------------------------------
+
+# Delete every top-level entry under a species directory EXCEPT the `fasta/`
+# folder (and its contents) -- the clean-slate a FULL refresh performs BEFORE
+# re-fetching the proteome. This removes the prior uniprot_features/ cache AND
+# the uniprot_membrane/ annotation (both regenerable / re-obtainable; the feature
+# cache is rebuilt by the ensuing full fetch). DESTRUCTIVE + irreversible: the
+# membrane file is gitignored and not produced by this app. Called only on the
+# full-refresh path, only AFTER the user confirms.
+#
+# No-op-safe: a missing species_dir deletes nothing and returns character(0).
+#
+# @param species_dir the species directory (file.path(database_dir, species)).
+# @return invisibly, the character vector of deleted top-level entry names.
+# @noRd
+pelsa_wipe_species_cache <- function(species_dir) {
+  if (!is.character(species_dir) || length(species_dir) != 1L ||
+      is.na(species_dir) || !nzchar(species_dir) || !dir.exists(species_dir)) {
+    return(invisible(character(0)))
+  }
+  entries <- list.files(species_dir, all.files = TRUE, no.. = TRUE)
+  to_delete <- setdiff(entries, "fasta")
+  for (e in to_delete) {
+    unlink(file.path(species_dir, e), recursive = TRUE, force = TRUE)
+  }
+  invisible(to_delete)
+}
+
 # Subset uploaded datasets to those whose SELECTED SPECIES matches `species`.
 #
 # Defect #1 guard: a species refresh must only fetch accessions belonging to that

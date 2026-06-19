@@ -82,6 +82,45 @@ test_that("incremental_universe ignores datasets without PG.ProteinAccessions", 
   expect_identical(pelsa_incremental_universe(gcts, NULL, fasta_map = NULL), "P5")
 })
 
+# ---- pelsa_wipe_species_cache (full-mode clean slate) ------------------------
+
+test_that("wipe deletes uniprot_features + uniprot_membrane, spares fasta/", {
+  species_dir <- withr::local_tempdir()
+  dir.create(file.path(species_dir, "fasta"))
+  writeLines(">x\nMKV", file.path(species_dir, "fasta", "p.fasta"))
+  dir.create(file.path(species_dir, "uniprot_features"))
+  writeLines("acc", file.path(species_dir, "uniprot_features", "uniprot_features.tsv"))
+  dir.create(file.path(species_dir, "uniprot_membrane"))
+  writeLines("m", file.path(species_dir, "uniprot_membrane", "mem.tsv"))
+
+  pelsa_wipe_species_cache(species_dir)
+
+  expect_true(dir.exists(file.path(species_dir, "fasta")))
+  expect_true(file.exists(file.path(species_dir, "fasta", "p.fasta")))
+  expect_false(dir.exists(file.path(species_dir, "uniprot_features")))
+  expect_false(dir.exists(file.path(species_dir, "uniprot_membrane")))
+})
+
+test_that("wipe also removes stray top-level files (except inside fasta/)", {
+  species_dir <- withr::local_tempdir()
+  dir.create(file.path(species_dir, "fasta"))
+  writeLines("keep", file.path(species_dir, "fasta", "keep.fasta"))
+  writeLines("junk", file.path(species_dir, "stray.parquet"))
+
+  deleted <- pelsa_wipe_species_cache(species_dir)
+
+  expect_false(file.exists(file.path(species_dir, "stray.parquet")))
+  expect_true(file.exists(file.path(species_dir, "fasta", "keep.fasta")))
+  expect_true("stray.parquet" %in% deleted)
+  expect_false("fasta" %in% deleted)
+})
+
+test_that("wipe is a no-op on a missing species dir", {
+  missing <- file.path(withr::local_tempdir(), "does_not_exist")
+  expect_silent(out <- pelsa_wipe_species_cache(missing))
+  expect_identical(out, character(0))
+})
+
 # ---- pelsa_write_feature_cache (round-trip) ----------------------------------
 
 test_that("write_feature_cache round-trips via pelsa_read_feature_cache", {
