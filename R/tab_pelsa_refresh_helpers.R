@@ -16,8 +16,10 @@
 # only thing that calls the REAL pelsa_fetch_uniprot + withProgress.
 #
 # Public helpers (all @noRd):
-#   pelsa_refresh_accession_universe(gcts, existing_cache, fasta_map = NULL)
-#       -> character vector: the accessions to (re)fetch for a species.
+#   pelsa_full_universe(gcts, existing_cache, fasta_map = NULL)
+#       -> character vector: the FASTA proteome (full-refresh universe).
+#   pelsa_incremental_universe(gcts, existing_cache, fasta_map = NULL)
+#       -> character vector: (dataset U fasta) - cache (incremental universe).
 #   pelsa_write_feature_cache(feature_df, species_dir)
 #       -> writes uniprot_features.tsv + schema.json; returns the .tsv path.
 #   pelsa_refresh_species_cache(species, universe, species_dir,
@@ -190,7 +192,7 @@ pelsa_wipe_species_cache <- function(species_dir) {
 #
 # Defect #1 guard: a species refresh must only fetch accessions belonging to that
 # species. Multiple uploaded datasets of the SAME species all match (so their
-# accessions UNION downstream via pelsa_refresh_accession_universe, which already
+# accessions UNION downstream via pelsa_incremental_universe, which already
 # unions across every GCT it is handed); datasets of OTHER species are dropped
 # (otherwise their accessions would be fetched into the wrong species' cache --
 # the human-into-mouse spillover). A dataset whose species is unset ("(none)") or
@@ -470,7 +472,7 @@ pelsa_write_feature_cache <- function(feature_df, species_dir) {
 #
 # @param species     species name (for progress/messages).
 # @param universe    character vector of accessions to fetch (from
-#                    pelsa_refresh_accession_universe).
+#                    pelsa_full_universe / pelsa_incremental_universe).
 # @param species_dir directory holding (or to hold) "uniprot_features/".
 # @param fetch_fn    function(accessions) -> list(features=<8-col df>,
 #                    unresolved=<chr>). Defaults to the real pelsa_fetch_uniprot.
