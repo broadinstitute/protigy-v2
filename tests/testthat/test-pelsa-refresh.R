@@ -691,18 +691,37 @@ test_that("Setup UI exposes the refresh species checklist + button ids", {
 
 # ---- confirm-gate: universe size + ETA text (pure) ---------------------------
 
-test_that("universe_size sums per-species universes (datasets union cache)", {
+test_that("universe_size full mode counts the FASTA proteome (per species)", {
   db <- withr::local_tempdir()
-  dir.create(file.path(db, "9606")); dir.create(file.path(db, "10090"))
-  gcts <- list(
-    d = data.frame(PG.ProteinAccessions = c("P1;P2", "P3"),
-                   stringsAsFactors = FALSE)
-  )
-  sz <- pelsa_refresh_universe_size(c("9606", "10090"), db, gcts)
-  # Both species share the same dataset universe (3 accessions); no caches yet.
-  expect_equal(unname(sz$per_species[["9606"]]), 3L)
-  expect_equal(unname(sz$per_species[["10090"]]), 3L)
-  expect_equal(sz$total, 6L)
+  sd <- file.path(db, "9606"); dir.create(sd)
+  dir.create(file.path(sd, "fasta"))
+  writeLines(c(">sp|P00001|A t", "MKV", ">sp|P00002|B t", "AAA",
+               ">sp|P00003|C t", "CCC"),
+             file.path(sd, "fasta", "p.fasta"))
+  # Dataset accessions present but full mode ignores them.
+  gcts <- list(d = data.frame(PG.ProteinAccessions = "P99999",
+                              stringsAsFactors = FALSE))
+  sz <- pelsa_refresh_universe_size("9606", db, gcts, mode = "full")
+  expect_equal(unname(sz$per_species[["9606"]]), 3L)  # 3 FASTA accessions
+  expect_equal(sz$total, 3L)
+})
+
+test_that("universe_size incremental mode counts (dataset U fasta) - cache", {
+  db <- withr::local_tempdir()
+  sd <- file.path(db, "9606"); dir.create(sd)
+  dir.create(file.path(sd, "fasta"))
+  writeLines(c(">sp|P00001|A t", "MKV"), file.path(sd, "fasta", "p.fasta"))
+  pelsa_write_feature_cache(
+    data.frame(accession = "P00001", feature_type = "domain", start = 1L,
+               end = 5L, description = "d", feature_class = "folded_domain",
+               class_score = 2L, coord_quality = "exact",
+               stringsAsFactors = FALSE), sd)
+  gcts <- list(d = data.frame(PG.ProteinAccessions = "P77777",
+                              stringsAsFactors = FALSE))
+  sz <- pelsa_refresh_universe_size("9606", db, gcts, mode = "incremental")
+  # union {P00001, P77777} minus cache {P00001} = 1.
+  expect_equal(unname(sz$per_species[["9606"]]), 1L)
+  expect_equal(sz$total, 1L)
 })
 
 test_that("eta_text formats count + a coarse ETA (sec vs min)", {

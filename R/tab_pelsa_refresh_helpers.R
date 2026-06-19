@@ -827,23 +827,33 @@ pelsa_refresh_notifications <- function(results) {
 # ---- Helper 5: confirm-gate universe size (pure, observer-facing) -------------
 
 # Estimate the TOTAL accession universe a refresh of `species` would fetch, so
-# the observer can WARN + confirm before a large (whole-proteome) fetch. Reads
-# each species' existing cache + (no-datasets) FASTA exactly as the real run
-# does, then sums the per-species universe sizes. Pure-ish (reads files only;
+# the observer can WARN + confirm before a fetch. Reads each species' existing
+# cache + FASTA exactly as the real run does, routes to the mode's universe
+# function, then sums the per-species universe sizes. Pure-ish (reads files only;
 # never fetches/writes), so the observer can call it synchronously pre-fetch.
+# The returned count is the TRUE to-be-fetched count for the mode (full = the
+# FASTA proteome; incremental = (dataset U fasta) - cache), so the confirmed
+# number matches the number actually fetched.
 #
 # @param species       character vector of species names.
 # @param database_dir  the PELSA database dir.
 # @param uploaded_gcts named list of uploaded datasets, or NULL.
+# @param mode          "full" (FASTA proteome) or "incremental"
+#                      ((dataset U fasta) - cache).
 # @return list(total = <int>, per_species = <named int vector>).
 # @noRd
-pelsa_refresh_universe_size <- function(species, database_dir, uploaded_gcts) {
+pelsa_refresh_universe_size <- function(species, database_dir, uploaded_gcts,
+                                        mode = "incremental") {
+  mode <- match.arg(mode, c("incremental", "full"))
   per <- vapply(species, function(sp) {
     species_dir <- file.path(database_dir, sp)
     io <- pelsa_species_refresh_inputs(species_dir, uploaded_gcts)
-    universe <- pelsa_refresh_accession_universe(
-      uploaded_gcts, io$existing, fasta_map = io$fasta_map
-    )
+    universe <- if (identical(mode, "full")) {
+      pelsa_full_universe(uploaded_gcts, io$existing, fasta_map = io$fasta_map)
+    } else {
+      pelsa_incremental_universe(uploaded_gcts, io$existing,
+                                 fasta_map = io$fasta_map)
+    }
     length(universe)
   }, integer(1))
   names(per) <- species
