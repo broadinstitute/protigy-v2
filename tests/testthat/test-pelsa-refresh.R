@@ -512,6 +512,62 @@ test_that("incremental mode merges fresh ATOP existing (no wipe)", {
                   c("P1", "P2", "P3", "P00001", "P00002"))
 })
 
+# ---- sentinel persistence in the cache (zero-feature accessions) -------------
+
+test_that("refresh writes sentinel rows for zero-feature accessions", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "9606")
+  dir.create(species_dir)
+
+  # Fetch: P00001 has a feature; P00002 resolved with zero features.
+  fake_fetch <- function(accessions, ...) {
+    list(features = data.frame(
+           accession = "P00001", feature_type = "active site", start = 10L,
+           end = 12L, description = "x", feature_class = "active_or_binding_site",
+           class_score = 5L, coord_quality = "exact", stringsAsFactors = FALSE),
+         unresolved = character(0), zero_feature = "P00002")
+  }
+  res <- pelsa_refresh_species_cache(
+    species = "9606", universe = c("P00001", "P00002"),
+    species_dir = species_dir, fetch_fn = fake_fetch, mode = "incremental")
+
+  expect_identical(res$n_zero_feature, 1L)
+  back <- pelsa_read_feature_cache(species_dir)
+  expect_setequal(unique(back$accession), c("P00001", "P00002"))
+  sentinel <- back[back$accession == "P00002", ]
+  expect_true(is.na(sentinel$start))
+  expect_identical(sentinel$feature_class, "none")
+})
+
+test_that("zero-feature accession is NOT re-fetched on the next incremental run", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "9606")
+  dir.create(species_dir)
+  dir.create(file.path(species_dir, "fasta"))
+  writeLines(c(">sp|P00001|A t", "MKV", ">sp|P00002|B t", "AAA"),
+             file.path(species_dir, "fasta", "p.fasta"))
+
+  # First incremental: P00001 feature, P00002 zero-feature.
+  fetch1 <- function(accessions, ...) list(
+    features = data.frame(accession = "P00001", feature_type = "domain",
+      start = 1L, end = 5L, description = "d", feature_class = "folded_domain",
+      class_score = 2L, coord_quality = "exact", stringsAsFactors = FALSE),
+    unresolved = character(0), zero_feature = "P00002")
+  pelsa_run_species_refresh("9606", db, uploaded_gcts = NULL,
+                            fetch_fn = fetch1, mode = "incremental")
+
+  # Second incremental: both cached (P00001 feature, P00002 sentinel) -> the
+  # universe is empty, so the orchestrator stops before any fetch.
+  seen <- NULL
+  fetch2 <- function(accessions, ...) { seen <<- accessions
+    list(features = pelsa_empty_feature_frame(), unresolved = character(0),
+         zero_feature = character(0)) }
+  results <- pelsa_run_species_refresh("9606", db, uploaded_gcts = NULL,
+                                       fetch_fn = fetch2, mode = "incremental")
+  expect_null(seen)                                   # fetch never called
+  expect_match(results[[1]]$error, "empty accession universe")
+})
+
 # ---- pelsa_run_species_refresh (multi-species, injected stub, NO network) ----
 
 test_that("run_species_refresh refreshes multiple species + captures errors", {

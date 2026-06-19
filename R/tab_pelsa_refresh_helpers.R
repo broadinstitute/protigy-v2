@@ -548,7 +548,8 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     list(features = existing, unresolved = universe, path = NA_character_,
          n_features = if (is.data.frame(existing)) nrow(existing) else 0L,
          n_unresolved = length(universe), n_accessions = length(universe),
-         n_retained_from_cache = 0L, mode = mode, canceled = TRUE)
+         n_retained_from_cache = 0L, n_zero_feature = 0L, mode = mode,
+         canceled = TRUE)
   }
 
   if (length(universe) == 0L) {
@@ -600,6 +601,13 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
   # so only they justify the "re-run when UniProt is reachable" warning. Older
   # injected stub fetchers may not return this field; default to character(0).
   transient_unresolved <- fetched$transient_unresolved %||% character(0)
+  zero_feature <- fetched$zero_feature %||% character(0)
+
+  # Persist resolved-but-0-feature accessions as SENTINEL rows so they live in
+  # cache$accession and an incremental refresh stops re-fetching them. Sentinels
+  # are merged exactly like feature rows (their accessions are resolved, so they
+  # are not in `unresolved`). Both modes write them.
+  fresh <- rbind(fresh, pelsa_zero_feature_rows(zero_feature))
 
   # MERGE the fresh frame with the prior cache.
   #   FULL: existing was forced NULL above -> fresh fully supersedes (clean
@@ -638,6 +646,7 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
     n_features             = nrow(merged),
     n_unresolved           = length(unresolved),
     n_transient_unresolved = length(transient_unresolved),
+    n_zero_feature         = length(zero_feature),
     n_accessions           = length(universe),
     n_retained_from_cache  = n_retained,
     mode                   = mode,
@@ -771,6 +780,7 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
       list(species = sp, n_features = res$n_features,
            n_unresolved = res$n_unresolved,
            n_transient_unresolved = res$n_transient_unresolved,
+           n_zero_feature = res$n_zero_feature,
            n_accessions = res$n_accessions,
            n_retained_from_cache = res$n_retained_from_cache,
            had_existing = had_existing, mode = mode, path = res$path,
