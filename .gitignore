@@ -37,19 +37,25 @@ firebase-debug.log
 
 # ──────────────────────────────────────────────────────────────────────────
 # PELSA reference databases (inst/database/<species>/)
-#   TRACKED (inputs users need):   fasta/*.fasta, uniprot_features/schema.json
+#   TRACKED (inputs users need):   fasta/*.fasta
 #   IGNORED (regenerable outputs): the derived feature/membrane caches below,
-#   which users rebuild from the FASTA via the Setup page "refresh".
+#   which users rebuild from the FASTA via the Setup page "refresh". The WHOLE
+#   uniprot_features/ folder (incl. schema.json) is ignored -- it is regenerated
+#   by a Full/Incremental refresh, so it should never be committed.
 # ──────────────────────────────────────────────────────────────────────────
-inst/database/*/uniprot_features/*.tsv
-inst/database/*/uniprot_features/*.parquet
+inst/database/*/uniprot_features/
 inst/database/*/uniprot_membrane/*.tsv
 inst/database/*/uniprot_membrane/*.parquet
 #   the runtime-generated species classification/display registry (rebuilt on
 #   first run; never committed -- see tab_pelsa_species_resolve.R).
 inst/database/species_meta.json
-#   network-derived validation baselines (dev/mouse_feature_baseline.R outputs).
+#   network-derived validation baselines (dev/ scratch fetch/baseline outputs).
 dev/baseline/
+
+# ──────────────────────────────────────────────────────────────────────────
+# Local planning / design docs (treated as scratch -- not version-controlled)
+# ──────────────────────────────────────────────────────────────────────────
+docs/
 
 # ──────────────────────────────────────────────────────────────────────────
 # Dev scratch artifacts (regenerable; not source)
