@@ -551,3 +551,68 @@ pelsa_unannotated_accessions <- function(plot_df_or_accessions, feat_df) {
   is_annotated <- tokens %in% annotated_set | token_base %in% annotated_set
   tokens[!is_annotated]
 }
+
+# ---- Function 4: three-way annotation status counts (Summary QC) -------------
+
+# Bucket a dataset's accessions into three mutually-exclusive annotation states
+# against the (sentinel-aware) feature cache, for the Summary QC dashboard:
+#   n_with_features  accession (or its isoform base) has >= 1 REAL feature row
+#                    (feature_class != "none") in feat_df.
+#   n_zero_feature   accession is in feat_df but ONLY as sentinel row(s)
+#                    (feature_class "none") -- UniProt resolved it with zero
+#                    features (requires a cache rebuilt with sentinels; an old
+#                    cache has none, so such accessions fall into n_failed).
+#   n_failed         accession (and its base) absent from feat_df entirely.
+# The three sum to the unique dataset-accession-token count. n_failed equals the
+# legacy pelsa_unannotated_accessions() length.
+#
+# @param plot_df_or_accessions data.frame (PG.ProteinAccessions / accession) or a
+#        character vector of (possibly ;-delimited) accession strings.
+# @param feat_df per-feature table with accession + feature_class columns.
+# @return list(n_with_features=<int>, n_zero_feature=<int>, n_failed=<int>).
+# @noRd
+pelsa_annotation_status_counts <- function(plot_df_or_accessions, feat_df) {
+  stopifnot(is.data.frame(feat_df))
+  if (!all(c("accession", "feature_class") %in% colnames(feat_df))) {
+    stop("pelsa_annotation_status_counts: feat_df needs accession + ",
+         "feature_class columns")
+  }
+
+  if (is.data.frame(plot_df_or_accessions)) {
+    if ("PG.ProteinAccessions" %in% colnames(plot_df_or_accessions)) {
+      raw <- as.character(plot_df_or_accessions[["PG.ProteinAccessions"]])
+    } else if ("accession" %in% colnames(plot_df_or_accessions)) {
+      raw <- as.character(plot_df_or_accessions[["accession"]])
+    } else {
+      stop("pelsa_annotation_status_counts: data.frame needs ",
+           "PG.ProteinAccessions or accession")
+    }
+  } else {
+    raw <- as.character(plot_df_or_accessions)
+  }
+  tokens <- trimws(unlist(strsplit(raw, ";", fixed = TRUE), use.names = FALSE))
+  if (is.null(tokens)) tokens <- character(0)
+  tokens <- unique(tokens[!is.na(tokens) & nzchar(tokens)])
+  if (length(tokens) == 0L) {
+    return(list(n_with_features = 0L, n_zero_feature = 0L, n_failed = 0L))
+  }
+
+  # Accessions in feat_df WITH a real feature (feature_class != "none").
+  real <- feat_df[!is.na(feat_df$feature_class) &
+                    feat_df$feature_class != "none", , drop = FALSE]
+  real_acc <- unique(as.character(real$accession))
+  real_acc <- real_acc[!is.na(real_acc) & nzchar(real_acc)]
+  real_set <- unique(c(real_acc, .pelsa_isoform_base(real_acc)))
+
+  # All accessions present in feat_df (real OR sentinel).
+  all_acc <- unique(as.character(feat_df$accession))
+  all_acc <- all_acc[!is.na(all_acc) & nzchar(all_acc)]
+  all_set <- unique(c(all_acc, .pelsa_isoform_base(all_acc)))
+
+  token_base <- .pelsa_isoform_base(tokens)
+  has_real <- tokens %in% real_set | token_base %in% real_set
+  in_cache <- tokens %in% all_set  | token_base %in% all_set
+  list(n_with_features = as.integer(sum(has_real)),
+       n_zero_feature  = as.integer(sum(in_cache & !has_real)),
+       n_failed        = as.integer(sum(!in_cache)))
+}

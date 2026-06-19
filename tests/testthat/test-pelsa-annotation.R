@@ -473,6 +473,52 @@ test_that("pelsa_unannotated_accessions accepts a bare accession character vecto
   expect_setequal(un, "PNEW")
 })
 
+# ---- pelsa_annotation_status_counts: three-way bucketing ---------------------
+
+test_that("annotation_status_counts buckets accessions three ways", {
+  # P1: real feature; P2: sentinel only (0 features); P3: absent (failed).
+  feat_df <- data.frame(
+    accession     = c("P1", "P2"),
+    feature_type  = c("domain", ""),
+    start         = c(1L, NA_integer_),
+    end           = c(9L, NA_integer_),
+    description   = c("d", ""),
+    feature_class = c("folded_domain", "none"),
+    class_score   = c(2L, 0L),
+    coord_quality = c("exact", ""),
+    stringsAsFactors = FALSE)
+  plot_df <- data.frame(
+    PG.ProteinAccessions = c("P1", "P2", "P3"), stringsAsFactors = FALSE)
+
+  cnt <- pelsa_annotation_status_counts(plot_df, feat_df)
+  expect_identical(cnt$n_with_features, 1L)  # P1
+  expect_identical(cnt$n_zero_feature, 1L)   # P2 (sentinel only)
+  expect_identical(cnt$n_failed, 1L)         # P3 (absent)
+})
+
+test_that("annotation_status_counts: isoform input resolves via base feature", {
+  feat_df <- data.frame(
+    accession = "P1", feature_type = "domain", start = 1L, end = 9L,
+    description = "d", feature_class = "folded_domain", class_score = 2L,
+    coord_quality = "exact", stringsAsFactors = FALSE)
+  cnt <- pelsa_annotation_status_counts(c("P1-2"), feat_df)
+  expect_identical(cnt$n_with_features, 1L)
+  expect_identical(cnt$n_zero_feature, 0L)
+  expect_identical(cnt$n_failed, 0L)
+})
+
+test_that("annotation_status_counts: failed bucket equals legacy unannotated", {
+  feat_df <- data.frame(
+    accession = "P1", feature_type = "domain", start = 1L, end = 9L,
+    description = "d", feature_class = "folded_domain", class_score = 2L,
+    coord_quality = "exact", stringsAsFactors = FALSE)
+  plot_df <- data.frame(PG.ProteinAccessions = c("P1", "PX", "PY"),
+                        stringsAsFactors = FALSE)
+  cnt <- pelsa_annotation_status_counts(plot_df, feat_df)
+  expect_identical(cnt$n_failed,
+                   length(pelsa_unannotated_accessions(plot_df, feat_df)))
+})
+
 # ---- pelsa_read_feature_cache: schema columns on a tiny temp TSV + smoke ------
 
 test_that("pelsa_read_feature_cache reads a tiny TSV and returns schema columns", {
