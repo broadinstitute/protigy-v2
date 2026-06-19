@@ -15,6 +15,8 @@ to regenerate `NAMESPACE`.
 - `devtools::document()`        # regenerate NAMESPACE/man after roxygen changes
 - `devtools::test()`            # run testthat suite; `devtools::test_active_file()` for one file
 #   (run `devtools::load_all(".")` first — tests exercise the loaded package, not source files)
+#   headless one file: Rscript -e 'suppressMessages(devtools::load_all(".")); testthat::test_file("tests/testthat/test-X.R", reporter="summary")'
+#   machine-readable pass/fail: wrap the result in as.data.frame(r) and sum(df$failed)/sum(df$error)
 - `devtools::check()`           # full R CMD check (also runs in CI on push)
 - `source("setup.R")`           # one-time: install Bioc + CRAN deps + the package
 
@@ -47,6 +49,17 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   (`allow_fetch = FALSE`); network is touched only at Start-Analysis and once per app
   start (`pelsa_refresh_species_meta_on_start`). `pelsa_read_fasta(path, mode=)` picks
   the parse mode from the resolved type.
+- **PELSA feature cache = resolved vs feature-present**: `pelsa_fetch_uniprot` returns
+  `features` (>=1 row per resolved+feature-bearing accession), `zero_feature` (resolved,
+  entry returned, 0 features), and `unresolved` (no entry). "Resolved" = ENTRY returned,
+  not feature presence. 0-feature accessions are persisted as SENTINEL rows
+  (`feature_class="none"`, NA coords) so `cache$accession` includes them — this is what
+  lets INCREMENTAL refresh skip them (universe = `(dataset U fasta) - cache$accession`).
+  FULL refresh wipes `<species>/` except `fasta/` then rebuilds from the FASTA only.
+- **`pelsa_annotate_features` soft-fails on a corrupt cache** (warn + drop the row, never
+  error) and silently drops sentinel rows. Any NA-aware predicate there MUST be NA-safe:
+  `feature_class` can be NA from a blank TSV cell, and a bare `== "none"` yields NA that
+  crashes `if (any(...))`.
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -84,7 +97,8 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
   rather than rebuilding `data.frame`s from `mat()`+rownames (which silently mangles
   non-syntactic sample names and can desync rdesc/cdesc order). cmapR is already an Import.
 - **Significance cutoff is shared**: the PELSA volcano and the Statistics tab both read
-  `stat_params()[[ome]]$cutoff` (set in Statistics > Summary). Don't hardcode `0.05`.
+  `stat_params()[[ome]]$cutoff` (set in Statistics > Summary, code in `R/tab_stat_setup.R` +
+  `R/tab_stat_summary_helpers.R`). Don't hardcode `0.05`.
 - Reusable helpers: `R/utilities.R`.
 - **ASCII-only R source**: no literal Unicode in `R/`; use `\uXXXX` escapes (e.g.
   `"●"` for a filled bullet). Enforced in practice — non-ASCII bytes break `R CMD check`.
@@ -92,6 +106,9 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
 ## Test data
 `data(brca_retrospective_v5.0_proteome_gct)` (also `_phosphoproteome_`, `_rnaseq_`);
 sample files in `inst/extdata/`.
-Tests live in `tests/testthat/test-*.R`. PELSA tests build on synthetic ground-truth
+Tests live in `tests/testthat/test-*.R` (~80 files). PELSA tests build on synthetic ground-truth
 fixtures in `tests/testthat/fixtures/pelsa/` (`generate_synthetic.R` + canned UniProt
 JSON) — prefer these over real data for deterministic assertions.
+Adding/removing a field on a list-returning helper (e.g. `pelsa_fetch_uniprot`) breaks
+`expect_named()` contract tests in sibling files — grep the field set across
+`tests/testthat/` before changing it.
