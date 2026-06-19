@@ -919,3 +919,33 @@ test_that("pelsa_gcts_for_species returns NULL/empty input unchanged", {
   expect_null(pelsa_gcts_for_species(NULL, list(), "9606"))
   expect_length(pelsa_gcts_for_species(list(), list(), "9606"), 0L)
 })
+
+# ---- full-mode round-trip equivalence (no network) --------------------------
+
+test_that("full refresh round-trips the fetched frame through wipe/write/read", {
+  db <- withr::local_tempdir()
+  sd <- file.path(db, "10090"); dir.create(sd)
+  dir.create(file.path(sd, "fasta"))
+  writeLines(c(">sp|P00001|A t", "MKV", ">sp|P00002|B t", "AAA"),
+             file.path(sd, "fasta", "p.fasta"))
+  # Pre-seed a stale cache the wipe must clear.
+  pelsa_write_feature_cache(.existing_cache_df(), sd)
+
+  canned <- .fake_feature_df()  # P00001(x2), P00002
+  fake_fetch <- function(accessions, ...) list(features = canned,
+                                               unresolved = character(0))
+
+  results <- pelsa_run_species_refresh(
+    species = "10090", database_dir = db, uploaded_gcts = NULL,
+    fetch_fn = fake_fetch, mode = "full")
+  expect_null(results[[1]]$error)
+
+  back <- pelsa_read_feature_cache(sd)
+  # Stale P1/P2/P3 gone; only the canned fetch frame remains, value-faithful.
+  expect_identical(back$accession, canned$accession)
+  expect_identical(back$start, canned$start)
+  expect_identical(back$end, canned$end)
+  expect_identical(back$feature_class, canned$feature_class)
+  expect_identical(back$class_score, canned$class_score)
+  expect_identical(back$coord_quality, canned$coord_quality)
+})
