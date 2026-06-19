@@ -988,11 +988,17 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
         icon  = shiny::icon("rotate"),
         class = "pelsa-refresh-btn"
       ),
-      shiny::actionButton(
-        ns("pelsa_incremental_btn"),
-        "Incremental refresh",
-        icon  = shiny::icon("circle-plus"),
-        class = "pelsa-refresh-btn pelsa-incremental-btn"
+      # Rendered DISABLED by default: the maintenance box re-renders server-side
+      # (renderUI) whenever the active dataset changes, which would otherwise
+      # reinstate a fresh enabled button. Starting disabled means the observer
+      # guard only ever has to ENABLE it (when the selected species has a cache),
+      # so a re-render can never leave it wrongly live before the guard re-fires.
+      shiny::tags$button(
+        id    = ns("pelsa_incremental_btn"),
+        type  = "button",
+        class = "btn btn-default action-button pelsa-refresh-btn pelsa-incremental-btn",
+        disabled = "disabled",
+        shiny::icon("circle-plus"), " Incremental refresh"
       )
     ),
     # Inline progress + result, rendered DIRECTLY under the buttons. Unlike a

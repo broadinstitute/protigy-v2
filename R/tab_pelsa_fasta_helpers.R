@@ -115,6 +115,40 @@ pelsa_read_fasta <- function(path, mode = c("uniprot", "self_curated")) {
   out
 }
 
+# Read ONLY the accession keys from a FASTA file (no sequence concatenation).
+#
+# A lightweight cousin of pelsa_read_fasta for callers that need the accession
+# UNIVERSE but not the sequences -- e.g. the refresh universe + size estimate,
+# which use only names(fasta_map). Parsing a proteome FASTA's full sequence map
+# just to count headers is wasteful (a multi-second, memory-heavy concatenation
+# on the Shiny event loop); this reads the header lines and applies the SAME key
+# rule as pelsa_read_fasta, skipping the sequence work entirely.
+#
+# @param path  path to a FASTA file
+# @param mode  "uniprot" (default; pipe-aware) or "self_curated" (first-token).
+# @return character vector of unique accession keys (first-wins on duplicates).
+# @noRd
+pelsa_read_fasta_accessions <- function(path, mode = c("uniprot",
+                                                       "self_curated")) {
+  mode <- match.arg(mode)
+  if (length(path) != 1L || is.na(path) || !nzchar(path) || !file.exists(path)) {
+    stop("pelsa_read_fasta_accessions: FASTA file not found: ", path)
+  }
+  lines <- readLines(path, warn = FALSE)
+  headers <- sub("^>", "", lines[startsWith(lines, ">")])
+  if (length(headers) == 0L) return(character(0))
+
+  first_tok <- sub("\\s.*$", "", headers)
+  keys <- if (identical(mode, "self_curated")) {
+    first_tok
+  } else {
+    pipe_acc <- sub("^[^|]*\\|([^|]*)\\|.*$", "\\1", first_tok)
+    ifelse(grepl("\\|", first_tok), pipe_acc, first_tok)
+  }
+  keys <- keys[!is.na(keys) & nzchar(keys)]
+  unique(keys)  # first-wins, matching pelsa_read_fasta's de-dup
+}
+
 # Resolve a FASTA sequence for an accession, falling back to the isoform base.
 #
 # Tries the exact key first; if absent and the accession carries a UniProt

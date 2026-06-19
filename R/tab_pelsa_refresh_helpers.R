@@ -628,7 +628,9 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
 # @param species_dir   the species directory (file.path(database_dir, species)).
 # @param uploaded_gcts named list of uploaded datasets, or NULL/empty (unused
 #                      here; kept for signature symmetry with the callers).
-# @return list(existing = <feature df or NULL>, fasta_map = <list or NULL>).
+# @return list(existing = <feature df or NULL>, fasta_map = <named list or NULL>).
+#         fasta_map is a names-only list (names = FASTA accessions, empty values)
+#         -- the refresh universe needs only the accession set, not sequences.
 # @noRd
 pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
   existing <- tryCatch(pelsa_read_feature_cache(species_dir),
@@ -642,11 +644,17 @@ pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
     character(0)
   }
   fasta_map <- if (length(fastas) > 0L) {
-    # Refresh only ever runs for UniProt (taxon-code) species -- the refresh
-    # checklist filters out self-curated species -- so the FASTA is parsed in
-    # UniProt mode (pipe-aware). Explicit for intent.
-    tryCatch(pelsa_read_fasta(fastas[[1]], mode = "uniprot"),
-             error = function(e) NULL)
+    # The refresh path uses ONLY the FASTA accession names (the universe
+    # functions take names(fasta_map)), never the sequences -- so read keys only
+    # via the lightweight pelsa_read_fasta_accessions rather than building the
+    # whole proteome sequence map on the event loop. Returned as a named list
+    # (names = accessions, values empty) so names(fasta_map) is the accession set.
+    # Refresh only ever runs for UniProt (taxon-code) species (the checklist
+    # filters out self-curated), so parse in UniProt mode (pipe-aware).
+    accs <- tryCatch(pelsa_read_fasta_accessions(fastas[[1]], mode = "uniprot"),
+                     error = function(e) character(0))
+    if (length(accs) > 0L) stats::setNames(vector("list", length(accs)), accs)
+    else NULL
   } else {
     NULL
   }

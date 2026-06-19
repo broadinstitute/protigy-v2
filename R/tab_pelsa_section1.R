@@ -1053,7 +1053,9 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         return(FALSE)
       }
       species_dir <- file.path(pelsa_database_dir(), selected)
-      cache <- tryCatch(pelsa_read_feature_cache(species_dir),
+      # Only need to know whether the cache has >= 1 row; a 1-row read avoids
+      # parsing the whole (proteome-sized) feature TSV on every guard firing.
+      cache <- tryCatch(pelsa_read_feature_cache(species_dir, n_max = 1L),
                         error = function(e) NULL)
       is.data.frame(cache) && nrow(cache) > 0L
     }

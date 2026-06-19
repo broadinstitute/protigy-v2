@@ -39,6 +39,49 @@ test_that("pelsa_read_fasta parses sp|...| and bare headers, concatenates seq", 
   expect_equal(fa[["BARE"]], "AAABBB")
 })
 
+# ---- pelsa_read_fasta_accessions (key-only fast path) ------------------------
+
+test_that("read_fasta_accessions returns the same keys as names(read_fasta)", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(
+    c(">sp|P12345|X_HUMAN desc", "MKLV", "PTIDE",
+      ">tr|A0A123|Y_HUMAN desc", "AAA",
+      ">BARE bare header", "BBB"),
+    tmp)
+  # Parity: the fast path must yield exactly names(pelsa_read_fasta) in uniprot
+  # mode (the only mode the refresh path uses).
+  expect_identical(
+    pelsa_read_fasta_accessions(tmp, mode = "uniprot"),
+    names(pelsa_read_fasta(tmp, mode = "uniprot"))
+  )
+  expect_setequal(pelsa_read_fasta_accessions(tmp, mode = "uniprot"),
+                  c("P12345", "A0A123", "BARE"))
+})
+
+test_that("read_fasta_accessions honors self_curated first-token keying", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(c(">CUSTOM|withpipe rest of header", "MKL",
+               ">PLAIN second", "AAA"), tmp)
+  expect_identical(
+    pelsa_read_fasta_accessions(tmp, mode = "self_curated"),
+    names(pelsa_read_fasta(tmp, mode = "self_curated"))
+  )
+  expect_setequal(pelsa_read_fasta_accessions(tmp, mode = "self_curated"),
+                  c("CUSTOM|withpipe", "PLAIN"))
+})
+
+test_that("read_fasta_accessions de-dups first-wins + errors on missing file", {
+  tmp <- tempfile(fileext = ".fasta")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(c(">sp|P1|A d", "MK", ">sp|P1|A d", "AA", ">sp|P2|B d", "CC"), tmp)
+  expect_identical(pelsa_read_fasta_accessions(tmp, mode = "uniprot"),
+                   c("P1", "P2"))  # duplicate collapsed, order preserved
+  expect_error(pelsa_read_fasta_accessions(tempfile(fileext = ".fasta")),
+               "not found")
+})
+
 test_that("pelsa_read_fasta errors on missing or empty file", {
   expect_error(pelsa_read_fasta(tempfile(fileext = ".fasta")))
 
