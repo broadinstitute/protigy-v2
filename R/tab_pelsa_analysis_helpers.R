@@ -815,6 +815,7 @@ pelsa_run_analysis_one <- function(gct,
   annotation_features <- annotation[, PELSA_ANNOTATION_FEATURE_COLS, drop = FALSE]
   rownames(annotation_features) <- NULL
   unannotated <- pelsa_unannotated_accessions(matched, feat_df)
+  annotation_status <- pelsa_annotation_status_counts(matched, feat_df)
 
   # --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ---
   # GCTs_original is LOG-transformed (Protigy stores the post-log matrix), so we
@@ -939,7 +940,9 @@ pelsa_run_analysis_one <- function(gct,
     n_matched_rows        = nrow(matched),
     n_unmatched_rows      = nrow(unmatched),
     unmatched_by_reason   = as.list(c(table(reasons))),
-    n_unannotated_accessions = length(unannotated)
+    n_unannotated_accessions    = length(unannotated),
+    n_annotated_with_features   = annotation_status$n_with_features,
+    n_annotated_zero_feature    = annotation_status$n_zero_feature
   )
 
   list(

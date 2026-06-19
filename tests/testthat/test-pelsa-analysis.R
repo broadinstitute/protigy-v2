@@ -508,10 +508,41 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
                     "winning_gene") %in% colnames(ann)))
   expect_true(all(colnames(one$matched) %in% colnames(ann)))
 
-  # QC counts.
+  # QC counts (incl. the three-way annotation breakdown).
   expect_true(all(c("n_peptides", "n_matched_rows", "n_unmatched_rows",
-                    "n_unannotated_accessions") %in% names(one$qc)))
+                    "n_unannotated_accessions", "n_annotated_with_features",
+                    "n_annotated_zero_feature") %in% names(one$qc)))
   expect_equal(one$qc$n_peptides, nrow(syn$peptides))
+  # The failed bucket still equals the legacy unannotated length.
+  expect_identical(one$qc$n_unannotated_accessions, length(one$unannotated))
+})
+
+test_that("run_analysis_one counts zero-feature (sentinel) accessions in QC", {
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 10)
+  gct <- .mk_gct(syn)
+  # Take the standard feat_df and add a SENTINEL row for one matched accession
+  # so it is "resolved with 0 features" rather than absent.
+  base <- .mk_feat_df()
+  # Pick an accession that actually appears in the matched peptides (SHARED1 is
+  # already a real feature; add a sentinel for a DIFFERENT matched accession).
+  one0 <- pelsa_run_analysis_one(gct = gct, gct_original = gct,
+                                 fasta_map = syn$fasta, feat_df = base,
+                                 condition_col = "condition")
+  # An accession present in the data but absent from feat_df -> currently failed.
+  failed_acc <- one0$unannotated
+  skip_if(length(failed_acc) == 0L, "no unannotated accession to convert")
+  sentinel <- data.frame(
+    accession = failed_acc[[1]], start = NA_integer_, end = NA_integer_,
+    feature_class = "none", stringsAsFactors = FALSE)
+  feat_df <- rbind(base, sentinel)
+
+  one <- pelsa_run_analysis_one(gct = gct, gct_original = gct,
+                                fasta_map = syn$fasta, feat_df = feat_df,
+                                condition_col = "condition")
+  # That accession moved from failed -> zero-feature.
+  expect_gte(one$qc$n_annotated_zero_feature, 1L)
+  expect_identical(one$qc$n_unannotated_accessions,
+                   one0$qc$n_unannotated_accessions - 1L)
 })
 
 # ---- M8/M9: align CV source to the processed peptide set BY id ---------------
