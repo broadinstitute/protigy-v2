@@ -161,6 +161,36 @@ test_that("a feature cache of ONLY NA-coord rows falls back to 'none' (no crash)
   expect_equal(out$winning_accession, "PB")
 })
 
+test_that("annotate_features drops 0-feature SENTINEL rows silently", {
+  # A sentinel (feature_class 'none' + NA coords) marks a resolved-but-0-feature
+  # accession. It carries no interval, so it must be dropped from the overlap
+  # WITHOUT the 'dropped feature row' corruption warning (it is expected, not a
+  # corrupt cache).
+  feat <- data.frame(
+    accession = "PB", start = NA_integer_, end = NA_integer_,
+    feature_class = "none", stringsAsFactors = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "PB", PG.Genes = "GB",
+    pep_start = 5L, pep_end = 15L, stringsAsFactors = FALSE
+  )
+  out <- expect_silent(pelsa_annotate_features(plot_df, feat))
+  expect_equal(out$feature_class_primary, "none")  # no overlap -> fallback
+})
+
+test_that("annotate_features STILL warns on genuinely corrupt NA-coord rows", {
+  # NA coords on a REAL feature_class is corruption, not a sentinel -> still warn.
+  feat <- data.frame(
+    accession = "PB", start = NA_integer_, end = NA_integer_,
+    feature_class = "folded_domain", stringsAsFactors = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "PB", PG.Genes = "GB",
+    pep_start = 5L, pep_end = 15L, stringsAsFactors = FALSE
+  )
+  expect_warning(pelsa_annotate_features(plot_df, feat), "NA or inverted")
+})
+
 test_that("single overlap on leading accession resolves to that class", {
   feat <- .feat_df()
   # PB [1,30] active_or_binding_site; peptide [5,15] overlaps it.

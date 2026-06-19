@@ -445,13 +445,20 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
   # on-disk feature cache is untrusted input (a blank/unparseable coord parses
   # to NA). Mirror the grid (x) side: drop them with a one-time warning so a
   # corrupt cache surfaces in logs (soft-fail posture used in PELSA).
+  # Sentinel rows (feature_class "none" with NA coords) mark resolved-but-0-
+  # feature accessions; they carry no interval and are DROPPED silently. Genuine
+  # corruption (NA/inverted coords on a REAL feature_class) is also dropped but
+  # WARNS so a bad cache surfaces in logs.
   feat_bad <- is.na(feat$start) | is.na(feat$end) | (feat$start > feat$end)
-  if (any(feat_bad)) {
-    warning("pelsa_annotate_features: dropped ", sum(feat_bad),
+  is_sentinel <- feat_bad & (feat$feature_class == "none") &
+    is.na(feat$start) & is.na(feat$end)
+  feat_corrupt <- feat_bad & !is_sentinel
+  if (any(feat_corrupt)) {
+    warning("pelsa_annotate_features: dropped ", sum(feat_corrupt),
             " feature row(s) with NA or inverted (start > end) coordinates ",
             "from the feature cache.", call. = FALSE)
-    feat <- feat[!feat_bad]
   }
+  if (any(feat_bad)) feat <- feat[!feat_bad]
   data.table::setkey(qry, accession, pep_start, pep_end)
   data.table::setkey(feat, accession, start, end)
 
