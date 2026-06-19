@@ -837,3 +837,25 @@ test_that("missed-cleavage y-axis uses plain integer labels, not scientific", {
                info = paste("got scientific labels:", paste(labs, collapse = ", ")))
   expect_true(grepl("5", labs[1], fixed = TRUE))
 })
+
+test_that("missed-cleavage plot bakes count + percent into a tooltip text aesthetic", {
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:4),
+    missed_cleavages = c(0L, 0L, 1L, 2L),
+    peptide_length = rep(8L, 4L),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_missed_cleavage_plot(pm)
+  expect_s3_class(p, "ggplot")
+  # A `text` aesthetic must be mapped (used as the plotly tooltip). ggplotly
+  # reads it whether it lives in the plot-level mapping or a layer mapping.
+  has_text_aes <- "text" %in% names(p$mapping) ||
+    any(vapply(p$layers, function(l) "text" %in% names(l$mapping), logical(1)))
+  expect_true(has_text_aes)
+  # The built data must contain the formatted tooltip strings with both the
+  # count and the percent for the largest bar (count 2 = 50.0%).
+  built <- ggplot2::ggplot_build(p)$data[[1]]
+  expect_true("text" %in% names(built))
+  expect_true(any(grepl("50.0%", built$text, fixed = TRUE)))
+  expect_true(any(grepl("Peptides: 2", built$text, fixed = TRUE)))
+})

@@ -238,7 +238,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       pelsa_missed_cleavage_plot(entry$peptide_metrics)
     })
     output$missed_plot <- renderPlotly({
-      ggplotly(missed_plot_reactive())
+      ggplotly(missed_plot_reactive(), tooltip = "text")
     })
 
     ## 6B - PER-CONDITION CV KDE ##
@@ -673,8 +673,15 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No missed-cleavage data."))
   }
+  # Pre-format the per-bar tooltip: count + percentage of all identified
+  # peptides. Baked into a `text` aesthetic so ggplotly(tooltip = "text")
+  # shows exactly this. \n becomes a line break in the plotly hover box.
+  df$tooltip <- sprintf(
+    "Missed cleavages: %d\nPeptides: %s\nPercent: %.1f%%",
+    df$missed, format(df$count, big.mark = ","), df$percent
+  )
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
-  ggplot(df, aes(x = .data$missed, y = .data$count)) +
+  ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
     scale_y_continuous(labels = scales::label_comma()) +
     labs(x = "Missed cleavages", y = "# of peptides",
