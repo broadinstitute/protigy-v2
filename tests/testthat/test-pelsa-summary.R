@@ -157,6 +157,47 @@ test_that("length values + missed-cleavage data shape correctly", {
   expect_identical(mc$count, c(2L, 1L))
 })
 
+test_that("missed-cleavage data includes percent of all identified peptides", {
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:4),
+    missed_cleavages = c(0L, 0L, 1L, 2L),
+    peptide_length   = rep(8L, 4L),
+    stringsAsFactors = FALSE
+  )
+  mc <- pelsa_missed_cleavage_data(pm)
+  expect_identical(mc$missed, c(0L, 1L, 2L))
+  expect_identical(mc$count, c(2L, 1L, 1L))
+  # percent is count / total peptides identified (nrow(pm)) * 100.
+  expect_equal(mc$percent, c(50, 25, 25))
+  # all 4 peptides have finite missed-cleavage values, so percents sum to 100.
+  expect_equal(sum(mc$percent), 100)
+})
+
+test_that("missed-cleavage percent denominator is ALL identified peptides, not just finite", {
+  # 2 of 4 peptides have a non-finite missed-cleavage value. The denominator is
+  # still nrow(pm) = 4 (= qc$n_peptides / total peptides identified), so the
+  # bars cover only 2 peptides and percents sum to 50, NOT 100.
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:4),
+    missed_cleavages = c(0L, 1L, NA_integer_, NA_integer_),
+    peptide_length   = rep(8L, 4L),
+    stringsAsFactors = FALSE
+  )
+  mc <- pelsa_missed_cleavage_data(pm)
+  expect_identical(mc$missed, c(0L, 1L))
+  expect_identical(mc$count, c(1L, 1L))
+  # denominator is 4 (all rows), not 2 (finite rows): 1/4 = 25% each.
+  expect_equal(mc$percent, c(25, 25))
+  expect_equal(sum(mc$percent), 50)
+})
+
+test_that("missed-cleavage empty result carries a numeric percent column", {
+  mc <- pelsa_missed_cleavage_data(NULL)
+  expect_identical(nrow(mc), 0L)
+  expect_true("percent" %in% names(mc))
+  expect_type(mc$percent, "double")
+})
+
 # ---- CV plot render paths (cv = NULL / all-skipped) --------------------------
 
 test_that("pelsa_cv_kde_plot renders without error when cv is NULL", {

@@ -237,18 +237,26 @@ pelsa_cv_ok_values <- function(cv) {
 # @noRd
 pelsa_missed_cleavage_data <- function(peptide_metrics) {
   empty <- data.frame(missed = integer(0), count = integer(0),
-                      stringsAsFactors = FALSE)
+                      percent = numeric(0), stringsAsFactors = FALSE)
   if (is.null(peptide_metrics) || !is.data.frame(peptide_metrics) ||
       !("missed_cleavages" %in% names(peptide_metrics))) {
     return(empty)
   }
+  # Denominator = total peptides identified = nrow(peptide_metrics), which is
+  # identically qc$n_peptides (the "Total peptides identified" dashbar number;
+  # peptide_metrics is built one row per input peptide). Capture it BEFORE
+  # dropping non-finite missed-cleavage values, so peptides without a finite
+  # count still count toward the denominator.
+  total <- nrow(peptide_metrics)
   v <- suppressWarnings(as.integer(peptide_metrics$missed_cleavages))
   v <- v[is.finite(v)]
-  if (length(v) == 0L) return(empty)
+  if (length(v) == 0L || total == 0L) return(empty)
   tb <- table(v)
+  count <- as.integer(tb)
   data.frame(
-    missed = as.integer(names(tb)),
-    count  = as.integer(tb),
+    missed  = as.integer(names(tb)),
+    count   = count,
+    percent = count / total * 100,
     stringsAsFactors = FALSE
   )
 }
