@@ -232,8 +232,11 @@ pelsa_cv_ok_values <- function(cv) {
 # Missed-cleavage counts as an ordered factor-ready data.frame for the bar plot.
 #
 # @param peptide_metrics the cache `peptide_metrics` data.frame.
-# @return data.frame(missed = integer, count = integer), one row per distinct
-#         missed-cleavage value in ascending order. Empty when none.
+# @return data.frame(missed = integer, count = integer, percent = numeric), one
+#         row per integer from min(0, observed) to max(observed) in ascending
+#         order. Values no peptide has are filled with count 0 / percent 0 so the
+#         bar chart shows evenly-spaced bars with a visible empty slot at gaps.
+#         Empty when there are no finite values.
 # @noRd
 pelsa_missed_cleavage_data <- function(peptide_metrics) {
   empty <- data.frame(missed = integer(0), count = integer(0),
@@ -252,9 +255,16 @@ pelsa_missed_cleavage_data <- function(peptide_metrics) {
   v <- v[is.finite(v)]
   if (length(v) == 0L || total == 0L) return(empty)
   tb <- table(v)
-  count <- as.integer(tb)
+  observed <- as.integer(names(tb))
+  observed_count <- as.integer(tb)
+  # Contiguous axis: every integer from min(0, observed) to max(observed). Gaps
+  # (values no peptide has) are filled with count 0 so the bar chart draws an
+  # evenly-spaced, visibly-empty slot instead of collapsing the gap.
+  full <- seq.int(min(0L, min(observed)), max(observed))
+  count <- integer(length(full))
+  count[match(observed, full)] <- observed_count
   data.frame(
-    missed  = as.integer(names(tb)),
+    missed  = as.integer(full),
     count   = count,
     percent = count / total * 100,
     stringsAsFactors = FALSE

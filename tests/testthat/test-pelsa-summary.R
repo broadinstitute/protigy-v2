@@ -198,6 +198,30 @@ test_that("missed-cleavage empty result carries a numeric percent column", {
   expect_type(mc$percent, "double")
 })
 
+test_that("missed-cleavage data fills gaps with zero-count rows for even spacing", {
+  # Peptides have 0, 1, 2, 3, 5, 7 missed cleavages -> 4 and 6 are gaps.
+  # The helper must emit a contiguous 0..7 sequence, with count 0 / percent 0
+  # at the missing values so the bar chart can draw a visible empty slot.
+  pm <- data.frame(
+    PEP.StrippedSequence = paste0("PEP", 1:8),
+    missed_cleavages = c(0L, 0L, 1L, 2L, 3L, 5L, 7L, 7L),
+    peptide_length   = rep(8L, 8L),
+    stringsAsFactors = FALSE
+  )
+  mc <- pelsa_missed_cleavage_data(pm)
+  # Contiguous 0..7 (max observed is 7), no gaps.
+  expect_identical(mc$missed, 0:7)
+  # Observed counts at 0,1,2,3,5,7; zeros filled at 4 and 6.
+  expect_identical(mc$count, c(2L, 1L, 1L, 1L, 0L, 1L, 0L, 2L))
+  # Gap rows carry percent 0; observed rows are count / nrow(pm) * 100.
+  expect_equal(mc$percent[mc$missed == 4L], 0)
+  expect_equal(mc$percent[mc$missed == 6L], 0)
+  expect_equal(mc$percent[mc$missed == 0L], 25)   # 2 / 8 * 100
+  expect_equal(mc$percent[mc$missed == 7L], 25)   # 2 / 8 * 100
+  # Percentages still sum over the same numerator (8 finite peptides / 8 total).
+  expect_equal(sum(mc$percent), 100)
+})
+
 # ---- CV plot render paths (cv = NULL / all-skipped) --------------------------
 
 test_that("pelsa_cv_kde_plot renders without error when cv is NULL", {
