@@ -545,6 +545,69 @@ test_that("run_species_refresh captures a per-species error without aborting", {
   expect_match(results[[1]]$error, "missing schema column")
 })
 
+# ---- pelsa_run_species_refresh: mode routing --------------------------------
+
+test_that("run_species_refresh full mode fetches the FASTA universe + wipes", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "10090")
+  dir.create(species_dir)
+  dir.create(file.path(species_dir, "fasta"))
+  # FASTA with two UniProt-style accessions (pipe header parsed in uniprot mode).
+  writeLines(c(">sp|P00001|A_X test", "MKV",
+               ">sp|P00002|B_X test", "AAA"),
+             file.path(species_dir, "fasta", "p.fasta"))
+  # A pre-existing dataset accession that full mode must IGNORE.
+  gcts <- list(d = data.frame(PG.ProteinAccessions = "P99999",
+                              stringsAsFactors = FALSE))
+
+  seen <- NULL
+  fake_fetch <- function(accessions, ...) { seen <<- accessions
+    list(features = .fake_feature_df(), unresolved = character(0)) }
+
+  results <- pelsa_run_species_refresh(
+    species = "10090", database_dir = db, uploaded_gcts = gcts,
+    fetch_fn = fake_fetch, mode = "full")
+
+  expect_identical(results[[1]]$mode, "full")
+  # Full universe = FASTA accessions only; the dataset accession is NOT fetched.
+  expect_setequal(seen, c("P00001", "P00002"))
+  expect_false("P99999" %in% seen)
+})
+
+test_that("run_species_refresh incremental mode fetches (dataset U fasta) - cache", {
+  db <- withr::local_tempdir()
+  species_dir <- file.path(db, "9606")
+  dir.create(species_dir)
+  dir.create(file.path(species_dir, "fasta"))
+  writeLines(c(">sp|P00001|A_X t", "MKV"),
+             file.path(species_dir, "fasta", "p.fasta"))
+  # Seed a cache that already covers P00001 -> incremental must skip it.
+  pelsa_write_feature_cache(
+    data.frame(accession = "P00001", feature_type = "domain", start = 1L,
+               end = 5L, description = "d", feature_class = "folded_domain",
+               class_score = 2L, coord_quality = "exact",
+               stringsAsFactors = FALSE),
+    species_dir)
+  gcts <- list(d = data.frame(PG.ProteinAccessions = "P77777",
+                              stringsAsFactors = FALSE))
+
+  seen <- NULL
+  fake_fetch <- function(accessions, ...) { seen <<- accessions
+    list(features = data.frame(
+      accession = "P77777", feature_type = "domain", start = 1L, end = 5L,
+      description = "d", feature_class = "folded_domain", class_score = 2L,
+      coord_quality = "exact", stringsAsFactors = FALSE),
+      unresolved = character(0)) }
+
+  results <- pelsa_run_species_refresh(
+    species = "9606", database_dir = db, uploaded_gcts = gcts,
+    fetch_fn = fake_fetch, mode = "incremental")
+
+  expect_identical(results[[1]]$mode, "incremental")
+  # union {P00001 (fasta), P77777 (dataset)} minus cache {P00001} = {P77777}.
+  expect_setequal(seen, "P77777")
+})
+
 # ---- pelsa_refresh_notifications (pure formatter) ----------------------------
 
 test_that("notifications: error + lossy-warning + success summary", {

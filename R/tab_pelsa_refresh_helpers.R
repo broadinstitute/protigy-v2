@@ -614,33 +614,39 @@ pelsa_refresh_species_cache <- function(species, universe, species_dir,
 # ---- Helper 4: multi-species orchestration (observer-facing) -----------------
 
 # Resolve ONE species' refresh inputs from disk: its existing cache (best-effort)
-# and, when no datasets are uploaded, the species' FASTA accession map (the
-# fallback universe). Pure-ish: reads files only; never fetches/writes.
+# and the species' FASTA accession map. Pure-ish: reads files only; never
+# fetches/writes.
+#
+# The FASTA is ALWAYS read (not gated on whether datasets are uploaded): both
+# refresh modes need it -- FULL fetches the FASTA proteome only, and INCREMENTAL
+# unions the FASTA accessions with the dataset accessions before subtracting the
+# cache. `uploaded_gcts` is retained in the signature for caller symmetry but no
+# longer gates the read.
 #
 # @param species_dir   the species directory (file.path(database_dir, species)).
-# @param uploaded_gcts named list of uploaded datasets, or NULL/empty.
+# @param uploaded_gcts named list of uploaded datasets, or NULL/empty (unused
+#                      here; kept for signature symmetry with the callers).
 # @return list(existing = <feature df or NULL>, fasta_map = <list or NULL>).
 # @noRd
 pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
   existing <- tryCatch(pelsa_read_feature_cache(species_dir),
                        error = function(e) NULL)
 
-  fasta_map <- NULL
-  if (is.null(uploaded_gcts) || length(uploaded_gcts) == 0L) {
-    fdir <- file.path(species_dir, "fasta")
-    fastas <- if (dir.exists(fdir)) {
-      list.files(fdir, pattern = "\\.(fasta|fa)$", full.names = TRUE,
-                 ignore.case = TRUE)
-    } else {
-      character(0)
-    }
-    if (length(fastas) > 0L) {
-      # Refresh only ever runs for UniProt (taxon-code) species -- the refresh
-      # checklist filters out self-curated species -- so the FASTA is parsed in
-      # UniProt mode (pipe-aware). Explicit for intent.
-      fasta_map <- tryCatch(pelsa_read_fasta(fastas[[1]], mode = "uniprot"),
-                            error = function(e) NULL)
-    }
+  fdir <- file.path(species_dir, "fasta")
+  fastas <- if (dir.exists(fdir)) {
+    list.files(fdir, pattern = "\\.(fasta|fa)$", full.names = TRUE,
+               ignore.case = TRUE)
+  } else {
+    character(0)
+  }
+  fasta_map <- if (length(fastas) > 0L) {
+    # Refresh only ever runs for UniProt (taxon-code) species -- the refresh
+    # checklist filters out self-curated species -- so the FASTA is parsed in
+    # UniProt mode (pipe-aware). Explicit for intent.
+    tryCatch(pelsa_read_fasta(fastas[[1]], mode = "uniprot"),
+             error = function(e) NULL)
+  } else {
+    NULL
   }
   list(existing = existing, fasta_map = fasta_map)
 }
@@ -670,11 +676,13 @@ pelsa_species_refresh_inputs <- function(species_dir, uploaded_gcts) {
 pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
                                       fetch_fn = pelsa_fetch_uniprot,
                                       set_progress = NULL,
-                                      should_cancel = NULL) {
+                                      should_cancel = NULL,
+                                      mode = "incremental") {
   if (!is.character(species) || length(species) == 0L) {
     stop("pelsa_run_species_refresh: `species` must be a non-empty character ",
          "vector", call. = FALSE)
   }
+  mode <- match.arg(mode, c("incremental", "full"))
   n <- length(species)
   results <- vector("list", n)
 
@@ -695,9 +703,13 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
     results[[k]] <- tryCatch({
       io <- pelsa_species_refresh_inputs(species_dir, uploaded_gcts)
       had_existing <- is.data.frame(io$existing) && nrow(io$existing) > 0L
-      universe <- pelsa_refresh_accession_universe(
-        uploaded_gcts, io$existing, fasta_map = io$fasta_map
-      )
+      universe <- if (identical(mode, "full")) {
+        pelsa_full_universe(uploaded_gcts, io$existing,
+                            fasta_map = io$fasta_map)
+      } else {
+        pelsa_incremental_universe(uploaded_gcts, io$existing,
+                                   fasta_map = io$fasta_map)
+      }
 
       sub_progress <- if (is.null(set_progress)) NULL else list(
         set = function(value, message, detail = NULL) {
@@ -712,14 +724,14 @@ pelsa_run_species_refresh <- function(species, database_dir, uploaded_gcts,
       res <- pelsa_refresh_species_cache(
         species = sp, universe = universe, species_dir = species_dir,
         fetch_fn = fetch_fn, existing = io$existing, progress = sub_progress,
-        should_cancel = should_cancel
+        should_cancel = should_cancel, mode = mode
       )
       list(species = sp, n_features = res$n_features,
            n_unresolved = res$n_unresolved,
            n_transient_unresolved = res$n_transient_unresolved,
            n_accessions = res$n_accessions,
            n_retained_from_cache = res$n_retained_from_cache,
-           had_existing = had_existing, path = res$path,
+           had_existing = had_existing, mode = mode, path = res$path,
            canceled = isTRUE(res$canceled), error = NULL)
     }, error = function(e) {
       list(species = sp, error = conditionMessage(e))
