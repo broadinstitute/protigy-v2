@@ -130,6 +130,60 @@
   out
 }
 
+# Repoint each row's winning_accession to a MATCHED accession when the
+# annotation-derived winner is absent from that peptide's matched-cache rows.
+#
+# The annotation winner is consistent with the matched cache for UniProt (the
+# feature overlap can only fire on a FASTA-mapped accession) and for self-curated
+# rows whose leading PG.ProteinAccessions token mapped. The ONLY rows that need
+# repair are self-curated peptides whose leading token did not map but a
+# secondary token did: their winner points at the unmapped leading token while
+# the matched cache holds only the secondary one. We replace such winners with
+# the peptide's REPRESENTATIVE matched accession -- the first matched accession by
+# (pep_start, accession), the same order .pelsa_volcano_labels() uses, so the
+# pinned label's leading entry and the resolved accession agree.
+#
+# @param winner   character vector of current winning_accession (length nrow df).
+# @param keys     the per-row join key values (df[[key_col]]).
+# @param matched  the matched cache (2B $matched).
+# @param key_col  the join key column present on BOTH df and matched.
+# @return character vector (length(winner)) with non-matched winners repaired;
+#   rows with no matched entry for their key are left unchanged.
+# @noRd
+.pelsa_volcano_reconcile_winner <- function(winner, keys, matched, key_col) {
+  if (length(winner) == 0L) return(winner)
+  mk <- as.character(matched[[key_col]])
+  ma <- as.character(matched[["accession"]])
+  mps <- matched[["pep_start"]]
+
+  # Sort matched rows by (key, pep_start, accession) so the FIRST row per key is
+  # that key's REPRESENTATIVE matched accession -- the same order
+  # .pelsa_volcano_labels() uses, so the repointed winner equals the pinned
+  # label's leading entry.
+  ord <- order(mk, mps, ma, na.last = TRUE)
+  mk <- mk[ord]; ma <- ma[ord]
+  first <- !duplicated(mk)
+  rep_acc <- ma[first]
+  names(rep_acc) <- mk[first]
+
+  # FULLY VECTORIZED (this builder runs on ~80k-row frames; a per-row loop with
+  # name-based list lookup is O(n^2) and was the profiled hot spot this file was
+  # rewritten to avoid -- see header). Membership is a paired-string set test:
+  # a winner is OK iff (key, winner) is one of the cache's (key, accession)
+  # pairs. The "\r" separator is collision-safe (accessions/keys never contain
+  # it) and mirrors .pelsa_best_back_map()'s pair-key idiom.
+  k <- as.character(keys)
+  have_pair <- paste0(mk, "\r", ma)
+  want_pair <- paste0(k, "\r", winner)
+  is_member <- !is.na(winner) & nzchar(winner) & want_pair %in% have_pair
+  rep_for_k <- rep_acc[k]                   # NA when the key has no matched rows
+  needs_fix <- !is_member & !is.na(rep_for_k)
+
+  out <- winner
+  out[needs_fix] <- rep_for_k[needs_fix]
+  out
+}
+
 # Attach the two-sided significance columns (Significant / sig_direction /
 # sig_color) to a frame already carrying logFC / adj.P.Val. Vectorized.
 #
@@ -302,6 +356,25 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   # Left-join the label by key, preserving stat_df row order. match() gives the
   # first label per key (one label per distinct key by construction).
   df$label <- labels$label[match(df[[key_col]], labels[[key_col]])]
+
+  # ---- winning_accession reconciliation (pin/intensity consistency) --------
+  # pelsa_annotate_features set winning_accession from the FEATURE overlap winner
+  # (UniProt) or, with no overlap (always, for a self-curated species), the
+  # LEADING PG.ProteinAccessions token. That leading token may not FASTA-map when
+  # a SECONDARY token is the one that maps -- the peptide then lives in the
+  # matched cache under the secondary accession only. The pinned intensity/Woods
+  # panels look winning_accession up in that cache, so a non-matched winner makes
+  # them silently blank. Repoint any winner ABSENT from this peptide's matched
+  # accessions to a representative MATCHED one (first by pep_start, accession --
+  # the same order .pelsa_volcano_labels uses). Rows whose winner already maps
+  # (every UniProt row, and self-curated rows whose leading token mapped) are
+  # untouched. We do NOT also repoint winning_gene / feature_class_primary: only
+  # self-curated rows are ever repointed in practice (UniProt winners always map),
+  # and for those winning_gene is already blanked + the label is accession-based
+  # across all tokens, so the repointed accession cannot disagree with them.
+  df$winning_accession <- .pelsa_volcano_reconcile_winner(
+    df$winning_accession, df[[key_col]], matched_cache, key_col)
+
   df[[key_col]] <- NULL
 
   # ---- Two-sided significance + display clamp ------------------------------

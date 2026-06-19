@@ -227,6 +227,60 @@ test_that("is_self_curated forces <accession>_aa<pos> label even when a gene is 
   expect_equal(out$winning_gene, "")
 })
 
+test_that("self-curated: winning_accession is a MATCHED accession, not an unmapped leading token", {
+  # Regression: the pinned intensity-line panel looks the clicked dot's
+  # winning_accession up in the matched cache. For a self-curated species (no
+  # feature overlap to rewrite the winner), the all-peptide builder used to take
+  # the LEADING PG.ProteinAccessions token verbatim. When that leading token does
+  # NOT FASTA-map but a SECONDARY token does, winning_accession pointed at the
+  # unmapped token and the intensity lookup stop()ed -> blank panel. The winner
+  # must instead be a token that is actually present in the matched cache.
+  stat <- .make_stat_df(
+    seq = "PEPMAP", acc = "NOMAP;REALPROT", genes = "G1;G2",
+    logfc = 1.5, adjp = 0.001, pval = 0.0005,
+    pep_start = 5L, pep_end = 9L, row_id = 1L
+  )
+  # Only REALPROT FASTA-mapped, so the matched cache carries REALPROT only.
+  matched <- .make_matched("PEPMAP", "REALPROT", "G2", 5L, 9L, row_id = 1L)
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1", is_self_curated = TRUE)
+
+  expect_equal(out$winning_accession, "REALPROT")
+  expect_true(out$winning_accession %in% matched$accession)
+})
+
+test_that("self-curated repoint picks the representative matched acc (first by pep_start) and agrees with the label", {
+  # The unmapped leading token forces a repoint; the chosen winner must be the
+  # REPRESENTATIVE matched accession = first by (pep_start, accession), the same
+  # order the multilabel uses -> winning_accession must equal the label's LEADING
+  # entry's accession. Matched holds B@pep_start=20 and A@pep_start=5: ordered by
+  # pep_start, A (start 5) is the representative even though B was listed first.
+  stat <- .make_stat_df(
+    seq = "PEPREP", acc = "NOMAP;A;B", genes = "G0;GA;GB",
+    logfc = 1.5, adjp = 0.001, pval = 0.0005,
+    pep_start = 5L, pep_end = 9L, row_id = 1L
+  )
+  matched <- .make_matched(
+    seq = c("PEPREP", "PEPREP"),
+    accession = c("B", "A"),         # input order deliberately B-first
+    gene = c("GB", "GA"),
+    pep_start = c(20L, 5L),          # A maps earlier (start 5) -> representative
+    pep_end = c(24L, 9L),
+    row_id = c(1L, 1L)
+  )
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1", is_self_curated = TRUE)
+
+  expect_equal(out$winning_accession, "A")
+  # Label is accession-based for self-curated, ordered by (pep_start, accession),
+  # so its leading entry is the representative accession: "A_aa5".
+  expect_true(startsWith(out$label, "A_aa5"))
+})
+
 test_that(".pelsa_volcano_labels(is_self_curated=TRUE) forces accession over gene", {
   matched <- .make_matched("PEPSC", "ACC1", "GENE1", 7L, 11L, row_id = 1L)
   lab_uniprot <- .pelsa_volcano_labels(matched, ".row_id")
@@ -579,9 +633,13 @@ test_that("peptide absent from matched_cache -> NA label, row retained, colored"
 
 # --- perf guard (catch a regression to the per-peptide loop) -----------------
 
-test_that("builder stays fast on a few-thousand-row frame (no per-peptide loop)", {
+test_that("builder stays fast on a large frame (no per-peptide / per-row loop)", {
   set.seed(11)
-  N <- 5000L
+  # N at the scale the file header documents (~80k); large enough that an O(n^2)
+  # regression in ANY builder stage (the multilabel group-call OR the
+  # winning_accession reconcile) blows past the bound. At 40k the vectorized path
+  # is ~0.3s; a quadratic reconcile loop was ~3s here / ~12s at 80k.
+  N <- 40000L
   aa <- strsplit("ACDEFGHIKLMNPQRSTVWY", "")[[1]]
   seqs <- vapply(seq_len(N), function(i)
     paste0(sample(aa, sample(7:15, 1L), TRUE), collapse = ""), character(1))
@@ -600,9 +658,10 @@ test_that("builder stays fast on a few-thousand-row frame (no per-peptide loop)"
     pelsa_build_volcano_df(stat, matched, feat, markers = character(0),
                            contrast = "C1", opts = list(panel = "all_peptide"))
   )[["elapsed"]]
-  # Generous bound: the vectorized path is well under this; a regression to the
-  # per-peptide pelsa_build_multilabel group-call would blow past it.
-  expect_lt(elapsed, 1.0)
+  # Generous bound: the vectorized path is well under this; a regression to a
+  # per-peptide pelsa_build_multilabel group-call OR a per-row reconcile loop
+  # would blow past it.
+  expect_lt(elapsed, 3.0)
 })
 
 # --- Integration: generator -> explode -> FASTA-map -> volcano df ------------
