@@ -25,59 +25,61 @@ library(testthat)
   )
 }
 
-# ---- pelsa_refresh_accession_universe ----------------------------------------
+# ---- pelsa_full_universe (FASTA proteome only) -------------------------------
 
-test_that("universe = uploaded-dataset accessions UNION existing cache", {
-  gcts <- list(
-    omeA = data.frame(
-      PG.ProteinAccessions = c("P10000;P20000", "P30000"),
-      stringsAsFactors = FALSE
-    )
-  )
+test_that("full_universe = FASTA accessions only; ignores datasets + cache", {
+  gcts <- list(omeA = data.frame(PG.ProteinAccessions = "P10000;P20000",
+                                 stringsAsFactors = FALSE))
   existing <- data.frame(accession = c("P30000", "P40000"),
                          stringsAsFactors = FALSE)
-
-  out <- pelsa_refresh_accession_universe(gcts, existing)
-  expect_identical(out, sort(c("P10000", "P20000", "P30000", "P40000")))
+  fasta_map <- list(Q1 = "MKV", Q2 = "AAA", Q3 = "CCC")
+  out <- pelsa_full_universe(gcts, existing, fasta_map = fasta_map)
+  expect_identical(out, sort(c("Q1", "Q2", "Q3")))  # NO dataset/cache accessions
 })
 
-test_that("universe explodes ;-delimited accession tokens + de-dups + trims", {
-  gcts <- list(
-    omeA = data.frame(
-      PG.ProteinAccessions = c("P1; P2 ;P3", "P2;P1", NA_character_, ""),
-      stringsAsFactors = FALSE
-    )
-  )
-  out <- pelsa_refresh_accession_universe(gcts, NULL)
+test_that("full_universe is empty when no FASTA is given", {
+  gcts <- list(omeA = data.frame(PG.ProteinAccessions = "P1",
+                                 stringsAsFactors = FALSE))
+  expect_identical(pelsa_full_universe(gcts, NULL, fasta_map = NULL),
+                   character(0))
+})
+
+# ---- pelsa_incremental_universe ((dataset U fasta) - cache) ------------------
+
+test_that("incremental_universe = (dataset U fasta) minus cache accessions", {
+  gcts <- list(omeA = data.frame(PG.ProteinAccessions = c("P1;P2", "P3"),
+                                 stringsAsFactors = FALSE))
+  fasta_map <- list(P3 = "AAA", P4 = "CCC")          # P3 overlaps a dataset acc
+  existing <- data.frame(accession = c("P2", "P4"),  # already cached
+                         stringsAsFactors = FALSE)
+  out <- pelsa_incremental_universe(gcts, existing, fasta_map = fasta_map)
+  # union {P1,P2,P3,P4} minus cache {P2,P4} = {P1,P3}
+  expect_identical(out, sort(c("P1", "P3")))
+})
+
+test_that("incremental_universe explodes/dedups/trims dataset tokens", {
+  gcts <- list(omeA = data.frame(
+    PG.ProteinAccessions = c("P1; P2 ;P3", "P2;P1", NA_character_, ""),
+    stringsAsFactors = FALSE))
+  out <- pelsa_incremental_universe(gcts, NULL, fasta_map = NULL)
   expect_identical(out, sort(c("P1", "P2", "P3")))
 })
 
-test_that("universe falls back to FASTA accessions when no datasets uploaded", {
-  fasta_map <- list(P1 = "MKV", P2 = "AAA", P3 = "CCC")
-  # empty gcts -> FASTA fallback
-  out <- pelsa_refresh_accession_universe(list(), NULL, fasta_map = fasta_map)
-  expect_identical(out, sort(c("P1", "P2", "P3")))
-
-  # NULL gcts -> FASTA fallback too, unioned with existing cache
-  existing <- data.frame(accession = "P9", stringsAsFactors = FALSE)
-  out2 <- pelsa_refresh_accession_universe(NULL, existing, fasta_map = fasta_map)
-  expect_identical(out2, sort(c("P1", "P2", "P3", "P9")))
+test_that("incremental_universe result is disjoint from the cache", {
+  gcts <- list(omeA = data.frame(PG.ProteinAccessions = "P1;P2;P3",
+                                 stringsAsFactors = FALSE))
+  existing <- data.frame(accession = c("P1", "P2", "P3"),
+                         stringsAsFactors = FALSE)
+  # All dataset accessions already cached, no FASTA -> empty.
+  expect_identical(pelsa_incremental_universe(gcts, existing, fasta_map = NULL),
+                   character(0))
 })
 
-test_that("universe ignores datasets without a PG.ProteinAccessions column", {
+test_that("incremental_universe ignores datasets without PG.ProteinAccessions", {
   gcts <- list(
     nonPelsa = data.frame(foo = 1:3, stringsAsFactors = FALSE),
-    pelsa    = data.frame(PG.ProteinAccessions = "P5", stringsAsFactors = FALSE)
-  )
-  out <- pelsa_refresh_accession_universe(gcts, NULL)
-  expect_identical(out, "P5")
-})
-
-test_that("universe is empty when nothing is available", {
-  expect_identical(
-    pelsa_refresh_accession_universe(NULL, NULL, fasta_map = NULL),
-    character(0)
-  )
+    pelsa    = data.frame(PG.ProteinAccessions = "P5", stringsAsFactors = FALSE))
+  expect_identical(pelsa_incremental_universe(gcts, NULL, fasta_map = NULL), "P5")
 })
 
 # ---- pelsa_write_feature_cache (round-trip) ----------------------------------
@@ -652,10 +654,10 @@ test_that("pelsa_gcts_for_species keeps ALL same-species datasets (union), drops
   human <- pelsa_gcts_for_species(gcts, species_by_ds, "9606")
   expect_setequal(names(human), c("ome_h1", "ome_h2"))   # both human datasets
   # The union of accessions across both same-species datasets is preserved.
-  expect_setequal(pelsa_refresh_accession_universe(human, NULL),
+  expect_setequal(pelsa_incremental_universe(human, NULL),
                   c("P10000", "P20000"))
   # Mouse dataset excluded from the human universe (no spillover).
-  expect_false("Q30000" %in% pelsa_refresh_accession_universe(human, NULL))
+  expect_false("Q30000" %in% pelsa_incremental_universe(human, NULL))
 
   mouse <- pelsa_gcts_for_species(gcts, species_by_ds, "10090")
   expect_setequal(names(mouse), "ome_m1")

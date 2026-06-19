@@ -93,60 +93,69 @@
   unique(tokens)
 }
 
-# ---- Helper 1: accession universe --------------------------------------------
+# ---- Helper 1: accession universes (mode-specific) ---------------------------
 
-# Determine the accession universe to (re)fetch for a species refresh.
-#
-# universe = unique exploded accessions across the uploaded datasets'
-#            PG.ProteinAccessions  UNION  the existing cache's accessions;
-#            FALLBACK to the FASTA accessions (fasta_map names) when no datasets
-#            are uploaded (gcts NULL/empty).
-#
-# Pure + deterministic (no network, no reactivity). Returns a sorted character
-# vector for stable downstream progress reporting.
-#
-# @param gcts          named list of uploaded datasets (cmapR GCTs or data.frames
-#                      carrying PG.ProteinAccessions), or NULL/empty.
-# @param existing_cache the species' current feature data.frame (e.g. from
-#                      pelsa_read_feature_cache); needs an `accession` column.
-#                      May be NULL or 0-row.
-# @param fasta_map     named list accession -> sequence (from pelsa_read_fasta);
-#                      ONLY used as the no-datasets fallback. May be NULL.
-# @return character vector of unique accessions (sorted).
+# Internal: exploded unique dataset accessions across all uploaded GCTs.
 # @noRd
-pelsa_refresh_accession_universe <- function(gcts, existing_cache,
-                                             fasta_map = NULL) {
-  # 1. Accessions from the uploaded datasets (exploded, unique).
-  dataset_acc <- character(0)
-  if (!is.null(gcts) && length(gcts) > 0L) {
-    raw <- unlist(lapply(gcts, .pelsa_dataset_accession_strings),
-                  use.names = FALSE)
-    dataset_acc <- .pelsa_explode_accession_tokens(raw)
-  }
+.pelsa_dataset_universe <- function(gcts) {
+  if (is.null(gcts) || length(gcts) == 0L) return(character(0))
+  raw <- unlist(lapply(gcts, .pelsa_dataset_accession_strings), use.names = FALSE)
+  .pelsa_explode_accession_tokens(raw)
+}
 
-  # 2. Accessions already in the existing cache.
-  cache_acc <- character(0)
-  if (!is.null(existing_cache) && is.data.frame(existing_cache) &&
-      "accession" %in% colnames(existing_cache) &&
-      nrow(existing_cache) > 0L) {
-    cache_acc <- unique(as.character(existing_cache$accession))
-    cache_acc <- cache_acc[!is.na(cache_acc) & nzchar(cache_acc)]
-  }
+# Internal: FASTA accessions (the proteome) from a fasta_map (names), cleaned.
+# @noRd
+.pelsa_fasta_universe <- function(fasta_map) {
+  if (is.null(fasta_map) || length(fasta_map) == 0L) return(character(0))
+  acc <- names(fasta_map)
+  if (is.null(acc)) return(character(0))
+  unique(acc[!is.na(acc) & nzchar(acc)])
+}
 
-  if (length(dataset_acc) > 0L) {
-    # Needed set (datasets) UNION existing cache coverage.
-    return(sort(unique(c(dataset_acc, cache_acc))))
+# Internal: accessions already present in an existing feature cache.
+# @noRd
+.pelsa_cache_universe <- function(existing_cache) {
+  if (is.null(existing_cache) || !is.data.frame(existing_cache) ||
+      !("accession" %in% colnames(existing_cache)) ||
+      nrow(existing_cache) == 0L) {
+    return(character(0))
   }
+  acc <- unique(as.character(existing_cache$accession))
+  acc[!is.na(acc) & nzchar(acc)]
+}
 
-  # 3. No datasets uploaded -> FASTA fallback (union with cache so refresh never
-  #    loses coverage even on the fallback path).
-  fasta_acc <- character(0)
-  if (!is.null(fasta_map) && length(fasta_map) > 0L) {
-    fasta_acc <- names(fasta_map)
-    if (is.null(fasta_acc)) fasta_acc <- character(0)
-    fasta_acc <- fasta_acc[!is.na(fasta_acc) & nzchar(fasta_acc)]
-  }
-  sort(unique(c(fasta_acc, cache_acc)))
+# FULL-mode universe: the whole FASTA proteome ONLY. A full refresh wipes the
+# species' feature cache and rebuilds it from the FASTA; it deliberately ignores
+# uploaded-dataset accessions (those are topped up via an incremental refresh)
+# AND the existing cache (which has just been wiped). Sorted unique.
+#
+# @param gcts          uploaded datasets (IGNORED; kept for a uniform signature).
+# @param existing_cache the species' current cache (IGNORED; wiped before fetch).
+# @param fasta_map     named list accession -> sequence (from pelsa_read_fasta).
+# @return character vector of FASTA accessions (sorted unique; may be empty).
+# @noRd
+pelsa_full_universe <- function(gcts, existing_cache, fasta_map = NULL) {
+  sort(.pelsa_fasta_universe(fasta_map))
+}
+
+# INCREMENTAL-mode universe: (uploaded-dataset accessions UNION FASTA accessions)
+# MINUS the accessions already in the existing cache. Drives the species toward
+# full proteome + dataset coverage over repeated runs WITHOUT re-fetching what is
+# already cached. Disjoint from the cache by construction. Sorted unique.
+#
+# @param gcts          uploaded datasets (cmapR GCTs or data.frames carrying
+#                      PG.ProteinAccessions), or NULL/empty. Already filtered to
+#                      the target species upstream (pelsa_gcts_for_species).
+# @param existing_cache the species' current feature data.frame (needs an
+#                      `accession` column); may be NULL/0-row.
+# @param fasta_map     named list accession -> sequence (from pelsa_read_fasta);
+#                      always included (not just a no-datasets fallback).
+# @return character vector of accessions to (re)fetch (sorted unique).
+# @noRd
+pelsa_incremental_universe <- function(gcts, existing_cache, fasta_map = NULL) {
+  needed <- unique(c(.pelsa_dataset_universe(gcts),
+                     .pelsa_fasta_universe(fasta_map)))
+  sort(setdiff(needed, .pelsa_cache_universe(existing_cache)))
 }
 
 # Subset uploaded datasets to those whose SELECTED SPECIES matches `species`.
