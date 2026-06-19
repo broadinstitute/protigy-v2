@@ -184,6 +184,68 @@
   out
 }
 
+# Re-derive each peptide's tooltip span (pep_start/pep_end) from the WINNING
+# accession's matched-cache occurrence, so the volcano tooltip + pinned metadata
+# table report the SAME coordinate the pinned intensity/Woods panels use.
+#
+# The span on stat_df is a REPRESENTATIVE one: pelsa_volcano_stat_df picks the
+# leading (smallest pep_start) occurrence per peptide across ALL of its accession
+# mappings, keyed by stripped sequence alone. When a peptide's winning accession
+# is NOT the one with the smallest residue position (e.g. AEIITVSDGR maps to
+# A2A4J8@170, A8XY17@114, Q9CQ80@162 and Q9CQ80 wins), that representative span
+# points at the wrong protein's coordinate. The intensity + Woods panels look the
+# peptide up by (key, winning_accession) in the matched cache, so they show the
+# winning accession's span; this aligns the volcano-side span to match.
+#
+# Vectorized pair-key lookup (key, winning_accession) -> the matched occurrence,
+# taking the LEADING (smallest pep_start) occurrence when a peptide hits the same
+# accession at several positions -- the same tie-break the intensity panel's
+# .pelsa_best_back_map / representative-span logic uses. Peptides whose winning
+# accession has no matched row (should not happen after winner reconciliation)
+# keep their existing span.
+#
+# @param keys     the per-row join key values (df[[key_col]]).
+# @param winner   character vector of winning_accession (length nrow df).
+# @param matched  the matched cache (2B $matched), carrying key_col + accession +
+#   pep_start (+ pep_end).
+# @param key_col  the join key column present on BOTH df and matched.
+# @return list(pep_start, pep_end), each length(winner); NA where no match.
+# @noRd
+.pelsa_volcano_winner_span <- function(keys, winner, matched, key_col) {
+  n <- length(winner)
+  na_span <- list(pep_start = rep(NA_integer_, n), pep_end = rep(NA_integer_, n))
+  if (n == 0L) return(na_span)
+
+  mk  <- as.character(matched[[key_col]])
+  ma  <- as.character(matched[["accession"]])
+  mps <- as.integer(matched[["pep_start"]])
+  mpe <- if ("pep_end" %in% colnames(matched)) {
+    as.integer(matched[["pep_end"]])
+  } else {
+    rep(NA_integer_, length(mk))
+  }
+
+  # Leading (smallest pep_start) occurrence per (key, accession) pair: order by
+  # (key, accession, pep_start) then keep the first row of each pair.
+  ord <- order(mk, ma, mps, na.last = TRUE)
+  mk <- mk[ord]; ma <- ma[ord]; mps <- mps[ord]; mpe <- mpe[ord]
+  pair <- paste0(mk, "\r", ma)
+  first <- !duplicated(pair)
+  lookup_key <- pair[first]
+  lk_start <- mps[first]
+  lk_end   <- mpe[first]
+
+  # Build the query pair-key. Force NA/blank winners to a sentinel that cannot
+  # match any real pair: an empty winner would otherwise paste to "<key>\r" and
+  # collide with a matched row carrying an empty accession. NA propagates through
+  # match() to NA (-> representative span retained), so map blank -> NA here too.
+  w <- as.character(winner)
+  w[is.na(w) | !nzchar(w)] <- NA_character_
+  qry <- ifelse(is.na(w), NA_character_, paste0(as.character(keys), "\r", w))
+  idx <- match(qry, lookup_key)
+  list(pep_start = lk_start[idx], pep_end = lk_end[idx])
+}
+
 # Attach the two-sided significance columns (Significant / sig_direction /
 # sig_color) to a frame already carrying logFC / adj.P.Val. Vectorized.
 #
@@ -374,6 +436,19 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   # across all tokens, so the repointed accession cannot disagree with them.
   df$winning_accession <- .pelsa_volcano_reconcile_winner(
     df$winning_accession, df[[key_col]], matched_cache, key_col)
+
+  # ---- span follows the winning accession (tooltip/metadata consistency) ----
+  # The span carried on stat_df is the representative (smallest pep_start across
+  # ALL of the peptide's accession mappings) one. Re-derive pep_start/pep_end
+  # from the WINNING accession's matched occurrence so the volcano tooltip + the
+  # pinned metadata table report the same coordinate as the pinned intensity +
+  # Woods panels (which key on winning_accession). Peptides whose winner has no
+  # matched row keep the representative span (no worse than before).
+  win_span <- .pelsa_volcano_winner_span(
+    df[[key_col]], df$winning_accession, matched_cache, key_col)
+  has_win_span <- !is.na(win_span$pep_start)
+  df$pep_start[has_win_span] <- win_span$pep_start[has_win_span]
+  df$pep_end[has_win_span] <- win_span$pep_end[has_win_span]
 
   df[[key_col]] <- NULL
 

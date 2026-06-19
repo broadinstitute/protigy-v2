@@ -343,6 +343,65 @@ test_that("shared peptide A;B;C -> ONE row in all_peptide panel", {
   expect_equal(out$label, "GA_aa5;GB_aa15;GC_aa25")
 })
 
+test_that("all_peptide pep_start/pep_end follow the WINNING accession, not the smallest-start mapping", {
+  # A shared peptide maps (in PG order) to C@162, A@120, B@50 (smallest start).
+  # With no feature overlap the winning accession is the LEADING token C. The
+  # tooltip span (pep_start/pep_end) and the Peptide label must describe the WON
+  # accession C (162-171) -- the same coordinate the pinned intensity + Woods
+  # panels use -- NOT the representative smallest-start mapping B (50-59) that
+  # pelsa_volcano_stat_df carried onto stat_df. Regression for the
+  # AEIITVSDGR/Q9CQ80 position mismatch (a peptide whose winning accession is not
+  # the one with the smallest residue position).
+  feat <- .make_feat("OTHER", 5L, 30L, "folded_domain")  # no overlap with PEPWIN
+  stat <- .make_stat_df(
+    seq = "PEPWIN", acc = "C;A;B", genes = "GC;GA;GB",
+    logfc = 1.0, adjp = 0.20, pval = 0.10,
+    pep_start = 50L, pep_end = 59L, row_id = 1L   # representative = B's span
+  )
+  matched <- .make_matched(
+    seq = rep("PEPWIN", 3L),
+    accession = c("C", "A", "B"),
+    gene = c("GC", "GA", "GB"),
+    pep_start = c(162L, 120L, 50L),
+    pep_end   = c(171L, 129L, 59L),
+    row_id = c(1L, 1L, 1L)
+  )
+
+  out <- pelsa_build_volcano_df(stat, matched, feat, markers = character(0),
+                                contrast = "C1", opts = list(panel = "all_peptide"))
+
+  expect_equal(out$winning_accession, "C")
+  expect_equal(out$pep_start, 162L)
+  expect_equal(out$pep_end, 171L)
+})
+
+test_that("all_peptide span falls back to the representative span when the winner has no matched occurrence", {
+  # A peptide with NO matched-cache row for its key (key=2): winner stays the
+  # leading token (reconciliation has nothing to repoint to), and the
+  # winning-accession span lookup misses -> the representative stat_df span must
+  # be RETAINED (not blanked to NA). Locks the documented fallback contract.
+  stat <- .make_stat_df(
+    seq = c("PEPHIT", "PEPMISS"), acc = c("A", "Z"), genes = c("GA", "GZ"),
+    logfc = c(1.0, 1.0), adjp = c(0.20, 0.20), pval = c(0.10, 0.10),
+    pep_start = c(10L, 77L), pep_end = c(14L, 86L), row_id = c(1L, 2L)
+  )
+  # matched holds ONLY PEPHIT (key 1); PEPMISS (key 2) is absent.
+  matched <- .make_matched(
+    seq = "PEPHIT", accession = "A", gene = "GA",
+    pep_start = 10L, pep_end = 14L, row_id = 1L
+  )
+
+  out <- pelsa_build_volcano_df(stat, matched,
+                                feat_df = .make_feat("X", 1L, 2L, "other"),
+                                markers = character(0), contrast = "C1",
+                                opts = list(panel = "all_peptide"))
+
+  miss <- out[out$id == "PEPMISS", , drop = FALSE]
+  expect_equal(miss$pep_start, 77L)   # representative span retained
+  expect_equal(miss$pep_end, 86L)
+  expect_false(is.na(miss$pep_start))
+})
+
 # --- contrast = NULL (already-renamed columns) -------------------------------
 
 test_that("contrast=NULL reads already-renamed logFC/adj.P.Val/P.Value", {
