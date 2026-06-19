@@ -1002,22 +1002,22 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # race the atomic rename).
     refresh_in_flight  <- reactiveVal(FALSE)
     refresh_result     <- reactiveVal(NULL)   # last run's results (inline panel)
-    # Above this universe size we confirm before fetching (the proteome-fallback
-    # foot-gun guard). A normal dataset-driven refresh is well under this.
-    REFRESH_CONFIRM_THRESHOLD <- 5000L
 
     output$pelsa_refresh_status <- renderUI({
       pelsa_refresh_result_ui(refresh_result())
     })
 
-    # The actual run (shared by the direct + confirmed paths). Drives the live
-    # progress modal, runs the orchestrator, and stores the results for the
-    # inline panel. `selected` + `uploaded_gcts` are captured by the callers.
-    run_refresh <- function(selected, uploaded_gcts) {
+    # The actual run (shared by both modes' confirmed paths). Drives the live
+    # progress modal, runs the orchestrator with the chosen mode, and stores the
+    # results for the inline panel. `mode` is "full" or "incremental".
+    run_refresh <- function(selected, uploaded_gcts, mode) {
       refresh_in_flight(TRUE)
       shinyjs::disable("pelsa_refresh_btn")
+      shinyjs::disable("pelsa_incremental_btn")
       on.exit({
         shinyjs::enable("pelsa_refresh_btn")
+        # The incremental guard observer re-applies the correct enabled/disabled
+        # state (cache presence) once in-flight clears; do not blanket-enable here.
         refresh_in_flight(FALSE)
       }, add = TRUE)
 
@@ -1028,6 +1028,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
             database_dir  = pelsa_database_dir(),
             uploaded_gcts = uploaded_gcts,
             fetch_fn      = pelsa_fetch_uniprot,
+            mode          = mode,
             set_progress  = function(value, detail) {
               setProgress(value = value, detail = detail)
             }
@@ -1037,56 +1038,90 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       refresh_result(results)
     }
 
-    observeEvent(input$pelsa_refresh_btn, {
-      if (isTRUE(refresh_in_flight())) return()   # ignore overlapping clicks
-
-      selected <- input$pelsa_refresh_species
-      if (is.null(selected) || length(selected) == 0L) {
-        showNotification("Select at least one species to refresh.",
-                         type = "warning", duration = 4)
-        return()
-      }
+    # Resolve the selected species' uploaded GCTs (Defect #1 guard: only same-
+    # species datasets). Shared by both modes.
+    refresh_gcts_for <- function(selected) {
       gp <- GCTs_and_params()
       uploaded_gcts <- if (is.null(gp)) NULL else gp$GCTs
-      database_dir  <- pelsa_database_dir()
-
-      # Defect #1 guard: only fetch accessions from datasets of the SELECTED
-      # species (union across all same-species datasets); never fan another
-      # species' accessions into this species' cache. The single-select control
-      # makes `selected` length-1.
       species_by_ds <- isolate(setup_state$species)
-      uploaded_gcts <- pelsa_gcts_for_species(uploaded_gcts, species_by_ds,
-                                              selected)
+      pelsa_gcts_for_species(uploaded_gcts, species_by_ds, selected)
+    }
 
-      # Size the universe up front; confirm before a large (proteome) fetch.
-      size <- tryCatch(
-        pelsa_refresh_universe_size(selected, database_dir, uploaded_gcts),
-        error = function(e) list(total = NA_integer_, per_species = integer(0)))
+    # TRUE iff the selected species has a feature cache with >= 1 row on disk.
+    species_cache_has_rows <- function(selected) {
+      if (is.null(selected) || length(selected) != 1L || !nzchar(selected)) {
+        return(FALSE)
+      }
+      species_dir <- file.path(pelsa_database_dir(), selected)
+      cache <- tryCatch(pelsa_read_feature_cache(species_dir),
+                        error = function(e) NULL)
+      is.data.frame(cache) && nrow(cache) > 0L
+    }
 
-      if (!is.na(size$total) && size$total > REFRESH_CONFIRM_THRESHOLD) {
-        per <- paste(sprintf("%s: %s", names(size$per_species),
-                             vapply(size$per_species, pelsa_refresh_eta_text,
-                                    character(1))),
-                     collapse = "<br/>")
-        shinyalert::shinyalert(
-          title = "Refresh a large annotation set?",
-          text = sprintf(
-            paste0("About to fetch <b>%s</b> total.<br/><br/>%s<br/><br/>",
-                   "This runs against UniProt and cannot be stopped once ",
-                   "started. Continue?"),
-            pelsa_refresh_eta_text(size$total), per),
-          html = TRUE, type = "warning",
-          showCancelButton = TRUE, confirmButtonText = "Fetch",
-          cancelButtonText = "Cancel",
-          callbackR = function(confirmed) {
-            if (isTRUE(confirmed)) run_refresh(selected, uploaded_gcts)
-          }
-        )
+    # Shared confirm-then-run for both modes. `mode` is "full" | "incremental".
+    # BOTH modes confirm unconditionally (no size threshold). Full warns about
+    # the destructive wipe; incremental about the append.
+    launch_refresh <- function(mode) {
+      if (isTRUE(refresh_in_flight())) return()        # ignore overlapping clicks
+      selected <- input$pelsa_refresh_species
+      if (is.null(selected) || length(selected) == 0L) {
+        showNotification("Select a species to refresh.", type = "warning",
+                         duration = 4)
         return()
       }
+      uploaded_gcts <- refresh_gcts_for(selected)
+      database_dir  <- pelsa_database_dir()
 
-      run_refresh(selected, uploaded_gcts)
-    }, ignoreInit = TRUE)
+      size <- tryCatch(
+        pelsa_refresh_universe_size(selected, database_dir, uploaded_gcts,
+                                    mode = mode),
+        error = function(e) list(total = NA_integer_, per_species = integer(0)))
+      eta <- if (is.na(size$total)) "an unknown number of accessions" else
+        pelsa_refresh_eta_text(size$total)
+
+      text <- if (identical(mode, "full")) {
+        sprintf(paste0("Full library refresh for <b>%s</b>.<br/><br/>This ",
+                       "DELETES the existing UniProt feature and membrane files ",
+                       "for this species and re-fetches the entire proteome ",
+                       "(<b>%s</b>). It cannot be undone or stopped once ",
+                       "started. Continue?"), selected, eta)
+      } else {
+        sprintf(paste0("Incremental refresh for <b>%s</b>.<br/><br/>This fetches ",
+                       "only the <b>%s</b> not yet in the library and appends ",
+                       "them to the existing cache. Continue?"), selected, eta)
+      }
+      shinyalert::shinyalert(
+        title = if (identical(mode, "full")) "Rebuild the whole library?"
+                else "Top up the library?",
+        text = text, html = TRUE,
+        type = if (identical(mode, "full")) "warning" else "info",
+        showCancelButton = TRUE,
+        confirmButtonText = if (identical(mode, "full")) "Delete & rebuild"
+                            else "Fetch",
+        cancelButtonText = "Cancel",
+        callbackR = function(confirmed) {
+          if (isTRUE(confirmed)) run_refresh(selected, uploaded_gcts, mode)
+        }
+      )
+    }
+
+    observeEvent(input$pelsa_refresh_btn, launch_refresh("full"),
+                 ignoreInit = TRUE)
+    observeEvent(input$pelsa_incremental_btn, launch_refresh("incremental"),
+                 ignoreInit = TRUE)
+
+    # Incremental disable-guard: enabled IFF a species is selected, its cache has
+    # >= 1 row, and no fetch is in flight. Reactive on the selection, the in-flight
+    # flag, AND the last result (so a just-finished Full refresh that populated the
+    # cache flips Incremental on without re-selecting the species).
+    observe({
+      refresh_result()                                 # re-evaluate after a run
+      in_flight <- isTRUE(refresh_in_flight())
+      selected  <- input$pelsa_refresh_species
+      enable_incremental <- !in_flight && species_cache_has_rows(selected)
+      if (enable_incremental) shinyjs::enable("pelsa_incremental_btn")
+      else shinyjs::disable("pelsa_incremental_btn")
+    })
 
     ## START ANALYSIS (5D) ##
     # The compute pipeline that assembles the verified Phase-2 helpers into a
