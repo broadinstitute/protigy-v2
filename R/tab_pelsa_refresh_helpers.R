@@ -868,13 +868,16 @@ pelsa_refresh_notifications <- function(results) {
   }
   if (length(done) > 0L) {
     summaries <- vapply(done, function(r) {
+      zf <- r$n_zero_feature %||% 0L
       if (identical(r$mode, "full")) {
-        sprintf(paste0("%s: rebuilt - %d features, %d unresolved (previous ",
-                       "feature + membrane files cleared)"),
-                r$species, r$n_features, r$n_unresolved)
+        sprintf(paste0("%s: rebuilt - %d with features, %d with no features, ",
+                       "%d unresolved (previous feature + membrane files ",
+                       "cleared)"),
+                r$species, r$n_features, zf, r$n_unresolved)
       } else {
-        sprintf("%s: topped up - %d features, %d unresolved, %d retained",
-                r$species, r$n_features, r$n_unresolved,
+        sprintf(paste0("%s: topped up - %d with features, %d with no features, ",
+                       "%d unresolved, %d retained"),
+                r$species, r$n_features, zf, r$n_unresolved,
                 r$n_retained_from_cache)
       }
     }, character(1))
@@ -1020,12 +1023,15 @@ pelsa_refresh_result_ui <- function(results) {
       sprintf("%s: canceled - existing cache left unchanged", r$species))))
   }
   for (r in done) {
+    zf <- r$n_zero_feature %||% 0L
     line <- if (identical(r$mode, "full")) {
-      sprintf("%s: rebuilt - %d features, %d unresolved (cache cleared)",
-              r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L)
+      sprintf(paste0("%s: rebuilt - %d with features, %d with no features, ",
+                     "%d unresolved (cache cleared)"),
+              r$species, r$n_features %||% 0L, zf, r$n_unresolved %||% 0L)
     } else {
-      sprintf("%s: topped up - %d features, %d unresolved, %d retained from cache",
-              r$species, r$n_features %||% 0L, r$n_unresolved %||% 0L,
+      sprintf(paste0("%s: topped up - %d with features, %d with no features, ",
+                     "%d unresolved, %d retained from cache"),
+              r$species, r$n_features %||% 0L, zf, r$n_unresolved %||% 0L,
               r$n_retained_from_cache %||% 0L)
     }
     items <- c(items, list(shiny::tags$li(line)))

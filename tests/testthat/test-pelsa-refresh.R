@@ -955,6 +955,28 @@ test_that("notifications: incremental mode says 'topped up' + retained count", {
   expect_match(summary, "100")  # retained count surfaced
 })
 
+test_that("notifications report the zero-feature count in the summary", {
+  results <- list(
+    list(species = "9606", n_features = 100L, n_unresolved = 2L,
+         n_zero_feature = 30L, n_retained_from_cache = 0L, had_existing = FALSE,
+         mode = "incremental", canceled = FALSE, error = NULL))
+  msgs <- vapply(pelsa_refresh_notifications(results),
+                 function(n) n$message, character(1))
+  summary <- msgs[grepl("topped up", msgs, ignore.case = TRUE)]
+  expect_length(summary, 1L)
+  expect_match(summary, "30")               # zero-feature count surfaced
+  expect_match(summary, "no features|zero", ignore.case = TRUE)
+})
+
+test_that("result_ui shows the zero-feature count", {
+  res <- list(list(species = "9606", n_features = 100L, n_unresolved = 2L,
+                   n_zero_feature = 30L, n_retained_from_cache = 0L,
+                   had_existing = FALSE, mode = "incremental",
+                   canceled = FALSE, error = NULL))
+  html <- as.character(pelsa_refresh_result_ui(res))
+  expect_match(html, "30")
+})
+
 test_that("result_ui: full mode line says rebuilt, incremental says topped up", {
   full <- list(list(species = "10090", n_features = 500L, n_unresolved = 0L,
                     n_retained_from_cache = 0L, had_existing = TRUE,
