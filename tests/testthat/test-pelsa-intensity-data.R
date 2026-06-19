@@ -583,7 +583,10 @@ test_that("two-panel intensity plot titles each panel 'Significant/Non-significa
   p <- pelsa_intensity_line_plot(.intensity_inapp_ld(), pinned_label = "aa162")
   b <- plotly::plotly_build(p)
   anns <- b$x$layout$annotations
-  texts <- vapply(anns, function(a) a$text %||% "", character(1))
+  # Panel titles are bolded via <b></b> HTML (plotly annotation font has no
+  # `face`); strip tags so the assertions match the rendered text, not markup.
+  texts <- vapply(anns, function(a) gsub("<[^>]+>", "", a$text %||% ""),
+                  character(1))
 
   expect_true("Significant in selected contrast" %in% texts)
   expect_true("Non-significant in selected contrast" %in% texts)
