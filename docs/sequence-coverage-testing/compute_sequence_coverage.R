@@ -242,3 +242,66 @@ unmatched <- data.frame(
 
 log_line("[map] matched (peptide x accession x occurrence) rows: ", nrow(matched))
 log_line("[map] unmatched (peptide x accession) pairs: ", nrow(unmatched))
+
+# ---- Block 6: per-protein interval-union coverage ---------------------------
+# Mirrors R/tab_pelsa_coverage_helpers.R::.pelsa_union_length + pelsa_sequence_coverage.
+# Union of 1-based inclusive spans, counted ONCE (overlaps not double-counted).
+
+# Union length of inclusive intervals sorted by (start, end). Sweep-line: a span
+# opens a new merged block when its start exceeds the running max-end of prior
+# spans; block length summed gives covered residues. Touching spans merge.
+union_length <- function(start, end) {
+  prior_max_end <- cummax(c(-Inf, head(end, -1L)))
+  block_id   <- cumsum(start > prior_max_end)
+  block_start <- tapply(start, block_id, min)
+  block_end   <- tapply(end,   block_id, max)
+  as.integer(sum(block_end - block_start + 1L))
+}
+
+# Resolve each accession's FASTA length with isoform-base fallback (NA if absent).
+resolve_fasta_length <- function(acc) {
+  seq_exact <- unname(fasta_vec[acc])
+  base_acc  <- sub("-[0-9]+$", "", acc)
+  need      <- is.na(seq_exact) & base_acc != acc
+  if (any(need)) seq_exact[need] <- unname(fasta_vec[base_acc[need]])
+  as.integer(nchar(seq_exact))  # nchar(NA) -> NA
+}
+
+sequence_coverage <- function(matched_df) {
+  if (nrow(matched_df) == 0L) {
+    return(data.frame(accession = character(0), covered_residues = integer(0),
+                      protein_length = integer(0), coverage = numeric(0),
+                      over_length_flag = logical(0), stringsAsFactors = FALSE))
+  }
+  acc   <- as.character(matched_df$accession)
+  start <- as.integer(matched_df$pep_start)
+  end   <- as.integer(matched_df$pep_end)
+
+  # Order by (accession, start, end), then union per accession.
+  o <- order(acc, start, end)
+  acc <- acc[o]; start <- start[o]; end <- end[o]
+  covered_residues <- tapply(seq_along(acc), acc,
+                             function(i) union_length(start[i], end[i]))
+  acc_vec <- names(covered_residues)
+  covered_residues <- as.integer(covered_residues)
+
+  protein_length <- resolve_fasta_length(acc_vec)
+  resolved <- !is.na(protein_length)
+
+  # Clamp an over-length union to protein length and flag it (soft-fail posture).
+  over <- resolved & protein_length > 0L & covered_residues > protein_length
+  if (any(over)) {
+    log_line("[coverage][warn] union exceeds protein length for ", sum(over),
+             " accession(s); clamping (e.g. ",
+             paste(head(acc_vec[over], 5L), collapse = ", "), ")")
+    covered_residues[over] <- protein_length[over]
+  }
+
+  coverage <- rep(NA_real_, length(acc_vec))
+  ok <- resolved & protein_length > 0L
+  coverage[ok] <- covered_residues[ok] / protein_length[ok]
+
+  data.frame(accession = acc_vec, covered_residues = covered_residues,
+             protein_length = protein_length, coverage = coverage,
+             over_length_flag = over, stringsAsFactors = FALSE)
+}
