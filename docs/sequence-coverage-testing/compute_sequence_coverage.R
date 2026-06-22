@@ -163,3 +163,82 @@ if (GENE_COL %in% colnames(peptides)) {
 }
 
 log_line("[explode] exploded (peptide x accession) rows: ", nrow(exploded))
+
+# ---- Block 5: map peptides to FASTA substring positions ---------------------
+# Mirrors R/tab_pelsa_fasta_helpers.R::pelsa_map_peptide_positions:
+#   1. valid sequence = ^[A-Z]+$ (NA/malformed -> reason "bad_sequence_format");
+#   2. resolve FASTA seq with isoform-base fallback (P12345-2 -> P12345);
+#      no key -> reason "accession_absent";
+#   3. exact substring match, overlap = TRUE, one matched row per occurrence;
+#      verbatim sequences (NO I->L isobaric retry); a miss -> "sequence_not_found".
+SEQ_COL <- "PEP.StrippedSequence"
+stopifnot(SEQ_COL %in% colnames(exploded))
+
+# Flatten the (possibly ragged) map to a length-1-per-entry named character
+# vector, then resolve exact key first and isoform base second.
+fasta_vec <- vapply(
+  fasta_map,
+  function(s) if (length(s) >= 1L) as.character(s)[[1L]] else NA_character_,
+  character(1)
+)
+resolve_fasta_seq <- function(acc) {
+  seq_exact <- unname(fasta_vec[acc])
+  base_acc  <- sub("-[0-9]+$", "", acc)
+  need      <- is.na(seq_exact) & base_acc != acc
+  if (any(need)) seq_exact[need] <- unname(fasta_vec[base_acc[need]])
+  seq_exact
+}
+
+seqs <- as.character(exploded[[SEQ_COL]])
+accs <- as.character(exploded$accession)
+n    <- nrow(exploded)
+
+is_valid_seq <- !is.na(seqs) & grepl("^[A-Z]+$", seqs)
+fasta_seq    <- resolve_fasta_seq(accs)
+has_fasta    <- !is.na(fasta_seq)
+
+reason <- rep(NA_character_, n)
+reason[!is_valid_seq]               <- "bad_sequence_format"
+reason[is_valid_seq & !has_fasta]   <- "accession_absent"
+candidate <- is_valid_seq & has_fasta
+
+# Vectorized overlapping substring locate over candidate rows only.
+starts_list <- vector("list", n)
+if (any(candidate)) {
+  locs <- stringi::stri_locate_all_fixed(
+    fasta_seq[candidate], seqs[candidate],
+    opts_fixed = stringi::stri_opts_fixed(overlap = TRUE)
+  )
+  starts_list[candidate] <- lapply(locs, function(m) {
+    s <- m[, "start"]; as.integer(s[!is.na(s)])
+  })
+}
+n_hits <- vapply(starts_list, length, integer(1))
+reason[candidate & n_hits == 0L] <- "sequence_not_found"
+
+# Build matched rows: one per occurrence.
+matched_mask <- candidate & n_hits > 0L
+if (any(matched_mask)) {
+  ridx      <- rep.int(which(matched_mask), n_hits[matched_mask])
+  pep_start <- unlist(starts_list[matched_mask], use.names = FALSE)
+  pep_len   <- nchar(seqs[ridx])
+  matched   <- exploded[ridx, , drop = FALSE]
+  rownames(matched) <- NULL
+  matched$pep_start <- as.integer(pep_start)
+  matched$pep_end   <- as.integer(pep_start + pep_len - 1L)
+} else {
+  matched <- exploded[0L, , drop = FALSE]
+  matched$pep_start <- integer(0)
+  matched$pep_end   <- integer(0)
+}
+
+unmatched_mask <- !is.na(reason)
+unmatched <- data.frame(
+  peptide_sequence = seqs[unmatched_mask],
+  accession        = accs[unmatched_mask],
+  reason           = reason[unmatched_mask],
+  stringsAsFactors = FALSE
+)
+
+log_line("[map] matched (peptide x accession x occurrence) rows: ", nrow(matched))
+log_line("[map] unmatched (peptide x accession) pairs: ", nrow(unmatched))
