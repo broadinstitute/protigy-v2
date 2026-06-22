@@ -35,6 +35,7 @@ pkg.lock
 .claude/
 .positai
 .worktrees/
+.superpowers/
 firebase-debug.log
 
 # ──────────────────────────────────────────────────────────────────────────
