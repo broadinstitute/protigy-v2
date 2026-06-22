@@ -117,3 +117,49 @@ read_fasta_uniprot <- function(path) {
 
 fasta_map <- read_fasta_uniprot(FASTA_PATH)
 log_line("[fasta] sequences parsed: ", length(fasta_map))
+
+# ---- Block 4: explode multi-accession rows ----------------------------------
+# Mirrors R/tab_pelsa_explode_helpers.R::pelsa_explode_accessions:
+#   * split PG.ProteinAccessions on ";", trim, strip a leading ">",
+#     drop empty/NA tokens;
+#   * one exploded row per kept accession, carrying a stable .row_id (1-based
+#     index into the original peptide frame) plus all original columns.
+# Gene tokens are aligned to accession order best-effort (coverage keys only on
+# accession, so gene is informational here).
+ACC_COL  <- "PG.ProteinAccessions"
+GENE_COL <- "PG.Genes"
+stopifnot(ACC_COL %in% colnames(peptides))
+
+peptides$.row_id <- seq_len(nrow(peptides))
+
+acc_split <- strsplit(as.character(peptides[[ACC_COL]]), ";", fixed = TRUE)
+n_acc_raw <- lengths(acc_split)
+flat_acc  <- trimws(unlist(acc_split, use.names = FALSE))
+flat_acc  <- sub("^>", "", flat_acc)               # strip stray FASTA '>'
+flat_row  <- rep.int(seq_len(nrow(peptides)), n_acc_raw)
+
+keep      <- !is.na(flat_acc) & nzchar(flat_acc)
+accession <- flat_acc[keep]
+row_idx   <- flat_row[keep]
+
+exploded <- peptides[row_idx, , drop = FALSE]
+rownames(exploded) <- NULL
+exploded$accession <- accession
+
+# Best-effort gene alignment by the same kept slots.
+if (GENE_COL %in% colnames(peptides)) {
+  gene_split <- strsplit(as.character(peptides[[GENE_COL]]), ";", fixed = TRUE)
+  flat_gene  <- unlist(
+    mapply(function(g, n) {
+      if (length(g) == 0L) rep(NA_character_, n)
+      else if (length(g) == n) g
+      else rep(g[[1]], n)          # single shared gene recycles across accessions
+    }, gene_split, n_acc_raw, SIMPLIFY = FALSE),
+    use.names = FALSE
+  )
+  exploded$gene <- trimws(flat_gene[keep])
+} else {
+  exploded$gene <- NA_character_
+}
+
+log_line("[explode] exploded (peptide x accession) rows: ", nrow(exploded))
