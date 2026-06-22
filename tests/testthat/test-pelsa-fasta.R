@@ -293,25 +293,26 @@ test_that("ragged map with a zero-length entry before target still resolves", {
   expect_equal(res$matched$pep_end, 3L + nchar("PEPXYZ") - 1L)
 })
 
-test_that("I->L isobaric retry matches and is not in unmatched", {
+test_that("I->L mismatched peptide is left unmatched (no isobaric retry)", {
   ctx <- .make_exploded()
   res <- pelsa_map_peptide_positions(ctx$exploded, ctx$syn$fasta)
 
+  # The peptide differs from its FASTA region only by I<->L swaps. We trust the
+  # sequence verbatim, so it must NOT be recovered: absent from matched...
   il_matched <- res$matched[
     res$matched$PEP.StrippedSequence == ctx$syn$il_peptide &
       res$matched$accession == ctx$syn$il_peptide_accession, , drop = FALSE
   ]
-  expect_equal(nrow(il_matched), 1L)
-  expect_equal(il_matched$pep_start, ctx$syn$il_peptide_position)
-  expect_equal(
-    il_matched$pep_end,
-    ctx$syn$il_peptide_position + nchar(ctx$syn$il_peptide) - 1L
-  )
+  expect_equal(nrow(il_matched), 0L)
 
+  # ...and present in unmatched with reason sequence_not_found (it IS a
+  # candidate: valid sequence + resolved FASTA, just no exact substring hit).
   il_unmatched <- res$unmatched[
-    res$unmatched$peptide_sequence == ctx$syn$il_peptide, , drop = FALSE
+    res$unmatched$peptide_sequence == ctx$syn$il_peptide &
+      res$unmatched$accession == ctx$syn$il_peptide_accession, , drop = FALSE
   ]
-  expect_equal(nrow(il_unmatched), 0L)
+  expect_equal(nrow(il_unmatched), 1L)
+  expect_equal(il_unmatched$reason, "sequence_not_found")
 })
 
 test_that("isoform accession resolves via base-key fallback", {

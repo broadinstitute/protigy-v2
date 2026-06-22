@@ -217,13 +217,12 @@ pelsa_read_fasta_accessions <- function(path, mode = c("uniprot",
 #      (never substring-searched).
 #   2. Resolve FASTA key with isoform-base fallback; if neither key exists ->
 #      unmatched reason "accession_absent".
-#   3. Exact substring match with overlap = TRUE for all occurrences.
-#   4. I->L isobaric retry on the miss subset: normalize I->L on BOTH peptide
-#      and FASTA sequence, match again (positions remain valid -- same-length
-#      substitution). Computed only over DISTINCT (sequence, accession) misses.
-#   5. Pairs still unmatched after retry -> unmatched reason
+#   3. Exact substring match with overlap = TRUE for all occurrences. Sequences
+#      are trusted verbatim -- there is NO I->L (Leu/Ile) or other isobaric
+#      fuzzy retry; an exact substring miss is a real miss.
+#   4. Candidates that still did not match -> unmatched reason
 #      "sequence_not_found".
-#   6. Return list(matched=, unmatched=).
+#   5. Return list(matched=, unmatched=).
 #
 # @param exploded_df  long frame from pelsa_explode_accessions()
 # @param fasta_map    named list accession -> sequence
@@ -308,25 +307,8 @@ pelsa_map_peptide_positions <- function(exploded_df,
   }
   n_hits <- vapply(starts_list, length, integer(1))
 
-  # ---- I->L isobaric retry on the miss subset -----------------------------
-  miss <- candidate & n_hits == 0L
-  if (any(miss)) {
-    # Distinct (sequence, accession) misses only -> small loop, never 100k rows.
-    miss_idx <- which(miss)
-    key <- paste(seqs[miss_idx], accs[miss_idx], sep = "\r")
-    uniq_first <- miss_idx[!duplicated(key)]
-
-    il_pep <- gsub("I", "L", seqs[uniq_first], fixed = TRUE)
-    il_seq <- gsub("I", "L", fasta_seq[uniq_first], fixed = TRUE)
-    il_starts <- .pelsa_locate_starts(il_seq, il_pep)
-
-    # Map the per-distinct results back to every miss row sharing that key.
-    names(il_starts) <- key[!duplicated(key)]
-    starts_list[miss_idx] <- il_starts[key]
-    n_hits[miss_idx] <- vapply(starts_list[miss_idx], length, integer(1))
-  }
-
-  # Anything still unmatched after retry among candidates -> sequence_not_found.
+  # Candidates that did not exact-match are unmatched. We trust the FASTA and
+  # peptide sequences verbatim: no I->L (Leu/Ile) or other isobaric retry.
   still_missing <- candidate & n_hits == 0L
   reason[still_missing] <- "sequence_not_found"
 
