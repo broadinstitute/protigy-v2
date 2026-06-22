@@ -47,15 +47,16 @@
 #       "ABSENTPROT".
 #
 #   $il_peptide  "PEPTIDEWLTHISO"   (note: contains L and I)
-#       Does NOT exact-substring-match its FASTA, but DOES after I->L on BOTH
-#       sides (Leu/Ile isobaric). $il_peptide_accession = "ILPROT".
+#       Differs from its FASTA region ONLY by I<->L swaps, so it does NOT
+#       exact-substring-match. The mapper trusts sequences verbatim and does
+#       NOT do I->L (Leu/Ile) isobaric reconciliation, so this peptide is
+#       intentionally UNMATCHABLE -> unmatched reason "sequence_not_found".
+#       Used to prove no isobaric retry exists. $il_peptide_accession = "ILPROT".
 #       FASTA ILPROT = "MK" (2) + "PEPTIDEWITHISO" + "RR"
 #         (FASTA spells the region with I where the peptide has L, and vice
-#          versa, so only the I->L-normalized forms match.)
-#       Peptide  = "PEPTIDEWLTHISO"  -> I->L = "PEPTLDEWLTHLSO"
-#       FASTA region "PEPTIDEWITHISO" -> I->L = "PEPTLDEWLTHLSO"  (matches)
-#       Known position after I->L retry = 3 (right after "MK").
-#       $il_peptide_position = 3L.
+#          versa, so the exact forms never match.)
+#       $il_peptide_position = 3L is retained only to document where the region
+#       WOULD sit; it is NOT an emitted match position.
 #
 #   $isoform_accession  "P12345-2"  (UniProt isoform suffix)
 #       A peptide "ISOPEPTIDEK" is annotated to "P12345-2". DECISION: we key the

@@ -106,24 +106,23 @@ test_that("absent peptide is in frame but NOT in its annotated accession's FASTA
   expect_false(grepl(pep, seq, fixed = TRUE))
 })
 
-test_that("I->L peptide fails exact match but matches after I->L normalization", {
+test_that("I->L fixture peptide does not exact-substring-match its FASTA", {
   syn <- pelsa_make_synthetic(seed = 1)
   pep <- syn$il_peptide
   acc <- syn$il_peptide_accession
   seq <- syn$fasta[[acc]]
   expect_false(is.null(seq))
 
-  # no exact substring match
+  # The peptide and its FASTA region differ only by I<->L swaps, so there is no
+  # exact substring match. The mapper trusts sequences verbatim (no I->L retry),
+  # so this peptide is intentionally unrecoverable -- see test-pelsa-fasta.R.
   expect_false(grepl(pep, seq, fixed = TRUE))
 
-  # matches after I->L on BOTH sides
+  # Sanity: the difference really is only I<->L (normalizing both sides matches).
+  # This documents WHY the peptide misses; the mapper does NOT do this step.
   pep_n <- gsub("I", "L", pep, fixed = TRUE)
   seq_n <- gsub("I", "L", seq, fixed = TRUE)
   expect_true(grepl(pep_n, seq_n, fixed = TRUE))
-
-  # documented known position after I->L retry
-  pos <- regexpr(pep_n, seq_n, fixed = TRUE)[[1]]
-  expect_equal(as.integer(pos), syn$il_peptide_position)
 })
 
 test_that("isoform accession is exposed with base and isoform handles, and has a peptide", {
