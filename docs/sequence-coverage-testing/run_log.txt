@@ -1,0 +1,13 @@
+[run] sequence-coverage validation started
+[read] peptide rows: 137819 | columns: 33
+[read] design sample rows: 9
+[samples] using 9 samples across 3 conditions: AY9944_10uM, AY9944_1uM, AY9944_U18666A_DMSO
+[fasta] sequences parsed: 69845
+[explode] exploded (peptide x accession) rows: 199312
+[map] matched (peptide x accession x occurrence) rows: 200508
+[map] unmatched (peptide x accession) pairs: 0
+[out] coverage_experiment_level.csv: 14853 accessions; 14853 with finite coverage; mean coverage = 0.2465
+[out] unmatched_peptides_summary.csv written
+[out] coverage_by_condition.csv: 44559 rows
+[out] coverage_by_condition_summary.csv written
+[run] done

@@ -332,3 +332,63 @@ if (nrow(unmatched) > 0L) {
 readr::write_csv(unmatched_summary,
                  file.path(OUT_DIR, "unmatched_peptides_summary.csv"))
 log_line("[out] unmatched_peptides_summary.csv written")
+
+# ---- Block 8: per-condition coverage ----------------------------------------
+# Membership (R/tab_pelsa_analysis_helpers.R::pelsa_condition_membership):
+# a peptide belongs to a condition when quantified (finite & non-zero) in >= 1
+# of that condition's samples. Per-condition coverage subsets the matched cache
+# to those peptides (by .row_id) and reruns the same interval-union coverage
+# (pelsa_coverage_by_condition).
+
+# Build the numeric per-sample intensity matrix (rows = peptides, cols = samples).
+# Coerce all-character cells to numeric here so a blank/NA cell stays NA.
+proc_mat <- as.matrix(
+  data.frame(lapply(peptides[, sample_cols, drop = FALSE],
+                    function(col) suppressWarnings(as.numeric(col))),
+             check.names = FALSE)
+)
+rownames(proc_mat) <- NULL
+quantified <- is.finite(proc_mat) & proc_mat != 0   # canonical quantified mask
+
+conditions <- unique(unname(cond_map))
+m_rid <- as.integer(matched$.row_id)
+
+cov_by_condition <- do.call(rbind, lapply(conditions, function(cond) {
+  cond_samples <- names(cond_map)[cond_map == cond]
+  # peptide rows quantified in >= 1 of this condition's samples
+  member_rows <- which(rowSums(quantified[, cond_samples, drop = FALSE]) > 0L)
+  sub <- matched[m_rid %in% member_rows, , drop = FALSE]
+  if (nrow(sub) == 0L) return(NULL)
+  cov <- sequence_coverage(sub)
+  if (nrow(cov) == 0L) return(NULL)
+  data.frame(condition = cond, cov, stringsAsFactors = FALSE)
+}))
+if (is.null(cov_by_condition)) {
+  cov_by_condition <- data.frame(
+    condition = character(0), accession = character(0),
+    covered_residues = integer(0), protein_length = integer(0),
+    coverage = numeric(0), over_length_flag = logical(0),
+    stringsAsFactors = FALSE)
+}
+cov_by_condition <- cov_by_condition[
+  order(cov_by_condition$condition, cov_by_condition$accession), , drop = FALSE]
+readr::write_csv(cov_by_condition,
+                 file.path(OUT_DIR, "coverage_by_condition.csv"))
+log_line("[out] coverage_by_condition.csv: ", nrow(cov_by_condition), " rows")
+
+# Per-condition summary over finite per-protein coverage fractions (the quantity
+# the app's Summary coverage panel distributes per condition).
+cov_by_condition_summary <- do.call(rbind, lapply(conditions, function(cond) {
+  v <- cov_by_condition$coverage[cov_by_condition$condition == cond]
+  v <- v[is.finite(v)]
+  data.frame(
+    condition = cond,
+    n_accessions_with_coverage = length(v),
+    mean_coverage   = if (length(v)) mean(v)   else NA_real_,
+    median_coverage = if (length(v)) median(v) else NA_real_,
+    stringsAsFactors = FALSE)
+}))
+readr::write_csv(cov_by_condition_summary,
+                 file.path(OUT_DIR, "coverage_by_condition_summary.csv"))
+log_line("[out] coverage_by_condition_summary.csv written")
+log_line("[run] done")
