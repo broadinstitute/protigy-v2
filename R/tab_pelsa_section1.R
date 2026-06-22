@@ -989,8 +989,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     #
     # WHY CONFIRM: with no datasets uploaded the universe falls back to the WHOLE
     # FASTA proteome (~70k accessions for human). That is a multi-minute fetch a
-    # user can trigger by accident, so above a threshold we show the count + a
-    # rough ETA and require confirmation first.
+    # user can trigger by accident, so BOTH modes confirm unconditionally (no
+    # size threshold), showing the count + a rough ETA before any fetch.
     #
     # WHY INLINE STATUS: the per-page progress bar renders LIVE in the modal
     # (Shiny flushes setProgress mid-loop), and the final result renders in a
