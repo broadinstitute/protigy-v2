@@ -15,10 +15,9 @@
 #
 # Vectorized only (PELSA frames are 100k+ rows). The bulk path runs one regex
 # over the sequence column, resolves all FASTA keys vectorized, and matches with
-# a single stri_locate_all_fixed() call over the row vectors. The I->L retry is
-# computed on the miss mask and (since it needs per-pair sequence rewriting)
-# loops only over the small set of DISTINCT (sequence, accession) misses --
-# never over all rows. Keep these free of Shiny reactivity (unit-testable).
+# a single stri_locate_all_fixed() call over the row vectors. Sequences are
+# trusted verbatim: an exact substring miss is a real miss (NO I->L / isobaric
+# fuzzy retry). Keep these free of Shiny reactivity (unit-testable).
 ################################################################################
 
 # Read a FASTA file into a named list: accession -> amino-acid string.

@@ -228,7 +228,7 @@ test_that("seeded PEP.PeptidePosition annotations match FASTA-derived starts", {
   # match are excluded (each is covered by its own dedicated test):
   #   - bad_seq_peptide:  sequence rejected before FASTA lookup
   #   - absent_peptide:   FASTA present but deliberately lacks the peptide
-  #   - il_peptide:       only matches after I->L normalization, not exact
+  #   - il_peptide:       differs from FASTA only by I<->L, so never exact-matches
   skip_seqs <- c(syn$bad_seq_peptide, syn$absent_peptide, syn$il_peptide)
 
   # Seeded rows are those NOT generated as generic fillers.
