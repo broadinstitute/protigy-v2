@@ -1,13 +1,532 @@
 ################################################################################
+# PELSA UniProt fetch + feature-cache + per-species refresh + species-resolution.
+#
+# Consolidated OFFLINE suite. Merged verbatim from four former files:
+#   - test-pelsa-uniprot-fetch-offline.R   (pelsa_fetch_uniprot internals)
+#   - test-pelsa-refresh.R                 (per-species annotation refresh)
+#   - test-pelsa-refresh-benchmark.R       (runtime characterization / model)
+#   - test-pelsa-species-resolve.R         (species classification + resolution)
+#
+# Every suite is hermetic: injected fetch_fn / mocked httr2 / stub validate_fn.
+# NO real network is touched. The benchmark "network" is a calibrated arithmetic
+# model, never a real request.
+#
+# Cross-file contracts deliberately preserved:
+#   - the 8-column feature-frame schema (accession, feature_type, start, end,
+#     description, feature_class, class_score, coord_quality), and
+#   - the pelsa_fetch_uniprot return field-set (features / unresolved /
+#     zero_feature / transient_unresolved / canceled).
+#
+# Helpers from each former file are kept under their original names; there were
+# no name collisions across the four files (verified at merge time), so no
+# helper was renamed and no source()/`%||%` line needed de-duplication. Only a
+# single `library(testthat)` is kept (was duplicated across two of the files).
+################################################################################
+
+library(testthat)
+
+# ===========================================================================
+# --- from uniprot-fetch-offline ---
+# ===========================================================================
+# Phase 3 (P3.5) -- pelsa_fetch_uniprot internals, fully OFFLINE.
+#
+# The batch loop, the consecutive-failed-batch circuit breaker, the on_batch
+# progress callback, and the 4xx-vs-5xx split are otherwise reachable only via the
+# live network (those tests skip on CI). Here we mock the internal seam
+# (.pelsa_fetch_one_batch) for the batch-loop logic, and mock httr2 itself for the
+# one-batch 4xx/5xx discrimination. No network is touched.
+
+# ===========================================================================
+# Batch loop: count, on_batch callback, breaker, 4xx-vs-5xx at the loop level
+# ===========================================================================
+
+# Helper: a parsed-entry stub the real batch fn would return (one accession).
+# Carries ONE feature with exact coords so pelsa_parse_uniprot_json emits a row
+# (and thus the accession appears in features$accession -> "resolved").
+fake_entry <- function(acc) {
+  list(
+    primaryAccession = acc,
+    sequence = list(length = 10L),
+    features = list(list(
+      type = "Domain",
+      description = "test domain",
+      location = list(
+        start = list(value = 1L, modifier = "EXACT"),
+        end   = list(value = 5L, modifier = "EXACT")
+      )
+    ))
+  )
+}
+
+# A VALID UniProt entry that was returned but carries NO usable features
+# (no `features`). It produces zero feature rows, but the protein WAS resolved
+# (UniProt returned it), so its accession must NOT be reported unresolved.
+fake_entry_no_features <- function(acc) {
+  list(primaryAccession = acc, sequence = list(length = 10L))
+}
+
+# An entry returned under `primary`, carrying `secondary` in secondaryAccessions
+# (the demerged-accession case: a /search on the secondary returns this entry).
+fake_entry_with_secondary <- function(primary, secondary) {
+  e <- fake_entry(primary)
+  e$secondaryAccessions <- list(secondary)
+  e
+}
+
+test_that("on_batch fires once per batch with (done, total)", {
+  seen <- list()
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(
+    c("P00001", "P00002", "P00003", "P00004", "P00005"),
+    batch_size = 2L,                      # -> 3 batches of 2,2,1
+    on_batch = function(done, total) seen[[length(seen) + 1L]] <<- c(done, total)
+  )
+  # 3 batches -> 3 callbacks, done = 1,2,3 and total = 3 each time
+  expect_equal(length(seen), 3L)
+  expect_equal(seen[[1]], c(1L, 3L))
+  expect_equal(seen[[3]], c(3L, 3L))
+  # all accessions resolved (the fake entries carry each accession)
+  expect_setequal(res$features$accession,
+                  c("P00001", "P00002", "P00003", "P00004", "P00005"))
+  expect_length(res$unresolved, 0L)
+  expect_false(res$canceled)
+})
+
+test_that("a 4xx-style empty batch yields unresolved, NOT a breaker trip", {
+  # The real .pelsa_fetch_one_batch returns zero entries (failed = FALSE) for a
+  # 4xx (query matched nothing). Simulate that: every batch returns no entries.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # 10 accessions / batch_size 1 -> 10 empty batches. If empties counted toward
+  # the breaker (limit 5) this would error; it must NOT.
+  res <- pelsa_fetch_uniprot(sprintf("P%05d", 1:10), batch_size = 1L)
+  expect_setequal(res$unresolved, sprintf("P%05d", 1:10))
+  expect_equal(nrow(res$features), 0L)
+  expect_false(res$canceled)
+})
+
+test_that("a returned-but-feature-less entry is RESOLVED, not unresolved", {
+  # Regression: `resolved` was derived from feature rows, so a valid UniProt
+  # entry with zero parseable features was wrongly marked unresolved (spurious
+  # 'failed annotation' QC count + stale-cache retention). Entry presence, not
+  # feature presence, defines resolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # P00001 has features, P00002 is returned but feature-less.
+      ent <- list(fake_entry("P00001"), fake_entry_no_features("P00002"))
+      list(entries = ent, failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "P00002"), batch_size = 2L)
+  # P00002 was returned (resolved) even though it contributed no feature rows.
+  expect_false("P00002" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+  # P00001 still produced its feature row.
+  expect_true("P00001" %in% res$features$accession)
+  # P00002 is surfaced as a distinct zero-feature category (resolved, 0 feats).
+  expect_setequal(res$zero_feature, "P00002")
+  expect_false("P00001" %in% res$zero_feature)
+})
+
+test_that("fetch zero_feature is empty on the empty-input fast path", {
+  res <- pelsa_fetch_uniprot(character(0))
+  expect_identical(res$zero_feature, character(0))
+})
+
+test_that("an input secondary accession returned under its primary is RESOLVED", {
+  # Regression: UniProt returns a demerged accession's entry under the PRIMARY
+  # accession (with the secondary listed in secondaryAccessions). The input
+  # secondary must be marked resolved, not unresolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # input was the secondary "P0SEC1"; UniProt returns it as primary "Q99999".
+      list(entries = list(fake_entry_with_secondary("Q99999", "P0SEC1")),
+           failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P0SEC1"), batch_size = 2L)
+  expect_false("P0SEC1" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+})
+
+test_that("multiple secondary accessions on one entry all resolve", {
+  # Real UniProt entries carry secondaryAccessions as a multi-element array.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      e <- fake_entry("Q99999")
+      e$secondaryAccessions <- list("Q0SEC1", "Q0SEC2", "Q0SEC3")
+      list(entries = list(e), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("Q0SEC1", "Q0SEC3"), batch_size = 2L)
+  expect_length(res$unresolved, 0L)
+})
+
+test_that("an input isoform accession returned under its base is RESOLVED", {
+  # Regression: an isoform input "P12345-2" is returned by UniProt under its base
+  # primaryAccession "P12345" and is NOT listed in secondaryAccessions, so exact
+  # intersect would always mark it unresolved (inflating n_unresolved and firing a
+  # spurious "re-run when UniProt is reachable" warning on every healthy refresh).
+  # It must resolve via its isoform base.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # input was the isoform "P12345-2"; UniProt returns base "P12345".
+      list(entries = list(fake_entry("P12345")), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P12345-2"), batch_size = 2L)
+  expect_false("P12345-2" %in% res$unresolved)
+  expect_length(res$unresolved, 0L)
+})
+
+test_that("a genuinely-absent accession is still reported unresolved", {
+  # Control: an accession UniProt never returns stays unresolved.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # only P00001 comes back; P00098 is absent.
+      list(entries = list(fake_entry("P00001")), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "P00098"), batch_size = 2L)
+  expect_true("P00098" %in% res$unresolved)
+  expect_false("P00001" %in% res$unresolved)
+})
+
+test_that("a genuinely-absent isoform accession is still reported unresolved", {
+  # Control for the isoform fallback: if neither the isoform NOR its base returns,
+  # it stays unresolved (the base-match must not resolve an absent isoform).
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(fake_entry("P00001")), failed = FALSE)  # P99999 base absent
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "P99999-3"), batch_size = 2L)
+  expect_true("P99999-3" %in% res$unresolved)
+})
+
+test_that("transient_unresolved separates failed-batch accs from genuinely-absent", {
+  # A batch that FAILED (5xx/network) leaves its accessions transiently unresolved
+  # (re-running helps). An accession in a SUCCEEDED batch that UniProt simply did
+  # not return is genuinely absent (re-running will not help). Only the former
+  # should drive the "re-run when reachable" refresh warning.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      if ("P00097" %in% accs) {
+        list(entries = list(), failed = TRUE)            # transient failure
+      } else {
+        # succeeded batch: P00096 returned, P00095 genuinely absent
+        list(entries = list(fake_entry("P00096")), failed = FALSE)
+      }
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00097", "P00096", "P00095"), batch_size = 1L)
+  expect_setequal(res$unresolved, c("P00097", "P00095"))
+  expect_setequal(res$transient_unresolved, "P00097")    # NOT P00095
+})
+
+test_that("transient_unresolved is empty on a fully successful fetch", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "P00002"), batch_size = 2L)
+  expect_length(res$transient_unresolved, 0L)
+})
+
+test_that("breaker trips after .PELSA_BREAKER_LIMIT consecutive failed batches", {
+  # Every batch reports failed = TRUE (a 5xx/network failure) with no entries.
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = list(), failed = TRUE)
+    },
+    .package = "Protigy"
+  )
+  limit <- get(".PELSA_BREAKER_LIMIT", envir = asNamespace("Protigy"))
+  expect_true(limit >= 1L)
+  # Enough batches to exceed the limit.
+  expect_error(
+    pelsa_fetch_uniprot(sprintf("P%05d", seq_len(limit + 2L)), batch_size = 1L),
+    "UniProt unavailable"
+  )
+})
+
+test_that("breaker resets after a successful batch (failures must be consecutive)", {
+  limit <- get(".PELSA_BREAKER_LIMIT", envir = asNamespace("Protigy"))
+  calls <- new.env(); calls$n <- 0L
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      calls$n <- calls$n + 1L
+      # Alternate fail/succeed so consecutive failures never exceed 1 -- a single
+      # success between failures resets the breaker counter. With this pattern the
+      # breaker must NOT trip no matter how many batches run.
+      if (calls$n %% 2L == 0L) {
+        return(list(entries = lapply(accs, fake_entry), failed = FALSE))  # resets
+      }
+      list(entries = list(), failed = TRUE)
+    },
+    .package = "Protigy"
+  )
+  # 3*limit batches alternating fail/success -> never `limit` failures in a row.
+  n <- 3L * limit
+  res <- pelsa_fetch_uniprot(sprintf("P%05d", seq_len(n)), batch_size = 1L)
+  # the successful (even-numbered) batches resolve their accessions; the rest are
+  # unresolved -- but crucially no breaker error was thrown.
+  expect_gt(nrow(res$features), 0L)
+  expect_false(res$canceled)
+})
+
+test_that("should_cancel stops at a batch boundary and reports canceled = TRUE", {
+  calls <- new.env(); calls$n <- 0L
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      calls$n <- calls$n + 1L
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # cancel AFTER the first batch has run (so n >= 1 -> stop before batch 2)
+  res <- pelsa_fetch_uniprot(
+    sprintf("P%05d", 1:6), batch_size = 2L,
+    should_cancel = function() calls$n >= 1L
+  )
+  expect_true(res$canceled)
+  # only the first batch's two accessions resolved
+  expect_equal(calls$n, 1L)
+  expect_setequal(res$features$accession, c("P00001", "P00002"))
+  # the not-yet-fetched accessions are unresolved
+  expect_true(all(c("P00003", "P00004", "P00005", "P00006") %in% res$unresolved))
+})
+
+# ===========================================================================
+# One-batch 4xx vs 5xx discrimination (mock httr2 directly)
+# ===========================================================================
+# .pelsa_fetch_one_batch treats a >=500 (or network) failure as a thrown error
+# (breaker fuel) but a <500 response as a healthy server returning nothing.
+
+make_resp <- function(status, results = list()) {
+  # Must carry class "httr2_response" -- .pelsa_fetch_one_batch filters the
+  # iterative output to inherits(r, "httr2_response") before reading any page.
+  structure(list(.status = status, .results = results),
+            class = "httr2_response")
+}
+
+test_that(".pelsa_fetch_one_batch returns entries for a 200 page", {
+  fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  testthat::local_mocked_bindings(
+    req_url_path_append = function(req, ...) req,
+    req_url_query = function(req, ...) req,
+    req_perform_iterative = function(req, ...) list(make_resp(200L,
+      list(fake_entry("P1")))),
+    resp_status = function(resp) resp$.status,
+    resp_body_json = function(resp, ...) list(results = resp$.results),
+    .package = "httr2"
+  )
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_length(res$entries, 1L)
+  expect_false(res$failed)
+})
+
+test_that(".pelsa_fetch_one_batch yields zero entries for a 4xx (no throw)", {
+  fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  # The 400 response carries a non-empty results payload. If the >=400 skip were
+  # absent the batch would parse the entry and return length 1; the skip is the
+  # ONLY reason the result is empty. This ensures removing the skip breaks the test.
+  testthat::local_mocked_bindings(
+    req_url_path_append = function(req, ...) req,
+    req_url_query = function(req, ...) req,
+    req_perform_iterative = function(req, ...) list(make_resp(400L,
+      list(fake_entry("P1")))),
+    resp_status = function(resp) resp$.status,
+    resp_body_json = function(resp, ...) list(results = resp$.results),
+    .package = "httr2"
+  )
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_length(res$entries, 0L)
+  expect_false(res$failed)
+})
+
+test_that(".pelsa_fetch_one_batch reports failed = TRUE on a 5xx terminal error (breaker fuel)", {
+  fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  err <- structure(
+    list(message = "server error", resp = make_resp(503L)),
+    class = c("httr2_http_503", "error", "condition")
+  )
+  testthat::local_mocked_bindings(
+    req_url_path_append = function(req, ...) req,
+    req_url_query = function(req, ...) req,
+    # on_error = "return": iterative returns the error as the last element
+    req_perform_iterative = function(req, ...) list(err),
+    resp_status = function(resp) resp$.status,
+    resp_body_json = function(resp, ...) list(results = list()),
+    .package = "httr2"
+  )
+  res <- fetch_one(httr2::request("http://x"), c("P1"), size = 1L)
+  expect_true(res$failed)
+  expect_length(res$entries, 0L)
+})
+
+test_that("5xx on a LATE page preserves the good pages already fetched (no data loss)", {
+  # Regression: req_perform_iterative(on_error='return') returns the successful
+  # cursor pages PLUS a trailing error condition. The old code re-threw via
+  # stop(last) BEFORE collecting the good pages, discarding P1/P2 entirely. Now
+  # the good pages' entries must survive and the batch is still flagged failed.
+  fetch_one <- get(".pelsa_fetch_one_batch", envir = asNamespace("Protigy"))
+  err <- structure(
+    list(message = "server error", resp = make_resp(503L)),
+    class = c("httr2_http_503", "error", "condition")
+  )
+  testthat::local_mocked_bindings(
+    req_url_path_append = function(req, ...) req,
+    req_url_query = function(req, ...) req,
+    # page 1 (P1) ok, page 2 (P2) ok, page 3 fails 5xx after retries
+    req_perform_iterative = function(req, ...) list(
+      make_resp(200L, list(fake_entry("P1"))),
+      make_resp(200L, list(fake_entry("P2"))),
+      err
+    ),
+    resp_status = function(resp) resp$.status,
+    resp_body_json = function(resp, ...) list(results = resp$.results),
+    .package = "httr2"
+  )
+  res <- fetch_one(httr2::request("http://x"), c("P1", "P2"), size = 1L)
+  expect_true(res$failed)
+  expect_length(res$entries, 2L)  # P1 and P2 survived the late-page failure
+})
+
+# ---------------------------------------------------------------------------
+# Source-level guard for the failed-condition block. The 4xx-vs-5xx BEHAVIOR is
+# already covered by the behavioral tests above (4xx -> no throw; 5xx -> failed;
+# late-page 5xx preserves good pages). This guard pins only the two structural
+# invariants the corrected comment documents -- the req_error(>=500) policy and
+# the unchanged behavioral guard line -- without coupling to exact prose.
+# ---------------------------------------------------------------------------
+test_that("the failed-condition block keeps the req_error(>=500) policy + NA/5xx guard", {
+  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_uniprot_fetch.R")
+  skip_if_not(file.exists(src_path), "tab_pelsa_uniprot_fetch.R source not found")
+  src <- paste(readLines(src_path, warn = FALSE), collapse = "\n")
+  # base_req must keep the >= 500 error policy that makes 4xx a normal response.
+  expect_true(grepl("resp_status(resp) >= 500", src, fixed = TRUE))
+  # The behavioral guard (network NA OR server 5xx -> batch failed) is unchanged.
+  expect_true(grepl("if (is.na(status) || status >= 500L) batch_failed <- TRUE",
+                    src, fixed = TRUE))
+})
+
+# ===========================================================================
+# Defect #2/#4 fix: query universe is valid-format, isoform-base, deduped.
+# ===========================================================================
+
+test_that(".pelsa_is_valid_accession accepts UniProt accessions, rejects non-UniProt keys", {
+  # Valid: SwissProt (P/Q/O...) + TrEMBL forms, with optional isoform suffix.
+  expect_equal(
+    .pelsa_is_valid_accession(c("P12345", "Q6ZWR6", "A2ASS6", "A0A0N4SVQ2", "P12345-3")),
+    rep(TRUE, 5L)
+  )
+  # Invalid: smORF/contaminant keys + obviously malformed.
+  expect_equal(
+    .pelsa_is_valid_accession(c("smORF_G035940|LINC02081.2", "B99901", "", "lowercase1", NA)),
+    rep(FALSE, 5L)
+  )
+})
+
+test_that("pelsa_fetch_uniprot queries base+valid+deduped terms, never isoform/invalid keys", {
+  captured <- list()
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      captured[[length(captured) + 1L]] <<- accs
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # Input mixes: a base, its isoform, a duplicate, an invalid smORF, a contaminant.
+  pelsa_fetch_uniprot(
+    c("P00001", "P00001-2", "P00001", "smORF_G1|X", "B99901", "Q6ZWR6-3"),
+    batch_size = 100L
+  )
+  terms <- unlist(captured, use.names = FALSE)
+  # Isoform suffix stripped to base; duplicates collapsed.
+  expect_true("P00001" %in% terms)
+  expect_false(any(grepl("-[0-9]+$", terms)))       # no isoform-suffixed query terms
+  expect_equal(sum(terms == "P00001"), 1L)          # deduped (P00001 + P00001-2 -> one)
+  # Non-UniProt keys never queried.
+  expect_false("smORF_G1|X" %in% terms)
+  expect_false("B99901" %in% terms)
+  # Q6ZWR6-3 -> Q6ZWR6 base present.
+  expect_true("Q6ZWR6" %in% terms)
+})
+
+test_that("pelsa_fetch_uniprot never sends more than batch_size (<=100) terms per batch", {
+  seen_sizes <- integer(0)
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      seen_sizes[[length(seen_sizes) + 1L]] <<- length(accs)
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  # 250 distinct valid base accessions -> with batch_size 100 -> batches of <=100.
+  accs <- sprintf("P%05d", 1:250)
+  pelsa_fetch_uniprot(accs, batch_size = 100L)
+  expect_true(all(seen_sizes <= 100L))
+  expect_equal(sum(seen_sizes), 250L)
+})
+
+test_that("an isoform input resolves via its base entry (not falsely unresolved)", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      # UniProt returns the entry under the BASE primaryAccession only.
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001-2"), batch_size = 100L)
+  expect_false("P00001-2" %in% res$unresolved)
+})
+
+test_that("an invalid-format input is unresolved but does not error or trip the breaker", {
+  testthat::local_mocked_bindings(
+    .pelsa_fetch_one_batch = function(base_req, accs, size) {
+      list(entries = lapply(accs, fake_entry), failed = FALSE)
+    },
+    .package = "Protigy"
+  )
+  res <- pelsa_fetch_uniprot(c("P00001", "smORF_G1|X"), batch_size = 100L)
+  expect_true("P00001" %in% res$features$accession)
+  expect_true("smORF_G1|X" %in% res$unresolved)
+  expect_false(res$canceled)
+})
+
+test_that(".PELSA_BATCH_SIZE stays within UniProt's 100-OR /search cap", {
+  bs <- get(".PELSA_BATCH_SIZE", envir = asNamespace("Protigy"))
+  expect_lte(bs, 100L)
+})
+
+# ===========================================================================
+# --- from refresh ---
+# ===========================================================================
 # Tests for the PELSA per-species UniProt-annotation refresh (Task 5C).
 #
 # These cover the PURE helpers (accession universe, write/round-trip) and the
 # orchestration helper with an INJECTED fake fetcher. NO LIVE NETWORK is ever
 # touched: pelsa_fetch_uniprot is never called here  -  the orchestration test
 # substitutes a stub returning a canned 8-col feature frame.
-################################################################################
-
-library(testthat)
 
 # Canned 8-column feature frame matching the schema (for write + orchestration).
 .fake_feature_df <- function() {
@@ -1061,4 +1580,407 @@ test_that("full refresh round-trips the fetched frame through wipe/write/read", 
   expect_identical(back$feature_class, canned$feature_class)
   expect_identical(back$class_score, canned$class_score)
   expect_identical(back$coord_quality, canned$coord_quality)
+})
+
+# ===========================================================================
+# --- from refresh-benchmark ---
+# ===========================================================================
+# Benchmark / runtime characterization for the PELSA UniProt-annotation refresh
+# (the Setup tab "Maintenance: UniProt annotation library" control), focused on
+# the HUMAN species.
+#
+# WHY THIS FILE EXISTS
+#   The refresh is the single slowest user-facing PELSA action. Its cost is
+#   dominated by the network fetch in pelsa_fetch_uniprot(), which today issues
+#   ONE HTTP request PER ACCESSION, serially, throttled to ~10 req/s. For the
+#   human FALLBACK universe (the whole FASTA proteome, ~70k accessions) that is
+#   ~70k / 10 = ~7000 s ~= 2 h floor before any per-request latency or retries.
+#
+#   These tests measure what we CAN measure deterministically and offline:
+#     1. the orchestration overhead the refresh adds ON TOP of the network
+#        (merge + write + progress), to prove the pipeline itself is cheap and
+#        the network is the whole story; and
+#     2. a calibrated MODEL of wall-clock under the current serial design vs a
+#        batched-stream design, so the speed-up is quantified, not hand-waved.
+#
+#   NO LIVE NETWORK: every fetch goes through the injected `fetch_fn` seam. The
+#   "network" is a calibrated sleep/arithmetic model, never a real request, so
+#   this file is hermetic and CI-safe (it is also tagged slow-ish but bounded:
+#   the real-time sleeps are tiny and only run on a small sample).
+#
+# These are characterization tests, not pass/fail correctness gates: they assert
+# only ROBUST inequalities (batched < serial; overhead << network) that hold by
+# construction, so they are not flaky on a busy machine.
+
+# ---- calibration constants (documented model, not magic numbers) -------------
+# Per-request wall-clock the live design pays per accession: throttle slot
+# (1/rate s) PLUS a round-trip latency. We model both; only their RATIO matters
+# for the inequality assertions, so absolute values need only be plausible.
+.BENCH_RATE_PER_S        <- 10      # req_throttle(capacity = 10, fill_time_s = 1)
+.BENCH_RTT_S             <- 0.12    # typical UniProt JSON RTT under throttle
+.BENCH_STREAM_PAGE       <- 500L    # accessions per batched /stream page (model)
+.BENCH_STREAM_PAGE_RTT_S <- 0.9     # one big page's RTT (bigger payload)
+
+# Wall-clock model for the CURRENT serial, one-accession-per-request fetcher.
+.bench_serial_seconds <- function(n) {
+  n * (1 / .BENCH_RATE_PER_S + .BENCH_RTT_S)
+}
+
+# Wall-clock model for a BATCHED /stream fetcher (ceil(n / page) page requests,
+# each paying one big-page RTT; throttle is a non-binding ~1 req/s for pages).
+.bench_batched_seconds <- function(n, page = .BENCH_STREAM_PAGE) {
+  n_pages <- ceiling(n / page)
+  n_pages * .BENCH_STREAM_PAGE_RTT_S
+}
+
+# A canned 8-col feature frame for K accessions (orchestration input; the shape
+# the parser/fetcher returns). Cheap to build for large K.
+.bench_feature_df <- function(accs) {
+  k <- length(accs)
+  data.frame(
+    accession     = accs,
+    feature_type  = rep("domain", k),
+    start         = rep(10L, k),
+    end           = rep(120L, k),
+    description   = rep("kinase domain", k),
+    feature_class = rep("catalytic_domain", k),
+    class_score   = rep(3L, k),
+    coord_quality = rep("exact", k),
+    stringsAsFactors = FALSE
+  )
+}
+
+# ---- 1. Orchestration overhead is negligible vs the network ------------------
+
+test_that("refresh orchestration (merge + write) is fast; the network dominates", {
+  skip_on_cran()
+  # A realistic single-experiment universe size (proteins in a typical dataset).
+  n <- 5000L
+  accs <- sprintf("P%05d", seq_len(n))
+  species_dir <- tempfile("pelsa_bench_human_")
+  dir.create(species_dir, recursive = TRUE)
+
+  # Injected "fetch" that does NO real I/O: returns the canned frame instantly.
+  # This isolates the orchestration cost (universe merge + write_tsv + schema)
+  # from the network so we can show the pipeline itself is not the bottleneck.
+  fake_fetch <- function(accessions) {
+    list(features = .bench_feature_df(accessions), unresolved = character(0))
+  }
+
+  t <- system.time(
+    res <- pelsa_refresh_species_cache(
+      species = "human", universe = accs, species_dir = species_dir,
+      fetch_fn = fake_fetch, existing = NULL, progress = NULL
+    )
+  )
+  orchestration_s <- unname(t["elapsed"])
+
+  expect_equal(res$n_features, n)
+  expect_true(file.exists(res$path))
+
+  # The network the live fetcher WOULD pay for the same universe.
+  network_serial_s <- .bench_serial_seconds(n)
+
+  # Orchestration must be a tiny fraction of the network it sits on top of. We
+  # assert a very loose bound (<10% of modelled network, and < 5 s absolute) so
+  # this is robust on slow CI, while still proving the network is the story.
+  expect_lt(orchestration_s, 0.10 * network_serial_s)
+  expect_lt(orchestration_s, 5)
+
+  message(sprintf(
+    "[bench] human n=%d: orchestration=%.3fs  vs modelled serial network=%.0fs (%.1f min)",
+    n, orchestration_s, network_serial_s, network_serial_s / 60))
+})
+
+# ---- 2. Serial per-accession design: human runtime is hours, not minutes -----
+
+test_that("human FALLBACK universe (~70k accessions) blows past 'several minutes'", {
+  # The no-datasets-uploaded fallback fetches the whole FASTA proteome. The
+  # committed human FASTA has ~70k headers; model the serial wall-clock.
+  n_human_fallback <- 70000L
+  serial_s <- .bench_serial_seconds(n_human_fallback)
+
+  # Floor is well over an hour - far beyond the "several minutes per species"
+  # the UI promises. This test DOCUMENTS the gap (and guards against anyone
+  # quietly assuming it's fast).
+  expect_gt(serial_s, 60 * 60)   # > 1 hour
+  message(sprintf(
+    "[bench] human fallback n=%d: serial model=%.0fs (%.1f h)",
+    n_human_fallback, serial_s, serial_s / 3600))
+})
+
+test_that("a realistic single-dataset universe already exceeds 'several minutes'", {
+  # Even the dataset-driven (non-fallback) path is slow: a mid-size experiment
+  # annotates several thousand proteins.
+  n_dataset <- 8000L
+  serial_s <- .bench_serial_seconds(n_dataset)
+  expect_gt(serial_s, 5 * 60)    # > 5 minutes for a single mid-size dataset
+  message(sprintf(
+    "[bench] dataset n=%d: serial model=%.0fs (%.1f min)",
+    n_dataset, serial_s, serial_s / 60))
+})
+
+# ---- 3. Batched /stream design: order-of-magnitude faster, same coverage -----
+
+test_that("batched /stream model is >=20x faster than serial for human", {
+  for (n in c(5000L, 8000L, 70000L)) {
+    serial_s  <- .bench_serial_seconds(n)
+    batched_s <- .bench_batched_seconds(n)
+    speedup   <- serial_s / batched_s
+    expect_gt(speedup, 20)
+    message(sprintf(
+      "[bench] n=%6d: serial=%8.0fs  batched=%7.1fs  speedup=%.0fx",
+      n, serial_s, batched_s, speedup))
+  }
+})
+
+# ---- 4. Batching does NOT change the parsed result (accuracy preserved) ------
+
+test_that("parsing N entries in one batch == parsing them per-accession", {
+  # The accuracy guarantee behind batching: pelsa_parse_uniprot_json_batch over
+  # a multi-entry /stream 'results' array yields the SAME 8-col rows as parsing
+  # each entry alone and rbinding. (The classifier is per-feature and pure, so a
+  # batched fetch cannot change a single class/score/coord.)
+  entry <- function(acc) list(
+    primaryAccession = acc,
+    features = list(list(
+      type = "Domain", description = "Protein kinase domain",
+      location = list(start = list(value = 10L, modifier = "EXACT"),
+                      end   = list(value = 120L, modifier = "EXACT"))
+    ))
+  )
+  entries <- lapply(c("P00001", "P00002", "P00003"), entry)
+
+  per_accession <- do.call(rbind, lapply(entries, pelsa_parse_uniprot_json))
+  rownames(per_accession) <- NULL
+  batched <- pelsa_parse_uniprot_json_batch(entries)
+
+  expect_identical(batched, per_accession)
+  expect_identical(sort(unique(batched$accession)),
+                   c("P00001", "P00002", "P00003"))
+  expect_true(all(batched$feature_class == "catalytic_domain"))
+})
+
+# ===========================================================================
+# --- from species-resolve ---
+# ===========================================================================
+# Tests for PELSA species classification + resolution (taxonomy-code convention).
+#
+#   pelsa_classify_folder(folder)                  "numeric" | "named"
+#   pelsa_fetch_taxon(taxon_id, ...)               taxonomy name/validation fetch
+#   pelsa_read_species_meta / pelsa_write_species_meta(database_dir, ...)
+#   pelsa_species_has_feature_cache(database_dir, folder)
+#   pelsa_resolve_species(database_dir, folder, validate_fn, meta)
+#   pelsa_refresh_species_meta_on_start(database_dir, validate_fn)
+#   pelsa_species_display_label(struct)
+#
+# The taxonomy API is NEVER hit live: every test injects a `validate_fn` stub.
+# A folder named by digits is a UniProt taxon code; a named folder is self-curated.
+
+# ---- helpers -----------------------------------------------------------------
+
+# A stub validate_fn factory mirroring pelsa_fetch_taxon's return contract:
+#   list(status = "ok"|"not_found"|"network_error",
+#        scientific_name=, common_name=, taxon_id=)
+.stub_ok <- function(sci = "Homo sapiens", common = "Human") {
+  function(taxon_id, ...) list(status = "ok", scientific_name = sci,
+                               common_name = common, taxon_id = taxon_id)
+}
+.stub_not_found <- function() {
+  function(taxon_id, ...) list(status = "not_found", scientific_name = NA_character_,
+                               common_name = NA_character_, taxon_id = taxon_id)
+}
+.stub_network <- function() {
+  function(taxon_id, ...) list(status = "network_error",
+                               scientific_name = NA_character_,
+                               common_name = NA_character_, taxon_id = taxon_id)
+}
+
+# Build a database dir with the given folders; optionally drop a feature-cache
+# tsv into a folder to simulate "has_feature_cache".
+.make_db <- function(folders = character(0), with_cache = character(0)) {
+  db <- tempfile("pelsa_db_")
+  dir.create(db)
+  for (f in folders) dir.create(file.path(db, f))
+  for (f in with_cache) {
+    fdir <- file.path(db, f, "uniprot_features")
+    dir.create(fdir, recursive = TRUE)
+    writeLines("accession\tstart\tend\tfeature_class",
+               file.path(fdir, "uniprot_features.tsv"))
+  }
+  db
+}
+
+# ---- pelsa_classify_folder ---------------------------------------------------
+
+test_that("pelsa_classify_folder: all-digits -> numeric, else named", {
+  expect_identical(pelsa_classify_folder("9606"), "numeric")
+  expect_identical(pelsa_classify_folder("10090"), "numeric")
+  expect_identical(pelsa_classify_folder("009606"), "numeric")  # leading zeros
+  expect_identical(pelsa_classify_folder("hoylesellaTimonensis"), "named")
+  expect_identical(pelsa_classify_folder("strain1"), "named")   # mixed -> named
+  expect_identical(pelsa_classify_folder("9606b"), "named")
+})
+
+# ---- pelsa_species_has_feature_cache -----------------------------------------
+
+test_that("pelsa_species_has_feature_cache detects a cache tsv without reading it", {
+  db <- .make_db(folders = c("9606", "10090"), with_cache = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  expect_true(pelsa_species_has_feature_cache(db, "9606"))
+  expect_false(pelsa_species_has_feature_cache(db, "10090"))
+})
+
+# ---- species_meta read/write round-trip --------------------------------------
+
+test_that("species_meta write then read round-trips; absent file -> empty list", {
+  db <- .make_db()
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  expect_identical(pelsa_read_species_meta(db), list())
+
+  meta <- list(
+    "9606" = list(type = "uniprot", taxon_id = 9606L,
+                  scientific_name = "Homo sapiens", validated = TRUE)
+  )
+  pelsa_write_species_meta(db, meta)
+  rt <- pelsa_read_species_meta(db)
+  expect_identical(rt[["9606"]]$type, "uniprot")
+  expect_identical(rt[["9606"]]$scientific_name, "Homo sapiens")
+  expect_true(isTRUE(rt[["9606"]]$validated))
+})
+
+# ---- pelsa_resolve_species: the five verdict branches ------------------------
+
+test_that("resolve: numeric + validation ok -> uniprot, validated, display name", {
+  db <- .make_db(folders = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  s <- pelsa_resolve_species(db, "9606", validate_fn = .stub_ok("Homo sapiens"))
+  expect_identical(s$type, "uniprot")
+  expect_true(s$validated)
+  expect_identical(s$scientific_name, "Homo sapiens")
+  expect_identical(s$display, "Homo sapiens (9606)")
+  expect_identical(s$folder, "9606")
+  # The verdict is persisted so a re-resolve needs no network.
+  meta <- pelsa_read_species_meta(db)
+  expect_identical(meta[["9606"]]$type, "uniprot")
+  expect_true(isTRUE(meta[["9606"]]$validated))
+})
+
+test_that("resolve: numeric + 404 not_found -> self_curated (customized)", {
+  db <- .make_db(folders = "9999999")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  s <- pelsa_resolve_species(db, "9999999", validate_fn = .stub_not_found())
+  expect_identical(s$type, "self_curated")
+  expect_identical(s$display, "9999999 (customized)")
+})
+
+test_that("resolve: numeric + network_error + has cache -> uniprot unvalidated", {
+  db <- .make_db(folders = "9606", with_cache = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  s <- pelsa_resolve_species(db, "9606", validate_fn = .stub_network())
+  expect_identical(s$type, "uniprot")
+  expect_false(s$validated)
+  expect_identical(s$display, "9606 (annotations available, name pending)")
+})
+
+test_that("resolve: numeric + network_error + no cache -> self_curated (transient)", {
+  db <- .make_db(folders = "9606")  # no cache
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  s <- pelsa_resolve_species(db, "9606", validate_fn = .stub_network())
+  expect_identical(s$type, "self_curated")
+  expect_identical(s$display, "9606 (customized)")
+})
+
+test_that("resolve: named folder -> self_curated, no network call", {
+  db <- .make_db(folders = "hoylesellaTimonensis")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  called <- FALSE
+  vf <- function(...) { called <<- TRUE; .stub_ok()(...) }
+  s <- pelsa_resolve_species(db, "hoylesellaTimonensis", validate_fn = vf)
+  expect_identical(s$type, "self_curated")
+  expect_identical(s$display, "hoylesellaTimonensis (customized)")
+  expect_false(called)  # named folders never touch the network
+})
+
+test_that("resolve: a cached validated entry is reused without calling validate_fn", {
+  db <- .make_db(folders = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  pelsa_write_species_meta(db, list(
+    "9606" = list(type = "uniprot", taxon_id = 9606L,
+                  scientific_name = "Homo sapiens", validated = TRUE)))
+  called <- FALSE
+  vf <- function(...) { called <<- TRUE; .stub_ok()(...) }
+  s <- pelsa_resolve_species(db, "9606", validate_fn = vf)
+  expect_identical(s$display, "Homo sapiens (9606)")
+  expect_false(called)
+})
+
+# ---- cache-only path (allow_fetch = FALSE): never touch the network ----------
+
+test_that("allow_fetch=FALSE never calls validate_fn (reactive render path)", {
+  db <- .make_db(folders = "9606", with_cache = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  called <- FALSE
+  vf <- function(...) { called <<- TRUE; .stub_ok()(...) }
+
+  # No cached verdict yet + has feature cache -> uniprot unvalidated, no network.
+  s <- pelsa_resolve_species(db, "9606", validate_fn = vf, allow_fetch = FALSE)
+  expect_false(called)
+  expect_identical(s$type, "uniprot")
+  expect_false(s$validated)
+  expect_identical(s$display, "9606 (annotations available, name pending)")
+})
+
+test_that("allow_fetch=FALSE: numeric + no cache + no verdict -> self_curated, no network", {
+  db <- .make_db(folders = "9606")  # no cache
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  called <- FALSE
+  vf <- function(...) { called <<- TRUE; .stub_ok()(...) }
+  s <- pelsa_resolve_species(db, "9606", validate_fn = vf, allow_fetch = FALSE)
+  expect_false(called)
+  expect_identical(s$type, "self_curated")
+})
+
+test_that("allow_fetch=FALSE honors a cached validated verdict (display name shown)", {
+  db <- .make_db(folders = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  pelsa_write_species_meta(db, list(
+    "9606" = list(type = "uniprot", taxon_id = 9606L,
+                  scientific_name = "Homo sapiens", validated = TRUE)))
+  s <- pelsa_resolve_species(db, "9606", allow_fetch = FALSE)
+  expect_identical(s$display, "Homo sapiens (9606)")
+})
+
+# ---- refresh-on-start: promote a previously-unvalidated numeric folder -------
+
+test_that("refresh_on_start promotes unvalidated numeric folder and rewrites meta", {
+  db <- .make_db(folders = "9606", with_cache = "9606")
+  on.exit(unlink(db, recursive = TRUE), add = TRUE)
+  # Seed an unvalidated entry (e.g. earlier offline run).
+  pelsa_write_species_meta(db, list(
+    "9606" = list(type = "uniprot", taxon_id = 9606L,
+                  scientific_name = NA, validated = FALSE)))
+
+  pelsa_refresh_species_meta_on_start(db, validate_fn = .stub_ok("Homo sapiens"))
+
+  meta <- pelsa_read_species_meta(db)
+  expect_true(isTRUE(meta[["9606"]]$validated))
+  expect_identical(meta[["9606"]]$scientific_name, "Homo sapiens")
+})
+
+# ---- display label for each state --------------------------------------------
+
+test_that("pelsa_species_display_label formats all three states", {
+  expect_identical(
+    pelsa_species_display_label(list(folder = "9606", type = "uniprot",
+      validated = TRUE, scientific_name = "Homo sapiens")),
+    "Homo sapiens (9606)")
+  expect_identical(
+    pelsa_species_display_label(list(folder = "9606", type = "uniprot",
+      validated = FALSE, scientific_name = NA)),
+    "9606 (annotations available, name pending)")
+  expect_identical(
+    pelsa_species_display_label(list(folder = "hoylesellaTimonensis",
+      type = "self_curated", validated = TRUE, scientific_name = NA)),
+    "hoylesellaTimonensis (customized)")
 })
