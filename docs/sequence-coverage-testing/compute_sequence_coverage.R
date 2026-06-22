@@ -305,3 +305,30 @@ sequence_coverage <- function(matched_df) {
              protein_length = protein_length, coverage = coverage,
              over_length_flag = over, stringsAsFactors = FALSE)
 }
+
+# ---- Block 7: experiment-level coverage (ALL matched peptides) ---------------
+# This is the app's experiment-wide metric: pelsa_sequence_coverage(matched, fasta)
+# over every matched peptide (R/tab_pelsa_analysis_helpers.R line ~879).
+cov_experiment <- sequence_coverage(matched)
+cov_experiment <- cov_experiment[order(cov_experiment$accession), , drop = FALSE]
+
+readr::write_csv(cov_experiment,
+                 file.path(OUT_DIR, "coverage_experiment_level.csv"))
+log_line("[out] coverage_experiment_level.csv: ", nrow(cov_experiment),
+         " accessions; ",
+         sum(is.finite(cov_experiment$coverage)), " with finite coverage; ",
+         "mean coverage = ",
+         round(mean(cov_experiment$coverage[is.finite(cov_experiment$coverage)]), 4))
+
+# Unmatched reason breakdown (informational).
+if (nrow(unmatched) > 0L) {
+  unmatched_summary <- as.data.frame(table(reason = unmatched$reason),
+                                     stringsAsFactors = FALSE)
+  names(unmatched_summary) <- c("reason", "n_pairs")
+} else {
+  unmatched_summary <- data.frame(reason = character(0), n_pairs = integer(0),
+                                  stringsAsFactors = FALSE)
+}
+readr::write_csv(unmatched_summary,
+                 file.path(OUT_DIR, "unmatched_peptides_summary.csv"))
+log_line("[out] unmatched_peptides_summary.csv written")
