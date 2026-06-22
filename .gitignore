@@ -10,6 +10,8 @@
 *.Rcheck/
 *.tar.gz
 Rplots.pdf
+/.quarto/
+**/*.quarto_ipynb
 
 # RStudio Connect / shinyapps.io deploy metadata
 rsconnect/
@@ -37,31 +39,25 @@ firebase-debug.log
 
 # ──────────────────────────────────────────────────────────────────────────
 # PELSA reference databases (inst/database/<species>/)
-#   TRACKED (inputs users need):   fasta/*.fasta
-#   IGNORED (regenerable outputs): the derived feature/membrane caches below,
-#   which users rebuild from the FASTA via the Setup page "refresh". The WHOLE
-#   uniprot_features/ folder (incl. schema.json) is ignored -- it is regenerated
-#   by a Full/Incremental refresh, so it should never be committed.
+#   IGNORED: everything under inst/database/ -- species folders, FASTAs, and the
+#   regenerable feature/membrane caches are all user-populated / rebuilt locally
+#   via the Setup page "refresh" (see tab_pelsa_species_resolve.R), so nothing
+#   here should be committed by default.
+#   EXAMPLE (kept tracked): the empty inst/database/9606/fasta/ folder (its
+#   .gitkeep only) so new users see the expected <species>/fasta/ layout and
+#   drop in their own chosen FASTA. The FASTA itself is NOT committed.
 # ──────────────────────────────────────────────────────────────────────────
-inst/database/*/uniprot_features/
-inst/database/*/uniprot_membrane/*.tsv
-inst/database/*/uniprot_membrane/*.parquet
-#   the runtime-generated species classification/display registry (rebuilt on
-#   first run; never committed -- see tab_pelsa_species_resolve.R).
-inst/database/species_meta.json
-#   network-derived validation baselines (dev/ scratch fetch/baseline outputs).
-dev/baseline/
+inst/database/*
+!inst/database/9606/
+inst/database/9606/*
+!inst/database/9606/fasta/
+inst/database/9606/fasta/*
+!inst/database/9606/fasta/.gitkeep
 
 # ──────────────────────────────────────────────────────────────────────────
 # Local planning / design docs (treated as scratch -- not version-controlled)
 # ──────────────────────────────────────────────────────────────────────────
 docs/
-
-# ──────────────────────────────────────────────────────────────────────────
-# Dev scratch artifacts (regenerable; not source)
-#   e.g. volcano visual-diff PNGs from the kaleido consistency check
-# ──────────────────────────────────────────────────────────────────────────
-dev/*.png
 
 # testthat scratch dir + problems file (created when a test errors mid-run)
 tests/testthat/_problems/
