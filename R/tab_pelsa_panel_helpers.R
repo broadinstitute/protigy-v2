@@ -32,7 +32,7 @@
 ################################################################################
 
 # The gold used for the coverage-track highlight.
-# (Shared intent with .PELSA_VOLCANO_GOLD in tab_pelsa_section3_helpers.R.)
+# (Shared intent with .PELSA_VOLCANO_GOLD in tab_pelsa_constants.R.)
 .PELSA_WOODS_GOLD <- .PELSA_GOLD
 
 .PELSA_WOODS_NEGLOG_CAP <- 5  # clamp -log10(adj.P) so tiny p-values don't flatten
@@ -659,7 +659,7 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
 # y = MEAN PROCESSED-GCT log2 intensity, AS-IS: no delinearize, no z-score, no
 # re-normalize. For each (occurrence, condition) we average the processed_mat
 # values across that condition's replicate sample columns (na.rm). Contrast this
-# with CV (tab_pelsa_cv_helpers.R), which uses RAW sum-normalized intensities -
+# with CV (tab_pelsa_analysis_helpers.R), which uses RAW sum-normalized intensities -
 # a deliberate difference.
 #
 # x = condition as a FACTOR with levels = the user-confirmed condition_order

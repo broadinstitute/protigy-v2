@@ -982,7 +982,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # Maintenance action, OFF the reactive path (once per button click). The
     # multi-species loop, universe resolution, fetch + MERGE + atomic write, and
     # error capture all live in pelsa_run_species_refresh()
-    # (tab_pelsa_refresh_helpers.R) so this observer stays thin: gather inputs,
+    # (tab_pelsa_uniprot_helpers.R) so this observer stays thin: gather inputs,
     # (optionally) confirm a large fetch, drive a live progress bar, and surface
     # the result INLINE under the button. fetch_fn is the real pelsa_fetch_uniprot
     # here; tests inject a stub into the helper directly (no network).

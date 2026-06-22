@@ -5,8 +5,7 @@
 # (build/recolor/highlight/clicked-point/find-metadata), the Woods panel, the
 # intensity line-figure data + static-export builders, and export helpers.
 # Targets tab_pelsa_section3*.R + tab_pelsa_volcano_helpers.R +
-# tab_pelsa_section3_recolor_helpers.R + tab_pelsa_woods_helpers.R +
-# tab_pelsa_intensity_helpers.R + tab_pelsa_export_helpers.R.
+# tab_pelsa_panel_helpers.R + tab_pelsa_export_helpers.R.
 #
 # No helper-name collisions existed across the source files, so every fixture
 # builder is kept verbatim under its original name. The synthetic-generator
@@ -2566,7 +2565,7 @@ test_that("metadata_rows: empty gene -> accession fallback label, Gene = NA", {
 
 ################################################################################
 # Tests for the PELSA Volcano coverage + UniProt-feature + Woods panel helpers
-# (tab_pelsa_woods_helpers.R). Pure helpers - no Shiny, no network.
+# (tab_pelsa_panel_helpers.R). Pure helpers - no Shiny, no network.
 ################################################################################
 
 

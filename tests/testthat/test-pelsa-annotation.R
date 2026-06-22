@@ -716,7 +716,7 @@ test_that("integration: explode + FASTA-map + annotate resolves a known overlap"
 # Tests for the PELSA marker-matching helpers (Task 2J)  -  isoform-aware,
 # any-token, case-insensitive accession matching + marker paste-box parsing.
 #
-# The matching rule under test (documented in tab_pelsa_marker_helpers.R):
+# The matching rule under test (documented in tab_pelsa_analysis_helpers.R):
 #   A peptide is a marker hit if ANY of its ;-delimited accession tokens,
 #   normalized to isoform-BASE (strip trailing "-<digits>") and lowercased,
 #   equals ANY marker's isoform-base + lowercased. The rule is SYMMETRIC:

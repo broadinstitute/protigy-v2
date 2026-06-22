@@ -1011,7 +1011,7 @@ pelsa_within_condition_cv <- function(raw_mat, condition_map, min_nonNA = 3L) {
 #
 # SOURCE matrix = the PROCESSED GCT (log2) matrix (GCTs_and_params()$GCTs[[ome]]),
 # NOT the raw uploaded intensities. This DIFFERS from the within-condition CV
-# helper (R/tab_pelsa_cv_helpers.R), which operates on RAW linear intensities.
+# the CV helper below in this file (R/tab_pelsa_analysis_helpers.R), which operates on RAW linear intensities.
 #
 # QUANTIFIED MASK -- the canonical pelsa_quantified_mask (finite AND non-zero,
 # `is.finite(x) & x != 0`). This DEPARTS from the notebook's literal `> 0`:
@@ -1427,8 +1427,9 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
 #   "P12345-2", and marker "P12345-2" matches a peptide on "P12345" (both
 #   normalize to base "p12345").
 #
-# pelsa_isoform_base consolidates the suffix-strip that tab_pelsa_coverage_helpers.R,
-# tab_pelsa_annotation_helpers.R, and tab_pelsa_fasta_helpers.R each inlined
+# pelsa_isoform_base consolidates the suffix-strip that the coverage and fasta
+# helpers (now in this file, R/tab_pelsa_analysis_helpers.R) and
+# tab_pelsa_annotation_helpers.R each inlined
 # (sub("-[0-9]+$", "", x)); those files are intentionally left unchanged - this
 # is the shared entry point for future use (Phase 5/7).
 ################################################################################
@@ -1568,7 +1569,7 @@ pelsa_match_markers <- function(accession_tokens_list, marker_accessions) {
 #   It uses the on-disk feature cache (feat_df) as-is and records the accessions
 #   absent from it via pelsa_unannotated_accessions(). A FULL UniProt refresh of
 #   the cache is the species-refresh control's job (5C, pelsa_run_species_refresh
-#   in tab_pelsa_refresh_helpers.R). This keeps the analysis path network-free,
+#   in tab_pelsa_uniprot_helpers.R). This keeps the analysis path network-free,
 #   fast, deterministic, and unit-testable. The cache records the unannotated set
 #   so the Summary QC can prompt the user to run the refresh if coverage is poor.
 #

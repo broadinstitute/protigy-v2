@@ -32,7 +32,7 @@
 # scattergl, so an overlay trace is used rather than a proxy restyle) AND opens
 # the per-protein intensity line panel (3C); 7F per-ome exports.
 #
-# Pure plot-assembly / shaping logic: R/tab_pelsa_section3_helpers.R (tested).
+# Pure plot-assembly / shaping logic: R/tab_pelsa_volcano_helpers.R (tested).
 ################################################################################
 
 ################################################################################

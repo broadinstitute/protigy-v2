@@ -1128,7 +1128,7 @@ test_that("integration: shared peptide contributes to ALL its accessions", {
 # ==============================================================================
 # --- from cv ---
 # Tests for the PELSA within-condition CV helpers
-# (R/tab_pelsa_cv_helpers.R): pelsa_sum_normalize() and
+# (R/tab_pelsa_analysis_helpers.R): pelsa_sum_normalize() and
 # pelsa_within_condition_cv().
 #
 # CLOSED-FORM GROUND TRUTH (these comments ARE the reference):
@@ -1416,7 +1416,7 @@ test_that("within-condition CV runs on synthetic frame with correct shape", {
 # ==============================================================================
 # --- from depth ---
 # Tests for the PELSA per-sample quantified-peptide depth helpers
-# (R/tab_pelsa_depth_helpers.R): pelsa_peptides_per_sample() and
+# (R/tab_pelsa_analysis_helpers.R): pelsa_peptides_per_sample() and
 # pelsa_depth_summary().
 #   depth summary columns: {mean_n, median_n, cv_pct, total_n_peptides}
 #
