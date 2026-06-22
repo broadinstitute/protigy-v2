@@ -158,6 +158,8 @@ test_that("in-flight refresh ignores an overlapping click (no second confirm)", 
   gp <- .refresh_test_gp()
   run_calls <- new.env(); run_calls$n <- 0L
   alert_calls <- new.env(); alert_calls$n <- 0L; alert_calls$cb <- NULL
+  # The session handle is captured below so the mock can re-click mid-run.
+  sess <- new.env(); sess$obj <- NULL
 
   testthat::local_mocked_bindings(
     pelsa_database_dir = function() tempdir(),
@@ -165,9 +167,16 @@ test_that("in-flight refresh ignores an overlapping click (no second confirm)", 
                                            mode = "incremental") {
       list(total = 10L, per_species = stats::setNames(10L, species[[1]]))
     },
-    # Block inside the run so refresh_in_flight stays TRUE while we click again.
+    # While the run is executing, refresh_in_flight is TRUE (run_refresh sets it
+    # before calling this and clears it on.exit). Fire a SECOND button click from
+    # inside the run so the overlapping click is observed while still in flight;
+    # the launch_refresh guard must short-circuit it (no second confirm dialog).
     pelsa_run_species_refresh = function(species, ..., mode = "incremental") {
       run_calls$n <- run_calls$n + 1L
+      if (run_calls$n == 1L) {
+        sess$obj$setInputs(pelsa_refresh_btn = 2)
+        sess$obj$flushReact()
+      }
       list(updated = species)
     },
     .package = "Protigy"
@@ -182,18 +191,21 @@ test_that("in-flight refresh ignores an overlapping click (no second confirm)", 
   )
 
   shiny::testServer(PELSASection1_Tab_Server, args = .refresh_args(gp), {
+    sess$obj <- session
     session$setInputs(pelsa_refresh_species = "human")
     session$flushReact()
 
-    # First click -> confirm shown.
+    # First click -> confirm shown once.
     session$setInputs(pelsa_refresh_btn = 1)
     session$flushReact()
     expect_equal(alert_calls$n, 1L)
 
-    # Confirm it; the run sets refresh_in_flight TRUE then clears on exit. To
-    # prove the guard, confirm and run is recorded once.
+    # Confirm it. run_refresh sets refresh_in_flight TRUE, then the mock re-clicks
+    # the button mid-run: the guard must ignore it -> still exactly ONE confirm
+    # dialog and ONE run, even though the button changed twice.
     alert_calls$cb(TRUE)
     session$flushReact()
-    expect_equal(run_calls$n, 1L)
+    expect_equal(alert_calls$n, 1L)   # guard blocked the overlapping click's confirm
+    expect_equal(run_calls$n, 1L)     # and no second run was launched
   })
 })
