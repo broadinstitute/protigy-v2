@@ -2102,7 +2102,7 @@ test_that(".pelsa_woods_click_index returns NULL (not integer(0)) when all candi
 # ---------------------------------------------------------------------------
 test_that("section3 highlight comments describe the gold overlay, not proxy-restyle/rebuild", {
   s3_path  <- testthat::test_path("..", "..", "R", "tab_pelsa_section3.R")
-  s3h_path <- testthat::test_path("..", "..", "R", "tab_pelsa_section3_helpers.R")
+  s3h_path <- testthat::test_path("..", "..", "R", "tab_pelsa_volcano_helpers.R")
   skip_if_not(file.exists(s3_path) && file.exists(s3h_path),
               "tab_pelsa_section3 source not found")
   s3  <- paste(readLines(s3_path, warn = FALSE), collapse = "\n")
@@ -2792,8 +2792,8 @@ test_that("feature tooltip uses real feature_type + description, not feature_cla
 # resurrecting the stale "gold outline" / "thick gold segment underneath" claim.
 
 test_that("woods_helpers source no longer documents a gold-outline Woods track", {
-  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_woods_helpers.R")
-  skip_if_not(file.exists(src_path), "tab_pelsa_woods_helpers.R source not found")
+  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_panel_helpers.R")
+  skip_if_not(file.exists(src_path), "tab_pelsa_panel_helpers.R source not found")
   src <- paste(readLines(src_path, warn = FALSE), collapse = "\n")
   expect_false(grepl("gold outline", src, ignore.case = TRUE))
   expect_false(grepl("thick gold segment", src, ignore.case = TRUE))

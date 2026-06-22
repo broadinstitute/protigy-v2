@@ -419,8 +419,8 @@ test_that("5xx on a LATE page preserves the good pages already fetched (no data 
 # the unchanged behavioral guard line -- without coupling to exact prose.
 # ---------------------------------------------------------------------------
 test_that("the failed-condition block keeps the req_error(>=500) policy + NA/5xx guard", {
-  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_uniprot_fetch.R")
-  skip_if_not(file.exists(src_path), "tab_pelsa_uniprot_fetch.R source not found")
+  src_path <- testthat::test_path("..", "..", "R", "tab_pelsa_uniprot_helpers.R")
+  skip_if_not(file.exists(src_path), "tab_pelsa_uniprot_helpers.R source not found")
   src <- paste(readLines(src_path, warn = FALSE), collapse = "\n")
   # base_req must keep the >= 500 error policy that makes 4xx a normal response.
   expect_true(grepl("resp_status(resp) >= 500", src, fixed = TRUE))
