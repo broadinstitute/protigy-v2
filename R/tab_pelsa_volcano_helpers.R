@@ -44,12 +44,6 @@
 # paths (e.g. the 2G best-peptide rollup).
 ################################################################################
 
-# Two-sided significance colors (Decision #4). Down uses a disciplined blue
-# (#1f4e9c) distinct from the up red so both significant directions read.
-.PELSA_SIG_COLOR_UP   <- "darkred"
-.PELSA_SIG_COLOR_DOWN <- "#1f4e9c"
-.PELSA_SIG_COLOR_NS   <- "gray"
-
 # Resolve the three contrast stat columns from `contrast`, or accept already-
 # renamed logFC/adj.P.Val/P.Value when `contrast` is NULL.
 #

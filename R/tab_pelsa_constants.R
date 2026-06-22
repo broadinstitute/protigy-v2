@@ -41,3 +41,72 @@
 # column named adj.P.Val.<this> is added so the existing per-contrast helpers
 # (pelsa_intensity_proteins / pelsa_intensity_line_data) reuse unchanged.
 .PELSA_ANY_CONTRAST <- "any_contrast"
+
+# ---- Significance colors (moved from tab_pelsa_volcano_helpers.R) -----------
+# Two-sided significance colors (Decision #4). Down uses a disciplined blue
+# (#1f4e9c) distinct from the up red so both significant directions read.
+.PELSA_SIG_COLOR_UP   <- "darkred"
+.PELSA_SIG_COLOR_DOWN <- "#1f4e9c"
+.PELSA_SIG_COLOR_NS   <- "gray"
+
+# ---- Volcano plot constants (moved from tab_pelsa_section3_helpers.R) -------
+# The magenta marker-overlay color (Decision: marker peptides ALWAYS on top).
+.PELSA_VOLCANO_MARKER_COLOR <- "#FF00FF"
+.PELSA_VOLCANO_MARKER_EDGE  <- "black"
+
+# Point sizing / opacity. Markers are only SLIGHTLY larger than the background
+# cloud (was 2.4 vs 1, which over-dominated), and the background cloud is fairly
+# opaque so non-marker peptides read in their real sig/feature colors (the volcano
+# is about ALL peptides, not just markers).
+.PELSA_VOLCANO_MARKER_SIZE  <- 1.6
+.PELSA_VOLCANO_BG_SIZE      <- 1.1
+.PELSA_VOLCANO_BG_ALPHA     <- 0.8
+
+# Default per-contrast label mode and top-N. Default is "none" - a clean plot
+# out of the box; the user opts into labels via the sidebar radio.
+.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "none"
+.PELSA_VOLCANO_DEFAULT_TOP_N      <- 3L
+
+# The gold used to highlight a selected/pinned peptide (legend entry, Woods
+# cross-highlight). Distinct from the magenta marker fill.
+.PELSA_VOLCANO_GOLD <- .PELSA_GOLD
+
+.PELSA_VOLCANO_LABEL_MODES <- c("none", "all_markers", "all_significant",
+                                "best_per_marker", "top_n")
+
+# Significance-direction -> human legend label (fixed display order).
+.PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",
+                              ns   = "Non-significant",
+                              up   = "Upregulated")
+
+# ---- Placeholder UI helper (moved from tab_pelsa_helpers.R) -----------------
+# Standard placeholder box shown in each PELSA section before its analysis has
+# been implemented. Returns a shinydashboardPlus box describing the section.
+#
+# @param ns       the module's namespace function (session$ns)
+# @param ome      character, the ome label this section is rendered for
+# @param title    character, the box/section title
+# @param message  character, the placeholder body text
+# @return a fluidRow containing a styled box
+# @noRd
+pelsa_placeholder_box <- function(ns, ome, title, message) {
+  fluidRow(
+    shinydashboardPlus::box(
+      div(
+        style = paste(
+          "background-color: #f8f9fa; border-left: 4px solid #007bff;",
+          "padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;"
+        ),
+        icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+        strong("Coming soon: ", style = "color: #495057;"),
+        span(message, style = "color: #495057;")
+      ),
+      p(paste0("Ome: ", ome)),
+      status       = "primary",
+      width        = 12,
+      title        = title,
+      headerBorder = TRUE,
+      solidHeader  = TRUE
+    )
+  )
+}

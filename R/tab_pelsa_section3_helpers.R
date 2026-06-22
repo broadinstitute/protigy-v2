@@ -18,27 +18,6 @@
 # the 3B pelsa_thin_background() thinner.
 ################################################################################
 
-# The magenta marker-overlay color (Decision: marker peptides ALWAYS on top).
-.PELSA_VOLCANO_MARKER_COLOR <- "#FF00FF"
-.PELSA_VOLCANO_MARKER_EDGE  <- "black"
-
-# Point sizing / opacity. Markers are only SLIGHTLY larger than the background
-# cloud (was 2.4 vs 1, which over-dominated), and the background cloud is fairly
-# opaque so non-marker peptides read in their real sig/feature colors (the volcano
-# is about ALL peptides, not just markers).
-.PELSA_VOLCANO_MARKER_SIZE  <- 1.6
-.PELSA_VOLCANO_BG_SIZE      <- 1.1
-.PELSA_VOLCANO_BG_ALPHA     <- 0.8
-
-# Default per-contrast label mode and top-N. Default is "none" - a clean plot
-# out of the box; the user opts into labels via the sidebar radio.
-.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "none"
-.PELSA_VOLCANO_DEFAULT_TOP_N      <- 3L
-
-# The gold used to highlight a selected/pinned peptide (legend entry, Woods
-# cross-highlight). Distinct from the magenta marker fill.
-.PELSA_VOLCANO_GOLD <- .PELSA_GOLD
-
 # ---- contrast key + label/suffix mapping ------------------------------------
 
 # Resolve which Woods peptide a plotly_click selected, by coordinate.
@@ -318,9 +297,6 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # @param n_top      N for "top_n" (default 3, coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
-.PELSA_VOLCANO_LABEL_MODES <- c("none", "all_markers", "all_significant",
-                                "best_per_marker", "top_n")
-
 pelsa_volcano_label_rows <- function(volcano_df, mode = "top_n", n_top = 3L) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
@@ -1280,11 +1256,6 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   rownames(out) <- NULL
   out
 }
-
-# Significance-direction -> human legend label (fixed display order).
-.PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",
-                              ns   = "Non-significant",
-                              up   = "Upregulated")
 
 # Build the per-point legend category + the manual color scale for a color mode.
 # significance: the 3 fixed direction buckets; feature: the 9 UniProt classes
