@@ -43,6 +43,32 @@ qc_cv_detect_base <- function(log_transformation) {
          NA_real_)
 }
 
+# Align the non-normalized source GCT (GCTs_original: log-only, UNFILTERED) to the
+# processed analysis set, so the non-normalized CV uses exactly the samples and
+# features that were analyzed -- just without normalization. Samples are matched
+# by id (names are preserved through processing) in processed order. Features are
+# matched by id when the id spaces overlap; when they do not (e.g. setup converted
+# ids to gene symbols, so processed rids share nothing with the uploaded rids),
+# the full original feature set is kept as a graceful fallback so CV still renders.
+#
+# @param gct_original   the non-normalized GCT (log-transformed, unfiltered).
+# @param gct_processed  the processed GCT (filtered + normalized) defining the set.
+# @return a cmapR GCT subset of gct_original aligned to gct_processed.
+qc_cv_align_source <- function(gct_original, gct_processed) {
+  keep_cid <- intersect(gct_processed@cid, gct_original@cid)
+  if (length(keep_cid) == 0L) keep_cid <- gct_original@cid
+
+  common_rid <- intersect(gct_processed@rid, gct_original@rid)
+  keep_rid <- if (length(common_rid) > 0L) common_rid else gct_original@rid
+
+  # Use integer indices (id-based subset_gct requires an `id` meta column).
+  subset_gct(
+    gct_original,
+    rid = which(gct_original@rid %in% keep_rid),
+    cid = which(gct_original@cid %in% keep_cid)
+  )
+}
+
 # Compute CV (sd / mean) per group per feature.
 #
 # CV is NOT invariant under log transformation, so it must be computed on

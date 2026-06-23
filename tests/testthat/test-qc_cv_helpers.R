@@ -294,3 +294,59 @@ test_that("qc_cv_detect_base returns NA for None / NA / NULL / unknown", {
   expect_true(is.na(qc_cv_detect_base(NULL)))
   expect_true(is.na(qc_cv_detect_base("ln")))
 })
+
+# --------------------------------------------------------------------------- #
+# qc_cv_align_source                                                          #
+# --------------------------------------------------------------------------- #
+
+# Build a minimal GCT for alignment tests.
+.mk_gct <- function(rid, cid, group = NULL) {
+  mat <- matrix(seq_len(length(rid) * length(cid)),
+                nrow = length(rid), ncol = length(cid),
+                dimnames = list(rid, cid))
+  cdesc <- data.frame(
+    id = cid,
+    group = if (is.null(group)) rep("A", length(cid)) else group,
+    row.names = cid, stringsAsFactors = FALSE
+  )
+  rdesc <- data.frame(id = rid, feat = rid, row.names = rid,
+                      stringsAsFactors = FALSE)
+  new("GCT", mat = mat, cdesc = cdesc, rdesc = rdesc, rid = rid, cid = cid)
+}
+
+test_that("qc_cv_align_source keeps only the processed samples and features", {
+  orig <- .mk_gct(rid = c("g1", "g2", "g3"), cid = c("s1", "s2", "s3", "s4"))
+  proc <- .mk_gct(rid = c("g1", "g2"),       cid = c("s1", "s2"))
+  out  <- qc_cv_align_source(orig, proc)
+  expect_setequal(out@cid, c("s1", "s2"))
+  expect_setequal(out@rid, c("g1", "g2"))
+  # values come from the ORIGINAL (non-normalized) matrix, not processed
+  expect_equal(out@mat["g1", "s1"], orig@mat["g1", "s1"])
+})
+
+test_that("qc_cv_align_source drops samples filtered out at setup", {
+  orig <- .mk_gct(rid = c("g1", "g2"), cid = c("s1", "s2", "s3"))
+  proc <- .mk_gct(rid = c("g1", "g2"), cid = c("s1", "s3"))  # s2 filtered out
+  out  <- qc_cv_align_source(orig, proc)
+  expect_false("s2" %in% out@cid)
+  expect_setequal(out@cid, c("s1", "s3"))
+})
+
+test_that("qc_cv_align_source falls back to all original features when ids don't overlap", {
+  # Setup converted ids to gene symbols -> processed rids share nothing with orig.
+  orig <- .mk_gct(rid = c("P1", "P2", "P3"), cid = c("s1", "s2"))
+  proc <- .mk_gct(rid = c("symA", "symB"),   cid = c("s1", "s2"))
+  out  <- qc_cv_align_source(orig, proc)
+  # features fall back to the full original set...
+  expect_setequal(out@rid, c("P1", "P2", "P3"))
+  # ...but samples still align.
+  expect_setequal(out@cid, c("s1", "s2"))
+})
+
+test_that("qc_cv_align_source is a no-op when sets already match", {
+  orig <- .mk_gct(rid = c("g1", "g2"), cid = c("s1", "s2"))
+  proc <- .mk_gct(rid = c("g1", "g2"), cid = c("s1", "s2"))
+  out  <- qc_cv_align_source(orig, proc)
+  expect_setequal(out@rid, c("g1", "g2"))
+  expect_setequal(out@cid, c("s1", "s2"))
+})

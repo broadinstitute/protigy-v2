@@ -384,8 +384,11 @@ QCCV_Ome_Server <- function(id,
         req(GCT_processed())
         GCT_processed()
       } else {
-        req(GCT_original())
-        GCT_original()
+        req(GCT_original(), GCT_processed())
+        # GCTs_original is log-only and UNFILTERED; align it to the processed
+        # analysis set so non-normalized CV reflects exactly the analyzed
+        # samples/features, just without normalization.
+        qc_cv_align_source(GCT_original(), GCT_processed())
       }
     })
 
