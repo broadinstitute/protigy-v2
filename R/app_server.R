@@ -71,7 +71,8 @@ app_server <- function(input, output, session) {
   ## QC CV module
   all_QCCV_exports <- QCCV_Tab_Server(
     GCTs_and_params = GCTs_and_params,
-    globals = globals
+    globals = globals,
+    GCTs_original = GCTs_original
   )
 
   ## QC correlation module

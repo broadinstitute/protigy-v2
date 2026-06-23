@@ -30,7 +30,8 @@ QCCV_Tab_UI <- function(id = "QCCVTab") {
 
 QCCV_Tab_Server <- function(id = "QCCVTab",
                              GCTs_and_params,
-                             globals) {
+                             globals,
+                             GCTs_original) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -57,6 +58,12 @@ QCCV_Tab_Server <- function(id = "QCCVTab",
     all_omes    <- reactive(names(GCTs()))
     default_ome <- reactive(globals$default_ome)
     custom_colors <- reactive(globals$colors)
+
+    # Pre-normalization (log-transformed) GCTs -- the non-normalized CV source.
+    original_GCTs <- reactive({
+      validate(need(GCTs_original(), "Original GCTs not yet available"))
+      GCTs_original()
+    })
 
     ## Build per-ome tabset
 
@@ -96,6 +103,7 @@ QCCV_Tab_Server <- function(id = "QCCVTab",
           id                       = ome,
           ome                      = ome,
           GCT_processed            = reactive(GCTs()[[ome]]),
+          GCT_original             = reactive(original_GCTs()[[ome]]),
           parameters               = reactive(parameters()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map                = reactive(custom_colors()[[ome]])
@@ -125,6 +133,7 @@ QCCV_Ome_UI <- function(id, ome) {
 QCCV_Ome_Server <- function(id,
                               ome,
                               GCT_processed,
+                              GCT_original,
                               parameters,
                               default_annotation_column,
                               color_map) {
