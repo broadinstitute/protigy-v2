@@ -61,9 +61,7 @@ Imports:
     snakecase,
     shinyjs,
     data.table,
-    httr2,
     IRanges,
-    jsonlite,
     matrixStats,
     ragg,
     stringi
@@ -75,7 +73,8 @@ Suggests:
     shinytest2,
     chromote,
     viridisLite,
-    withr
+    withr,
+    jsonlite
 Config/testthat/edition: 3
 LazyData: false
 RoxygenNote: 8.0.0
