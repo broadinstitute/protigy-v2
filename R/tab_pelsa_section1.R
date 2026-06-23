@@ -130,7 +130,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
     # SHARED scalars + per-dataset NAMED LISTS keyed by dataset (ome).
     setup_state <- reactiveValues(
       datasets        = character(0), # NON-SKIPPED omes (set at Start-Analysis)
-      species         = list(),  # [[ds]] -> chr scalar ("(none)" when unset)
+      fasta_path      = list(),  # [[ds]] -> uploaded FASTA temp path
+      fasta_name      = list(),  # [[ds]] -> original uploaded FASTA filename
+      annotation_path = list(),  # [[ds]] -> uploaded annotation temp path (NULL if none)
+      annotation_name = list(),  # [[ds]] -> original annotation filename
+      self_curated    = list(),  # [[ds]] -> logical (TRUE = self-curated, no annotation)
       compound        = list(),  # [[ds]] -> chr scalar
       marker_rows     = list(),  # [[ds]] -> data.frame(accession, gene)
       skip            = list(),  # [[ds]] -> logical (TRUE = skip this dataset)
@@ -174,54 +178,24 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       # Seed the recreated inputs from the persisted setup_state (isolated, so
       # reading it does not add a reactive dependency). Without this, an
       # active-dataset switch re-renders the box at hardcoded defaults, whose
-      # re-emitted values clobber setup_state$datasets/species/compound via the
+      # re-emitted values clobber setup_state$compound/self_curated via the
       # control observers below. Defaults (first load) fall back when unset.
-      # Live folder list. Resolve each folder to its typed struct (reading the
-      # cached species_meta registry -- NO network on this render path) so the
-      # picker shows display names while the stored VALUE stays the folder name.
-      db_dir <- pelsa_database_dir()
-      species_folders <- pelsa_list_species(db_dir)
-      species_structs <- lapply(species_folders, function(f) {
-        # Cache-only (allow_fetch = FALSE): the render path must never touch the
-        # network. Validation/promotion is driven once by
-        # pelsa_refresh_species_meta_on_start() above.
-        tryCatch(pelsa_resolve_species(db_dir, f, allow_fetch = FALSE),
-                 error = function(e) NULL)
-      })
-      species_structs <- Filter(Negate(is.null), species_structs)
-      # Named vector: display label -> folder name (value).
-      species_choices <- stats::setNames(
-        vapply(species_structs, function(s) s$folder, character(1)),
-        vapply(species_structs, function(s) s$display, character(1))
-      )
-      # Refresh checklist: UniProt (taxon-code) species only -- self-curated
-      # species have no UniProt annotations to refresh.
-      uniprot_structs <- Filter(function(s) identical(s$type, "uniprot"),
-                                species_structs)
-      refresh_choices <- stats::setNames(
-        vapply(uniprot_structs, function(s) s$folder, character(1)),
-        vapply(uniprot_structs, function(s) s$display, character(1))
-      )
-
-      # Seed the per-dataset controls from this ome's persisted setup_state
-      # (isolated, so reading it adds no reactive dependency). species/compound
-      # default to the blank "(none)" so the user must consciously choose (and
-      # the validator can flag a blank). skip defaults to FALSE (analyzed).
-      sel_species  <- isolate(setup_state$species[[ome]])  %||% "(none)"
+      # compound defaults to the blank "(none)" so the user must consciously
+      # choose (and the validator can flag a blank). skip + self_curated default
+      # to FALSE.
       sel_compound <- isolate(setup_state$compound[[ome]]) %||% ""
       sel_skip     <- isTRUE(isolate(setup_state$skip[[ome]]))
+      sel_self_cur <- isTRUE(isolate(setup_state$self_curated[[ome]]))
 
       pelsa_setup_box_ui(
-        species   = species_choices,
         # isolate(): the dropdown is driven by a targeted updateSelectInput after
         # a write, so renderUI must NOT take a dependency on compound_markers()
         # (that would re-render the entire Setup box on every preset write).
         compounds = isolate(names(compound_markers()$compounds)),
         ns        = ns,
-        selected_species  = sel_species,
         selected_compound = sel_compound,
         selected_skip     = sel_skip,
-        refresh_species   = refresh_choices
+        self_curated      = sel_self_cur
       )
     })
 

@@ -803,11 +803,10 @@ pelsa_section_head <- function(icon_name, label) {
 #                  no UniProt annotations to refresh. Defaults to `species`.
 # @return a shiny tag (the Setup box).
 # @noRd
-pelsa_setup_box_ui <- function(species, compounds, ns,
-                               selected_species  = "(none)",
+pelsa_setup_box_ui <- function(compounds, ns,
                                selected_compound = "",
                                selected_skip     = FALSE,
-                               refresh_species   = species) {
+                               self_curated      = FALSE) {
   # The Setup box configures ONE dataset at a time (the active setup tab); the
   # per-dataset switcher above selects which. Each logical group is wrapped in a
   # .pelsa-section card whose LAYER class color-codes it (see inst/custom.css):
@@ -827,13 +826,27 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
     class = "pelsa-section pelsa-layer-data",
     pelsa_section_head("table-list", "Data inputs"),
 
-    # 2. Species (live list of inst/database/ subfolders). Defaults to "(none)"
-    #    so the user must consciously choose (the validator flags a blank).
-    shiny::selectInput(
-      ns("pelsa_species"),
-      label   = "Species",
-      choices = c("(none)" = "(none)", species),
-      selected = selected_species
+    # 2. FASTA + annotation upload for THIS dataset. Default: UniProt-style FASTA
+    #    (pipe-aware) + a required raw annotation file. The self-curated checkbox
+    #    switches the FASTA parse to first-token and greys out the annotation
+    #    uploader (a self-curated database has no UniProt annotation file).
+    shiny::fileInput(
+      ns("pelsa_fasta"),
+      label  = "FASTA file (.fasta / .fa)",
+      accept = c(".fasta", ".fa")
+    ),
+    shiny::checkboxInput(
+      ns("pelsa_self_curated"),
+      label = "Self-curated database (no annotation file)",
+      value = self_curated
+    ),
+    shiny::tags$div(
+      id = ns("pelsa_annotation_wrap"),
+      shiny::fileInput(
+        ns("pelsa_annotation"),
+        label  = "Feature annotation file (.tsv)",
+        accept = c(".tsv", ".txt", ".tab")
+      )
     ),
 
     # 3. Treatment compound (presets from compound_markers.yaml).
@@ -944,71 +957,12 @@ pelsa_setup_box_ui <- function(species, compounds, ns,
     shiny::uiOutput(ns("pelsa_validation_msgs"))
   )
 
-  # 7b. MAINTENANCE LAYER (slate, dashed = secondary): per-species UniProt
-  #     refresh (5C). Below Start-Analysis and visually quieter - a
-  #     setup-independent maintenance action. The species checklist is re-read
-  #     LIVE each render (caller passes a fresh pelsa_list_species()). Clicking
-  #     rebuilds the checked species' uniprot_features cache off the reactive
-  #     path, with a progress bar (fetches take minutes) and a MERGE-over-cache +
-  #     atomic write so a partial/flaky refresh never loses prior coverage.
-  maint_section <- shiny::tags$div(
-    class = "pelsa-section pelsa-layer-maint pelsa-refresh-section",
-    pelsa_section_head("screwdriver-wrench", "Maintenance: UniProt library"),
-    shiny::helpText(
-      "Rebuild the per-species feature cache used for volcano feature ",
-      "annotation. ",
-      shiny::tags$b("Full library refresh"),
-      " clears the species' existing feature + membrane files and re-fetches ",
-      "the entire FASTA proteome (several minutes). ",
-      shiny::tags$b("Incremental refresh"),
-      " adds only accessions from your uploaded data and FASTA that are not ",
-      "already cached (requires an existing library). Both are independent of ",
-      "Start Analysis."
-    ),
-    # SINGLE-select (radioButtons, not checkboxGroupInput): a refresh fetches the
-    # uploaded datasets' accessions, so allowing multiple species would fan ONE
-    # dataset's accessions into every checked species' cache (the human-into-mouse
-    # spillover). Restricting to one species at a time makes that impossible.
-    shiny::radioButtons(
-      ns("pelsa_refresh_species"),
-      label    = "Species to refresh",
-      choices  = refresh_species,
-      selected = character(0)
-    ),
-    # Two modes on the ONE selected species. Full = destructive proteome rebuild
-    # (wipe then fetch FASTA). Incremental = non-destructive top-up (fetch only
-    # the cache-miss accessions, append atop). The incremental button is enabled
-    # by the observer ONLY when a populated feature cache already exists for the
-    # selected species (see tab_pelsa_section1.R).
-    shiny::div(
-      class = "pelsa-refresh-buttons",
-      shiny::actionButton(
-        ns("pelsa_refresh_btn"),
-        "Full library refresh",
-        icon  = shiny::icon("rotate"),
-        class = "pelsa-refresh-btn"
-      ),
-      # Rendered DISABLED by default: the maintenance box re-renders server-side
-      # (renderUI) whenever the active dataset changes, which would otherwise
-      # reinstate a fresh enabled button. Starting disabled means the observer
-      # guard only ever has to ENABLE it (when the selected species has a cache),
-      # so a re-render can never leave it wrongly live before the guard re-fires.
-      shiny::tags$button(
-        id    = ns("pelsa_incremental_btn"),
-        type  = "button",
-        class = "btn btn-default action-button pelsa-refresh-btn pelsa-incremental-btn",
-        disabled = "disabled",
-        shiny::icon("circle-plus"), " Incremental refresh"
-      )
-    ),
-    # Inline progress + result, rendered DIRECTLY under the buttons. Unlike a
-    # showNotification() toast (which the user can dismiss / which auto-clears),
-    # this status persists for the life of the fetch and stays put afterward, so
-    # the live progress bar + the final summary can never be cleared off-screen.
-    shiny::uiOutput(ns("pelsa_refresh_status"))
-  )
+  # 7b. The per-species UniProt-refresh maintenance layer was removed: feature
+  #     annotations are now supplied per dataset via the FASTA + annotation
+  #     uploaders in the data-input layer (the external fetch workflow produces
+  #     the annotation file). No in-app fetching remains.
 
-  right_col <- shiny::tagList(action_section, maint_section)
+  right_col <- shiny::tagList(action_section)
 
   add_css_attributes(
     shinydashboardPlus::box(

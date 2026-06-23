@@ -983,46 +983,56 @@ test_that("setup_box render gates on a valid active dataset (NULL / unknown -> n
 # re-render preserves what the user chose for THIS dataset (else the re-emitted
 # values clobber the per-ome setup_state).
 # ---------------------------------------------------------------------------
-test_that("pelsa_setup_box_ui defaults: blank species, no compound, not skipped", {
+test_that("pelsa_setup_box_ui renders FASTA + annotation uploaders and the self-curated checkbox", {
   ns <- shiny::NS("x")
   html <- as.character(pelsa_setup_box_ui(
-    species   = c("human", "mouse"),
     compounds = c("CompoundA" = "CompoundA"),
     ns        = ns
   ))
-  # species defaults to the blank "(none)" entry (user must choose)
-  expect_true(grepl("<option value=\"\\(none\\)\" selected>", html))
+  expect_true(grepl("x-pelsa_fasta", html))
+  expect_true(grepl("x-pelsa_annotation", html))
+  expect_true(grepl("x-pelsa_self_curated", html))
   # default compound is the "(none)" = "" entry
   expect_true(grepl("<option value=\"\" selected>", html))
   # Skip toggle present and NOT checked by default
   expect_true(grepl("pelsa_skip", html))
   expect_false(grepl("pelsa_skip[^>]*checked", html))
-  # the datasets checkbox group is gone
-  expect_false(grepl("pelsa_datasets", html))
+  # self-curated unchecked by default
+  expect_false(grepl("pelsa_self_curated[^>]*checked", html))
 })
 
-test_that("pelsa_setup_box_ui honors seeded species/compound/skip", {
+test_that("pelsa_setup_box_ui no longer renders the species selector or refresh controls", {
   ns <- shiny::NS("x")
   html <- as.character(pelsa_setup_box_ui(
-    species   = c("human", "mouse"),
+    compounds = character(0),
+    ns        = ns
+  ))
+  expect_false(grepl("x-pelsa_species", html))
+  expect_false(grepl("x-pelsa_refresh_species", html))
+  expect_false(grepl("x-pelsa_refresh_btn", html))
+  expect_false(grepl("x-pelsa_incremental_btn", html))
+})
+
+test_that("pelsa_setup_box_ui honors seeded self_curated + skip", {
+  ns <- shiny::NS("x")
+  html <- as.character(pelsa_setup_box_ui(
     compounds = c("CompoundA" = "CompoundA"),
     ns        = ns,
-    selected_species  = "mouse",        # NOT the blank default
     selected_compound = "CompoundA",    # NOT "(none)"
-    selected_skip     = TRUE            # this dataset skipped
+    selected_skip     = TRUE,           # this dataset skipped
+    self_curated      = TRUE            # self-curated database
   ))
-  # mouse selected, not the blank
-  expect_true(grepl("<option value=\"mouse\" selected>", html))
   # the chosen compound is selected
   expect_true(grepl("<option value=\"CompoundA\" selected>", html))
   # Skip toggle checked
   expect_true(grepl("pelsa_skip[^>]*checked", html))
+  # self-curated checkbox checked
+  expect_true(grepl("pelsa_self_curated[^>]*checked", html))
 })
 
 test_that("pelsa_setup_box_ui exposes add-compound + set-default controls", {
   ns <- shiny::NS("x")
   html <- as.character(pelsa_setup_box_ui(
-    species   = c("human", "mouse"),
     compounds = c("CompoundA" = "CompoundA"),
     ns        = ns
   ))
