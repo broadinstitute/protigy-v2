@@ -53,6 +53,31 @@ pelsa_save_figure <- function(plot, dir_name, basename, width = 9, height = 5,
   invisible(paths)
 }
 
+# Copy a dataset's uploaded FASTA + annotation file (verbatim) into dir_name and
+# write missing_accessions.txt (dataset accessions absent from the annotation
+# file = the "failed to resolve annotation" set). Files are written under their
+# ORIGINAL upload names (the Shiny datapath is a mangled temp name); falls back
+# to basename(path) when no name is given. Self-curated datasets pass
+# annotation_path = NULL (FASTA + an empty missing list only). Returns the
+# written paths invisibly.
+# @noRd
+pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
+                                     missing_accessions,
+                                     fasta_name = NULL, annotation_name = NULL) {
+  written <- character(0)
+  copy_one <- function(path, name) {
+    if (is.null(path) || !nzchar(path %||% "") || !file.exists(path)) return(NULL)
+    dest <- file.path(dir_name, name %||% basename(path))
+    file.copy(path, dest, overwrite = TRUE)
+    dest
+  }
+  written <- c(written, copy_one(fasta_path, fasta_name))
+  written <- c(written, copy_one(annotation_path, annotation_name))
+  miss_path <- file.path(dir_name, "missing_accessions.txt")
+  writeLines(as.character(missing_accessions %||% character(0)), miss_path)
+  invisible(c(written, miss_path))
+}
+
 # Sanitize a gene/accession/contrast token for use in a filename: keep
 # [A-Za-z0-9._-], collapse the rest to "_", and never return empty.
 # @noRd

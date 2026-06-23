@@ -1164,6 +1164,27 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         utils::write.csv(mr, file.path(out, "pelsa_markers.csv"),
                          row.names = FALSE)
       }
+
+      # Copy the uploaded FASTA + annotation file verbatim (under their original
+      # names) for future reference, plus the missing-accessions list (dataset
+      # accessions absent from the annotation file = res$unannotated). Self-curated
+      # datasets export the FASTA only.
+      res <- tryCatch(isolate(pelsa_analysis())[[ome]], error = function(e) NULL)
+      missing <- if (!is.null(res) && is.null(res$error)) {
+        res$unannotated %||% character(0)
+      } else {
+        character(0)
+      }
+      pelsa_export_input_files(
+        out,
+        fasta_path      = ss$fasta_path[[ome]],
+        fasta_name      = ss$fasta_name[[ome]],
+        annotation_path = if (isTRUE(ss$self_curated[[ome]])) NULL
+                          else ss$annotation_path[[ome]],
+        annotation_name = if (isTRUE(ss$self_curated[[ome]])) NULL
+                          else ss$annotation_name[[ome]],
+        missing_accessions = missing
+      )
       invisible(out)
     }
 
