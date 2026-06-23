@@ -872,15 +872,19 @@ PELSASection3_Ome_Server <- function(id,
       # reactive context, where use_webgl() would otherwise error.
       uw <- isolate(use_webgl())
       # Delete existing overlays HIGHEST-index-first (click=3, gold=2) so the
-      # remaining indices stay valid mid-delete.
-      n <- overlay_n()
+      # remaining indices stay valid mid-delete. overlay_n() / find_result() /
+      # selection() are read via isolate() for the same reason as above: this
+      # also runs from session$onFlushed(), outside a reactive context, where a
+      # bare reactiveVal/reactive read would otherwise error.
+      n <- isolate(overlay_n())
       if (n >= 2L) plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(3L))
       if (n >= 1L) plotly::plotlyProxyInvoke(gold_proxy, "deleteTraces", list(2L))
       overlay_n(0L)
 
-      fr <- find_result()
+      sel <- isolate(selection())
+      fr <- isolate(find_result())
       gold_tr <- pelsa_volcano_gold_trace(
-        df, selection(), if (is.null(fr)) NULL else fr$mask, use_webgl = uw)
+        df, sel, if (is.null(fr)) NULL else fr$mask, use_webgl = uw)
       added <- 0L
       if (!is.null(gold_tr)) {
         plotly::plotlyProxyInvoke(gold_proxy, "addTraces", gold_tr)
@@ -888,7 +892,7 @@ PELSASection3_Ome_Server <- function(id,
         # Emphasize the clicked peptide (a larger gold dot with a thicker black
         # ring) on top of the gold markers, at index 3. Only meaningful when a
         # single peptide is selected (a click / single-accession Find).
-        click_tr <- pelsa_volcano_clicked_point_trace(df, selection(),
+        click_tr <- pelsa_volcano_clicked_point_trace(df, sel,
                                                        use_webgl = uw)
         if (!is.null(click_tr)) {
           plotly::plotlyProxyInvoke(gold_proxy, "addTraces", click_tr)
