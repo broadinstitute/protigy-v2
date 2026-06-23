@@ -550,49 +550,6 @@ test_that("annotation_status_counts: upload model with no sentinels -> unmatched
   expect_identical(cnt$n_failed, 2L)
 })
 
-# ---- pelsa_read_feature_cache: schema columns on a tiny temp TSV + smoke ------
-
-test_that("pelsa_read_feature_cache reads a tiny TSV and returns schema columns", {
-  tmp <- withr::local_tempdir()
-  feat_dir <- file.path(tmp, "uniprot_features")
-  dir.create(feat_dir, recursive = TRUE)
-  tsv <- file.path(feat_dir, "uniprot_features.tsv")
-  writeLines(
-    c(
-      "accession\tfeature_type\tstart\tend\tdescription\tfeature_class\tclass_score\tcoord_quality",
-      "P00001\tDomain\t10\t55\tEF-hand\tfolded_domain\t2\texact",
-      "P00001\tActive site\t60\t60\tactive\tactive_or_binding_site\t5\texact"
-    ),
-    tsv
-  )
-  out <- pelsa_read_feature_cache(tmp)
-  expect_s3_class(out, "data.frame")
-  expect_true(all(c("accession", "start", "end", "feature_class") %in%
-                    colnames(out)))
-  expect_equal(nrow(out), 2L)
-  expect_type(out$start, "integer")
-  expect_type(out$end, "integer")
-})
-
-test_that("pelsa_read_feature_cache errors clearly when the file is missing", {
-  tmp <- withr::local_tempdir()
-  expect_error(pelsa_read_feature_cache(tmp), "uniprot_features\\.tsv")
-})
-
-test_that("pelsa_read_feature_cache smoke-reads the committed 9606 cache (fast)", {
-  species_dir <- system.file("database", "9606", package = "Protigy")
-  if (!nzchar(species_dir)) {
-    species_dir <- testthat::test_path("..", "..", "inst", "database", "9606")
-  }
-  tsv <- file.path(species_dir, "uniprot_features", "uniprot_features.tsv")
-  skip_if_not(file.exists(tsv), "9606 feature cache not available")
-  # Read only a few rows to keep it fast (26MB file).
-  out <- pelsa_read_feature_cache(species_dir, n_max = 100L)
-  expect_true(all(c("accession", "start", "end", "feature_class") %in%
-                    colnames(out)))
-  expect_gt(nrow(out), 0L)
-})
-
 # ---- Inverted span (pep_start > pep_end) -------------------------------------
 
 test_that("inverted span (pep_start > pep_end) is dropped -> 'none' + warning", {

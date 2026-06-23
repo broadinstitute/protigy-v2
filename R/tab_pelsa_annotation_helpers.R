@@ -10,7 +10,6 @@
 # doc; the NOTEBOOK wins.
 #
 # Public helpers:
-#   pelsa_read_feature_cache(species_dir)        cached TSV -> feature data.frame
 #   pelsa_annotate_features(plot_df, feat_df)     core overlap + priority resolve
 #   pelsa_unannotated_accessions(x, feat_df)      Summary-QC "failed annotation"
 #
@@ -104,73 +103,6 @@ PELSA_FEATURE_COLORS <- c(
 # @noRd
 .pelsa_isoform_base <- function(acc) {
   sub("-[0-9]+$", "", acc)
-}
-
-# ---- Function 1: cached-TSV reader -------------------------------------------
-
-# Read inst/database/<species>/uniprot_features/uniprot_features.tsv.
-#
-# Selects the columns annotation needs (accession/start/end/feature_class) plus
-# the cheap context columns when present (feature_type/class_score/description/
-# coord_quality). Boundary-validates the file exists; clear error otherwise.
-#
-# @param species_dir directory holding "uniprot_features/uniprot_features.tsv"
-#                     (e.g. system.file("database","9606", package="Protigy"))
-# @param n_max        optional row cap (for fast tests on the 26MB file)
-# @return data.frame with at least accession/start/end/feature_class
-# @noRd
-pelsa_read_feature_cache <- function(species_dir, n_max = Inf) {
-  if (!is.character(species_dir) || length(species_dir) != 1L ||
-      !nzchar(species_dir)) {
-    stop("pelsa_read_feature_cache: species_dir must be a single non-empty path")
-  }
-  tsv <- file.path(species_dir, "uniprot_features", "uniprot_features.tsv")
-  if (!file.exists(tsv)) {
-    stop("pelsa_read_feature_cache: uniprot_features.tsv not found at '", tsv,
-         "'")
-  }
-
-  # Read the header to know which optional columns are present, then select.
-  header <- readr::read_tsv(
-    tsv, n_max = 0L, show_col_types = FALSE, progress = FALSE
-  )
-  present <- colnames(header)
-  required <- c("accession", "start", "end", "feature_class")
-  missing <- setdiff(required, present)
-  if (length(missing) > 0L) {
-    stop("pelsa_read_feature_cache: cache missing required column(s): ",
-         paste(missing, collapse = ", "))
-  }
-  optional <- intersect(
-    c("feature_type", "class_score", "description", "coord_quality"),
-    present
-  )
-  wanted <- c(required, optional)
-
-  # Type only the columns we keep; let readr skip the rest cheaply.
-  col_types <- readr::cols_only(
-    accession     = readr::col_character(),
-    start         = readr::col_integer(),
-    end           = readr::col_integer(),
-    feature_class = readr::col_character()
-  )
-  for (col in optional) {
-    col_types$cols[[col]] <- if (col == "class_score") {
-      readr::col_integer()
-    } else {
-      readr::col_character()
-    }
-  }
-
-  out <- readr::read_tsv(
-    tsv,
-    col_types     = col_types,
-    n_max         = n_max,
-    show_col_types = FALSE,
-    progress      = FALSE
-  )
-  out <- as.data.frame(out[, wanted, drop = FALSE], stringsAsFactors = FALSE)
-  out
 }
 
 # ---- Token grid builder ------------------------------------------------------

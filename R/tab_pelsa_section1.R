@@ -156,16 +156,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       pelsa_read_compound_markers(pelsa_compound_markers_path())
     })
 
-    # Once per session, OFF the reactive path: re-attempt taxonomy validation for
-    # any structurally-numeric species folder whose cached verdict is missing or
-    # unvalidated (e.g. the first run was offline / the API was down), promoting
-    # + persisting it on success. Best-effort -- a failure must not break the
-    # species listing, so it is wrapped and ignored.
-    tryCatch(
-      pelsa_refresh_species_meta_on_start(pelsa_database_dir()),
-      error = function(e) NULL
-    )
-
     ## SETUP UI ##
     # The Setup box's PURE markup lives in pelsa_setup_box_ui() (helpers); this
     # renderUI just gates on a valid active dataset, gathers the live choices,

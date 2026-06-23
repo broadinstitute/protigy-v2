@@ -253,51 +253,39 @@ PELSASection3_Ome_Server <- function(id,
       )
     })
 
-    # Narrow seam: feat_df reads ONLY the species off setup_state. Depending on
-    # the whole setup_state() would re-read the 26MB feature TSV on ANY setup-
-    # state change (condition columns, orders, ...); scoping to species_r() means
-    # feat_df re-reads only when the species actually changes.
-    species_r <- reactive({
+    # Narrow seam: feat_df reads ONLY this dataset's uploaded annotation path off
+    # setup_state. Depending on the whole setup_state() would re-read the
+    # annotation file on ANY setup-state change (condition columns, orders, ...);
+    # scoping to annotation_path_r() means feat_df re-reads only when the uploaded
+    # annotation file actually changes.
+    annotation_path_r <- reactive({
       ss <- pelsa_setup_state()
-      # Species is PER-OME: read THIS dataset's species.
-      if (is.null(ss)) NULL else ss$species[[ome]]
+      # Self-curated datasets have no annotation file -> NULL (3A colors "none").
+      if (is.null(ss) || isTRUE(ss$self_curated[[ome]])) return(NULL)
+      ss$annotation_path[[ome]]
     })
 
-    # Species feature table (2I/3A feat_df), read once per species via the
-    # on-disk cache. Read-only; NO network. NULL when unavailable (3A then
-    # colors everything "none").
+    # Per-dataset feature table (2I/3A feat_df), read + classified once per
+    # uploaded annotation file via pelsa_read_annotation_file(). Read-only; NO
+    # network. NULL when unavailable / self-curated (3A then colors "none").
     feat_df <- reactive({
-      species <- species_r()
-      # "(none)" is the unset default - skip the cache read (avoids a guaranteed
-      # error-path I/O on every reactive eval while setup is incomplete).
-      if (is.null(species) || length(species) != 1L || is.na(species) ||
-          !nzchar(species) || identical(species, "(none)")) {
+      ap <- annotation_path_r()
+      if (is.null(ap) || length(ap) != 1L || is.na(ap) || !nzchar(ap) ||
+          !file.exists(ap)) {
         return(NULL)
       }
-      species_dir <- file.path(pelsa_database_dir(), species)
       tryCatch(
-        pelsa_read_feature_cache(species_dir),
+        pelsa_read_annotation_file(ap),
         error = function(e) NULL
       )
     })
 
-    # Whether the selected species is self-curated (no UniProt annotations). Read
-    # off the cached species_meta registry via the resolver -- NO network on this
-    # reactive path (a numeric folder's verdict was cached at listing / app
-    # start). Gates the annotation-dependent UI + forces accession labels. We gate
-    # on the RESOLVED TYPE, never on the display label.
+    # Whether this dataset is a self-curated database (no annotation file). Read
+    # straight off setup_state -- NO network, NO disk. Gates the
+    # annotation-dependent UI + forces accession labels.
     is_self_curated_r <- reactive({
-      species <- species_r()
-      if (is.null(species) || length(species) != 1L || is.na(species) ||
-          !nzchar(species) || identical(species, "(none)")) {
-        return(FALSE)
-      }
-      struct <- tryCatch(
-        pelsa_resolve_species(pelsa_database_dir(), species,
-                              allow_fetch = FALSE),
-        error = function(e) NULL
-      )
-      isTRUE(!is.null(struct) && identical(struct$type, "self_curated"))
+      ss <- pelsa_setup_state()
+      isTRUE(if (is.null(ss)) FALSE else ss$self_curated[[ome]])
     })
 
     ## ------------------------------------------------------------------------

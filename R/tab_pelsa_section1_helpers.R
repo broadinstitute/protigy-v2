@@ -7,7 +7,6 @@
 # them.
 #
 # Public helpers (all @noRd):
-#   pelsa_list_species(database_dir)            species subfolders under inst/database/
 #   pelsa_read_compound_markers(path)           parse inst/pelsa/compound_markers.yaml
 #   pelsa_compound_marker_rows(cm, compound)    marker rows (accession, gene) for a compound
 #   pelsa_marker_rows_from_input(tokens, ...)   parsed paste-box tokens -> marker rows
@@ -44,15 +43,6 @@
 
 # ---- live path resolvers (shared with Section 3) -----------------------------
 
-# Resolve the PELSA database directory live.
-#   - installed package: system.file("database", package = "Protigy")
-#   - dev/load_all:      the same call resolves to inst/database
-# Returns "" when unavailable (pelsa_list_species() then yields character(0)).
-# @noRd
-pelsa_database_dir <- function() {
-  system.file("database", package = "Protigy")
-}
-
 # Resolve the compound-marker preset yaml path live (same install/dev rule).
 # @noRd
 pelsa_compound_markers_path <- function() {
@@ -69,30 +59,6 @@ pelsa_empty_marker_rows <- function() {
     gene      = character(0),
     stringsAsFactors = FALSE
   )
-}
-
-# List the species subfolders under a PELSA database directory.
-#
-# Read LIVE (no caching) so a newly added species folder appears without an app
-# restart. The directory is passed in as a PARAM (not resolved here) so the
-# helper is testable and works for both the installed-package path
-# (system.file("database", package = "Protigy")) and the dev/load_all inst path.
-#
-# @param database_dir character scalar path to the database directory.
-# @return sorted character vector of subfolder (species) names; character(0)
-#   when the directory is missing/empty or `database_dir` is "".
-# @noRd
-pelsa_list_species <- function(database_dir) {
-  if (!is.character(database_dir) || length(database_dir) != 1L) {
-    stop("pelsa_list_species(): `database_dir` must be a single string.",
-         call. = FALSE)
-  }
-  if (is.na(database_dir) || !nzchar(database_dir) || !dir.exists(database_dir)) {
-    return(character(0))
-  }
-  entries <- list.dirs(database_dir, full.names = FALSE, recursive = FALSE)
-  entries <- entries[nzchar(entries)]
-  sort(entries)
 }
 
 # Read + validate the PELSA compound-marker preset file (compound_markers.yaml).

@@ -139,7 +139,7 @@ pelsa_empty_feature_frame <- function() {
 # Optional column:  coord_quality (default "exact" when absent/blank).
 # Derives feature_class via pelsa_feature_to_class() and class_score via
 # pelsa_feature_class_scores(), returning the canonical 8-column frame that
-# pelsa_annotate_features() / pelsa_read_feature_cache() also produce.
+# pelsa_annotate_features() also consumes.
 #
 # NOTE: the input format is PROVISIONAL. When the finalized example file arrives,
 # adjust ONLY the column mapping below.

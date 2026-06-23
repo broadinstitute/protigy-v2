@@ -1599,34 +1599,6 @@ pelsa_setup_snapshot <- function(setup_state) {
   )
 }
 
-# ---- FASTA path resolution ---------------------------------------------------
-
-# Resolve the FASTA file for a species: the first *.fasta/*.fa under
-# inst/database/<species>/fasta/. Returns NA_character_ when none exists (so the
-# validator can emit the clear "No FASTA for <species>" message). Mirrors the
-# pattern pelsa_species_refresh_inputs() uses.
-#
-# @param database_dir the PELSA database dir.
-# @param species       species name (a subfolder of database_dir).
-# @return a single FASTA path, or NA_character_ when none is found.
-# @noRd
-pelsa_species_fasta_path <- function(database_dir, species) {
-  if (!is.character(database_dir) || length(database_dir) != 1L ||
-      is.na(database_dir) || !nzchar(database_dir)) {
-    return(NA_character_)
-  }
-  if (!is.character(species) || length(species) != 1L ||
-      is.na(species) || !nzchar(species)) {
-    return(NA_character_)
-  }
-  fdir <- file.path(database_dir, species, "fasta")
-  if (!dir.exists(fdir)) return(NA_character_)
-  fastas <- list.files(fdir, pattern = "\\.(fasta|fa)$", full.names = TRUE,
-                       ignore.case = TRUE)
-  if (length(fastas) == 0L) return(NA_character_)
-  fastas[[1]]
-}
-
 # ---- pre-flight validation ---------------------------------------------------
 
 # Pre-flight checklist for Start-Analysis (PURE, closed-form testable).

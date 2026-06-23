@@ -23,42 +23,6 @@ library(testthat)
 # --- from setup-controls (Task 5A) ---
 # =============================================================================
 
-# ---- pelsa_list_species ------------------------------------------------------
-
-test_that("pelsa_list_species returns sorted subfolder names, dirs only", {
-  tmp <- withr::local_tempdir()
-  dir.create(file.path(tmp, "mouse"))
-  dir.create(file.path(tmp, "human"))
-  dir.create(file.path(tmp, "zebrafish"))
-  writeLines("not a dir", file.path(tmp, "readme.txt"))
-
-  expect_identical(
-    pelsa_list_species(tmp),
-    c("human", "mouse", "zebrafish")
-  )
-})
-
-test_that("pelsa_list_species picks up a newly added species (read live)", {
-  tmp <- withr::local_tempdir()
-  dir.create(file.path(tmp, "human"))
-  expect_identical(pelsa_list_species(tmp), "human")
-
-  dir.create(file.path(tmp, "rat"))
-  expect_identical(pelsa_list_species(tmp), c("human", "rat"))
-})
-
-test_that("pelsa_list_species returns character(0) for missing/empty/'' dir", {
-  expect_identical(pelsa_list_species(""), character(0))
-  expect_identical(pelsa_list_species(tempfile()), character(0)) # nonexistent
-  empty <- withr::local_tempdir()
-  expect_identical(pelsa_list_species(empty), character(0))
-})
-
-test_that("pelsa_list_species fails fast on non-scalar input", {
-  expect_error(pelsa_list_species(c("a", "b")), "single string")
-  expect_error(pelsa_list_species(1L), "single string")
-})
-
 # ---- pelsa_read_compound_markers (REAL yaml) ---------------------------------
 
 test_that("pelsa_read_compound_markers parses the real preset file", {
