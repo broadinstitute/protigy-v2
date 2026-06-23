@@ -20,6 +20,14 @@ app_server <- function(input, output, session) {
   globals <- sidebar_output$globals
   GCTs_original <- sidebar_output$GCTs_original
 
+  # Record the client's WebGL capability (reported by the app_UI probe) onto the
+  # shared globals so every module can read it. Default-capable until reported:
+  # webgl_capability() returns TRUE for the pre-report NULL, so capable clients
+  # never flip. An explicit FALSE makes the PELSA volcanoes re-render as SVG.
+  observeEvent(input$webgl_supported, {
+    globals$webgl_supported <- webgl_capability(input$webgl_supported)
+  }, ignoreNULL = FALSE)
+
   # Export reactive state for shinytest2 integration tests.
   # These are no-ops in production (shiny.testmode is FALSE by default).
   shiny::exportTestValues(

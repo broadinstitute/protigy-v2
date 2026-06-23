@@ -1246,7 +1246,8 @@ pelsa_volcano_tip <- function(d) {
 # The marker `size` here (7) MUST match the build's gold/marker px
 # (pelsa_volcano_build_plot's gold_px == mk_px == 7) so the proxy-pushed overlay
 # visually matches the gold the static export build bakes. @noRd
-pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
+pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL,
+                                     use_webgl = TRUE) {
   if (!is.data.frame(df) || nrow(df) == 0L) return(NULL)
   m <- pelsa_volcano_highlight_mask(df, selection, find_mask)
   if (!any(m)) return(NULL)
@@ -1257,7 +1258,7 @@ pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
   # trace then can't index it and the gold dot vanishes. (Same guard as
   # pelsa_volcano_clicked_point_trace.)
   list(
-    type = "scattergl", mode = "markers",
+    type = if (isTRUE(use_webgl)) "scattergl" else "scatter", mode = "markers",
     x = as.list(as.numeric(d$logFC)), y = as.list(as.numeric(d$logP)),
     text = as.list(pelsa_volcano_tip(d)), hoverinfo = "text",
     marker = list(color = .PELSA_GOLD, size = 7,
@@ -1279,7 +1280,8 @@ pelsa_volcano_gold_trace <- function(df, selection = NULL, find_mask = NULL) {
 # peptide_seq fallback (a Woods click carries row=NA). Returns NULL when nothing
 # is selected, the row cannot be resolved (e.g. a multi-accession Find sets
 # selection() to NULL), or the row has NA coordinates. @noRd
-pelsa_volcano_clicked_point_trace <- function(df, selection = NULL) {
+pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
+                                              use_webgl = TRUE) {
   if (!is.data.frame(df) || nrow(df) == 0L || is.null(selection)) return(NULL)
   row <- selection$row
   if (is.null(row) || length(row) != 1L || is.na(row)) {
@@ -1305,7 +1307,7 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL) {
   # overlay escaped this only because it usually has >=2 points; see
   # pelsa_volcano_gold_trace for the same guard.)
   list(
-    type = "scattergl", mode = "markers",
+    type = if (isTRUE(use_webgl)) "scattergl" else "scatter", mode = "markers",
     x = list(as.numeric(d$logFC)), y = list(as.numeric(d$logP)),
     text = list(pelsa_volcano_tip(d)), hoverinfo = "text",
     marker = list(color = .PELSA_GOLD, size = .PELSA_CLICK_PT_SIZE,
@@ -1356,7 +1358,8 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
                                      label_mode = "top_n", n_top = 3L,
                                      source_id = "pelsa_volcano",
                                      selection = NULL, find_mask = NULL,
-                                     register_click = FALSE) {
+                                     register_click = FALSE,
+                                     use_webgl = TRUE) {
   if (!is.data.frame(df)) {
     stop("pelsa_volcano_build_plot: df must be a data.frame")
   }
@@ -1407,13 +1410,19 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   mk_px   <- 7
   gold_px <- mk_px
 
+  # WebGL vs SVG render backend. scattergl draws the cloud on the GPU (fast, but
+  # paints blank if the client browser has no WebGL context); scatter is the SVG
+  # fallback. The caller resolves this from the client probe (see webgl_capability
+  # + app_UI). Default TRUE preserves the WebGL path for every capable client.
+  trace_type <- if (isTRUE(use_webgl)) "scattergl" else "scatter"
+
   p <- plotly::plot_ly(source = source_id)
 
   # 0. BACKGROUND cloud (always added so the bg trace exists at index 0; an empty
   #    frame yields an empty trace, which keeps the meta indices stable).
   bg_tip <- tip(bg)
   p <- plotly::add_trace(
-    p, type = "scattergl", mode = "markers",
+    p, type = trace_type, mode = "markers",
     x = bg$logFC, y = bg$logP,
     marker = list(
       color = pelsa_volcano_color_column(bg, color_mode),
@@ -1426,7 +1435,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   #    their magenta fill even under an active selection/find.
   mk_tip <- tip(mk)
   p <- plotly::add_trace(
-    p, type = "scattergl", mode = "markers",
+    p, type = trace_type, mode = "markers",
     x = mk$logFC, y = mk$logP,
     marker = list(
       color = .PELSA_VOLCANO_MARKER_COLOR, size = mk_px,
@@ -1439,7 +1448,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   if (length(bg_hl) > 0L && any(bg_hl)) {
     hb <- bg[bg_hl, , drop = FALSE]
     p <- plotly::add_trace(
-      p, type = "scattergl", mode = "markers",
+      p, type = trace_type, mode = "markers",
       x = hb$logFC, y = hb$logP,
       marker = list(
         color = .PELSA_GOLD, size = gold_px,
@@ -1450,7 +1459,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   if (length(mk_hl) > 0L && any(mk_hl)) {
     hm <- mk[mk_hl, , drop = FALSE]
     p <- plotly::add_trace(
-      p, type = "scattergl", mode = "markers",
+      p, type = trace_type, mode = "markers",
       x = hm$logFC, y = hm$logP,
       marker = list(
         color = .PELSA_GOLD, size = gold_px,

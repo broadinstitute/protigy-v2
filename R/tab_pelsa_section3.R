@@ -82,6 +82,12 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     default_ome   <- reactive(globals$default_ome) # don't remove
     custom_colors <- reactive(globals$colors)
 
+    # Client WebGL capability (set by the app_UI probe via app_server). Reactive
+    # so the volcano re-renders into SVG if the probe reports FALSE after the
+    # first paint. Default TRUE (webgl_capability(NULL)) keeps the WebGL path for
+    # capable clients with no extra render.
+    use_webgl <- reactive(webgl_capability(globals$webgl_supported))
+
     # Tolerate being called without the Statistics-tab / cache seams (older test
     # callers). Each is a no-arg reactive returning NULL when absent.
     stat_results_r <- if (is.function(stat_results)) stat_results else reactive(NULL)
@@ -131,7 +137,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           poi_registry              = poi_registry,
           top_n_registry            = top_n_registry,
           label_mode_registry       = label_mode_registry,
-          marker_add_request        = marker_add_request
+          marker_add_request        = marker_add_request,
+          use_webgl                 = use_webgl
         )
       }, simplify = FALSE)
       all_exports(ome_exports)
@@ -165,7 +172,8 @@ PELSASection3_Ome_Server <- function(id,
                                      poi_registry = NULL,
                                      top_n_registry = NULL,
                                      label_mode_registry = NULL,
-                                     marker_add_request = NULL) {
+                                     marker_add_request = NULL,
+                                     use_webgl = reactive(TRUE)) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -830,7 +838,8 @@ PELSASection3_Ome_Server <- function(id,
         n_top = top_n_for_contrast(),
         source_id = ns("pelsa_volcano"),
         selection = NULL, find_mask = NULL,
-        register_click = TRUE)
+        register_click = TRUE,
+        use_webgl = use_webgl())
     })
 
     ## ------------------------------------------------------------------------
@@ -858,6 +867,10 @@ PELSASection3_Ome_Server <- function(id,
       # observers already establish the needed dependencies.
       df <- tryCatch(isolate(active_volcano_df()), error = function(e) NULL)
       if (is.null(df) || nrow(df) == 0L) return()
+      # Overlay backend must match the base figure (scattergl vs scatter). Read
+      # via isolate(): this also runs from session$onFlushed(), outside a
+      # reactive context, where use_webgl() would otherwise error.
+      uw <- isolate(use_webgl())
       # Delete existing overlays HIGHEST-index-first (click=3, gold=2) so the
       # remaining indices stay valid mid-delete.
       n <- overlay_n()
@@ -867,7 +880,7 @@ PELSASection3_Ome_Server <- function(id,
 
       fr <- find_result()
       gold_tr <- pelsa_volcano_gold_trace(
-        df, selection(), if (is.null(fr)) NULL else fr$mask)
+        df, selection(), if (is.null(fr)) NULL else fr$mask, use_webgl = uw)
       added <- 0L
       if (!is.null(gold_tr)) {
         plotly::plotlyProxyInvoke(gold_proxy, "addTraces", gold_tr)
@@ -875,7 +888,8 @@ PELSASection3_Ome_Server <- function(id,
         # Emphasize the clicked peptide (a larger gold dot with a thicker black
         # ring) on top of the gold markers, at index 3. Only meaningful when a
         # single peptide is selected (a click / single-accession Find).
-        click_tr <- pelsa_volcano_clicked_point_trace(df, selection())
+        click_tr <- pelsa_volcano_clicked_point_trace(df, selection(),
+                                                       use_webgl = uw)
         if (!is.null(click_tr)) {
           plotly::plotlyProxyInvoke(gold_proxy, "addTraces", click_tr)
           added <- added + 1L
@@ -899,10 +913,12 @@ PELSASection3_Ome_Server <- function(id,
     # figure has flushed. The base now rebuilds on color-mode / contrast AND on
     # label-mode / Top-N (labels are baked into the build, not relayout-applied),
     # so all four are triggers here - otherwise a label change would silently drop
-    # the gold highlight.
+    # the gold highlight. use_webgl() is also a trigger: a client WebGL->SVG flip
+    # rebuilds the base figure (the renders depend on use_webgl()), clearing the
+    # overlay traces, so the overlay must be re-applied on the new backend too.
     observeEvent(
       list(input$pelsa_color_mode, active_contrast(),
-           label_mode_for_contrast(), top_n_for_contrast()),
+           label_mode_for_contrast(), top_n_for_contrast(), use_webgl()),
       {
         session$onFlushed(function() {
           overlay_n(0L)   # the rebuild already cleared the overlay traces
@@ -932,7 +948,8 @@ PELSASection3_Ome_Server <- function(id,
         label_mode     = label_mode_for_contrast(),
         n_top          = top_n_for_contrast(),
         source_id      = ns("pelsa_volcano_best"),
-        register_click = FALSE
+        register_click = FALSE,
+        use_webgl      = use_webgl()
       )
     })
 
