@@ -23,121 +23,13 @@
 # Annotation overlap + priority resolution is the NEXT task (2I), not here.
 ################################################################################
 
-# ---- (A) Classifier ----------------------------------------------------------
-
-# class_score lookup, parity-locked to schema.json::feature_class_scores.
-# Returned as a named integer vector (class_score column is int8 in the cache).
-#
-# @return named integer vector feature_class -> score
-# @noRd
-pelsa_feature_class_scores <- function() {
-  c(
-    active_or_binding_site     = 5L,
-    catalytic_domain           = 3L,
-    folded_domain              = 2L,
-    region_or_motif            = 1L,
-    repeat_or_coiled_coil      = -1L,
-    transmembrane_or_signal    = 0L,
-    low_complexity_or_disorder = -3L,
-    other                      = 0L
-  )
-}
-
-# Classify one UniProt feature into a coarse functional class.
-#
-# Vectorized port of the notebook's feature_to_class (classifier_version
-# "fixed_v1"). The CHECK ORDER is parity-critical -- reordering changes results:
-#   1. compositional bias                       -> low_complexity_or_disorder
-#   2. site set (active/binding/metal/.../DNA)  -> active_or_binding_site
-#   3. TM/signal set                            -> transmembrane_or_signal
-#   4. desc-keyword disorder check (BEFORE repeat) -> low_complexity_or_disorder
-#   5. repeat / coiled-coil set                 -> repeat_or_coiled_coil
-#   6. domain: catalytic-by-keyword else folded
-#   7. region / motif                           -> region_or_motif
-#   8. else                                     -> other
-# ftype and desc are lower-cased + trimmed (NA -> "").
-#
-# @param ftype character vector of UniProt feature types
-# @param desc  character vector of feature descriptions (recycled to ftype)
-# @return character vector of feature_class labels
-# @noRd
-pelsa_feature_to_class <- function(ftype, desc) {
-  ftype <- tolower(trimws(ifelse(is.na(ftype), "", as.character(ftype))))
-  if (missing(desc) || is.null(desc)) desc <- ""
-  desc <- tolower(trimws(ifelse(is.na(desc), "", as.character(desc))))
-
-  n <- length(ftype)
-  if (length(desc) == 1L && n != 1L) desc <- rep(desc, n)
-  if (length(desc) != n) {
-    stop("pelsa_feature_to_class: ftype and desc lengths differ")
-  }
-
-  site_set <- c("active site", "binding site", "metal binding",
-                "nucleotide binding", "site", "dna binding")
-  tm_set   <- c("transmembrane", "signal peptide", "topological domain",
-                "intramembrane", "signal")
-  repeat_set <- c("repeat", "coiled-coil", "coiled coil")
-  catalytic_kw <- c("kinase", "methyltransferase", "transferase", "atpase",
-                    "helicase", "protease", "dehydrogenase")
-
-  has_kw <- function(x, kws) {
-    Reduce(`|`, lapply(kws, function(k) grepl(k, x, fixed = TRUE)),
-           init = rep(FALSE, length(x)))
-  }
-
-  disorder_desc <- grepl("low complexity", desc, fixed = TRUE) |
-    grepl("compositionally biased", desc, fixed = TRUE) |
-    grepl("disordered", desc, fixed = TRUE)
-
-  out <- character(n)
-  # default
-  out[] <- "other"
-
-  # Evaluate in REVERSE priority so earlier (higher-priority) checks overwrite
-  # later ones -- preserving the notebook's first-match-wins order.
-  is_region_motif <- ftype %in% c("region", "motif")
-  out[is_region_motif] <- "region_or_motif"
-
-  is_domain <- ftype == "domain"
-  out[is_domain] <- ifelse(has_kw(desc[is_domain], catalytic_kw),
-                           "catalytic_domain", "folded_domain")
-
-  is_repeat <- ftype %in% repeat_set
-  out[is_repeat] <- "repeat_or_coiled_coil"
-
-  # desc-keyword disorder check BEATS repeat + region/motif + domain
-  out[disorder_desc] <- "low_complexity_or_disorder"
-
-  is_tm <- ftype %in% tm_set
-  out[is_tm] <- "transmembrane_or_signal"
-
-  is_site <- ftype %in% site_set
-  out[is_site] <- "active_or_binding_site"
-
-  # compositional bias short-circuits FIRST (highest priority)
-  is_compbias <- ftype == "compositional bias"
-  out[is_compbias] <- "low_complexity_or_disorder"
-
-  out
-}
+# ---- (A) Classifier + empty-frame helpers RELOCATED --------------------------
+# pelsa_feature_class_scores(), pelsa_feature_to_class(), and
+# pelsa_empty_feature_frame() now live in R/tab_pelsa_annotation_io.R (kept with
+# the annotation-file reader so parity logic + its tests stay in one place). They
+# remain in the package namespace and are still used by the parser below.
 
 # ---- (A) Parser --------------------------------------------------------------
-
-# Empty 0-row frame with the 8 schema columns + correct types.
-# @noRd
-pelsa_empty_feature_frame <- function() {
-  data.frame(
-    accession     = character(0),
-    feature_type  = character(0),
-    start         = integer(0),
-    end           = integer(0),
-    description   = character(0),
-    feature_class = character(0),
-    class_score   = integer(0),
-    coord_quality = character(0),
-    stringsAsFactors = FALSE
-  )
-}
 
 # Coerce a possibly-NULL scalar to a single character string ("" if absent).
 # @noRd
