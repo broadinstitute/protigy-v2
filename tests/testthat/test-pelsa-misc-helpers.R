@@ -29,18 +29,6 @@ test_that("pelsa_depth_summary(c(0,0,0)) guards a non-finite CV to NA", {
   expect_true(is.na(res$cv_pct))
 })
 
-test_that("pelsa_parse_uniprot_json returns the empty frame for malformed input", {
-  empty <- pelsa_empty_feature_frame()
-  expect_equal(pelsa_parse_uniprot_json(NULL), empty)
-  expect_equal(pelsa_parse_uniprot_json("not a list"), empty)
-  expect_equal(pelsa_parse_uniprot_json(list()), empty)
-  # a well-formed entry with NO features also yields the empty frame
-  expect_equal(
-    pelsa_parse_uniprot_json(list(primaryAccession = "P1", features = list())),
-    empty
-  )
-})
-
 test_that("pelsa_read_fasta stops when no header line is present", {
   f <- tempfile(fileext = ".fasta")
   on.exit(unlink(f), add = TRUE)

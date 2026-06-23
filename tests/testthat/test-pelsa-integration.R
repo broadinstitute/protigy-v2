@@ -80,7 +80,6 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
   sample_order <- syn$sample_cols
   snap <- list(
     datasets      = "ds",
-    species       = "9606",
     condition_col = list(ds = "condition"),
     sample_order  = list(ds = sample_order)
   )
