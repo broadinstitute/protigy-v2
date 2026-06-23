@@ -258,10 +258,9 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       set_ds("species", ome, input$pelsa_species)
     }, ignoreNULL = FALSE)
 
-    observeEvent(input$pelsa_compound, {
-      ome <- active_setup_ome(); req(ome)
-      set_ds("compound", ome, input$pelsa_compound)
-    }, ignoreNULL = FALSE)
+    # NOTE: input$pelsa_compound is handled by a SINGLE merged observer further
+    # down (record + marker autofill, both under the per-ome echo guard), so a
+    # setup-box re-render re-emit cannot redundantly re-record or clobber edits.
 
     # Skip toggle: write the per-ome flag. Greying of the rest of the form is
     # handled by the observe() below (CSS class toggle).
@@ -297,8 +296,14 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       ome <- active_setup_ome(); req(ome)
       compound <- input$pelsa_compound
       tracker  <- last_autofilled_compound()
-      # Skip when unchanged FOR THIS OME, so a re-emit cannot clobber edits.
+      # Skip when unchanged FOR THIS OME, so a re-emit cannot clobber edits or
+      # redundantly re-record the compound.
       if (identical(compound, tracker[[ome]])) return()
+
+      # Record the per-dataset compound selection (merged from the former
+      # standalone observer so record + autofill stay in lockstep under the same
+      # per-ome guard).
+      set_ds("compound", ome, compound)
 
       if (is.null(compound) || !nzchar(compound)) {
         # "(none)" -> clear the table entirely.

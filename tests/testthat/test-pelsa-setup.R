@@ -443,6 +443,19 @@ test_that("Setup control ids are namespaced + wired in the module server", {
   }
 })
 
+test_that("Issue A: compound is handled by a SINGLE guarded observer (merged)", {
+  # The record (set_ds("compound", ...)) and the marker autofill must live in
+  # ONE guarded observeEvent(input$pelsa_compound) so a setup-box re-render
+  # re-emit cannot redundantly re-record or clobber edited markers. The control
+  # ids are emitted server-side, so assert against the deparsed module body.
+  fn_body <- paste(deparse(body(PELSASection1_Tab_Server)), collapse = "\n")
+  n_obs <- length(gregexpr("observeEvent(input$pelsa_compound", fn_body,
+                           fixed = TRUE)[[1]])
+  expect_equal(n_obs, 1L)
+  # the record side-effect is preserved (inside the merged handler).
+  expect_match(fn_body, "set_ds(\"compound\"", fixed = TRUE)
+})
+
 test_that("app_UI() still evaluates after adding Setup controls (construct smoke)", {
   ui <- app_UI(request = list())
   expect_s3_class(ui, "shiny.tag.list")
@@ -532,6 +545,34 @@ test_that("marker table: compound autofill, add, remove, clear all flow", {
       expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 4L)
 
       session$setInputs(pelsa_clear_markers = 1)
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
+    }
+  )
+})
+
+test_that("Issue A: a compound selection records it AND autofills markers", {
+  fx <- .setup_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(fx$gp)
+  globals <- shiny::reactiveValues(default_ome = "proteome",
+                                   colors = list(proteome = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active_dataset <- shiny::reactive("proteome")
+  path <- pelsa_compound_markers_path()
+  skip_if(path == "", "compound_markers.yaml not installed")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset),
+    {
+      # genuine selection: record + autofill happen together (lockstep).
+      session$setInputs(pelsa_compound = "Rapamycin")
+      expect_identical(setup_state$compound[["proteome"]], "Rapamycin")
+      expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 3L)
+
+      # "(none)" records "" AND clears the table, together.
+      session$setInputs(pelsa_compound = "")
+      expect_identical(setup_state$compound[["proteome"]], "")
       expect_equal(nrow(setup_state$marker_rows[["proteome"]]), 0L)
     }
   )
@@ -1225,6 +1266,41 @@ test_that("pelsa_build_sample_order handles a single-replicate condition", {
                       rna  = list(annotation_column = NA))
   )
 }
+
+test_that("Issue A: the merged compound handler is per-ome isolated", {
+  gp <- .ordering_test_gp()
+  GCTs_and_params <- shiny::reactiveVal(gp)
+  globals <- shiny::reactiveValues(default_ome = "prot",
+                                   colors = list(prot = NULL, rna = NULL))
+  GCTs_original <- shiny::reactiveVal(NULL)
+  active <- shiny::reactiveVal("prot")
+  active_dataset <- shiny::reactive(active())
+  path <- pelsa_compound_markers_path()
+  skip_if(path == "", "compound_markers.yaml not installed")
+
+  shiny::testServer(
+    PELSASection1_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                setup_active_dataset = active_dataset),
+    {
+      # Record + autofill for "prot" must not touch "rna".
+      session$setInputs(pelsa_compound = "Rapamycin")
+      expect_identical(setup_state$compound[["prot"]], "Rapamycin")
+      expect_equal(nrow(setup_state$marker_rows[["prot"]]), 3L)
+      expect_null(setup_state$compound[["rna"]])
+
+      # Switch the active dataset to "rna"; a selection records into "rna" only,
+      # leaving "prot"'s recorded compound + markers intact.
+      active("rna"); session$flushReact()
+      session$setInputs(pelsa_compound = "")
+      expect_identical(setup_state$compound[["rna"]], "")
+      expect_equal(nrow(setup_state$marker_rows[["rna"]]), 0L)
+      expect_identical(setup_state$compound[["prot"]], "Rapamycin")
+      expect_equal(nrow(setup_state$marker_rows[["prot"]]), 3L)
+    }
+  )
+})
 
 test_that("per-dataset condition/replicate columns are stored as named lists", {
   gp <- .ordering_test_gp()
