@@ -1476,8 +1476,6 @@ pelsa_match_markers <- function(accession_tokens_list, marker_accessions) {
 #   pelsa_setup_snapshot(setup_state)
 #       -> a plain immutable list copy of the live reactiveValues, taken under
 #          isolate() at click so mid-compute input edits cannot corrupt a run.
-#   pelsa_species_fasta_path(database_dir, species)
-#       -> the first *.fasta/*.fa under inst/database/<species>/fasta/, or NA.
 #   pelsa_dataset_peptide_frame(gct)
 #       -> a peptide-level data.frame = cbind(rdesc, mat) for a cmapR GCT (or a
 #          plain data.frame passed straight through; the test seam).
@@ -1485,21 +1483,20 @@ pelsa_match_markers <- function(accession_tokens_list, marker_accessions) {
 #       -> named character vector sample -> condition, aligned to sample_cols
 #          (the condition_map pelsa_within_condition_cv() consumes).
 #   pelsa_run_analysis(gcts, gcts_original, setup_snapshot, fasta_map, feat_df,
-#                      species_dir = NULL, ...)
+#                      resolve_fasta = NULL, resolve_feat = NULL, ...)
 #       -> named-by-dataset list of per-dataset cache objects (the integration
-#          crux). NO network, NO Shiny: the observer reads the FASTA + feature
-#          cache off-disk and passes them in; tests inject synthetic ones.
+#          crux). NO network, NO Shiny: the observer reads each dataset's uploaded
+#          FASTA + annotation file and passes them in; tests inject synthetic ones.
 #
 # ------------------------------------------------------------------------------
 # DECISIONS (documented per the task spec)
 # ------------------------------------------------------------------------------
-# TOP-UP FETCH: CACHE-AS-IS. pelsa_run_analysis NEVER calls pelsa_fetch_uniprot.
-#   It uses the on-disk feature cache (feat_df) as-is and records the accessions
-#   absent from it via pelsa_unannotated_accessions(). A FULL UniProt refresh of
-#   the cache is the species-refresh control's job (5C, pelsa_run_species_refresh
-#   in tab_pelsa_uniprot_helpers.R). This keeps the analysis path network-free,
-#   fast, deterministic, and unit-testable. The cache records the unannotated set
-#   so the Summary QC can prompt the user to run the refresh if coverage is poor.
+# ANNOTATION-AS-UPLOADED. pelsa_run_analysis NEVER fetches from UniProt. It uses
+#   the uploaded feature annotation (feat_df) as-is and records the dataset
+#   accessions absent from it via pelsa_unannotated_accessions() (the "failed to
+#   resolve annotation" set). This keeps the analysis path network-free, fast,
+#   deterministic, and unit-testable. The cache records the unannotated set so the
+#   Summary QC can flag poor annotation coverage.
 #
 # COMPUTE-ALL-AT-START: pelsa_run_analysis computes EVERY checked dataset's heavy
 #   objects once per Start-Analysis (simpler, matches the "analyzed datasets"

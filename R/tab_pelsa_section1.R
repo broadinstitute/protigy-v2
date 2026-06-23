@@ -14,8 +14,8 @@
 #                            excludes the dataset from the run and from the
 #                            Summary/Volcano switcher. Per-dataset state is pruned
 #                            ONLY when a new upload removes the dataset.
-#   1. Species               (selectInput, LIVE from inst/database/; default
-#                            "(none)") - PER-OME.
+#   1. FASTA + annotation    (per-dataset fileInputs; a self-curated checkbox
+#                            greys out the annotation uploader) - PER-OME.
 #   2. Treatment compound    (selectInput from compound_markers.yaml; autofills
 #                            THIS dataset's markers) - PER-OME.
 #   3. Marker paste box      (textAreaInput + "Add markers") - PER-OME.

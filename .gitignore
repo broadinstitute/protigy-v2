@@ -39,21 +39,11 @@ pkg.lock
 firebase-debug.log
 
 # ──────────────────────────────────────────────────────────────────────────
-# PELSA reference databases (inst/database/<species>/)
-#   IGNORED: everything under inst/database/ -- species folders, FASTAs, and the
-#   regenerable feature/membrane caches are all user-populated / rebuilt locally
-#   via the Setup page "refresh" (see tab_pelsa_species_resolve.R), so nothing
-#   here should be committed by default.
-#   EXAMPLE (kept tracked): the empty inst/database/9606/fasta/ folder (its
-#   .gitkeep only) so new users see the expected <species>/fasta/ layout and
-#   drop in their own chosen FASTA. The FASTA itself is NOT committed.
+# PELSA inputs (FASTA + feature annotation file) are now UPLOADED per dataset at
+# runtime on the Setup page -- the app no longer reads an inst/database/ tree.
+# Any local inst/database/ contents are stale dev artifacts and are ignored.
 # ──────────────────────────────────────────────────────────────────────────
-inst/database/*
-!inst/database/9606/
-inst/database/9606/*
-!inst/database/9606/fasta/
-inst/database/9606/fasta/*
-!inst/database/9606/fasta/.gitkeep
+inst/database/
 
 # ──────────────────────────────────────────────────────────────────────────
 # Local planning / design docs (treated as scratch -- not version-controlled)
