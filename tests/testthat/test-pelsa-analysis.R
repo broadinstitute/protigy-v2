@@ -783,7 +783,7 @@ test_that("run_analysis threads per-ds log_base into the CV delinearize", {
   cmap <- stats::setNames(sub("_R[0-9]+$", "", sc), sc)
   gct <- .mk_gct_from_mat(log_mat)
 
-  snap <- list(datasets = "ds1", species = "9606",
+  snap <- list(datasets = "ds1",
                condition_col = list(ds1 = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(ds1 = gct), gcts_original = list(ds1 = gct),
@@ -841,14 +841,14 @@ test_that("run_analysis returns a per-dataset keyed list for >1 dataset", {
   feat_df <- .mk_feat_df()
 
   snap <- list(
-    datasets = c("dsA", "dsB"), species = "9606",
+    datasets = c("dsA", "dsB"),
     condition_col = list(dsA = "condition", dsB = "condition")
   )
   res <- pelsa_run_analysis(
     gcts = list(dsA = g1, dsB = g2),
     gcts_original = list(dsA = g1, dsB = g2),
     setup_snapshot = snap,
-    fasta_map = syn1$fasta,   # same species -> shared map (injected)
+    fasta_map = syn1$fasta,   # shared single-map fallback (injected)
     feat_df = feat_df
   )
   expect_setequal(names(res), c("dsA", "dsB"))
@@ -864,7 +864,7 @@ test_that("run_analysis surfaces a checked dataset absent from gcts as a failure
   # structured failure entry, like a compute failure.
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 4)
   g <- .mk_gct(syn)
-  snap <- list(datasets = c("dsA", "ghost"), species = "9606",
+  snap <- list(datasets = c("dsA", "ghost"),
                condition_col = list(dsA = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(dsA = g), gcts_original = list(dsA = g),
@@ -878,26 +878,25 @@ test_that("run_analysis surfaces a checked dataset absent from gcts as a failure
   expect_true("stage" %in% names(res$ghost))
 })
 
-test_that("run_analysis resolves FASTA + feat PER DATASET by species", {
-  # Two datasets of DIFFERENT species. dsA's species FASTA contains its peptides;
-  # dsB's species FASTA is EMPTY. If the loop used ONE shared map for both, dsB
-  # would (wrongly) match against dsA's map. Per-species keying => dsB matches 0.
+test_that("run_analysis resolves the uploaded FASTA + feat PER DATASET", {
+  # Each dataset supplies its OWN uploaded FASTA. dsA's FASTA contains its
+  # peptides; dsB's is EMPTY. If the loop used ONE shared map for both, dsB would
+  # (wrongly) match against dsA's map. Per-dataset keying => dsB matches 0.
   syn1 <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 8)
   syn2 <- pelsa_make_synthetic(seed = 2, n_extra_peptides = 8)
   g1 <- .mk_gct(syn1); g2 <- .mk_gct(syn2)
 
   snap <- list(
     datasets      = c("dsA", "dsB"),
-    species       = list(dsA = "sp1", dsB = "sp2"),
     condition_col = list(dsA = "condition", dsB = "condition")
   )
 
-  seen_species <- character(0)
-  resolve_fasta <- function(species) {
-    seen_species[[length(seen_species) + 1L]] <<- species
-    if (identical(species, "sp1")) syn1$fasta else list()  # sp2 -> empty map
+  seen_ds <- character(0)
+  resolve_fasta <- function(ds) {
+    seen_ds[[length(seen_ds) + 1L]] <<- ds
+    if (identical(ds, "dsA")) syn1$fasta else list()  # dsB -> empty map
   }
-  resolve_feat <- function(species) .mk_feat_df()
+  resolve_feat <- function(ds) .mk_feat_df()
 
   res <- pelsa_run_analysis(
     gcts = list(dsA = g1, dsB = g2),
@@ -911,22 +910,22 @@ test_that("run_analysis resolves FASTA + feat PER DATASET by species", {
   expect_false(pelsa_analysis_failed(res$dsB))
   expect_gt(res$dsA$qc$n_matched_rows, 0L)     # matched against its own fasta
   expect_equal(res$dsB$qc$n_matched_rows, 0L)   # empty fasta -> nothing matches
-  # both species were resolved (per dataset), not just one shared read
-  expect_setequal(unique(seen_species), c("sp1", "sp2"))
+  # each dataset was resolved by its own name (per dataset), not one shared read
+  expect_setequal(unique(seen_ds), c("dsA", "dsB"))
 })
 
-test_that("run_analysis memoizes the per-species resolver (one read per species)", {
-  # Two datasets of the SAME species must resolve that species' FASTA ONCE.
+test_that("run_analysis resolves once per dataset (keyed by dataset name)", {
+  # Two datasets => the FASTA resolver fires once per dataset (memoized per ds, so
+  # the fasta + feat reads for one dataset never double-fire it).
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 6)
   g1 <- .mk_gct(syn); g2 <- .mk_gct(syn)
   snap <- list(
     datasets      = c("dsA", "dsB"),
-    species       = list(dsA = "sp1", dsB = "sp1"),
     condition_col = list(dsA = "condition", dsB = "condition")
   )
-  calls <- 0L
-  resolve_fasta <- function(species) { calls <<- calls + 1L; syn$fasta }
-  resolve_feat  <- function(species) .mk_feat_df()
+  seen_ds <- character(0)
+  resolve_fasta <- function(ds) { seen_ds[[length(seen_ds) + 1L]] <<- ds; syn$fasta }
+  resolve_feat  <- function(ds) .mk_feat_df()
 
   res <- pelsa_run_analysis(
     gcts = list(dsA = g1, dsB = g2),
@@ -936,13 +935,13 @@ test_that("run_analysis memoizes the per-species resolver (one read per species)
   )
   expect_false(pelsa_analysis_failed(res$dsA))
   expect_false(pelsa_analysis_failed(res$dsB))
-  expect_equal(calls, 1L)   # same species -> resolved once (memoized)
+  expect_equal(seen_ds, c("dsA", "dsB"))   # one FASTA read per dataset
 })
 
 test_that("run_analysis captures a per-dataset error (with stage) without aborting others", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 4)
   g <- .mk_gct(syn)
-  snap <- list(datasets = c("good", "bad"), species = "9606",
+  snap <- list(datasets = c("good", "bad"),
                condition_col = list(good = "condition", bad = "condition"))
   # 'bad' gets a non-GCT/non-df value -> pelsa_dataset_peptide_frame stop ->
   # captured as list(error=, stage=).
@@ -964,7 +963,7 @@ test_that("run_analysis captures the failing STAGE on a deep mid-pipeline error"
   # inside the explode/map stage -> stage == "Mapping peptide positions".
   pf <- syn$peptides
   pf$PG.ProteinAccessions <- NULL
-  snap <- list(datasets = "d", species = "9606",
+  snap <- list(datasets = "d",
                condition_col = list(d = "condition"))
   res <- pelsa_run_analysis(
     gcts = list(d = pf), gcts_original = list(d = NULL),
@@ -976,7 +975,7 @@ test_that("run_analysis captures the failing STAGE on a deep mid-pipeline error"
 
 test_that("run_analysis errors when no checked dataset is present", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
-  snap <- list(datasets = character(0), species = "9606",
+  snap <- list(datasets = character(0),
                condition_col = list())
   expect_error(
     pelsa_run_analysis(gcts = list(), gcts_original = list(),

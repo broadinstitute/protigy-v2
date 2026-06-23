@@ -2471,9 +2471,8 @@ pelsa_run_analysis_one <- function(gct,
 
 # Run the full compute pipeline for ALL checked datasets (the public entry the
 # observer calls under withProgress). PURE-ish: NO Shiny, NO network. Each
-# dataset can be a DIFFERENT species; its FASTA + feature cache are resolved by
-# its own species[[ds]] (see resolve_fasta/resolve_feat), MEMOIZED per species so
-# same-species datasets read once.
+# dataset supplies its OWN uploaded FASTA + annotation file, resolved by the
+# dataset name (see resolve_fasta/resolve_feat), MEMOIZED per dataset.
 #
 # @param gcts           named list of PROCESSED GCTs (or frames), keyed by ds.
 # @param gcts_original  named list of GCTs (or frames) Protigy stored as
@@ -2483,21 +2482,20 @@ pelsa_run_analysis_one <- function(gct,
 #                       (pelsa_delinearize) before CV. May be
 #                       NULL / missing a ds (CV skipped).
 # @param setup_snapshot pelsa_setup_snapshot() list (datasets + per-ds
-#                       condition_col + per-ds species).
-# @param fasta_map      LEGACY single-species fallback: a named list accession ->
+#                       condition_col + per-ds uploads).
+# @param fasta_map      LEGACY single-map fallback: a named list accession ->
 #                       sequence used for EVERY dataset when resolve_fasta is NULL
-#                       (a single-species run / the existing tests). Ignored when
+#                       (a single-map run / the existing tests). Ignored when
 #                       resolve_fasta is supplied.
-# @param feat_df        LEGACY single-species fallback feature cache data.frame,
+# @param feat_df        LEGACY single-map fallback feature cache data.frame,
 #                       used when resolve_feat is NULL. Ignored when resolve_feat
 #                       is supplied.
-# @param resolve_fasta  NULL or function(species) -> fasta map for that species.
-#                       When given, the FASTA is resolved PER DATASET by
-#                       species[[ds]] (memoized per species). The observer wraps
-#                       its off-disk read; tests inject a map lookup.
-# @param resolve_feat   NULL or function(species) -> feature-cache data.frame for
-#                       that species (same per-species memoization as
-#                       resolve_fasta).
+# @param resolve_fasta  NULL or function(ds) -> fasta map for that dataset.
+#                       When given, the FASTA is resolved PER DATASET (memoized
+#                       per ds). The observer wraps the uploaded-file read; tests
+#                       inject a map lookup.
+# @param resolve_feat   NULL or function(ds) -> feature-cache data.frame for that
+#                       dataset (same per-dataset memoization as resolve_fasta).
 # @param min_nonNA      min non-NA replicates for a finite CV.
 # @param log_base_by_ds named list/character keyed by ds giving each dataset's
 #                       declared log transformation ("None"/NA/"log2"/"log10").
@@ -2547,13 +2545,12 @@ pelsa_run_analysis <- function(gcts,
   # same-species datasets read once. When no resolvers are given, fall back to a
   # single shared fasta_map/feat_df (the legacy single-species path the existing
   # tests + a single-species run use).
-  species_by_ds <- setup_snapshot$species %||% list()
   fasta_cache <- new.env(parent = emptyenv())
   feat_cache  <- new.env(parent = emptyenv())
-  resolve_one <- function(cache, resolver, shared, species) {
+  resolve_one <- function(cache, resolver, shared, ds) {
     if (is.null(resolver)) return(shared)
-    key <- if (.pelsa_is_unset(species)) "__none__" else as.character(species)
-    if (is.null(cache[[key]])) cache[[key]] <- list(value = resolver(species))
+    key <- as.character(ds)
+    if (is.null(cache[[key]])) cache[[key]] <- list(value = resolver(ds))
     cache[[key]]$value
   }
 
@@ -2591,14 +2588,12 @@ pelsa_run_analysis <- function(gcts,
     ds_log_base <- if (is.null(log_base_by_ds)) NA_character_
                    else log_base_by_ds[[ds]] %||% NA_character_
 
-    # Per-ome species when `species` is a named list (the per-dataset contract);
-    # a scalar `species` (the legacy single-species snapshot the older tests use)
-    # applies to every dataset. NULL when neither supplies one.
-    ds_species  <- if (is.list(species_by_ds)) species_by_ds[[ds]]
-                   else if (length(species_by_ds) == 1L) species_by_ds
-                   else NULL
-    ds_fasta    <- resolve_one(fasta_cache, resolve_fasta, fasta_map, ds_species)
-    ds_feat     <- resolve_one(feat_cache,  resolve_feat,  feat_df,   ds_species)
+    # Per-dataset uploads: the FASTA + annotation file are resolved by the
+    # dataset name itself (resolve_fasta(ds)/resolve_feat(ds)), memoized per ds.
+    # When no resolvers are given, fall back to the shared fasta_map/feat_df (the
+    # legacy single-map path the older tests use).
+    ds_fasta    <- resolve_one(fasta_cache, resolve_fasta, fasta_map, ds)
+    ds_feat     <- resolve_one(feat_cache,  resolve_feat,  feat_df,   ds)
 
     out[[ds]] <- tryCatch(
       pelsa_run_analysis_one(

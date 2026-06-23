@@ -1019,7 +1019,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       gp <- isolate(GCTs_and_params())
       gcts_processed <- if (is.null(gp)) NULL else gp$GCTs
       gcts_raw       <- isolate(GCTs_original())
-      database_dir   <- pelsa_database_dir()
 
       # Per-dataset log base for the CV delinearize. GCTs_original is the
       # LOG-transformed matrix; the CV is defined on raw LINEAR intensities, so
@@ -1031,7 +1030,7 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       })
 
       # Pre-flight validation (pure). Render inline + bail on failure.
-      validation <- pelsa_validate_setup(snapshot, gcts_processed, database_dir)
+      validation <- pelsa_validate_setup(snapshot, gcts_processed, NULL)
       last_validation(validation)
       if (!isTRUE(validation$ok)) {
         showNotification(
@@ -1050,17 +1049,15 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       result <- tryCatch(
         withProgress(message = "Running PELSA analysis", value = 0, {
           setProgress(value = 0.05, detail = "Loading FASTA")
-          # PER-SPECIES resolvers: each dataset can be a DIFFERENT species, so the
-          # FASTA + feature cache are resolved by THAT dataset's species. A
-          # UniProt (taxon-code) species parses pipe-aware + reads its feature
-          # cache; a self-curated species parses first-token + uses an empty
-          # feature frame (no UniProt cache). pelsa_run_analysis memoizes these
-          # per species, so datasets sharing a species read once.
-          resolve_fasta <- function(species) {
-            sp_struct <- pelsa_resolve_species(database_dir, species)
-            fasta_mode <- if (identical(sp_struct$type, "self_curated"))
+          # PER-DATASET resolvers: each dataset supplies its OWN uploaded FASTA +
+          # annotation file. A self-curated dataset parses its FASTA first-token
+          # and uses an empty feature frame (no annotation); otherwise the FASTA
+          # is parsed pipe-aware (UniProt) and the uploaded raw annotation file is
+          # read + classified. pelsa_run_analysis memoizes these per dataset.
+          resolve_fasta <- function(ds) {
+            fasta_path <- snapshot$fasta_path[[ds]]
+            fasta_mode <- if (isTRUE(snapshot$self_curated[[ds]]))
               "self_curated" else "uniprot"
-            fasta_path <- pelsa_species_fasta_path(database_dir, species)
             # Surface any reader warning (e.g. duplicated accessions), then muffle
             # so it does not abort the progress block.
             withCallingHandlers(
@@ -1072,12 +1069,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
               }
             )
           }
-          resolve_feat <- function(species) {
-            sp_struct <- pelsa_resolve_species(database_dir, species)
-            if (identical(sp_struct$type, "self_curated")) {
+          resolve_feat <- function(ds) {
+            if (isTRUE(snapshot$self_curated[[ds]])) {
               pelsa_empty_feature_frame()
             } else {
-              pelsa_read_feature_cache(file.path(database_dir, species))
+              pelsa_read_annotation_file(snapshot$annotation_path[[ds]])
             }
           }
 
