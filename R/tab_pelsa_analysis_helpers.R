@@ -1583,7 +1583,11 @@ pelsa_validation_msg_ui <- function(validation) {
 pelsa_setup_snapshot <- function(setup_state) {
   list(
     datasets        = setup_state$datasets        %||% character(0),
-    species         = setup_state$species         %||% list(),
+    fasta_path      = setup_state$fasta_path      %||% list(),
+    fasta_name      = setup_state$fasta_name      %||% list(),
+    annotation_path = setup_state$annotation_path %||% list(),
+    annotation_name = setup_state$annotation_name %||% list(),
+    self_curated    = setup_state$self_curated    %||% list(),
     compound        = setup_state$compound        %||% list(),
     marker_rows     = setup_state$marker_rows     %||% list(),
     skip            = setup_state$skip            %||% list(),
@@ -1635,15 +1639,17 @@ pelsa_species_fasta_path <- function(database_dir, species) {
 # Checks, accumulating ALL failures (so the user sees every missing piece at
 # once, not one-at-a-time):
 #   1. >= 1 non-skipped dataset (else "all skipped").
-#   2. Each non-skipped dataset has a species, condition column, and replicate
-#      column chosen. A value of "(none)" (the blank default) / "" / NA counts
-#      as NOT chosen.
+#   2. Each non-skipped dataset has a condition column and replicate column
+#      chosen. A value of "(none)" (the blank default) / "" / NA counts as NOT
+#      chosen.
 #   3. The chosen condition column exists in that dataset's cdesc.
 #   4. Each non-skipped dataset has a confirmed (non-empty) condition order.
-#   5. Each non-skipped dataset's species has a FASTA under
-#      inst/database/<species>/fasta/ - else "No FASTA for <species>...".
+#   5. Each non-skipped dataset has an uploaded FASTA; and an uploaded annotation
+#      file unless it is flagged self-curated.
 #
-# species/condition_col/replicate_col are PER-OME named lists keyed by ome.
+# fasta_path/annotation_path/self_curated/condition_col/replicate_col are PER-OME
+# named lists keyed by ome. database_dir is retained for signature stability but
+# is no longer used (uploads supersede the on-disk database).
 #
 # An EMPTY marker table is VALID (markers are a volcano OVERLAY, not a
 # prerequisite) - no marker check here.
@@ -1667,7 +1673,9 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
                 "Enable PELSA analysis for at least one dataset (all are skipped).")
   }
 
-  species         <- setup_snapshot$species         %||% list()
+  fasta_path      <- setup_snapshot$fasta_path      %||% list()
+  annotation_path <- setup_snapshot$annotation_path %||% list()
+  self_curated    <- setup_snapshot$self_curated    %||% list()
   condition_col   <- setup_snapshot$condition_col   %||% list()
   replicate_col   <- setup_snapshot$replicate_col   %||% list()
   condition_order <- setup_snapshot$condition_order %||% list()
@@ -1704,17 +1712,18 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
         "Dataset '%s': confirm the condition order.", ds))
     }
 
-    # 2 + 5. Per-ome species + its FASTA.
-    sp <- species[[ds]]
-    if (.pelsa_is_unset(sp)) {
-      errors <- c(errors, sprintf("Dataset '%s': select a species.", ds))
-    } else {
-      fasta <- pelsa_species_fasta_path(database_dir, sp)
-      if (is.na(fasta)) {
+    # 2 + 5. Per-dataset uploads: a FASTA is always required; an annotation file
+    # is required unless this dataset is a self-curated database.
+    fp <- fasta_path[[ds]]
+    if (is.null(fp) || !nzchar(fp %||% "")) {
+      errors <- c(errors, sprintf("Dataset '%s': upload a FASTA file.", ds))
+    }
+    if (!isTRUE(self_curated[[ds]])) {
+      ap <- annotation_path[[ds]]
+      if (is.null(ap) || !nzchar(ap %||% "")) {
         errors <- c(errors, sprintf(
-          paste0("No FASTA for %s (dataset '%s'). Add a .fasta file under ",
-                 "inst/database/%s/fasta/ before running the analysis."),
-          sp, ds, sp))
+          paste0("Dataset '%s': upload a feature annotation file (or check ",
+                 "'Self-curated database')."), ds))
       }
     }
   }

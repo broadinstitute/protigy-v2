@@ -429,7 +429,8 @@ test_that("Setup control ids are namespaced + wired in the module server", {
   # the deparsed module-server body (closed-form, non-flaky) that each expected
   # control id is present.
   ids <- c(
-    "pelsa_skip", "pelsa_species", "pelsa_compound",
+    "pelsa_skip", "pelsa_fasta", "pelsa_self_curated", "pelsa_annotation",
+    "pelsa_compound",
     "pelsa_marker_input", "pelsa_add_markers", "pelsa_marker_table",
     "pelsa_remove_markers", "pelsa_clear_markers",
     # per-dataset config + apply-to-all button (the datasets checkbox is gone;
@@ -515,7 +516,8 @@ test_that("Tab_Server returns list(exports, setup_state, analysis)", {
   expect_true(shiny::is.reactive(ret$setup_state))
   expect_false(shiny::is.reactivevalues(ret$setup_state))
   expect_true(is.list(snap) && !shiny::is.reactivevalues(snap))
-  expect_true(all(c("datasets", "species", "marker_rows", "condition_col",
+  expect_true(all(c("datasets", "fasta_path", "annotation_path", "self_curated",
+                    "marker_rows", "condition_col",
                     "condition_order", "sample_order") %in% names(snap)))
   expect_true(is.function(ret$analysis))                # a reactiveVal IS a function
 })
@@ -930,7 +932,7 @@ test_that("per-dataset cond/rep wiring + skip toggle (no checkbox group)", {
   )
 })
 
-test_that("per-dataset species/compound wiring writes the active ome's slot", {
+test_that("per-dataset upload/compound wiring writes the active ome's slot", {
   fx <- .setup_test_gp()
   GCTs_and_params <- shiny::reactiveVal(fx$gp)
   globals <- shiny::reactiveValues(default_ome = "proteome",
@@ -943,10 +945,13 @@ test_that("per-dataset species/compound wiring writes the active ome's slot", {
     args = list(GCTs_and_params = GCTs_and_params, globals = globals,
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
-      session$setInputs(pelsa_species = "9606")
+      session$setInputs(pelsa_fasta = data.frame(
+        name = "human.fasta", size = 1, type = "",
+        datapath = "/tmp/human.fasta", stringsAsFactors = FALSE))
       session$setInputs(pelsa_compound = "Rapamycin")
       session$flushReact()
-      expect_identical(setup_state$species[["proteome"]], "9606")
+      expect_identical(setup_state$fasta_path[["proteome"]], "/tmp/human.fasta")
+      expect_identical(setup_state$fasta_name[["proteome"]], "human.fasta")
       expect_identical(setup_state$compound[["proteome"]], "Rapamycin")
     }
   )
@@ -1028,6 +1033,16 @@ test_that("pelsa_setup_box_ui honors seeded self_curated + skip", {
   expect_true(grepl("pelsa_skip[^>]*checked", html))
   # self-curated checkbox checked
   expect_true(grepl("pelsa_self_curated[^>]*checked", html))
+})
+
+test_that("pelsa_fileinput_path/name extract datapath and name, NULL-safe", {
+  fi <- data.frame(name = "human.fasta", size = 1, type = "",
+                   datapath = "/tmp/abc", stringsAsFactors = FALSE)
+  expect_equal(pelsa_fileinput_path(fi), "/tmp/abc")
+  expect_equal(pelsa_fileinput_name(fi), "human.fasta")
+  expect_null(pelsa_fileinput_path(NULL))
+  expect_null(pelsa_fileinput_name(NULL))
+  expect_null(pelsa_fileinput_path(fi[0, ]))
 })
 
 test_that("pelsa_setup_box_ui exposes add-compound + set-default controls", {
@@ -1455,8 +1470,10 @@ test_that("apply-all copies source dataset config to compatible datasets", {
                 GCTs_original = GCTs_original, active_dataset = active_dataset),
     {
       session$flushReact()  # both datasets non-skipped by default
-      # Source (active=prot): set species/compound/cols explicitly.
-      session$setInputs(pelsa_species = "9606",
+      # Source (active=prot): set FASTA/compound/cols explicitly.
+      session$setInputs(pelsa_fasta = data.frame(
+                          name = "human.fasta", size = 1, type = "",
+                          datapath = "/tmp/human.fasta", stringsAsFactors = FALSE),
                         pelsa_compound = "Rapamycin",
                         pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid")
@@ -1469,8 +1486,8 @@ test_that("apply-all copies source dataset config to compatible datasets", {
       session$setInputs(pelsa_apply_all = 1)
       session$flushReact()
 
-      # Species / compound / markers transfer VERBATIM.
-      expect_identical(setup_state$species[["rna"]], "9606")
+      # FASTA / compound / markers transfer VERBATIM.
+      expect_identical(setup_state$fasta_path[["rna"]], "/tmp/human.fasta")
       expect_identical(setup_state$compound[["rna"]], "Rapamycin")
       expect_equal(nrow(setup_state$marker_rows[["rna"]]),
                    nrow(setup_state$marker_rows[["prot"]]))
@@ -1593,7 +1610,9 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
       session$flushReact()  # prot non-skipped by default
       session$setInputs(pelsa_condition_col_d1 = "grp",
                         pelsa_replicate_col_d1 = "rid",
-                        pelsa_species = "homo_sapiens")
+                        pelsa_fasta = data.frame(
+                          name = "human.fasta", size = 1, type = "",
+                          datapath = "/tmp/human.fasta", stringsAsFactors = FALSE))
       session$flushReact()
 
       # Set a marker so we can prove it flows through the seam (per-ome).
@@ -1614,8 +1633,8 @@ test_that("Tab server returns setup_state as a reactive yielding the live snapsh
       expect_false(shiny::is.reactivevalues(snap))
 
       # (3) Every field the consumers read is present + populated from live state
-      # (species / marker_rows are now PER-OME named lists).
-      expect_identical(snap$species[["prot"]], "homo_sapiens")
+      # (fasta_path / marker_rows are now PER-OME named lists).
+      expect_identical(snap$fasta_path[["prot"]], "/tmp/human.fasta")
       expect_identical(snap$condition_col[["prot"]], "grp")
       expect_setequal(snap$condition_order[["prot"]], c("ctrl", "drug"))
       expect_true(!is.null(snap$sample_order[["prot"]]))
@@ -1746,217 +1765,3 @@ test_that("an NA condition value is dropped from the wired sample_order", {
   )
 })
 
-# =============================================================================
-# --- from refresh-observer (5C species UniProt-refresh observer; P3.3) ---
-#
-# The observer is intentionally thin: gather inputs, ALWAYS confirm via a
-# shinyalert dialog (both Full and Incremental modes; no size threshold), and
-# run pelsa_run_species_refresh only from the dialog's callbackR(confirmed).
-# We drive it via testServer with the heavy/network helpers mocked offline:
-#   * pelsa_database_dir         -> a temp dir (no real DB)
-#   * pelsa_refresh_universe_size-> returns a fixed count for the ETA text
-#   * pelsa_run_species_refresh  -> records that the run happened (no network)
-#   * shinyalert::shinyalert     -> captures args so the test can fire callbackR
-#
-# Covered branches:
-#   * no species selected   -> warning, confirm NOT shown, run NOT invoked
-#   * Full button           -> confirm shown; run deferred; runs mode="full"
-#                              only after callbackR(TRUE)
-#   * Incremental button    -> confirm shown; runs mode="incremental" on confirm
-#   * in-flight guard       -> overlapping click ignored (no second confirm)
-#
-# NOTE: the per-test local_mocked_bindings here are intentionally INSIDE each
-# test_that (not shared) and the mock mechanics (shinyalert callbackR capture,
-# the in-flight-guard session re-click) are preserved verbatim.
-# =============================================================================
-
-.refresh_test_gp <- function() {
-  ok <- tryCatch({
-    utils::data("brca_retrospective_v5.0_proteome_gct", package = "Protigy")
-    TRUE
-  }, error = function(e) FALSE)
-  skip_if_not(ok, "brca proteome test data not available")
-  gct <- get("brca_retrospective_v5.0_proteome_gct")
-  list(GCTs = list(proteome = gct),
-       parameters = list(proteome = list(annotation_column = NA)))
-}
-
-.refresh_args <- function(gp) {
-  list(
-    GCTs_and_params = shiny::reactiveVal(gp),
-    globals = shiny::reactiveValues(default_ome = "proteome",
-                                    colors = list(proteome = NULL)),
-    GCTs_original = shiny::reactiveVal(gp$GCTs),
-    active_dataset = shiny::reactive("proteome")
-  )
-}
-
-test_that("refresh observer warns and does NOT confirm or run when no species selected", {
-  gp <- .refresh_test_gp()
-  run_calls <- new.env(); run_calls$n <- 0L
-  alert_calls <- new.env(); alert_calls$n <- 0L
-
-  testthat::local_mocked_bindings(
-    pelsa_database_dir = function() tempdir(),
-    pelsa_run_species_refresh = function(...) { run_calls$n <- run_calls$n + 1L; list() },
-    .package = "Protigy"
-  )
-  testthat::local_mocked_bindings(
-    shinyalert = function(...) { alert_calls$n <- alert_calls$n + 1L; invisible() },
-    .package = "shinyalert"
-  )
-
-  shiny::testServer(PELSASection1_Tab_Server, args = .refresh_args(gp), {
-    session$setInputs(pelsa_refresh_species = character(0))
-    session$setInputs(pelsa_refresh_btn = 1)
-    session$flushReact()
-    expect_equal(alert_calls$n, 0L)   # early return: no confirm dialog
-    expect_equal(run_calls$n, 0L)     # and no run
-  })
-})
-
-test_that("Full button confirms, defers the run, then runs mode='full' on confirm", {
-  gp <- .refresh_test_gp()
-  run_calls <- new.env(); run_calls$n <- 0L; run_calls$species <- NULL
-  run_calls$mode <- NULL
-  alert_calls <- new.env(); alert_calls$n <- 0L; alert_calls$cb <- NULL
-
-  testthat::local_mocked_bindings(
-    pelsa_database_dir = function() tempdir(),
-    pelsa_refresh_universe_size = function(species, database_dir, uploaded_gcts,
-                                           mode = "incremental") {
-      list(total = 10L, per_species = stats::setNames(10L, species[[1]]))
-    },
-    pelsa_run_species_refresh = function(species, ..., mode = "incremental") {
-      run_calls$n <- run_calls$n + 1L
-      run_calls$species <- species
-      run_calls$mode <- mode
-      list(updated = species)
-    },
-    .package = "Protigy"
-  )
-  # Capture the confirm dialog instead of surfacing a real modal; stash callbackR.
-  testthat::local_mocked_bindings(
-    shinyalert = function(..., callbackR = NULL) {
-      alert_calls$n <- alert_calls$n + 1L
-      alert_calls$cb <- callbackR
-      invisible()
-    },
-    .package = "shinyalert"
-  )
-
-  shiny::testServer(PELSASection1_Tab_Server, args = .refresh_args(gp), {
-    session$setInputs(pelsa_refresh_species = "human")
-    session$flushReact()
-    session$setInputs(pelsa_refresh_btn = 1)
-    session$flushReact()
-
-    # Confirm shown exactly once; the run is deferred, NOT synchronous.
-    expect_equal(alert_calls$n, 1L)
-    expect_equal(run_calls$n, 0L)
-    expect_true(is.function(alert_calls$cb))
-
-    # Firing the confirm callback runs the refresh once, in full mode.
-    alert_calls$cb(TRUE)
-    session$flushReact()
-    expect_equal(run_calls$n, 1L)
-    expect_equal(run_calls$species, "human")
-    expect_equal(run_calls$mode, "full")
-  })
-})
-
-test_that("Incremental button confirms then runs mode='incremental' on confirm", {
-  gp <- .refresh_test_gp()
-  run_calls <- new.env(); run_calls$n <- 0L; run_calls$mode <- NULL
-  alert_calls <- new.env(); alert_calls$cb <- NULL
-
-  testthat::local_mocked_bindings(
-    pelsa_database_dir = function() tempdir(),
-    pelsa_refresh_universe_size = function(species, database_dir, uploaded_gcts,
-                                           mode = "incremental") {
-      list(total = 10L, per_species = stats::setNames(10L, species[[1]]))
-    },
-    pelsa_run_species_refresh = function(species, ..., mode = "incremental") {
-      run_calls$n <- run_calls$n + 1L
-      run_calls$mode <- mode
-      list(updated = species)
-    },
-    .package = "Protigy"
-  )
-  testthat::local_mocked_bindings(
-    shinyalert = function(..., callbackR = NULL) {
-      alert_calls$cb <- callbackR; invisible()
-    },
-    .package = "shinyalert"
-  )
-
-  shiny::testServer(PELSASection1_Tab_Server, args = .refresh_args(gp), {
-    session$setInputs(pelsa_refresh_species = "human")
-    session$flushReact()
-    session$setInputs(pelsa_incremental_btn = 1)
-    session$flushReact()
-    expect_equal(run_calls$n, 0L)              # deferred
-    expect_true(is.function(alert_calls$cb))
-
-    alert_calls$cb(TRUE)
-    session$flushReact()
-    expect_equal(run_calls$n, 1L)
-    expect_equal(run_calls$mode, "incremental")
-  })
-})
-
-test_that("in-flight refresh ignores an overlapping click (no second confirm)", {
-  gp <- .refresh_test_gp()
-  run_calls <- new.env(); run_calls$n <- 0L
-  alert_calls <- new.env(); alert_calls$n <- 0L; alert_calls$cb <- NULL
-  # The session handle is captured below so the mock can re-click mid-run.
-  sess <- new.env(); sess$obj <- NULL
-
-  testthat::local_mocked_bindings(
-    pelsa_database_dir = function() tempdir(),
-    pelsa_refresh_universe_size = function(species, database_dir, uploaded_gcts,
-                                           mode = "incremental") {
-      list(total = 10L, per_species = stats::setNames(10L, species[[1]]))
-    },
-    # While the run is executing, refresh_in_flight is TRUE (run_refresh sets it
-    # before calling this and clears it on.exit). Fire a SECOND button click from
-    # inside the run so the overlapping click is observed while still in flight;
-    # the launch_refresh guard must short-circuit it (no second confirm dialog).
-    pelsa_run_species_refresh = function(species, ..., mode = "incremental") {
-      run_calls$n <- run_calls$n + 1L
-      if (run_calls$n == 1L) {
-        sess$obj$setInputs(pelsa_refresh_btn = 2)
-        sess$obj$flushReact()
-      }
-      list(updated = species)
-    },
-    .package = "Protigy"
-  )
-  testthat::local_mocked_bindings(
-    shinyalert = function(..., callbackR = NULL) {
-      alert_calls$n <- alert_calls$n + 1L
-      alert_calls$cb <- callbackR
-      invisible()
-    },
-    .package = "shinyalert"
-  )
-
-  shiny::testServer(PELSASection1_Tab_Server, args = .refresh_args(gp), {
-    sess$obj <- session
-    session$setInputs(pelsa_refresh_species = "human")
-    session$flushReact()
-
-    # First click -> confirm shown once.
-    session$setInputs(pelsa_refresh_btn = 1)
-    session$flushReact()
-    expect_equal(alert_calls$n, 1L)
-
-    # Confirm it. run_refresh sets refresh_in_flight TRUE, then the mock re-clicks
-    # the button mid-run: the guard must ignore it -> still exactly ONE confirm
-    # dialog and ONE run, even though the button changed twice.
-    alert_calls$cb(TRUE)
-    session$flushReact()
-    expect_equal(alert_calls$n, 1L)   # guard blocked the overlapping click's confirm
-    expect_equal(run_calls$n, 1L)     # and no second run was launched
-  })
-})

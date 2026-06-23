@@ -742,6 +742,20 @@ pelsa_prune_perdataset_state <- function(state_lists, checked) {
   })
 }
 
+# Extract the datapath / original name from a shiny fileInput value (NULL-safe).
+# A fileInput's value is a data.frame (one row per file) with `name`, `datapath`
+# columns, or NULL before any upload. Returns NULL when nothing is uploaded.
+# @noRd
+pelsa_fileinput_path <- function(fi) {
+  if (is.null(fi) || !is.data.frame(fi) || nrow(fi) == 0L) return(NULL)
+  as.character(fi$datapath[[1L]])
+}
+# @noRd
+pelsa_fileinput_name <- function(fi) {
+  if (is.null(fi) || !is.data.frame(fi) || nrow(fi) == 0L) return(NULL)
+  as.character(fi$name[[1L]])
+}
+
 # The analyzed (non-skipped) omes, in all_omes() order.
 #
 # A dataset is analyzed unless its per-ome skip flag is explicitly TRUE. A

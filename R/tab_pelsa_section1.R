@@ -227,9 +227,23 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       "Source: https://github.com/broadinstitute/protigy-v2.git"
     )
 
-    observeEvent(input$pelsa_species, {
+    # Per-dataset upload wiring: each uploader writes the ACTIVE dataset's slot.
+    observeEvent(input$pelsa_fasta, {
       ome <- active_setup_ome(); req(ome)
-      set_ds("species", ome, input$pelsa_species)
+      set_ds("fasta_path", ome, pelsa_fileinput_path(input$pelsa_fasta))
+      set_ds("fasta_name", ome, pelsa_fileinput_name(input$pelsa_fasta))
+    })
+    observeEvent(input$pelsa_annotation, {
+      ome <- active_setup_ome(); req(ome)
+      set_ds("annotation_path", ome, pelsa_fileinput_path(input$pelsa_annotation))
+      set_ds("annotation_name", ome, pelsa_fileinput_name(input$pelsa_annotation))
+    })
+    observeEvent(input$pelsa_self_curated, {
+      ome <- active_setup_ome(); req(ome)
+      set_ds("self_curated", ome, isTRUE(input$pelsa_self_curated))
+      # Grey out / re-enable the annotation uploader to match.
+      shinyjs::toggleState("pelsa_annotation_wrap",
+                           condition = !isTRUE(input$pelsa_self_curated))
     }, ignoreNULL = FALSE)
 
     # NOTE: input$pelsa_compound is handled by a SINGLE merged observer further
@@ -848,9 +862,9 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
     # ---- APPLY THIS DATASET'S SETUP TO ALL OTHERS -----------------------------
     # A button (not a checkbox): copies the ACTIVE setup tab's full config to
-    # every OTHER non-skipped tab. Species / compound / markers copy VERBATIM
-    # (cross-species copy is the user's choice; non-matching accessions simply
-    # won't match the FASTA). Condition/replicate COLUMNS + condition ORDER copy
+    # every OTHER non-skipped tab. Uploaded FASTA + annotation / compound /
+    # markers copy VERBATIM (the user can re-upload per dataset if they differ).
+    # Condition/replicate COLUMNS + condition ORDER copy
     # best-effort (only where the target's cdesc has those columns). The per-
     # condition replicate ORDER is NOT copied (it holds the source's SAMPLE names,
     # which don't exist in the target); each target reseeds its own default.
@@ -868,7 +882,11 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         return()
       }
       i_src    <- .ds_index(src)
-      src_species  <- setup_state$species[[src]]
+      src_fasta_path  <- setup_state$fasta_path[[src]]
+      src_fasta_name  <- setup_state$fasta_name[[src]]
+      src_annot_path  <- setup_state$annotation_path[[src]]
+      src_annot_name  <- setup_state$annotation_name[[src]]
+      src_self_cur    <- isTRUE(setup_state$self_curated[[src]])
       src_compound <- setup_state$compound[[src]]
       src_markers  <- cur_markers(src)
       src_cond <- input[[id_condition_col(i_src)]] %||% setup_state$condition_col[[src]]
@@ -881,8 +899,12 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       for (ome in checked_datasets()) {       # non-skipped targets only
         if (identical(ome, src)) next
 
-        # Species / compound / markers copy verbatim.
-        set_ds("species", ome, src_species)
+        # Uploaded FASTA + annotation / compound / markers copy verbatim.
+        set_ds("fasta_path", ome, src_fasta_path)
+        set_ds("fasta_name", ome, src_fasta_name)
+        set_ds("annotation_path", ome, src_annot_path)
+        set_ds("annotation_name", ome, src_annot_name)
+        set_ds("self_curated", ome, src_self_cur)
         set_ds("compound", ome, src_compound)
         set_markers(ome, src_markers)
         # Mark this ome's compound as already-autofilled, so the first visit to
@@ -917,8 +939,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
 
       if (applied) {
         showNotification(sprintf(
-          paste0("Applied %s's species, compound, and markers to all other ",
-                 "datasets; condition/replicate columns copied where present."),
+          paste0("Applied %s's FASTA, annotation, compound, and markers to all ",
+                 "other datasets; condition/replicate columns copied where present."),
           src), type = "message", duration = 5)
       } else {
         showNotification("No other datasets to apply this setup to.",
@@ -927,8 +949,8 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       if (length(col_skipped)) {
         showNotification(sprintf(
           paste0("Condition/replicate columns not copied to %d dataset(s) ",
-                 "lacking matching columns: %s (species/compound/markers still ",
-                 "applied)."),
+                 "lacking matching columns: %s (FASTA/annotation/compound/markers ",
+                 "still applied)."),
           length(col_skipped), paste(col_skipped, collapse = ", ")
         ), type = "warning", duration = 6)
       }
@@ -955,153 +977,6 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
         )
       }
       setup_state$sample_order <- so
-    })
-
-    ## SPECIES UNIPROT-ANNOTATION REFRESH (5C) ##
-    # Maintenance action, OFF the reactive path (once per button click). The
-    # multi-species loop, universe resolution, fetch + MERGE + atomic write, and
-    # error capture all live in pelsa_run_species_refresh()
-    # (tab_pelsa_uniprot_helpers.R) so this observer stays thin: gather inputs,
-    # (optionally) confirm a large fetch, drive a live progress bar, and surface
-    # the result INLINE under the button. fetch_fn is the real pelsa_fetch_uniprot
-    # here; tests inject a stub into the helper directly (no network).
-    #
-    # WHY CONFIRM: with no datasets uploaded the universe falls back to the WHOLE
-    # FASTA proteome (~70k accessions for human). That is a multi-minute fetch a
-    # user can trigger by accident, so BOTH modes confirm unconditionally (no
-    # size threshold), showing the count + a rough ETA before any fetch.
-    #
-    # WHY INLINE STATUS: the per-page progress bar renders LIVE in the modal
-    # (Shiny flushes setProgress mid-loop), and the final result renders in a
-    # PERSISTENT inline panel under the button (pelsa_refresh_result_ui) instead
-    # of a dismissible toast - so the outcome can never be cleared off-screen.
-    #
-    # RE-CLICK GUARD: an in-flight reactiveVal + a disabled button prevent a
-    # second click mid-fetch from starting an overlapping write (which would
-    # race the atomic rename).
-    refresh_in_flight  <- reactiveVal(FALSE)
-    refresh_result     <- reactiveVal(NULL)   # last run's results (inline panel)
-
-    output$pelsa_refresh_status <- renderUI({
-      pelsa_refresh_result_ui(refresh_result())
-    })
-
-    # The actual run (shared by both modes' confirmed paths). Drives the live
-    # progress modal, runs the orchestrator with the chosen mode, and stores the
-    # results for the inline panel. `mode` is "full" or "incremental".
-    run_refresh <- function(selected, uploaded_gcts, mode) {
-      refresh_in_flight(TRUE)
-      shinyjs::disable("pelsa_refresh_btn")
-      shinyjs::disable("pelsa_incremental_btn")
-      on.exit({
-        shinyjs::enable("pelsa_refresh_btn")
-        # The incremental guard observer re-applies the correct enabled/disabled
-        # state (cache presence) once in-flight clears; do not blanket-enable here.
-        refresh_in_flight(FALSE)
-      }, add = TRUE)
-
-      results <- withProgress(
-        message = "Refreshing UniProt annotation library", value = 0, {
-          pelsa_run_species_refresh(
-            species       = selected,
-            database_dir  = pelsa_database_dir(),
-            uploaded_gcts = uploaded_gcts,
-            fetch_fn      = pelsa_fetch_uniprot,
-            mode          = mode,
-            set_progress  = function(value, detail) {
-              setProgress(value = value, detail = detail)
-            }
-          )
-        }
-      )
-      refresh_result(results)
-    }
-
-    # Resolve the selected species' uploaded GCTs (Defect #1 guard: only same-
-    # species datasets). Shared by both modes.
-    refresh_gcts_for <- function(selected) {
-      gp <- GCTs_and_params()
-      uploaded_gcts <- if (is.null(gp)) NULL else gp$GCTs
-      species_by_ds <- isolate(setup_state$species)
-      pelsa_gcts_for_species(uploaded_gcts, species_by_ds, selected)
-    }
-
-    # TRUE iff the selected species has a feature cache with >= 1 row on disk.
-    species_cache_has_rows <- function(selected) {
-      if (is.null(selected) || length(selected) != 1L || !nzchar(selected)) {
-        return(FALSE)
-      }
-      species_dir <- file.path(pelsa_database_dir(), selected)
-      # Only need to know whether the cache has >= 1 row; a 1-row read avoids
-      # parsing the whole (proteome-sized) feature TSV on every guard firing.
-      cache <- tryCatch(pelsa_read_feature_cache(species_dir, n_max = 1L),
-                        error = function(e) NULL)
-      is.data.frame(cache) && nrow(cache) > 0L
-    }
-
-    # Shared confirm-then-run for both modes. `mode` is "full" | "incremental".
-    # BOTH modes confirm unconditionally (no size threshold). Full warns about
-    # the destructive wipe; incremental about the append.
-    launch_refresh <- function(mode) {
-      if (isTRUE(refresh_in_flight())) return()        # ignore overlapping clicks
-      selected <- input$pelsa_refresh_species
-      if (is.null(selected) || length(selected) == 0L) {
-        showNotification("Select a species to refresh.", type = "warning",
-                         duration = 4)
-        return()
-      }
-      uploaded_gcts <- refresh_gcts_for(selected)
-      database_dir  <- pelsa_database_dir()
-
-      size <- tryCatch(
-        pelsa_refresh_universe_size(selected, database_dir, uploaded_gcts,
-                                    mode = mode),
-        error = function(e) list(total = NA_integer_, per_species = integer(0)))
-      eta <- if (is.na(size$total)) "an unknown number of accessions" else
-        pelsa_refresh_eta_text(size$total)
-
-      text <- if (identical(mode, "full")) {
-        sprintf(paste0("Full library refresh for <b>%s</b>.<br/><br/>This ",
-                       "DELETES the existing UniProt feature and membrane files ",
-                       "for this species and re-fetches the entire proteome ",
-                       "(<b>%s</b>). It cannot be undone or stopped once ",
-                       "started. Continue?"), selected, eta)
-      } else {
-        sprintf(paste0("Incremental refresh for <b>%s</b>.<br/><br/>This fetches ",
-                       "only the <b>%s</b> not yet in the library and appends ",
-                       "them to the existing cache. Continue?"), selected, eta)
-      }
-      shinyalert::shinyalert(
-        title = if (identical(mode, "full")) "Rebuild the whole library?"
-                else "Top up the library?",
-        text = text, html = TRUE,
-        type = if (identical(mode, "full")) "warning" else "info",
-        showCancelButton = TRUE,
-        confirmButtonText = if (identical(mode, "full")) "Delete & rebuild"
-                            else "Fetch",
-        cancelButtonText = "Cancel",
-        callbackR = function(confirmed) {
-          if (isTRUE(confirmed)) run_refresh(selected, uploaded_gcts, mode)
-        }
-      )
-    }
-
-    observeEvent(input$pelsa_refresh_btn, launch_refresh("full"),
-                 ignoreInit = TRUE)
-    observeEvent(input$pelsa_incremental_btn, launch_refresh("incremental"),
-                 ignoreInit = TRUE)
-
-    # Incremental disable-guard: enabled IFF a species is selected, its cache has
-    # >= 1 row, and no fetch is in flight. Reactive on the selection, the in-flight
-    # flag, AND the last result (so a just-finished Full refresh that populated the
-    # cache flips Incremental on without re-selecting the species).
-    observe({
-      refresh_result()                                 # re-evaluate after a run
-      in_flight <- isTRUE(refresh_in_flight())
-      selected  <- input$pelsa_refresh_species
-      enable_incremental <- !in_flight && species_cache_has_rows(selected)
-      if (enable_incremental) shinyjs::enable("pelsa_incremental_btn")
-      else shinyjs::disable("pelsa_incremental_btn")
     })
 
     ## START ANALYSIS (5D) ##
@@ -1279,7 +1154,9 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
                      error = function(e) NULL)
       if (is.null(ss)) return(invisible(NULL))
       cfg <- list(
-        species          = ss$species[[ome]] %||% NA,
+        self_curated     = isTRUE(ss$self_curated[[ome]]),
+        fasta_file       = ss$fasta_name[[ome]] %||% NA,
+        annotation_file  = ss$annotation_name[[ome]] %||% NA,
         compound         = ss$compound[[ome]] %||% NA,
         condition_column = ss$condition_col[[ome]] %||% NA,
         condition_order  = as.list(ss$condition_order[[ome]] %||% character(0)),
