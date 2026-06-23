@@ -381,3 +381,61 @@ test_that("is.continuous is invariant to input order (INT-3)", {
     expect_equal(is.continuous(x), !is.discrete(x))
   }
 })
+
+# --------------------------------------------------------------------------- #
+# delinearize                                                                  #
+# --------------------------------------------------------------------------- #
+
+test_that("delinearize with base 2 computes 2^mat and preserves dimnames", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2,
+              dimnames = list(c("r1", "r2"), c("c1", "c2")))
+  expect_equal(delinearize(m, 2), 2 ^ m)
+  expect_equal(dimnames(delinearize(m, 2)), dimnames(m))
+})
+
+test_that("delinearize with base 10 computes 10^mat", {
+  m <- matrix(c(0, 1, 2, 3), nrow = 2)
+  expect_equal(delinearize(m, 10), 10 ^ m)
+})
+
+test_that("delinearize accepts an arbitrary positive base (natural log)", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_equal(delinearize(m, exp(1)), exp(1) ^ m)
+})
+
+test_that("delinearize base 1 is a passthrough (NOT 1^mat)", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_identical(delinearize(m, 1), m)
+})
+
+test_that("delinearize base NA and NULL are passthroughs", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_identical(delinearize(m, NA), m)
+  expect_identical(delinearize(m, NULL), m)
+})
+
+test_that("delinearize preserves NA positions", {
+  m <- matrix(c(1, NA, 3, 4), nrow = 2)  # column-major: NA at [2, 1]
+  out <- delinearize(m, 2)
+  expect_true(is.na(out[2, 1]))
+  expect_equal(sum(is.na(out)), 1L)
+})
+
+test_that("delinearize coerces a data.frame block to a matrix", {
+  df <- as.data.frame(matrix(c(1, 2, 3, 4), nrow = 2))
+  out <- delinearize(df, 2)
+  expect_true(is.matrix(out))
+  expect_equal(out, 2 ^ as.matrix(df))
+})
+
+test_that("delinearize errors on non-positive or non-numeric base", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_error(delinearize(m, 0))
+  expect_error(delinearize(m, -2))
+  expect_error(delinearize(m, "2"))
+})
+
+test_that("delinearize errors on a non-numeric matrix", {
+  m <- matrix(letters[1:4], nrow = 2)
+  expect_error(delinearize(m, 2))
+})

@@ -239,6 +239,48 @@ min_samples_message <- function(gct, n = 2, analysis = "This analysis") {
   )
 }
 
+# Undo a log transform of an arbitrary base, recovering linear intensities.
+# Used by the QC CV tab so CV (which is NOT invariant under log) is always
+# computed on linear data, regardless of the log base applied upstream. This is
+# self-contained (no PELSA dependency) so the QC CV tab does not rely on the
+# PELSA subsystem.
+#
+# `base` semantics:
+#   NULL / NA / 1            -> passthrough (data already linear). base 1 is the
+#                               documented "no delinearization" sentinel: log base
+#                               1 is undefined and 1^x would erase the data, so it
+#                               means "leave as-is".
+#   numeric > 0 (and != 1)   -> base ^ mat
+#   non-numeric or <= 0      -> error (fail fast)
+#
+# NA positions and dimnames are preserved (base ^ NA == NA).
+#
+# @param mat   numeric matrix, or a data.frame block coerced to matrix.
+# @param base  single value: NULL, NA, or a positive number.
+# @return numeric matrix, same shape/dimnames as `mat`.
+delinearize <- function(mat, base) {
+  if (is.data.frame(mat)) mat <- as.matrix(mat)
+  if (!is.matrix(mat) || !is.numeric(mat)) {
+    stop("delinearize: `mat` must be a numeric matrix or data.frame.",
+         call. = FALSE)
+  }
+  if (is.null(base) || length(base) == 0L ||
+      (length(base) == 1L && is.na(base))) {
+    return(mat)
+  }
+  if (length(base) != 1L || !is.numeric(base)) {
+    stop("delinearize: `base` must be a single numeric value (or NULL/NA).",
+         call. = FALSE)
+  }
+  if (base <= 0) {
+    stop("delinearize: `base` must be a positive number.", call. = FALSE)
+  }
+  if (base == 1) {
+    return(mat)
+  }
+  base ^ mat
+}
+
 
 
 
