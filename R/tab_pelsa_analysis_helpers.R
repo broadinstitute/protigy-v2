@@ -1892,6 +1892,15 @@ pelsa_dataset_matrix <- function(gct, sample_cols) {
   NULL
 }
 
+# cid (column/sample id) vector from a GCT (@cid) or a data.frame (colnames).
+# NULL when the object carries no usable id (so callers can no-op gracefully).
+# @noRd
+.pelsa_gct_cids <- function(g) {
+  if (methods::is(g, "GCT")) return(methods::slot(g, "cid"))
+  if (is.data.frame(g))      return(colnames(g))
+  NULL
+}
+
 # Restrict the CV-source (ORIGINAL) GCT to the PROCESSED peptide set, BY id, so
 # within-condition CV describes exactly the analyzed peptides -- regardless of
 # any rows the processing pipeline dropped (missing/SD filters) or reordered.
@@ -1901,18 +1910,24 @@ pelsa_dataset_matrix <- function(gct, sample_cols) {
 # by row-dropping filters that preserve rownames, so the processed rid set is a
 # subset of the original's. The rid IS the identifier column chosen at setup, so
 # aligning by rid keeps the CV row set in lock-step with the analysis row set.
-# Only ROWS (peptides) are subset/reordered; COLUMNS (samples) are untouched, so
-# the condition map derived from the original's cdesc stays valid.
+# Both ROWS (peptides) and COLUMNS (samples) are restricted/reordered to the
+# processed set: peptides by rid, samples by cid. Restricting samples means CV
+# reflects exactly the analyzed samples even when setup filtered some out -- this
+# matches the QC CV tab's qc_cv_align_source() behavior for consistency. The
+# condition map (built from the original's cdesc, then intersected with the
+# aligned matrix's columns by the caller) stays valid because it is keyed by name.
 #
-# We subset the @mat/@rdesc/@rid slots directly rather than via cmapR::subset_gct:
-# subset_gct requires an "id" meta column that programmatically-built GCTs in this
-# app don't guarantee. Direct slot replacement on the (copy-on-modify) local is
-# robust to that and needs no GCT re-validation -- downstream only reads @mat.
+# We subset the @mat/@rdesc/@rid (and @cdesc/@cid) slots directly rather than via
+# cmapR::subset_gct: subset_gct requires an "id" meta column that
+# programmatically-built GCTs in this app don't guarantee. Direct slot replacement
+# on the (copy-on-modify) local is robust to that and needs no GCT re-validation.
 #
 # @param gct_original   the unprocessed (CV-source) GCT, or a data.frame seam.
-# @param gct_processed  the processed GCT whose rid set/order is the target.
-# @return gct_original restricted + reordered to the processed rids. Inputs with
-#         no usable id (non-GCT, non-data.frame) are returned unchanged.
+# @param gct_processed  the processed GCT whose rid/cid sets are the target.
+# @return gct_original restricted + reordered to the processed rids and cids.
+#         Inputs with no usable rid (non-GCT, non-data.frame) are returned
+#         unchanged. Sample (cid) restriction is skipped when either side lacks
+#         usable cids.
 # @noRd
 pelsa_align_original_to_processed <- function(gct_original, gct_processed) {
   proc_rids <- .pelsa_gct_rids(gct_processed)
@@ -1924,15 +1939,35 @@ pelsa_align_original_to_processed <- function(gct_original, gct_processed) {
   }
   keep <- proc_rids[proc_rids %in% orig_rids]
   idx  <- match(keep, orig_rids)               # no NAs: keep is a subset of orig
+
+  # Samples to keep, in processed order. NULL (skip) when either side lacks cids.
+  proc_cids <- .pelsa_gct_cids(gct_processed)
+  orig_cids <- .pelsa_gct_cids(gct_original)
+  keep_cols <- if (!is.null(proc_cids) && !is.null(orig_cids)) {
+    proc_cids[proc_cids %in% orig_cids]
+  } else {
+    NULL
+  }
+
   if (methods::is(gct_original, "GCT")) {
     mat   <- methods::slot(gct_original, "mat")[idx, , drop = FALSE]
     rdesc <- methods::slot(gct_original, "rdesc")[idx, , drop = FALSE]
+    if (!is.null(keep_cols)) {
+      cidx  <- match(keep_cols, orig_cids)     # no NAs: keep_cols subset of orig
+      mat   <- mat[, cidx, drop = FALSE]
+      methods::slot(gct_original, "cdesc") <-
+        methods::slot(gct_original, "cdesc")[cidx, , drop = FALSE]
+      methods::slot(gct_original, "cid")   <- as.character(keep_cols)
+    }
     methods::slot(gct_original, "mat")   <- mat
     methods::slot(gct_original, "rdesc") <- rdesc
     methods::slot(gct_original, "rid")   <- as.character(keep)
     return(gct_original)
   }
-  gct_original[keep, , drop = FALSE]            # data.frame seam
+  # data.frame seam (rows = peptides, cols = samples)
+  out <- gct_original[keep, , drop = FALSE]
+  if (!is.null(keep_cols)) out <- out[, keep_cols, drop = FALSE]
+  out
 }
 
 # ---- condition map -----------------------------------------------------------
@@ -2306,9 +2341,10 @@ pelsa_run_analysis_one <- function(gct,
   .step("Computing CV")
   cv <- NULL
   if (!is.null(gct_original)) {
-    # M8/M9: restrict the CV source to the PROCESSED peptide set BY id, so CV
-    # describes exactly the analyzed peptides (processing may drop/reorder rows).
-    # Columns (samples) are untouched, so cdesc_cond above remains valid.
+    # M8/M9: restrict the CV source to the PROCESSED set BY id, so CV describes
+    # exactly the analyzed peptides AND samples (processing may drop/reorder rows
+    # and filter samples). cdesc_cond above remains valid -- it is keyed by sample
+    # name and the cmap below intersects it with the aligned matrix's columns.
     gct_original <- pelsa_align_original_to_processed(gct_original, gct)
     log_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
     raw_mat <- pelsa_delinearize(log_mat, log_base)

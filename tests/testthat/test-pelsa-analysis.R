@@ -591,6 +591,30 @@ test_that("pelsa_align_original_to_processed subsets + reorders the original by 
   expect_equal(out["pC", "s1"], 3)
 })
 
+test_that("pelsa_align_original_to_processed restricts samples to the processed set", {
+  orig <- .mk_rid_gct(c("pA", "pB", "pC"), samples = c("s1", "s2", "s3", "s4"))
+  # processing kept only s1 and s3 (s2, s4 filtered out at setup)
+  proc <- .mk_rid_gct(c("pA", "pB", "pC"), samples = c("s1", "s3"))
+
+  out <- pelsa_align_original_to_processed(orig, proc)
+  expect_identical(out@cid, c("s1", "s3"))
+  expect_identical(colnames(out@mat), c("s1", "s3"))
+  expect_equal(nrow(out@cdesc), 2L)
+  expect_identical(rownames(out@cdesc), c("s1", "s3"))
+  # values come from the ORIGINAL by sample id
+  expect_equal(unname(out@mat["pA", "s3"]), unname(orig@mat["pA", "s3"]))
+})
+
+test_that("pelsa_align_original_to_processed restricts data.frame seam columns too", {
+  o <- data.frame(s1 = 1:4, s2 = 5:8, s3 = 9:12,
+                  row.names = c("pA", "pB", "pC", "pD"))
+  p <- data.frame(s1 = c(0, 0), s3 = c(0, 0), row.names = c("pC", "pA"))
+  out <- pelsa_align_original_to_processed(o, p)
+  expect_identical(rownames(out), c("pC", "pA"))
+  expect_identical(colnames(out), c("s1", "s3"))   # s2 dropped
+  expect_equal(out["pC", "s1"], 3)
+})
+
 test_that("pelsa_align_original_to_processed stops on duplicate original ids", {
   dup <- .mk_rid_gct(c("pA","pX","pB"))
   methods::slot(dup, "rid") <- c("pA","pA","pB")   # forced invalid id namespace
