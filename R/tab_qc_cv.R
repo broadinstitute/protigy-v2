@@ -417,7 +417,9 @@ QCCV_Ome_Server <- function(id,
       filter_cv_table(cv_table(), cutoff = cutoff, min_groups = min_groups)
     })
 
-    # Filtered GCT
+    # Filtered GCT. The export deliberately re-anchors to the PROCESSED GCT's row
+    # set (not the CV source): filtered_cv() ids come from the selected source,
+    # so the %in% intersection keeps only features that also survive processing.
     filtered_gct <- reactive({
       req(filtered_cv(), GCT_processed())
       keep_ids <- filtered_cv()$id
@@ -426,7 +428,8 @@ QCCV_Ome_Server <- function(id,
 
     ## Group preview table ----------------------------------------------------
     output$group_preview_table <- renderTable({
-      req(GCT_processed(), selected_cols())
+      # Gate on the source actually consumed (grouping is built from source_gct).
+      req(source_gct(), selected_cols())
       tab <- table(grouping_vector())
       data.frame(
         Group       = names(tab),
