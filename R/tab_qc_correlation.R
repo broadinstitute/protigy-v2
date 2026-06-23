@@ -282,6 +282,13 @@ QCCorrelation_Ome_Server <- function(id,
     
     
     qc_corr_heatmap_export_function <- function(dir_name) {
+      # Single-sample omes grey out on screen via the validate(need(...)) gate in
+      # qc_corr_heatmap_out(). Skip the export cleanly (mirrors the PCA/CV tabs) so
+      # the gate does not raise a shiny.silent.error that tab_export.R would surface
+      # as a misleading "Could not save" failure.
+      if (!is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation"))) {
+        return(invisible(NULL))
+      }
       req(qc_corr_heatmap_out()$HM)
       pdf(file = file.path(dir_name, paste0("qc_corr_heatmap_", ome, ".pdf")),
           width = (corr_plot_height() + 48)/72,
@@ -291,6 +298,10 @@ QCCorrelation_Ome_Server <- function(id,
     }
     
     qc_corr_boxplot_export_function <- function(dir_name) {
+      # See qc_corr_heatmap_export_function: skip single-sample omes cleanly.
+      if (!is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation"))) {
+        return(invisible(NULL))
+      }
       ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_corr_boxplot_", ome, ".pdf"), 

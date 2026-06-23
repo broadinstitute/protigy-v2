@@ -81,8 +81,21 @@ stat.testing <- function(
         # This handles group names with hyphens (e.g., "Non-inflamed")
         unique_groups <- unique(groups)
         group_name_map <- setNames(make.names(unique_groups), unique_groups)
+        # make.names() can map two distinct group names to the same syntactic
+        # value (e.g. "A-B" and "A.B" both -> "A.B"). That collapses a factor
+        # level and silently misaligns the AveExpr.<group> column permutation
+        # below (match() returns the first hit for both). Warn so the misalignment
+        # is not invisible; the 2-group full-collision case is still caught by the
+        # length(levels(f)) < 2 guard.
+        if (anyDuplicated(unname(group_name_map))) {
+          warning(
+            "Two or more group names map to identical syntactic names via ",
+            "make.names(); per-group average-expression columns may be ",
+            "misaligned for ome ", ome_name, "."
+          )
+        }
         groups_valid <- group_name_map[as.character(groups)]
-        
+
         f <- factor(groups_valid, levels = unique(groups_valid))
         if (length(levels(f)) < 2) {
           message(paste(
@@ -172,7 +185,7 @@ stat.testing <- function(
         ]
         col_perm <- match(design_group_order, agg_group_order)
         avg <- avg[, col_perm, drop = FALSE]
-        final.results[, grepl("AveExpr.", colnames(final.results))] <- avg
+        final.results[, grepl("AveExpr.", colnames(final.results), fixed = TRUE)] <- avg
         final.results[, colnames(final.results) == "AveExpr"] <- rowMeans(
           avg,
           na.rm = T

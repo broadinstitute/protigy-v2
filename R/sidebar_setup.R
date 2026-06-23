@@ -843,7 +843,9 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # Reading live preserves the user's selection through a toggle. These reads are
       # read-only dependencies and do NOT cause a panel rebuild.
       live_norm <- input[[paste0(label, '_data_normalization')]]
-      if (is.null(live_norm) || !nzchar(live_norm)) {
+      # length(live_norm) != 1L guards the zero-length case: `!nzchar(character(0))`
+      # is logical(0), which errors inside `||` under R >= 4.4.
+      if (is.null(live_norm) || length(live_norm) != 1L || !nzchar(live_norm)) {
         live_norm <- parameters$data_normalization
       }
       live_max_missing <- input[[paste0(label, '_max_missing')]]
