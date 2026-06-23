@@ -278,3 +278,19 @@ test_that("CV note + comment do not over-claim 'raw' intensities", {
   expect_false(grepl("RAW\\s*\\n?\\s*#?\\s*LINEAR|raw linear", helper, ignore.case = TRUE),
                info = "compute_cv_table comment must not claim raw linear intensities")
 })
+
+# --------------------------------------------------------------------------- #
+# qc_cv_detect_base                                                           #
+# --------------------------------------------------------------------------- #
+
+test_that("qc_cv_detect_base maps log2 -> 2 and log10 -> 10", {
+  expect_equal(qc_cv_detect_base("log2"), 2)
+  expect_equal(qc_cv_detect_base("log10"), 10)
+})
+
+test_that("qc_cv_detect_base returns NA for None / NA / NULL / unknown", {
+  expect_true(is.na(qc_cv_detect_base("None")))
+  expect_true(is.na(qc_cv_detect_base(NA_character_)))
+  expect_true(is.na(qc_cv_detect_base(NULL)))
+  expect_true(is.na(qc_cv_detect_base("ln")))
+})

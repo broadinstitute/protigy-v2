@@ -26,6 +26,23 @@ combine_cdesc_cols <- function(cdesc, cols, sep = "_") {
   do.call(paste, c(vals, list(sep = sep)))
 }
 
+# Map a setup `log_transformation` value to the numeric base used to delinearize
+# the CV source. "log2" -> 2, "log10" -> 10. Anything else ("None", NA, NULL, an
+# unrecognized value) -> NA_real_, meaning "base unknown" so the QC CV tab asks
+# the user to enter one (the data may have been log-transformed before upload).
+#
+# @param log_transformation  the per-ome setup parameter, or NA/NULL.
+# @return single numeric: 2, 10, or NA_real_.
+qc_cv_detect_base <- function(log_transformation) {
+  if (is.null(log_transformation) || length(log_transformation) == 0L) {
+    return(NA_real_)
+  }
+  switch(as.character(log_transformation)[[1]],
+         log2  = 2,
+         log10 = 10,
+         NA_real_)
+}
+
 # Compute CV (sd / mean) per group per feature.
 #
 # CV is NOT invariant under log transformation, so it must be computed on
