@@ -896,10 +896,11 @@ pelsa_sum_normalize <- function(mat, condition_map, scale = "mean") {
 
 # Compute per-peptide-row CV within each condition on the SUM-NORMALIZED matrix.
 #
-# Pipeline: sum-normalize the raw matrix (pelsa_sum_normalize), then for each
-# condition compute, per peptide row over that condition's normalized replicate
-# columns (NA ignored): cv_pct = sd / mean * 100, where sd is the SAMPLE sd
-# (ddof = 1, matrixStats::rowSds default) and mean is rowMeans2(na.rm = TRUE).
+# Pipeline: for each condition compute, per peptide row over that condition's
+# RAW (non-normalized) replicate columns (NA ignored): cv_pct = sd / mean * 100,
+# where sd is the SAMPLE sd (ddof = 1, matrixStats::rowSds default) and mean is
+# rowMeans2(na.rm = TRUE). The caller delinearizes the matrix first; CV is
+# computed on the non-normalized linear intensities (no sum-normalization).
 #
 # cv_status per (row, condition):
 #   "insufficient_replicates"  if n_nonNA < min_nonNA  (cv_pct = NA)
@@ -937,7 +938,6 @@ pelsa_within_condition_cv <- function(raw_mat, condition_map, min_nonNA = 3L) {
   min_nonNA <- as.integer(min_nonNA)
 
   cond <- .pelsa_resolve_condition_map(condition_map, raw_mat)
-  norm <- pelsa_sum_normalize(raw_mat, condition_map)
 
   n_row <- nrow(raw_mat)
   conditions <- unique(cond)
@@ -948,7 +948,7 @@ pelsa_within_condition_cv <- function(raw_mat, condition_map, min_nonNA = 3L) {
   for (i in seq_along(conditions)) {
     cnd <- conditions[i]
     cols <- which(cond == cnd)
-    block <- norm[, cols, drop = FALSE]
+    block <- raw_mat[, cols, drop = FALSE]
 
     n_nonNA <- rowSums(!is.na(block)) # vectorized, no per-row loop
     means <- matrixStats::rowMeans2(block, na.rm = TRUE)

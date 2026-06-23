@@ -1280,6 +1280,17 @@ test_that("within-condition CV: r1 condition B matches closed form sqrt(700)/30*
   expect_equal(r1B$cv_pct, sqrt(700) / 30 * 100, tolerance = 1e-8)
 })
 
+test_that("within-condition CV: condition A uses NON-normalized (raw-basis) values", {
+  io <- .cv_tiny_inputs()
+  res <- pelsa_within_condition_cv(io$mat, io$cond, min_nonNA = 3L)
+  r1A <- res[res$row_id == 1L & res$condition == "A", , drop = FALSE]
+  # r1 condition A raw = {100, 200, 300}: mean 200, sample sd 100 -> cv 50%.
+  # If sum-normalization were applied (factors 2, 16/15, 0.64) this would be
+  # ~5.34%, so this row discriminates non-normalized from sum-normalized CV.
+  expect_equal(r1A$cv_status, "ok")
+  expect_equal(r1A$cv_pct, 100 / 200 * 100, tolerance = 1e-8)
+})
+
 test_that("within-condition CV: insufficient replicates -> status + NA cv", {
   io <- .cv_tiny_inputs()
   res <- pelsa_within_condition_cv(io$mat, io$cond, min_nonNA = 3L)
