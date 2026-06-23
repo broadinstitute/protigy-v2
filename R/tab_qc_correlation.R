@@ -171,14 +171,20 @@ QCCorrelation_Ome_Server <- function(id,
       eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
+        # Single-sample omes cannot be correlated; grey out with a shared message.
+        validate(need(
+          is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")),
+          min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")
+        ))
+
         # get annotation column
         if (!is.null(input$qc_correlation_annotation)) {
           annot_column <- input$qc_correlation_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -186,7 +192,7 @@ QCCorrelation_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
+
         # generate plot
          create_corr_heatmap(gct = GCT_processed(),
                               col_of_interest = annot_column,
@@ -222,14 +228,20 @@ QCCorrelation_Ome_Server <- function(id,
       eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
+        # Single-sample omes cannot be correlated; grey out with a shared message.
+        validate(need(
+          is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")),
+          min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")
+        ))
+
         # get annotation column
         if (!is.null(input$qc_correlation_annotation)) {
           annot_column <- input$qc_correlation_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -237,7 +249,7 @@ QCCorrelation_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
+
         # generate plot
         create_corr_boxplot(gct = GCT_processed(),
                            col_of_interest = annot_column,

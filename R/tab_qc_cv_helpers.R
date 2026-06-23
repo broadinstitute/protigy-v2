@@ -28,19 +28,34 @@ combine_cdesc_cols <- function(cdesc, cols, sep = "_") {
 
 # Compute CV (sd / mean) per group per feature.
 #
+# CV is NOT invariant under log transformation, so it must be computed on
+# LINEAR intensities. Protigy's processed matrix is log-transformed when the
+# dataset's setup selected log2/log10, so the matrix is DELINEARIZED by the
+# declared base before sd/mean (mirroring the PELSA CV path, which delinearizes
+# for the same reason). NOTE: delinearization only reverses the log base -- any
+# normalization applied during setup is NOT undone here, so CVs reflect the
+# normalized (then delinearized) intensities, not strictly raw ones. `log_base`
+# comes from the dataset's setup parameter `log_transformation` in
+# {"None","log2","log10"}; "None"/NA passes through unchanged (already linear).
+#
 # @param mat       numeric matrix, features (rows) x samples (cols).
 #                  rownames(mat) are used as feature IDs.
 # @param grouping  character vector of length ncol(mat) assigning each sample
 #                  to a group. Use combine_cdesc_cols() to produce this.
+# @param log_base  declared log base of `mat`: "None"/NA (linear pass-through),
+#                  "log2" (2^mat), or "log10" (10^mat). Default "None".
 # @return data.frame with column `id` (feature identifier) followed by one
 #         `CV_<group>` column per unique group. Features with zero/NA mean
 #         produce NA CV (not Inf, not NaN).
-compute_cv_table <- function(mat, grouping) {
+compute_cv_table <- function(mat, grouping, log_base = "None") {
   stopifnot(
     is.matrix(mat),
     is.numeric(mat),
     length(grouping) == ncol(mat)
   )
+  # Recover linear intensities before CV (reuses the PELSA delinearizer, which
+  # leaves a "None"/NA matrix unchanged and only exponentiates log2/log10).
+  mat <- pelsa_delinearize(mat, log_base)
   groups <- unique(grouping)
   cv_cols <- vapply(groups, function(g) {
     cols <- which(grouping == g)
@@ -48,15 +63,15 @@ compute_cv_table <- function(mat, grouping) {
     mu   <- rowMeans(sub, na.rm = TRUE)
     sdv  <- apply(sub, 1L, function(x) sd(x, na.rm = TRUE))
     cv   <- sdv / mu
-    # Guard: zero or NA mean → NA CV (avoids Inf / NaN leaking downstream)
+    # Guard: zero or NA mean -> NA CV (avoids Inf / NaN leaking downstream)
     cv[is.nan(cv) | is.infinite(cv)] <- NA_real_
     cv
   }, numeric(nrow(mat)))
   # vapply returns:
-  #   nrow>1, groups>1 → matrix (nrow x ngroups), colnames = group names
-  #   nrow>1, groups==1 → named numeric vector (length = nrow)
-  #   nrow==1, groups>1 → named numeric vector (length = ngroups)
-  #   nrow==1, groups==1 → single named scalar
+  #   nrow>1, groups>1 -> matrix (nrow x ngroups), colnames = group names
+  #   nrow>1, groups==1 -> named numeric vector (length = nrow)
+  #   nrow==1, groups>1 -> named numeric vector (length = ngroups)
+  #   nrow==1, groups==1 -> single named scalar
   # Normalize to matrix with features as rows, groups as columns.
   if (!is.matrix(cv_cols)) {
     if (nrow(mat) == 1L) {
@@ -79,8 +94,8 @@ compute_cv_table <- function(mat, grouping) {
 # Filter a CV table by a cutoff value.
 # Features (rows) are kept if their CV satisfies the cutoff according to the
 # min_groups rule:
-#   "one" — at least one group's CV is strictly below the cutoff
-#   "all" — every group's CV is strictly below the cutoff
+#   "one"  -  at least one group's CV is strictly below the cutoff
+#   "all"  -  every group's CV is strictly below the cutoff
 # NA CVs are treated as "not satisfying" the cutoff.
 #
 # @param cv_df      data.frame returned by compute_cv_table()
@@ -111,7 +126,7 @@ filter_cv_table <- function(cv_df, cutoff, min_groups = c("one", "all")) {
 create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
                                   log_scale = FALSE, y_range = NULL) {
   title <- trimws(paste("CV distributions", title_suffix))
-  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
+  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -"id")
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
   y_axis_label <- if (log_scale) "log10(CV)" else "CV"

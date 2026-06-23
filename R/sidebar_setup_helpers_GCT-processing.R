@@ -231,7 +231,7 @@ org_db_for_species <- function(species) {
 }
 
 #' Detect AnnotationDbi keytype from ID strings (Protigy v1 global.R mapIDs).
-#' Uses sequential `if` assignments so later rules overwrite earlier ones (e.g. ENSP…
+#' Uses sequential `if` assignments so later rules overwrite earlier ones (e.g. ENSP...
 #' matches `^E` for UniProt-style but must still resolve to ENSEMBLPROT).
 #' @noRd
 protigy_legacy_detect_keytype <- function(ids) {
@@ -546,7 +546,7 @@ apply_gene_symbol_from_params <- function(rdesc, params, ome) {
   list(rdesc = rdesc, params = params)
 }
 
-# Deep copy of a data.frame (row metadata) — avoids shared columns with the source object.
+# Deep copy of a data.frame (row metadata)  -  avoids shared columns with the source object.
 # @noRd
 df_deep_copy <- function(df) {
   if (is.null(df)) {
@@ -619,18 +619,33 @@ split_tab_fields <- function(line) {
 # This preserves annotation values like "001" exactly as provided in file.
 # @noRd
 read_gct_cdesc_as_character <- function(file_path) {
-  lines <- readLines(file_path, warn = FALSE)
-  if (length(lines) < 3L) {
-    stop("Invalid .gct file (expected at least 3 lines): ", file_path)
+  # Only the header region is needed: line 1 (version), line 2 (dims), line 3
+  # (column id row), then nchd cdesc rows. The data matrix that follows is never
+  # used here, so read just the first (3 + nchd) lines instead of the whole file.
+  con <- file(file_path, open = "r")
+  on.exit(close(con), add = TRUE)
+
+  head2 <- readLines(con, n = 2L, warn = FALSE)
+  if (length(head2) < 2L) {
+    stop("Invalid .gct file (incomplete header, expected version and dimensions lines): ", file_path)
   }
 
-  dims <- suppressWarnings(as.integer(split_tab_fields(lines[2L])))
+  dims <- suppressWarnings(as.integer(split_tab_fields(head2[2L])))
   if (length(dims) < 2L || any(is.na(dims[1:2]))) {
     stop("Invalid .gct dimensions line: ", file_path)
   }
   ncmat <- dims[2L]
   nrhd <- if (length(dims) >= 3L && !is.na(dims[3L])) dims[3L] else 0L
   nchd <- if (length(dims) >= 4L && !is.na(dims[4L])) dims[4L] else 0L
+
+  # Read the column-id header row plus the nchd cdesc metadata rows. readLines
+  # stops early on EOF, so a truncated header yields a short `lines` vector that
+  # trips the same guards below (we intentionally do not pad here).
+  rest <- readLines(con, n = 1L + nchd, warn = FALSE)
+  lines <- c(head2, rest)
+  if (length(lines) < 3L) {
+    stop("Invalid .gct file (expected at least 3 lines): ", file_path)
+  }
 
   header <- split_tab_fields(lines[3L])
   if (nrhd > 0L) {
@@ -1073,9 +1088,11 @@ perform_data_normalization <- function(data, method, cdesc,
 
 # maximum missing value filter
 perform_missing_filter <- function(data, max_missing) {
-  missing_percent <- apply(data, 1, function(x) sum(is.na(x))/length(x))
-  data <- data[missing_percent <= max_missing/100, ]
-  return(data)
+  # rowMeans(is.na(data)) == sum(is.na(x))/length(x) per row, in one C-level pass.
+  # drop = FALSE keeps a matrix when exactly one row survives (the old code dropped
+  # to a vector, which crashed the downstream data.frame(data, id = rownames(data))).
+  missing_percent <- rowMeans(is.na(data))
+  data[missing_percent <= max_missing / 100, , drop = FALSE]
 }
 
 # perform data filtering
@@ -1259,8 +1276,12 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
     incProgress()
     
     # remove conflicting columns and re-name by ome
+    # track base names that were split into per-ome variants so the missing-column
+    # NA-fill loop below does NOT resurrect them (doing so would re-add the
+    # ambiguous column with only one ome's values -- silent data loss).
+    split_out_base_columns <- character(0)
     for (col in conflict_columns) {
-      
+
       # get the omes that contain this conflict column
       omes_with_col <- names(which(
         sapply(GCTs_processed, function(gct) col %in% names(gct@cdesc))
@@ -1285,12 +1306,18 @@ merge_processed_gcts <- function(GCTs_processed, parameters_updated) {
       GCTs_merged@cdesc <- GCTs_merged@cdesc %>%
         dplyr::mutate(new_columns, .after = dplyr::all_of(col)) %>%
         dplyr::select(-dplyr::all_of(col))
+
+      split_out_base_columns <- unique(c(split_out_base_columns, col))
     }
-    
+
     # Add missing columns logic
-    # Find columns that exist in some datasets but not in the merged cdesc
+    # Find columns that exist in some datasets but not in the merged cdesc.
+    # Exclude any base column that the conflict-rename loop just split into
+    # per-ome variants -- re-adding it here would resurrect the ambiguous
+    # column populated with only one ome's values (last-writer-wins data loss).
     all_unique_columns <- unique(unlist(lapply(GCTs_processed, function(gct) names(gct@cdesc))))
     missing_columns <- setdiff(all_unique_columns, names(GCTs_merged@cdesc))
+    missing_columns <- setdiff(missing_columns, split_out_base_columns)
     
     if (length(missing_columns) > 0) {
       message("Adding missing columns to merged GCT: ", paste(missing_columns, collapse = ", "))

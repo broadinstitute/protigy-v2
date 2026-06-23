@@ -12,7 +12,8 @@ export_colors_to_yaml(custom_colors, file_path)
 \item{file_path}{Path to save the YAML file}
 }
 \value{
-TRUE if successful
+TRUE on success. Errors propagate (no silent failure) so that
+\code{downloadHandler} surfaces them to the user.
 }
 \description{
 Export colors to YAML format

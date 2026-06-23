@@ -73,7 +73,7 @@ statSummary_Tab_Server <- function(id = "statSummaryTab",
     output$ome_tabset_box <- renderUI({
       # This will trigger the validate() statements and show "GCTs not yet processed"
       req(GCTs(), parameters())
-      req(stat_results_check())  # stop if these reactiveVals don’t exist
+      req(stat_results_check())  # stop if these reactiveVals don't exist
       req(all_omes(), default_ome())
       
       #preserve current selected tab

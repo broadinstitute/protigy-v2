@@ -133,6 +133,21 @@ gct_setup_apply_to_all_valid <- function(
   list(ok = TRUE, msg = NA_character_)
 }
 
+# Collision-free, filename-stable element id for a file's remove button.
+# A plain gsub-to-underscore (e.g. gsub("[^a-zA-Z0-9_]", "_", name)) is NOT
+# injective: "a-b.gct" and "a_b.gct" both collapse to one id, which (a) emits
+# duplicate HTML ids and (b) makes the register-once dedup in the server skip the
+# second file's handler, leaving its remove button non-functional. Hex-encoding
+# the filename bytes is injective (distinct names -> distinct ids) AND stable
+# (the same name always yields the same id, which the monotonic dedup relies on).
+# Index-based ids cannot be used here: the persistent observer captures the
+# filename at first registration, so a positional id would target the wrong file
+# after a removal reorders the list.
+gct_remove_btn_id <- function(filename) {
+  paste0("remove_file_",
+         paste(sprintf("%02x", utf8ToInt(enc2utf8(filename))), collapse = ""))
+}
+
 # UI for the sidebar setup
 setupSidebarUI <- function(id = "setupSidebar") {
   # namespace function, wrap inputId's and outputId's with this (e.g. `ns(id)`)
@@ -205,6 +220,22 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     parameters_internal_reactive <- reactiveVal()
     GCTs_unprocessed_internal_reactive <- reactiveVal()
     accumulated_files <- reactiveVal(NULL)  # Store accumulated file uploads
+    # Track remove-button ids that already have a live observeEvent so each id is
+    # registered exactly once per session (prevents observer accumulation /
+    # multi-fire on every accumulated_files() invalidation). Monotonic by design:
+    # never reset, so re-adding a previously seen filename does not double-register.
+    registered_remove_btns <- reactiveVal(character(0))
+
+    # INT-2: memoized per-ome discrete-column map for the setup panel's dropdowns.
+    # Depends ONLY on the GCTs reactiveVal, so it recomputes exactly when the GCTs
+    # change (any upload / removal / reprocess via either upload path, since both
+    # write GCTs_unprocessed_internal_reactive). gctSetupUI consumes this instead
+    # of re-scanning is.discrete() over every annotation column on every rebuild
+    # (e.g. on every Intensity-data toggle). Recompute-on-change preserves the
+    # original "always fresh" guarantee; it only skips redundant re-scans.
+    discrete_columns_map <- reactive({
+      build_discrete_columns_map(GCTs_unprocessed_internal_reactive())
+    })
 
     # initialize reactiveValues with back/next logic for when user navigates
     # through each GCT file to input parameters
@@ -217,7 +248,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     sample_filter_input_state <- reactiveValues()
     row_filter_input_state <- reactiveValues()
     # Labels that just received default_parameters; after first parse, gene_symbol_column
-    # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
+    # is set from rdesc (geneSymbol if present, else None) once -- never overwrites user edits.
     gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
     
     # read in default settings and choices from yamls
@@ -272,8 +303,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         div(
           style = "max-height: 200px; overflow-y: auto; margin-bottom: 10px; width: 100%;",
           lapply(1:nrow(files), function(i) {
-            # Use filename as unique identifier (sanitize for use as ID)
-            file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
+            # Collision-free, filename-stable id (see gct_remove_btn_id).
+            btn_id <- gct_remove_btn_id(files$name[i])
             div(
               style = "padding: 8px; margin: 3px 0; background-color: #f8f9fa; border-radius: 3px; display: flex; align-items: flex-start; justify-content: space-between; width: 100%; box-sizing: border-box; min-height: 35px; height: auto;",
               div(
@@ -281,7 +312,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 files$name[i]
               ),
               actionButton(
-                ns(paste0("remove_file_", file_id)),
+                ns(btn_id),
                 label = NULL,
                 icon = icon("times"),
                 class = "btn-sm btn-primary",
@@ -409,12 +440,27 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         return(NULL)
       }
 
-      # Create observers for each remove button using filename as unique identifier
+      # Create observers for each remove button using filename as unique identifier.
+      # Only register button ids that do not already have a live observeEvent, so the
+      # handler set does not grow on every accumulated_files() invalidation. Existing
+      # handlers look the file up BY NAME at click time and no-op if it is gone, so
+      # keeping them alive across add/remove/clear cycles is safe.
+      # isolate() so reading/writing the tracker does not make this observe depend
+      # on itself (the observe must only re-run on accumulated_files() changes).
+      already_registered <- isolate(registered_remove_btns())
+      newly_registered <- character(0)
       lapply(1:nrow(files), function(i) {
-        # Use filename as unique identifier (sanitize for use as ID)
-        file_id <- gsub("[^a-zA-Z0-9_]", "_", files$name[i])
-        btn_id <- paste0("remove_file_", file_id)
+        # Collision-free, filename-stable id (see gct_remove_btn_id). Distinct
+        # filenames never share an id, so the register-once dedup below cannot
+        # drop a second file's handler.
+        btn_id <- gct_remove_btn_id(files$name[i])
         filename <- files$name[i]  # Capture filename at observer creation time
+
+        # Skip ids that already have a live handler (also de-dupes within this batch).
+        if (btn_id %in% already_registered || btn_id %in% newly_registered) {
+          return(NULL)
+        }
+        newly_registered <<- c(newly_registered, btn_id)
 
         observeEvent(input[[btn_id]], {
           # Wrap in tryCatch to handle any reactive errors
@@ -447,9 +493,6 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                 type = "message",
                 duration = 3
               )
-
-              # Small delay to ensure notification is displayed
-              Sys.sleep(0.1)
 
               # No files left - reset everything
               accumulated_files(NULL)
@@ -487,6 +530,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
           })
         }, ignoreInit = TRUE, ignoreNULL = TRUE)
       })
+
+      # Record the ids we just registered so they are not registered again on the
+      # next invalidation. Tracker is never cleared, guaranteeing one handler per id.
+      if (length(newly_registered) > 0L) {
+        isolate(registered_remove_btns(c(already_registered, newly_registered)))
+      }
     })
 
     # Handle clear all files
@@ -727,7 +776,8 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
                                                    parameters = parameters_internal_reactive(),
                                                    current_place = backNextLogic$place,
                                                    max_place = backNextLogic$maxPlace,
-                                                   GCTs = GCTs_unprocessed_internal_reactive())})
+                                                   GCTs = GCTs_unprocessed_internal_reactive(),
+                                                   discrete_columns = discrete_columns_map())})
         
         # left button (back to labels or just back)
         if (backNextLogic$place == 1) {
@@ -765,16 +815,45 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       }
     })
     observeEvent(current_intensity(), {
-      # first, collect all the current inputs
-      collectInputs()
+      # INT-1: do NOT call collectInputs() here. It writes parameters_internal_reactive,
+      # and output$sideBarMain (a renderUI) reads that reactiveVal, so the write forced a
+      # full setup-panel rebuild (the visible grey-out) on every intensity toggle.
+      # The call was redundant for persistence: every exit path (Next/Back/Submit/
+      # back-to-labels) re-runs collectInputs() from live widget state before acting, so
+      # no in-progress edit is lost, and the toggled intensity_data is re-collected then.
+      # This handler updates only data_normalization and max_missing. It reads their
+      # LIVE widget values (with a stored fallback for the pre-paint NULL window) -- NOT
+      # the stored reactiveVal -- because the stored value is only refreshed by
+      # collectInputs() at navigation, so a user who edits the dropdown and then toggles
+      # would otherwise have their edit reset to the stale stored value. Reading live
+      # preserves the user's in-progress selection. The intensity-dependent choice list
+      # is derived from current_intensity() (the live checkbox).
 
       # gather current label and parameters
       label = names(parameters_internal_reactive())[backNextLogic$place]
       parameters = parameters_internal_reactive()[[label]]
 
+      # INT-1: read the LIVE widget values for the two fields this handler updates,
+      # falling back to the STORED value only when the widget hasn't reported yet
+      # (first paint / pre-flush, where live input is NULL). The stored reactiveVal
+      # is NOT kept in sync with the dropdown/numeric on every keystroke -- only
+      # collectInputs() (run at Next/Back/Submit) writes it -- so reading the stored
+      # value here would reset an in-progress edit: e.g. user picks "Quantile", then
+      # toggles intensity, and the stored (pre-edit) value would overwrite "Quantile".
+      # Reading live preserves the user's selection through a toggle. These reads are
+      # read-only dependencies and do NOT cause a panel rebuild.
+      live_norm <- input[[paste0(label, '_data_normalization')]]
+      if (is.null(live_norm) || !nzchar(live_norm)) {
+        live_norm <- parameters$data_normalization
+      }
+      live_max_missing <- input[[paste0(label, '_max_missing')]]
+      if (is.null(live_max_missing) || is.na(suppressWarnings(as.numeric(live_max_missing)[1]))) {
+        live_max_missing <- parameters$max_missing
+      }
+
       # indicator for intensity data (check out the yaml format)
       ind = paste0("intensity_data_", tolower(current_intensity()))
-      
+
       # update data normalization
       # Filter out 2-component normalization if dataset has more than 20 samples (too slow)
       norm_choices <- parameter_choices$data_normalization[[ind]]
@@ -783,10 +862,12 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       if (n_samples > 20) {
         norm_choices <- norm_choices[norm_choices != "2-component"]
       }
-      # If current selection is 2-component but it should be disabled, use default
+      # Keep the user's current selection if it is still valid in the new intensity
+      # branch; otherwise fall back to the default. (If current selection is
+      # 2-component but it should be disabled, use default.)
       norm_selected <- ifelse(
-        parameters$data_normalization %in% norm_choices,
-        parameters$data_normalization,
+        live_norm %in% norm_choices,
+        live_norm,
         default_parameters$data_normalization)
       if (n_samples > 20 && norm_selected == "2-component") {
         norm_selected <- default_parameters$data_normalization
@@ -795,14 +876,14 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
         inputId = paste0(label, '_data_normalization'),
         choices = norm_choices,
         selected = norm_selected)
-      
+
       # update max missing
       updateNumericInput(
         inputId = paste0(label, '_max_missing'),
         min = parameter_choices$max_missing[[ind]]$min,
         max = parameter_choices$max_missing[[ind]]$max,
         step = parameter_choices$max_missing[[ind]]$step,
-        value = min(parameters$max_missing, parameter_choices$max_missing[[ind]]$max))
+        value = min(as.numeric(live_max_missing), parameter_choices$max_missing[[ind]]$max))
     })
 
     # update sample filter values choices when sample filter column changes

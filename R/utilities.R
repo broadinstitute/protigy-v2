@@ -172,7 +172,10 @@ is.discrete <- function(annot_col, nfactor_cutoff = 20) {
   if (is.factor(annot_col)) {
     annot_vals <- levels(annot_col)
   } else {
-    annot_vals <- sort(unique(annot_col))
+    # INT-3: sort() is unnecessary here -- the result depends only on the COUNT of
+    # unique values and whether they are all numeric, both order-independent.
+    # Dropping it avoids sorting up to ~34k strings on every row-filter rebuild.
+    annot_vals <- unique(annot_col)
   }
   annot_vals[is.na(annot_vals)] <- "NA"
   
@@ -200,7 +203,8 @@ is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$"
   if (is.factor(annot_col)) {
     annot_vals <- levels(annot_col)
   } else {
-    annot_vals <- sort(unique(annot_col))
+    # INT-3: see is.discrete() -- sort() is order-independent dead work here too.
+    annot_vals <- unique(annot_col)
   }
   annot_vals[is.na(annot_vals)] <- "NA"
   
@@ -209,11 +213,30 @@ is.continuous <- function(annot_col, na_annot_vals = c("^na$", "^n.a.$", "^n/a$"
   })))
   
   all_numbers_regex <- "^(-?[0-9]*)((\\.?[0-9]+[eE]?[-\\+]?[0-9]+)|(\\.[0-9]+))*$"
-  if ((length(annot_vals) - n_na) > nfactor_cutoff && 
+  if ((length(annot_vals) - n_na) > nfactor_cutoff &&
       sum(!grepl(all_numbers_regex, annot_vals), na.rm = TRUE) <= n_na) {
     return(TRUE) # continuous
   }
   return(FALSE) # discrete
+}
+
+# Sample-count gate for analyses that are undefined with a single sample
+# (PCA, sample correlation, CV). Returns NULL when the ome has enough samples,
+# otherwise a ready-to-display message string. Intended to be used as:
+#   validate(need(is.null(min_samples_message(gct, analysis = "PCA")),
+#                 min_samples_message(gct, analysis = "PCA")))
+# Gated per-ome on the full sample count (ncol of the data matrix), independent
+# of any finer-grained within-section sample/group selection.
+min_samples_message <- function(gct, n = 2, analysis = "This analysis") {
+  n_samples <- ncol(gct@mat)
+  if (n_samples >= n) {
+    return(NULL)
+  }
+  sample_word <- if (n_samples == 1) "sample" else "samples"
+  paste0(
+    analysis, " requires at least ", n, " samples. ",
+    "This ome has ", n_samples, " ", sample_word, "."
+  )
 }
 
 

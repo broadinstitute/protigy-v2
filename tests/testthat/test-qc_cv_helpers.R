@@ -38,11 +38,11 @@ test_that("combine_cdesc_cols errors when a requested column is missing", {
 
 # Hand-computed expected values:
 # Group A samples: col 1 (1, 3), col 2 (3, 5)
-#   row 1: mu=2, sd=sqrt(2), cv=sqrt(2)/2 ≈ 0.7071
-#   row 2: mu=4, sd=sqrt(2), cv=sqrt(2)/4 ≈ 0.3536
+#   row 1: mu=2, sd=sqrt(2), cv=sqrt(2)/2 ~ 0.7071
+#   row 2: mu=4, sd=sqrt(2), cv=sqrt(2)/4 ~ 0.3536
 # Group B samples: col 3 (2, 6), col 4 (4, 8)
-#   row 1: mu=3, sd=sqrt(2), cv=sqrt(2)/3 ≈ 0.4714
-#   row 2: mu=7, sd=sqrt(2), cv=sqrt(2)/7 ≈ 0.2020
+#   row 1: mu=3, sd=sqrt(2), cv=sqrt(2)/3 ~ 0.4714
+#   row 2: mu=7, sd=sqrt(2), cv=sqrt(2)/7 ~ 0.2020
 
 test_that("compute_cv_table basic 2x4 matrix with 2 groups matches hand-computed CV", {
   mat <- matrix(c(1, 3, 3, 5, 2, 6, 4, 8), nrow = 2,
@@ -57,6 +57,49 @@ test_that("compute_cv_table basic 2x4 matrix with 2 groups matches hand-computed
   expect_equal(result$CV_A[2], sd(c(3, 5)) / mean(c(3, 5)), tolerance = 1e-6)
   expect_equal(result$CV_B[1], sd(c(2, 4)) / mean(c(2, 4)), tolerance = 1e-6)
   expect_equal(result$CV_B[2], sd(c(6, 8)) / mean(c(6, 8)), tolerance = 1e-6)
+})
+
+test_that("compute_cv_table default log_base = 'None' is identity (linear, unchanged)", {
+  mat <- matrix(c(1, 3, 3, 5, 2, 6, 4, 8), nrow = 2,
+                dimnames = list(c("f1", "f2"), NULL))
+  grouping <- c("A", "A", "B", "B")
+  # explicit "None" must match the default (no delinearization)
+  expect_equal(compute_cv_table(mat, grouping),
+               compute_cv_table(mat, grouping, log_base = "None"))
+})
+
+test_that("compute_cv_table delinearizes a log2 matrix before computing CV", {
+  # CV is NOT invariant under log: it must be computed on raw (linear)
+  # intensities. With log_base = 'log2' the matrix must be 2^x first.
+  # matrix() fills column-major: f1 = (2,16,4,32), f2 = (8,64,16,128).
+  lin <- matrix(c(2, 8, 16, 64, 4, 16, 32, 128), nrow = 2,
+                dimnames = list(c("f1", "f2"), NULL))
+  log2_mat <- log2(lin)
+  grouping <- c("A", "A", "B", "B")
+
+  result <- compute_cv_table(log2_mat, grouping, log_base = "log2")
+
+  # Expected CV is computed on the LINEAR values.
+  # f1: A = (2,16), B = (4,32); f2: A = (8,64), B = (16,128).
+  expect_equal(result$CV_A[1], sd(c(2, 16)) / mean(c(2, 16)), tolerance = 1e-6)
+  expect_equal(result$CV_B[1], sd(c(4, 32)) / mean(c(4, 32)), tolerance = 1e-6)
+  expect_equal(result$CV_A[2], sd(c(8, 64)) / mean(c(8, 64)), tolerance = 1e-6)
+  # Computing CV on the log values directly (the bug) would give a different,
+  # smaller number, so this differs from the wrong result.
+  expect_false(isTRUE(all.equal(
+    result$CV_A[1], sd(log2(c(2, 16))) / mean(log2(c(2, 16))), tolerance = 1e-6
+  )))
+})
+
+test_that("compute_cv_table delinearizes a log10 matrix before computing CV", {
+  lin <- matrix(c(10, 100, 1000, 10000), nrow = 1,
+                dimnames = list("f1", NULL))
+  log10_mat <- log10(lin)
+  grouping <- c("A", "A", "B", "B")
+  result <- compute_cv_table(log10_mat, grouping, log_base = "log10")
+  expect_equal(result$CV_A, sd(c(10, 100)) / mean(c(10, 100)), tolerance = 1e-6)
+  expect_equal(result$CV_B, sd(c(1000, 10000)) / mean(c(1000, 10000)),
+               tolerance = 1e-6)
 })
 
 test_that("compute_cv_table handles NA values with na.rm = TRUE", {
@@ -133,11 +176,11 @@ test_that("filter_cv_table treats NA CVs as not satisfying the cutoff", {
     CV_B = c(0.1,  0.1),
     stringsAsFactors = FALSE
   )
-  # min_groups = "all": f1 has NA in CV_A → NA is not < cutoff → excluded
+  # min_groups = "all": f1 has NA in CV_A -> NA is not < cutoff -> excluded
   result_all <- filter_cv_table(cv_df, cutoff = 0.2, min_groups = "all")
   expect_identical(result_all$id, "f2")
 
-  # min_groups = "one": f1 has CV_B = 0.1 < 0.2 → included
+  # min_groups = "one": f1 has CV_B = 0.1 < 0.2 -> included
   result_one <- filter_cv_table(cv_df, cutoff = 0.2, min_groups = "one")
   expect_identical(result_one$id, c("f1", "f2"))
 })
@@ -200,4 +243,38 @@ test_that("create_cv_violin_plot keeps box fill transparent and supports y_range
   expect_identical(p$layers[[2]]$aes_params$fill, NA)
   expect_s3_class(p$coordinates, "CoordCartesian")
   expect_equal(p$coordinates$limits$y, c(0.05, 0.40))
+})
+
+# ---------------------------------------------------------------------------
+# CV intensity-source wording (source-level guard)
+#
+# compute_cv_table receives GCT_processed()@mat, which is log-transformed AND
+# normalized. pelsa_delinearize reverses only the log base, NOT normalization,
+# so the CV is computed on delinearized-but-still-normalized intensities -- NOT
+# strictly "raw" intensities. The UI note (tab_qc_cv.R) and the helper comment
+# (tab_qc_cv_helpers.R) must not over-claim "raw", and must acknowledge that
+# normalization stays applied. Reverting either to the "raw (linear)" wording
+# fails this test.
+# ---------------------------------------------------------------------------
+
+test_that("CV note + comment do not over-claim 'raw' intensities", {
+  note_path   <- testthat::test_path("..", "..", "R", "tab_qc_cv.R")
+  helper_path <- testthat::test_path("..", "..", "R", "tab_qc_cv_helpers.R")
+  # R/ source is absent under R CMD check (installed package); skip like the
+  # other source-level guard tests rather than erroring on a missing file.
+  skip_if_not(file.exists(note_path) && file.exists(helper_path),
+              "tab_qc_cv.R / tab_qc_cv_helpers.R source not found")
+
+  note   <- paste(readLines(note_path, warn = FALSE), collapse = "\n")
+  helper <- paste(readLines(helper_path, warn = FALSE), collapse = "\n")
+
+  # The misleading "raw (linear)" claim must be gone from the user-facing note.
+  expect_false(grepl("raw \\(linear\\)", note),
+               info = "tab_qc_cv.R UI note must not claim CV is on raw (linear) intensities")
+  # The note must acknowledge that normalization remains applied.
+  expect_true(grepl("normaliz", note, ignore.case = TRUE),
+              info = "tab_qc_cv.R UI note must mention normalization still applies")
+  # The helper comment must not assert the matrix is RAW LINEAR.
+  expect_false(grepl("RAW\\s*\\n?\\s*#?\\s*LINEAR|raw linear", helper, ignore.case = TRUE),
+               info = "compute_cv_table comment must not claim raw linear intensities")
 })
