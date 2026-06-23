@@ -37,12 +37,24 @@ calculate_PCA <- function(gct) {
   }
 
   # Filter out zero-variance features (columns after transpose).
-  # drop = FALSE keeps the result a matrix even when a single row/column survives.
+  # drop = FALSE keeps data.norm a matrix even when a single feature survives,
+  # so the feature-count guard below reports a readable message rather than
+  # crashing on a length-zero ncol().
   data.norm <- data.norm[, apply(data.norm, 2, var, na.rm = TRUE) != 0, drop = FALSE]
 
-  # Check if we have any data left after filtering
-  if (ncol(data.norm) == 0) {
-    stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
+  # PCA is only meaningful with at least 2 features. Guard the degenerate
+  # single-feature (and zero-feature) cases with a clear, user-facing message;
+  # this error propagates through cached_pca_result() to the PCA plot panels.
+  n_usable_features <- ncol(data.norm)
+  if (n_usable_features < 2) {
+    stop(sprintf(
+      paste0(
+        "PCA requires at least 2 features. Only %d feature(s) are usable for ",
+        "PCA after removing features with missing values or zero variance. ",
+        "PCA plots cannot be generated for this dataset."
+      ),
+      n_usable_features
+    ))
   }
   if (nrow(data.norm) == 0) {
     stop("No samples remain after filtering. Cannot perform PCA.")

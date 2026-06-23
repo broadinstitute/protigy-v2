@@ -245,3 +245,66 @@ test_that("create_PCA_loadings_cumulative cumulative curve ends at export metric
   export_vals <- export_df[[cum_col]][seq_along(top_features)]
   expect_equal(plot_end$cumulative, export_vals, tolerance = 1e-10)
 })
+
+# --------------------------------------------------------------------------- #
+# Single-feature guard                                                         #
+# --------------------------------------------------------------------------- #
+
+test_that("calculate_PCA errors clearly when the dataset has only one feature", {
+  mat <- matrix(c(1, 2, 3), nrow = 1L, ncol = 3L)
+  rownames(mat) <- "gene_1"
+  colnames(mat) <- paste0("sample_", 1:3)
+  gct <- new("GCT",
+    mat = mat,
+    cdesc = data.frame(group = c("A", "B", "A"), row.names = colnames(mat)),
+    rdesc = data.frame(id = rownames(mat), row.names = rownames(mat)),
+    rid = rownames(mat),
+    cid = colnames(mat)
+  )
+
+  expect_error(calculate_PCA(gct), "at least 2 features")
+})
+
+test_that("calculate_PCA errors when zero-variance filtering leaves one feature", {
+  # gene_1 varies across samples; gene_2 is constant (zero variance) and is dropped,
+  # leaving a single usable feature. drop = FALSE keeps data.norm a matrix so the
+  # guard reports a readable message instead of crashing on a length-zero ncol().
+  mat <- matrix(
+    c(1, 2, 3,   # gene_1: variance > 0
+      5, 5, 5),  # gene_2: variance == 0
+    nrow = 2L, ncol = 3L, byrow = TRUE
+  )
+  rownames(mat) <- c("gene_1", "gene_2")
+  colnames(mat) <- paste0("sample_", 1:3)
+  gct <- new("GCT",
+    mat = mat,
+    cdesc = data.frame(group = c("A", "B", "A"), row.names = colnames(mat)),
+    rdesc = data.frame(id = rownames(mat), row.names = rownames(mat)),
+    rid = rownames(mat),
+    cid = colnames(mat)
+  )
+
+  expect_error(calculate_PCA(gct), "at least 2 features")
+})
+
+test_that("calculate_PCA succeeds with two usable features and returns a matrix", {
+  mat <- matrix(
+    c(1, 2, 3, 4,   # gene_1
+      4, 1, 5, 2),  # gene_2
+    nrow = 2L, ncol = 4L, byrow = TRUE
+  )
+  rownames(mat) <- c("gene_1", "gene_2")
+  colnames(mat) <- paste0("sample_", 1:4)
+  gct <- new("GCT",
+    mat = mat,
+    cdesc = data.frame(group = c("A", "B", "A", "B"), row.names = colnames(mat)),
+    rdesc = data.frame(id = rownames(mat), row.names = rownames(mat)),
+    rid = rownames(mat),
+    cid = colnames(mat)
+  )
+
+  res <- calculate_PCA(gct)
+  expect_true(is.matrix(res$data_norm))
+  expect_equal(res$n_features, 2L)
+  expect_equal(nrow(res$data_norm), 4L) # samples preserved as rows
+})
