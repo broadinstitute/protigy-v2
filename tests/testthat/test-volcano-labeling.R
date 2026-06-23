@@ -355,7 +355,7 @@ test_that("add_volcano_labels sets hidden_count_rv to 0 when all labels fit", {
 
 test_that("add_volcano_labels hidden_count_rv reflects dropped overlapping labels", {
   skip_if_not_installed("plotly")
-  # 10 points at identical (x, y) — all but the first must be hidden
+  # 10 points at identical (x, y) -- all but the first must be hidden
   n <- 10
   df <- data.frame(
     id          = paste0("P", 1:n),
@@ -447,7 +447,7 @@ test_that("regex_escape escapes PCRE metacharacters", {
   expect_equal(regex_escape(""),            "")
 })
 
-## get_volcano_cols — metacharacter safety ####################################
+## get_volcano_cols -- metacharacter safety ####################################
 
 test_that("get_volcano_cols handles group names with regex metacharacters", {
   group_name <- "Group(A)"
@@ -471,7 +471,7 @@ test_that("get_volcano_cols handles group names with regex metacharacters", {
                               volcano_groups    = group_name,
                               volcano_contrasts = NULL)
 
-  expect_false(is.na(result$logfc), info = "logfc col not found — metacharacter escaping likely missing")
+  expect_false(is.na(result$logfc), info = "logfc col not found -- metacharacter escaping likely missing")
   expect_false(is.na(result$logp),  info = "logp col not found")
   expect_false(is.na(result$adjp),  info = "adjp col not found")
   expect_false(is.na(result$pval),  info = "pval col not found")
@@ -504,7 +504,7 @@ test_that("get_volcano_cols handles contrast names with regex metacharacters (tw
   expect_false(is.na(result$pval))
 })
 
-## get_volcano_cols — normal cases ############################################
+## get_volcano_cols -- normal cases ############################################
 
 # Helper: build a minimal stat_results df with standard column naming
 make_one_sample_df <- function(group = "GroupA") {
@@ -611,7 +611,7 @@ test_that("build_volcano_df computes Significant correctly with p.val sig_stat",
   df_raw[["P.value.GroupA"]]     <- c(0.001, 0.01, 0.1)
 
   cols   <- make_cols_one_sample()
-  # sig_cutoff = 0.05 -> y_cutoff = -log10(0.05) ≈ 1.301
+  # sig_cutoff = 0.05 -> y_cutoff = -log10(0.05) ~ 1.301
   # logP values: 4.0 > 1.301 (sig), 3.0 > 1.301 (sig), 0.5 < 1.301 (not sig)
   result <- build_volcano_df(df_raw, cols, sig_cutoff = 0.05, sig_stat = "p.val")
 
@@ -823,7 +823,7 @@ test_that("volcano_label_union_for_ome works for one-sample test with multiple g
 # per ome with that ome's own POI, then Reduce(union) the results.
 # This mirrors the fixed global_union_ids() logic in statPlot_Ome_Server.
 # Uses the existing make_two_sample_stat_results / make_two_sample_stat_params
-# helpers (contrast format "A / B" → column suffix "A_over_B").
+# helpers (contrast format "A / B" -> column suffix "A_over_B").
 
 test_that("global union uses each ome's own POI, not a shared one", {
   # Prot ome: one contrast, sig = p1, POI = p2 (non-sig)
@@ -836,7 +836,7 @@ test_that("global union uses each ome's own POI, not a shared one", {
                    contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
   prot_poi <- c("p2")
 
-  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig) — completely separate IDs
+  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig) -- completely separate IDs
   phos_df <- make_two_sample_stat_results(
     contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
     sig_ids_a  = "q1",
@@ -875,15 +875,15 @@ test_that("passing wrong ome POI to another ome misses that ome's POI (old bug r
   )
   phos_sp  <- list(test = "Two-sample Moderated T-test",
                    contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
-  prot_poi <- c("p1")  # Prot's POI — not in phos_df
-  phos_poi <- c("q2")  # Phos's POI — only in phos_df
+  prot_poi <- c("p1")  # Prot's POI -- not in phos_df
+  phos_poi <- c("q2")  # Phos's POI -- only in phos_df
 
   # OLD (buggy) path: Prot's POI passed to Phos iteration
   buggy_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", prot_poi)
   expect_false("q2" %in% buggy_phos_union, info = "Phos-only POI absent when Prot's POI is passed")
   expect_false("p1" %in% buggy_phos_union, info = "Prot POI filtered (not in phos_df$id)")
 
-  # FIXED path: Phos gets its own POI → q2 now appears
+  # FIXED path: Phos gets its own POI -> q2 now appears
   fixed_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", phos_poi)
   expect_true("q2" %in% fixed_phos_union, info = "Phos POI present when correct POI used")
 })

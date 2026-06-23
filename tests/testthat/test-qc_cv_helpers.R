@@ -38,11 +38,11 @@ test_that("combine_cdesc_cols errors when a requested column is missing", {
 
 # Hand-computed expected values:
 # Group A samples: col 1 (1, 3), col 2 (3, 5)
-#   row 1: mu=2, sd=sqrt(2), cv=sqrt(2)/2 ≈ 0.7071
-#   row 2: mu=4, sd=sqrt(2), cv=sqrt(2)/4 ≈ 0.3536
+#   row 1: mu=2, sd=sqrt(2), cv=sqrt(2)/2 ~ 0.7071
+#   row 2: mu=4, sd=sqrt(2), cv=sqrt(2)/4 ~ 0.3536
 # Group B samples: col 3 (2, 6), col 4 (4, 8)
-#   row 1: mu=3, sd=sqrt(2), cv=sqrt(2)/3 ≈ 0.4714
-#   row 2: mu=7, sd=sqrt(2), cv=sqrt(2)/7 ≈ 0.2020
+#   row 1: mu=3, sd=sqrt(2), cv=sqrt(2)/3 ~ 0.4714
+#   row 2: mu=7, sd=sqrt(2), cv=sqrt(2)/7 ~ 0.2020
 
 test_that("compute_cv_table basic 2x4 matrix with 2 groups matches hand-computed CV", {
   mat <- matrix(c(1, 3, 3, 5, 2, 6, 4, 8), nrow = 2,
@@ -133,11 +133,11 @@ test_that("filter_cv_table treats NA CVs as not satisfying the cutoff", {
     CV_B = c(0.1,  0.1),
     stringsAsFactors = FALSE
   )
-  # min_groups = "all": f1 has NA in CV_A → NA is not < cutoff → excluded
+  # min_groups = "all": f1 has NA in CV_A -> NA is not < cutoff -> excluded
   result_all <- filter_cv_table(cv_df, cutoff = 0.2, min_groups = "all")
   expect_identical(result_all$id, "f2")
 
-  # min_groups = "one": f1 has CV_B = 0.1 < 0.2 → included
+  # min_groups = "one": f1 has CV_B = 0.1 < 0.2 -> included
   result_one <- filter_cv_table(cv_df, cutoff = 0.2, min_groups = "one")
   expect_identical(result_one$id, c("f1", "f2"))
 })

@@ -217,7 +217,7 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
     sample_filter_input_state <- reactiveValues()
     row_filter_input_state <- reactiveValues()
     # Labels that just received default_parameters; after first parse, gene_symbol_column
-    # is set from rdesc (geneSymbol if present, else None) once — never overwrites user edits.
+    # is set from rdesc (geneSymbol if present, else None) once -- never overwrites user edits.
     gene_symbol_defaults_pending_labels <- reactiveVal(character(0))
     
     # read in default settings and choices from yamls

@@ -24,7 +24,7 @@ labelSetupUI <- function(ns, gctFileNames) {
 
 # Whether stored `intensity_data` means the intensity ("yes") YAML branch.
 # Canonical values are "Yes"/"No" (setupDefaults + collectInputs); logical
-# TRUE/FALSE can appear from the checkbox before collectInputs runs — `TRUE == "Yes"`
+# TRUE/FALSE can appear from the checkbox before collectInputs runs -- `TRUE == "Yes"`
 # is NA in R, so compare explicitly.
 intensity_data_param_is_yes <- function(intensity_data) {
   if (is.null(intensity_data) || length(intensity_data) < 1L) {
@@ -177,7 +177,7 @@ gctSetupUI <- function(ns,
 
     ## Map IDs to gene symbols (when Gene symbol column is None)
     # Use unqualified input names here; `ns = ns` lets conditionalPanel namespace them
-    # correctly in JS. Do not call ns() inside the condition string — that double-
+    # correctly in JS. Do not call ns() inside the condition string -- that double-
     # namespaces and the panel never shows when "None" is selected.
     conditionalPanel(
       condition = paste0("input['", label, "_gene_symbol_column'] == 'None'"),

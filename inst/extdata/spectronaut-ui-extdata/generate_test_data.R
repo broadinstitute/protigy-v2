@@ -32,10 +32,10 @@ set.seed(42)
 N_PROTEINS <- 200
 N_SAMPLES  <- 6
 
-# Synthetic run labels — no real project codes, dates, or instrument prefixes.
+# Synthetic run labels -- no real project codes, dates, or instrument prefixes.
 sample_labels <- sprintf("SYN_sample_%02d", seq_len(N_SAMPLES))
 
-# Conditions: 3 groups × 2 replicates each, assigned round-robin.
+# Conditions: 3 groups x 2 replicates each, assigned round-robin.
 condition_names <- c("cond_A", "cond_A", "cond_B", "cond_B", "ctrl", "ctrl")
 replicate_nums  <- c(1L, 2L, 1L, 2L, 1L, 2L)
 sample_colors   <- c("#E41A1C", "#E41A1C", "#377EB8", "#377EB8", "#4DAF4A", "#4DAF4A")
@@ -140,4 +140,4 @@ write.table(
 )
 
 message("Written: ", pivot_file)
-message("Done. Pivot: ", N_PROTEINS, " proteins × ", N_SAMPLES, " samples.")
+message("Done. Pivot: ", N_PROTEINS, " proteins x ", N_SAMPLES, " samples.")

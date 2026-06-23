@@ -541,7 +541,7 @@ stat.testing <- function(
           results_list[[i]] <- contrast_results
         }
 
-        # Combine all contrasts at once using cbind (O(N) instead of O(N*M²))
+        # Combine all contrasts at once using cbind (O(N) instead of O(N*M^2))
         # All results have same features in same order, so cbind is safe and fast
         combined_results <- cbind(
           data.frame(id = id, stringsAsFactors = FALSE),

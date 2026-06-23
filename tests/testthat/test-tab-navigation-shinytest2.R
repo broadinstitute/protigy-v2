@@ -57,7 +57,7 @@ test_that("Summary tab renders after GCT upload", {
   on.exit(app$stop(), add = TRUE)
 
   navigate_to_tab(app, "Summary")
-  # No JS error — verify app is still alive by getting a value
+  # No JS error -- verify app is still alive by getting a value
   setup_val <- app$get_value(export = "GCTs_and_params")
   expect_false(is.null(setup_val))
 })
@@ -160,7 +160,7 @@ test_that("stat_results_available export flips TRUE after running statistics", {
     app$wait_for_idle(duration = 500)
 
     # Select contrast (first group vs second)
-    # Try to set up a simple contrast — exact input IDs depend on dynamic UI
+    # Try to set up a simple contrast -- exact input IDs depend on dynamic UI
     # so we use tryCatch to handle cases where inputs may not be rendered yet
     app$wait_for_idle(duration = 1000)
     app$click(input = "statSetupTab-runStat")

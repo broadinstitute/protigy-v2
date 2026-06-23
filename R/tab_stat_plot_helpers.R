@@ -8,7 +8,7 @@
 # contrasts with darkred significant scatter points (plotVolcano sig.col).
 .volcano_label_hex <- "#FF00FF"
 
-# Build plotly hover `text` for volcano points: always `ID: …`; optional second
+# Build plotly hover `text` for volcano points: always `ID: ...`; optional second
 # line from the real gene-symbol metadata column when `gs_vals` is provided
 # (same length as ids); optional third line from the user-selected label column
 # when `lbl_vals` + `lbl_col_name` are provided and length matches ids.
@@ -142,7 +142,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
   df$P.Value <- if (!is.na(pval_col)) as.numeric(df[[pval_col]]) else NA_real_
   
   # Resolve the user-selected label column into df$geneSymbol.
-  # NOTE: geneSymbol is repurposed as "resolved label text" — it may contain
+  # NOTE: geneSymbol is repurposed as "resolved label text" -- it may contain
   # values from any rdesc column (not necessarily a literal gene symbol).
   lbl_col <- if (!is.null(label_column) && nzchar(label_column) &&
                    label_column %in% colnames(df)) label_column else "id"
@@ -665,7 +665,7 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
   if (show_poi && length(poi) > 0) {
     poi_rows <- df[df$id %in% poi, ]
     if (nrow(poi_rows) > 0) {
-      # POI takes priority — remove any existing sig entries for the same IDs
+      # POI takes priority -- remove any existing sig entries for the same IDs
       label_df <- label_df[!label_df$id %in% poi_rows$id, ]
       label_df <- rbind(label_df, data.frame(
         id        = poi_rows$id,
@@ -689,7 +689,7 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
 
   # Placement order: features of interest first (user explicitly chose them), then
   # by significance. Tie-breaker keeps rows stable. Delimiter-splitting only affects
-  # label text, not (logFC, logP) positions — it does not change overlap among points.
+  # label text, not (logFC, logP) positions -- it does not change overlap among points.
   poi <- unique(as.character(poi))
   is_poi_row <- label_df$id %in% poi
   ord <- order(!is_poi_row, -label_df$logP, label_df$id)

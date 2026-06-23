@@ -231,7 +231,7 @@ org_db_for_species <- function(species) {
 }
 
 #' Detect AnnotationDbi keytype from ID strings (Protigy v1 global.R mapIDs).
-#' Uses sequential `if` assignments so later rules overwrite earlier ones (e.g. ENSP…
+#' Uses sequential `if` assignments so later rules overwrite earlier ones (e.g. ENSP...
 #' matches `^E` for UniProt-style but must still resolve to ENSEMBLPROT).
 #' @noRd
 protigy_legacy_detect_keytype <- function(ids) {
@@ -546,7 +546,7 @@ apply_gene_symbol_from_params <- function(rdesc, params, ome) {
   list(rdesc = rdesc, params = params)
 }
 
-# Deep copy of a data.frame (row metadata) — avoids shared columns with the source object.
+# Deep copy of a data.frame (row metadata) -- avoids shared columns with the source object.
 # @noRd
 df_deep_copy <- function(df) {
   if (is.null(df)) {

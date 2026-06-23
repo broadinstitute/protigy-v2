@@ -1,4 +1,4 @@
-# intensity_data_param_is_yes() — R/sidebar_setup_helpers_shiny.R (not exported)
+# intensity_data_param_is_yes() -- R/sidebar_setup_helpers_shiny.R (not exported)
 
 test_that("intensity_data_param_is_yes: canonical strings and logical checkbox values", {
   f <- Protigy:::intensity_data_param_is_yes
