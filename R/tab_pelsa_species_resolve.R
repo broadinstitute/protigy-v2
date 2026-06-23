@@ -41,6 +41,14 @@ pelsa_classify_folder <- function(folder) {
     stop("pelsa_classify_folder(): `folder` must be a single string.",
          call. = FALSE)
   }
+  # Folder names become filesystem paths under inst/database/ (and feed an
+  # eventual unlink(recursive=) on FULL refresh), so a name must be a bare
+  # single directory component -- reject path separators and '.'/'..' so a
+  # crafted name cannot escape the database dir.
+  if (grepl("[/\\\\]", folder) || folder %in% c(".", "..")) {
+    stop("pelsa_classify_folder(): `folder` must be a bare directory name ",
+         "(no path separators or '.'/'..').", call. = FALSE)
+  }
   if (grepl("^[0-9]+$", folder)) "numeric" else "named"
 }
 
@@ -67,12 +75,20 @@ pelsa_fetch_taxon <- function(taxon_id,
                               max_tries = 3L,
                               rate = 10L) {
   taxon_id <- as.character(taxon_id)[[1L]]
+  # Defense-in-depth: callers only pass digit-classified folders, but this is
+  # the injectable network seam -- never interpolate a non-digit segment into
+  # the taxonomy URL path.
+  if (is.na(taxon_id) || !grepl("^[0-9]+$", taxon_id)) {
+    stop("pelsa_fetch_taxon(): `taxon_id` must be all digits, got: ",
+         taxon_id, call. = FALSE)
+  }
   fail <- function(status) {
     list(status = status, scientific_name = NA_character_,
          common_name = NA_character_, taxon_id = taxon_id)
   }
 
   req <- httr2::request(base)
+  req <- httr2::req_timeout(req, seconds = 30)
   req <- httr2::req_url_path_append(req, "taxonomy", taxon_id)
   req <- httr2::req_user_agent(req, .PELSA_TAXONOMY_UA)
   req <- httr2::req_throttle(req, capacity = rate, fill_time_s = 1)

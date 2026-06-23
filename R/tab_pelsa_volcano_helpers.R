@@ -305,7 +305,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
     stop("pelsa_build_volcano_df: markers must be a character vector")
   }
 
-  sig_cutoff <- opts$sig_cutoff %||% 0.05
+  sig_cutoff <- opts$sig_cutoff %||% .PELSA_EXPORT_SIG_CUTOFF
   panel <- opts$panel %||% "all_peptide"
   logfc_cap <- opts$logfc_cap
   if (!panel %in% c("all_peptide", "best_peptide")) {
@@ -1226,7 +1226,8 @@ pelsa_volcano_tip <- function(d) {
   acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
                    d$PG.ProteinAccessions, d$winning_accession)
   stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
-  pep_lab <- paste0(stem, "_aa", d$pep_start)
+  pep_lab <- ifelse(is.na(d$pep_start), as.character(stem),
+                    paste0(stem, "_aa", d$pep_start))
   lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
   adjp_chr <- ifelse(is.na(d$adj.P.Val), "NA", sprintf("%.2g", d$adj.P.Val))
   paste0("Peptide: ", pep_lab, "<br>",

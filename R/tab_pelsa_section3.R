@@ -851,7 +851,12 @@ PELSASection3_Ome_Server <- function(id,
     # start at index 2: the gold highlight is index 2, and the emphasized
     # clicked-point dot (when present) rides on top at index 3.
     apply_gold_overlay <- function() {
-      df <- tryCatch(active_volcano_df(), error = function(e) NULL)
+      # isolate(): this runs both inside reactive observers AND from
+      # session$onFlushed() (after a base rebuild), where reading the
+      # active_volcano_df() reactive directly would error out of context and
+      # the tryCatch would silently drop the gold overlay. The triggering
+      # observers already establish the needed dependencies.
+      df <- tryCatch(isolate(active_volcano_df()), error = function(e) NULL)
       if (is.null(df) || nrow(df) == 0L) return()
       # Delete existing overlays HIGHEST-index-first (click=3, gold=2) so the
       # remaining indices stay valid mid-delete.

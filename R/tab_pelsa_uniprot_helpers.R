@@ -475,6 +475,7 @@ pelsa_fetch_uniprot <- function(accessions,
   }
 
   base_req <- httr2::request(base)
+  base_req <- httr2::req_timeout(base_req, seconds = 30)
   base_req <- httr2::req_user_agent(base_req, .PELSA_UNIPROT_UA)
   base_req <- httr2::req_throttle(base_req, capacity = rate, fill_time_s = 1)
   base_req <- httr2::req_retry(
