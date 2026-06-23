@@ -769,34 +769,3 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
 
   plotly::layout(p, annotations = annotations)
 }
-# Apply the WebGL render backend to a built Statistics-volcano plotly object,
-# guarded by the client's WebGL capability. toWebGL converts the SVG scatter
-# traces (base points + label markers) to scattergl so pan/zoom/hover stay
-# smooth on tens of thousands of points. WebGL renders in the USER's browser,
-# so when the client reports no WebGL context we MUST leave the plot as SVG
-# scatter -- scattergl would otherwise paint a blank cloud (plotly does not
-# auto-fall-back). The conversion is also tryCatch-guarded so a toWebGL error on
-# a given object never crashes the render, and the benign `hoveron` warning
-# (ggplotly sets it; scattergl drops it) is muffled while any other warning still
-# surfaces.
-#
-# @param p         a built plotly object (typically ggplotly + add_volcano_labels).
-# @param use_webgl logical; when FALSE, return p unchanged (SVG fallback).
-# @return p converted to WebGL when capable, else the original p.
-# @noRd
-stat_volcano_apply_webgl <- function(p, use_webgl = TRUE) {
-  if (!isTRUE(use_webgl)) return(p)
-  tryCatch(
-    withCallingHandlers(
-      plotly::toWebGL(p),
-      warning = function(w) {
-        if (grepl("hoveron", conditionMessage(w))) invokeRestart("muffleWarning")
-      }
-    ),
-    error = function(e) {
-      message("toWebGL conversion failed, falling back to SVG: ",
-              conditionMessage(e))
-      p
-    }
-  )
-}

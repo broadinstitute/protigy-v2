@@ -284,18 +284,3 @@ delinearize <- function(mat, base) {
 
 
 
-# Normalize a client-reported WebGL-support value to a definite logical.
-# The browser probe (see app_UI) sets the top-level `webgl_supported` input;
-# before it reports, the value is NULL. We default to TRUE (assume capable) so
-# the common, already-working client path is never altered, and only flip to
-# SVG when the client explicitly reports FALSE.
-#
-# @param x the raw input value (NULL / NA / logical / anything).
-# @return TRUE unless x is a length-1 logical FALSE.
-# @noRd
-webgl_capability <- function(x) {
-  if (is.logical(x) && length(x) == 1L && !is.na(x) && identical(x, FALSE)) {
-    return(FALSE)
-  }
-  TRUE
-}
