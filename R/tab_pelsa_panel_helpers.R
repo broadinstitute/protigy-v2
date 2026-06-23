@@ -659,7 +659,7 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
 # y = MEAN PROCESSED-GCT log2 intensity, AS-IS: no delinearize, no z-score, no
 # re-normalize. For each (occurrence, condition) we average the processed_mat
 # values across that condition's replicate sample columns (na.rm). Contrast this
-# with CV (tab_pelsa_analysis_helpers.R), which uses RAW sum-normalized intensities -
+# with CV (tab_pelsa_analysis_helpers.R), which uses RAW (non-normalized) intensities -
 # a deliberate difference.
 #
 # x = condition as a FACTOR with levels = the user-confirmed condition_order

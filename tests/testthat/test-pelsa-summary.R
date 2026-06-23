@@ -515,7 +515,7 @@ test_that("Summary renders metrics + exports for a good cache entry", {
       # The CV caption is EXACTLY the required text.
       cap <- paste(as.character(output$cv_caption), collapse = "")
       expect_true(grepl(
-        "CV of sum-normalized \\(un-logged\\) intensities", cap))
+        "CV of \\(un-logged\\), non-normalized intensities", cap))
 
       # Exports: one entry per analyzed dataset, the single `qc` bundle.
       exp_all <- session$returned()

@@ -848,7 +848,7 @@ pelsa_sequence_coverage <- function(matched_cache,
 # so non-negativity is a precondition, not a runtime check.
 #
 # @param raw_mat        numeric matrix of RAW intensities (or data.frame block).
-# @param condition_map  named/positional condition vector (see sum_normalize).
+# @param condition_map  named/positional condition vector (see compute helpers).
 # @param min_nonNA      minimum non-NA replicates for a finite CV (>= 1L).
 # @return tidy long data.frame: columns row_id (1-based peptide row index into
 #         raw_mat), condition, cv_pct, n_nonNA, cv_status; one row per
@@ -1517,7 +1517,7 @@ pelsa_match_markers <- function(accession_tokens_list, marker_accessions) {
 #     CV is NOT invariant under log, so the pipeline DELINEARIZES that matrix by
 #     the dataset's declared log base (params$log_transformation -> log2 => 2^x,
 #     log10 => 10^x, None/NA => already-linear pass-through) via
-#     pelsa_delinearize() BEFORE sum-normalize + CV. Depth (2E) and the
+#     pelsa_delinearize() BEFORE CV. Depth (2E) and the
 #     intensity-line plot keep using the PROCESSED log2 matrix as-is. The raw
 #     matrix columns are the sample
 #     names; the condition map is built from THAT dataset's cdesc condition
@@ -1747,7 +1747,7 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
 # (R/sidebar_setup_helpers_GCT-processing.R), i.e. the LOG-transformed values
 # when log2/log10 was selected. The PELSA within-condition CV
 # (pelsa_within_condition_cv) is defined on RAW LINEAR intensities (the notebook
-# delinearizes before sum-normalizing + CV; CV is NOT invariant under log).
+# delinearizes before CV; CV is NOT invariant under log).
 # So the analysis pipeline must DELINEARIZE `GCTs_original` by the dataset's
 # declared log base BEFORE feeding it to the CV path.
 #
@@ -2223,7 +2223,7 @@ pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
 # @param log_base      this dataset's declared log transformation, one of
 #                      "None"/NA (already linear), "log2", "log10". The CV input
 #                      (gct_original's matrix) is delinearized by it BEFORE
-#                      sum-normalize + CV. The DEPTH metric and intensity-line
+#                      CV. The DEPTH metric and intensity-line
 #                      use the PROCESSED log2 matrix as-is and are NOT affected.
 # @param progress      NULL or a function(detail) advancing a sub-progress stage.
 # @param stage_env     NULL or an environment whose $stage the assembly updates
@@ -2281,7 +2281,7 @@ pelsa_run_analysis_one <- function(gct,
 
   # --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ---
   # GCTs_original is LOG-transformed (Protigy stores the post-log matrix), so we
-  # delinearize by this dataset's declared log base BEFORE sum-normalize + CV.
+  # delinearize by this dataset's declared log base BEFORE CV.
   # CV is NOT invariant under log; the notebook delinearizes first. "None"/NA
   # means the matrix is already linear -> pelsa_delinearize passes it through.
   # CANONICAL condition annotation, shared by the CV panel (2D) AND the
@@ -2435,7 +2435,7 @@ pelsa_run_analysis_one <- function(gct,
 #                       `GCTs_original`, keyed by ds (the CV source). These are
 #                       LOG-TRANSFORMED (post perform_log_transformation), so the
 #                       CV path DELINEARIZES each by `log_base_by_ds[[ds]]`
-#                       (pelsa_delinearize) before sum-normalize + CV. May be
+#                       (pelsa_delinearize) before CV. May be
 #                       NULL / missing a ds (CV skipped).
 # @param setup_snapshot pelsa_setup_snapshot() list (datasets + per-ds
 #                       condition_col + per-ds species).

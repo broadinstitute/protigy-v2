@@ -28,8 +28,8 @@
 
 # Exact caption required for the per-condition CV KDE (planning Decision).
 .PELSA_CV_CAPTION <- paste0(
-  "CV of sum-normalized (un-logged) intensities - replicate ",
-  "reproducibility after loading/depth correction."
+  "CV of (un-logged), non-normalized intensities — replicate ",
+  "reproducibility."
 )
 
 ################################################################################
