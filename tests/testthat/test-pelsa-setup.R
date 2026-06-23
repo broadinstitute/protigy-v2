@@ -997,6 +997,16 @@ test_that("pelsa_setup_box_ui honors seeded self_curated + skip", {
   expect_true(grepl("pelsa_skip[^>]*checked", html))
   # self-curated checkbox checked
   expect_true(grepl("pelsa_self_curated[^>]*checked", html))
+  # annotation uploader greyed out from the FIRST render when self-curated
+  expect_true(grepl("pelsa_annotation_wrap\" class=\"shinyjs-disabled\"", html))
+})
+
+test_that("pelsa_setup_box_ui leaves the annotation uploader enabled when not self-curated", {
+  ns <- shiny::NS("x")
+  html <- as.character(pelsa_setup_box_ui(
+    compounds = character(0), ns = ns, self_curated = FALSE
+  ))
+  expect_false(grepl("pelsa_annotation_wrap\" class=\"shinyjs-disabled\"", html))
 })
 
 test_that("pelsa_fileinput_path/name extract datapath and name, NULL-safe", {

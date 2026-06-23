@@ -37,7 +37,13 @@
 #                                      Start-Analysis (drives the container's
 #                                      pelsa_analyzed_datasets via
 #                                      set_analyzed_datasets; see SEAM below)
-#     setup_state$species[[ds]]      chr scalar - selected species ("(none)"=unset)
+#     setup_state$fasta_path[[ds]]      chr - uploaded FASTA temp path
+#     setup_state$fasta_name[[ds]]      chr - original uploaded FASTA filename
+#     setup_state$annotation_path[[ds]] chr - uploaded annotation temp path (NULL
+#                                            when self-curated / not yet uploaded)
+#     setup_state$annotation_name[[ds]] chr - original annotation filename
+#     setup_state$self_curated[[ds]]    logical - TRUE = self-curated DB (first-
+#                                            token FASTA parse, no annotation file)
 #     setup_state$compound[[ds]]     chr scalar - selected treatment compound
 #     setup_state$marker_rows[[ds]]  data.frame(accession, gene) - marker table
 #     setup_state$skip[[ds]]         logical - TRUE = skip this dataset
@@ -57,13 +63,15 @@
 #   wraps the snapshot in reactive() (see the return-block comment for the seam
 #   contract).
 #
-#   APPLY-ALL SOURCE: the ACTIVE setup tab. Species/compound/markers copy
-#   verbatim; condition/replicate columns + condition order copy best-effort
-#   (only where the target's cdesc has those columns) to NON-SKIPPED targets.
+#   APPLY-ALL SOURCE: the ACTIVE setup tab. Uploaded FASTA/annotation/compound/
+#   markers copy verbatim; condition/replicate columns + condition order copy
+#   best-effort (only where the target's cdesc has those columns) to NON-SKIPPED
+#   targets.
 #
-# SPECIES IS PER-OME: Start-Analysis resolves FASTA + feature cache PER DATASET
-#   by setup_state$species[[ds]] (memoized per species in pelsa_run_analysis), so
-#   datasets of different species each match against their own FASTA.
+# UPLOADS ARE PER-DATASET: Start-Analysis resolves each dataset's FASTA +
+#   annotation file PER DATASET (memoized per ds in pelsa_run_analysis) from the
+#   uploaded paths; a self-curated dataset parses its FASTA first-token and uses
+#   an empty feature frame (no annotation file).
 ################################################################################
 
 ################################################################################
@@ -889,7 +897,10 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       for (ome in checked_datasets()) {       # non-skipped targets only
         if (identical(ome, src)) next
 
-        # Uploaded FASTA + annotation / compound / markers copy verbatim.
+        # Uploaded FASTA + annotation / compound / markers copy verbatim. NOTE:
+        # the targets share the SOURCE's uploaded temp file paths until the user
+        # re-uploads per dataset (read-only sharing behind an explicit action -
+        # the same verbatim-copy semantics compound/markers already use).
         set_ds("fasta_path", ome, src_fasta_path)
         set_ds("fasta_name", ome, src_fasta_name)
         set_ds("annotation_path", ome, src_annot_path)

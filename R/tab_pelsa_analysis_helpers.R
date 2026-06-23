@@ -2507,13 +2507,12 @@ pelsa_run_analysis <- function(gcts,
     stop("pelsa_run_analysis: no checked datasets to analyze.", call. = FALSE)
   }
 
-  # PER-DATASET species resolution. Each dataset can be a DIFFERENT species, so
-  # its FASTA + feature cache are resolved by its own species[[ds]] via the
-  # caller's resolve_fasta(species)/resolve_feat(species) closures (the observer
-  # reads off-disk; tests inject maps). Results are MEMOIZED per species so
-  # same-species datasets read once. When no resolvers are given, fall back to a
-  # single shared fasta_map/feat_df (the legacy single-species path the existing
-  # tests + a single-species run use).
+  # PER-DATASET resolution. Each dataset supplies its OWN uploaded FASTA +
+  # annotation file, resolved by the dataset name via the caller's
+  # resolve_fasta(ds)/resolve_feat(ds) closures (the observer reads the uploaded
+  # temp paths; tests inject maps). Results are MEMOIZED per ds. When no resolvers
+  # are given, fall back to a single shared fasta_map/feat_df (the legacy
+  # single-map path the existing tests + a single-dataset run use).
   fasta_cache <- new.env(parent = emptyenv())
   feat_cache  <- new.env(parent = emptyenv())
   resolve_one <- function(cache, resolver, shared, ds) {

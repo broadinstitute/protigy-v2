@@ -760,27 +760,23 @@ pelsa_section_head <- function(icon_name, label) {
 
 # The PELSA Setup box markup for ONE dataset (pure tag constructor).
 #
-# Builds the per-dataset Setup form: a Skip toggle, species + compound selectors
-# (both defaulting to a blank "(none)"), marker paste box + table placeholder,
-# the per-dataset condition/replicate config placeholder (rendered server-side),
-# an "Apply this dataset's setup to all others" button, the Start-Analysis
-# action layer, and the maintenance refresh sub-section. Kept pure (a function
-# of its choice vectors + `ns`) so the module renderUI stays thin and the markup
-# is testable without a running session. All inputIds are namespaced via `ns`.
+# Builds the per-dataset Setup form: a Skip toggle, a per-dataset FASTA uploader,
+# a self-curated checkbox, a (greyable) annotation-file uploader, the compound
+# selector, the marker paste box + table placeholder, the per-dataset
+# condition/replicate config placeholder (rendered server-side), an "Apply this
+# dataset's setup to all others" button, and the Start-Analysis action layer.
+# Kept pure (a function of its choice vectors + `ns`) so the module renderUI
+# stays thin and the markup is testable without a running session. All inputIds
+# are namespaced via `ns`.
 #
-# @param species   species selectInput choices. Pass a NAMED vector
-#                  (display label -> folder name) so the picker shows resolved
-#                  display names while the stored value stays the folder name. A
-#                  leading "(none)" blank default is prepended internally.
 # @param compounds character vector of compound preset names.
 # @param ns        the module namespacer (session$ns / NS(id)).
-# @param selected_species  the persisted species for THIS dataset ("(none)"
-#                  when unset).
 # @param selected_compound the persisted compound for THIS dataset ("" = none).
 # @param selected_skip     persisted Skip flag for THIS dataset (TRUE = skip).
-# @param refresh_species choices for the UniProt-refresh checklist. Pass only
-#                  UniProt (taxon-code) species here -- self-curated species have
-#                  no UniProt annotations to refresh. Defaults to `species`.
+# @param self_curated      persisted self-curated flag for THIS dataset. When
+#                  TRUE the FASTA is parsed first-token and the annotation
+#                  uploader is greyed out (a self-curated database has no UniProt
+#                  annotation file).
 # @return a shiny tag (the Setup box).
 # @noRd
 pelsa_setup_box_ui <- function(compounds, ns,
@@ -820,14 +816,21 @@ pelsa_setup_box_ui <- function(compounds, ns,
       label = "Self-curated database (no annotation file)",
       value = self_curated
     ),
-    shiny::tags$div(
-      id = ns("pelsa_annotation_wrap"),
-      shiny::fileInput(
-        ns("pelsa_annotation"),
-        label  = "Feature annotation file (.tsv)",
-        accept = c(".tsv", ".txt", ".tab")
+    {
+      annotation_uploader <- shiny::tags$div(
+        id = ns("pelsa_annotation_wrap"),
+        shiny::fileInput(
+          ns("pelsa_annotation"),
+          label  = "Feature annotation file (.tsv)",
+          accept = c(".tsv", ".txt", ".tab")
+        )
       )
-    ),
+      # Grey out from the FIRST render when this dataset is already self-curated
+      # (re-entering its tab), so the disabled state is correct without waiting on
+      # the self-curated observer to fire. The observer keeps it in sync on toggle.
+      if (isTRUE(self_curated)) shinyjs::disabled(annotation_uploader)
+      else annotation_uploader
+    },
 
     # 3. Treatment compound (presets from compound_markers.yaml).
     #    Selecting a compound REPLACES THIS dataset's marker table with its

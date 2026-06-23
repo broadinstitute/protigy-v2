@@ -34,7 +34,7 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   Full guide: `dev/module_requirements.md`.
 - **PELSA** is the largest subsystem (~14 of 60 `R/` files but ~45% of R/ lines): a
   `tab_pelsa_container.R` tab with numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus
-  many `tab_pelsa_*_helpers.R` (analysis/annotation/export/panel/uniprot/volcano + constants).
+  many `tab_pelsa_*_helpers.R` (analysis/annotation/annotation_io/export/panel/volcano + constants).
   It extends the naming rule above — follow the existing `section`/`_helpers` split there.
   The volcano is a native plotly `scattergl` (WebGL) build: per-point `marker.color`
   restyle and `plotlyProxyInvoke("relayout", annotations=)` do NOT reliably render on
@@ -50,27 +50,28 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   `stat_volcano_apply_webgl()` (`R/tab_stat_plot_helpers.R`), which calls
   `plotly::toWebGL()` only when capable (else keeps the SVG ggplotly plot).
   Server GPU is irrelevant -- WebGL renders client-side.
-- **PELSA species convention**: a species is a subfolder of `inst/database/`. Its NAME
-  is the sole signal (`R/tab_pelsa_species_resolve.R::pelsa_resolve_species`): an
-  all-digits name (`9606`, `10090`) is a UniProt taxon code (pipe-aware FASTA parse +
-  UniProt annotation fetch + name validated via `rest.uniprot.org/taxonomy/{id}`); any
-  other name is a self-curated species (first-token FASTA parse, NO annotation fetch,
-  annotation UI disabled, accession-based labels). Verdicts cache in a gitignored
-  `inst/database/species_meta.json`. The reactive render path resolves CACHE-ONLY
-  (`allow_fetch = FALSE`); network is touched only at Start-Analysis and once per app
-  start (`pelsa_refresh_species_meta_on_start`). `pelsa_read_fasta(path, mode=)` picks
-  the parse mode from the resolved type.
-- **PELSA feature cache = resolved vs feature-present**: `pelsa_fetch_uniprot` returns
-  `features` (>=1 row per resolved+feature-bearing accession), `zero_feature` (resolved,
-  entry returned, 0 features), and `unresolved` (no entry). "Resolved" = ENTRY returned,
-  not feature presence. 0-feature accessions are persisted as SENTINEL rows
-  (`feature_class="none"`, NA coords) so `cache$accession` includes them — this is what
-  lets INCREMENTAL refresh skip them (universe = `(dataset U fasta) - cache$accession`).
-  FULL refresh wipes `<species>/` except `fasta/` then rebuilds from the FASTA only.
-- **`pelsa_annotate_features` soft-fails on a corrupt cache** (warn + drop the row, never
-  error) and silently drops sentinel rows. Any NA-aware predicate there MUST be NA-safe:
-  `feature_class` can be NA from a blank TSV cell, and a bare `== "none"` yields NA that
-  crashes `if (any(...))`.
+- **PELSA inputs are UPLOADED per dataset** (no in-app UniProt fetch, no `inst/database/`,
+  no species folders — all removed; see `dev/pelsa_uniprot_fetch_module.md` for the
+  removed fetcher). Each dataset's Setup block has a FASTA `fileInput`, a "Self-curated
+  database" checkbox, and an annotation `fileInput`. Default (unchecked) = UniProt-style
+  FASTA (pipe-aware parse) + a required raw annotation TSV. Checked (self-curated) =
+  first-token FASTA parse + the annotation uploader greyed out (empty feature frame,
+  accession-based labels). `setup_state` carries `fasta_path`/`fasta_name`/
+  `annotation_path`/`annotation_name`/`self_curated` per dataset (NOT species).
+  `pelsa_run_analysis` resolves each dataset's FASTA + annotation by DATASET NAME
+  (memoized per ds) via `resolve_fasta(ds)`/`resolve_feat(ds)`.
+- **Annotation file = RAW features; Protigy classifies on load**: `pelsa_read_annotation_file`
+  (`R/tab_pelsa_annotation_io.R`) reads a TSV (`accession, feature_type, start, end,
+  description` + optional `coord_quality`) and derives `feature_class`/`class_score` via
+  the parity-locked `pelsa_feature_to_class`/`pelsa_feature_class_scores` (kept there with
+  their tests). Format is PROVISIONAL — the parse rule is isolated to that one function.
+  An accession ABSENT from the uploaded annotation file counts as FAILED (not
+  zero-feature) in `pelsa_annotation_status_counts`; that failed set is also exported as
+  `missing_accessions.txt`.
+- **`pelsa_annotate_features` soft-fails on a corrupt feature frame** (warn + drop the row,
+  never error) and silently drops sentinel rows. Any NA-aware predicate there MUST be
+  NA-safe: `feature_class` can be NA from a blank TSV cell, and a bare `== "none"` yields
+  NA that crashes `if (any(...))`.
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -120,6 +121,6 @@ sample files in `inst/extdata/`.
 Tests live in `tests/testthat/test-*.R` (~46 files, 13 of them `test-pelsa-*`). PELSA tests build on synthetic ground-truth
 fixtures in `tests/testthat/fixtures/pelsa/` (`generate_synthetic.R` + canned UniProt
 JSON) — prefer these over real data for deterministic assertions.
-Adding/removing a field on a list-returning helper (e.g. `pelsa_fetch_uniprot`) breaks
+Adding/removing a field on a list-returning helper (e.g. `pelsa_run_analysis_one`) breaks
 `expect_named()` contract tests in sibling files — grep the field set across
 `tests/testthat/` before changing it.
