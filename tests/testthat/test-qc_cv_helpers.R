@@ -59,25 +59,25 @@ test_that("compute_cv_table basic 2x4 matrix with 2 groups matches hand-computed
   expect_equal(result$CV_B[2], sd(c(6, 8)) / mean(c(6, 8)), tolerance = 1e-6)
 })
 
-test_that("compute_cv_table default log_base = 'None' is identity (linear, unchanged)", {
+test_that("compute_cv_table default base is identity (linear, unchanged)", {
   mat <- matrix(c(1, 3, 3, 5, 2, 6, 4, 8), nrow = 2,
                 dimnames = list(c("f1", "f2"), NULL))
   grouping <- c("A", "A", "B", "B")
-  # explicit "None" must match the default (no delinearization)
+  # default (NA) and explicit base = 1 are both passthrough (no delinearization)
   expect_equal(compute_cv_table(mat, grouping),
-               compute_cv_table(mat, grouping, log_base = "None"))
+               compute_cv_table(mat, grouping, base = 1))
 })
 
 test_that("compute_cv_table delinearizes a log2 matrix before computing CV", {
-  # CV is NOT invariant under log: it must be computed on raw (linear)
-  # intensities. With log_base = 'log2' the matrix must be 2^x first.
+  # CV is NOT invariant under log: it must be computed on linear intensities.
+  # With base = 2 the matrix must be 2^x first.
   # matrix() fills column-major: f1 = (2,16,4,32), f2 = (8,64,16,128).
   lin <- matrix(c(2, 8, 16, 64, 4, 16, 32, 128), nrow = 2,
                 dimnames = list(c("f1", "f2"), NULL))
   log2_mat <- log2(lin)
   grouping <- c("A", "A", "B", "B")
 
-  result <- compute_cv_table(log2_mat, grouping, log_base = "log2")
+  result <- compute_cv_table(log2_mat, grouping, base = 2)
 
   # Expected CV is computed on the LINEAR values.
   # f1: A = (2,16), B = (4,32); f2: A = (8,64), B = (16,128).
@@ -96,7 +96,7 @@ test_that("compute_cv_table delinearizes a log10 matrix before computing CV", {
                 dimnames = list("f1", NULL))
   log10_mat <- log10(lin)
   grouping <- c("A", "A", "B", "B")
-  result <- compute_cv_table(log10_mat, grouping, log_base = "log10")
+  result <- compute_cv_table(log10_mat, grouping, base = 10)
   expect_equal(result$CV_A, sd(c(10, 100)) / mean(c(10, 100)), tolerance = 1e-6)
   expect_equal(result$CV_B, sd(c(1000, 10000)) / mean(c(1000, 10000)),
                tolerance = 1e-6)

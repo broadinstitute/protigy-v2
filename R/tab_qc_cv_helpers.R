@@ -46,33 +46,30 @@ qc_cv_detect_base <- function(log_transformation) {
 # Compute CV (sd / mean) per group per feature.
 #
 # CV is NOT invariant under log transformation, so it must be computed on
-# LINEAR intensities. Protigy's processed matrix is log-transformed when the
-# dataset's setup selected log2/log10, so the matrix is DELINEARIZED by the
-# declared base before sd/mean (mirroring the PELSA CV path, which delinearizes
-# for the same reason). NOTE: delinearization only reverses the log base -- any
-# normalization applied during setup is NOT undone here, so CVs reflect the
-# normalized (then delinearized) intensities, not strictly raw ones. `log_base`
-# comes from the dataset's setup parameter `log_transformation` in
-# {"None","log2","log10"}; "None"/NA passes through unchanged (already linear).
+# LINEAR intensities. The matrix is DELINEARIZED by the numeric `base` before
+# sd/mean. The caller selects the source matrix (non-normalized by default, or
+# the normalized processed matrix when toggled) and supplies the base, so this
+# helper itself neither normalizes nor un-normalizes -- it only delinearizes.
 #
 # @param mat       numeric matrix, features (rows) x samples (cols).
 #                  rownames(mat) are used as feature IDs.
 # @param grouping  character vector of length ncol(mat) assigning each sample
 #                  to a group. Use combine_cdesc_cols() to produce this.
-# @param log_base  declared log base of `mat`: "None"/NA (linear pass-through),
-#                  "log2" (2^mat), or "log10" (10^mat). Default "None".
+# @param base      numeric log base of `mat` for delinearization: NA/NULL/1 pass
+#                  through unchanged (already linear), 2 -> 2^mat, 10 -> 10^mat,
+#                  or any positive number. Default NA (no delinearization).
 # @return data.frame with column `id` (feature identifier) followed by one
 #         `CV_<group>` column per unique group. Features with zero/NA mean
 #         produce NA CV (not Inf, not NaN).
-compute_cv_table <- function(mat, grouping, log_base = "None") {
+compute_cv_table <- function(mat, grouping, base = NA) {
   stopifnot(
     is.matrix(mat),
     is.numeric(mat),
     length(grouping) == ncol(mat)
   )
-  # Recover linear intensities before CV (reuses the PELSA delinearizer, which
-  # leaves a "None"/NA matrix unchanged and only exponentiates log2/log10).
-  mat <- pelsa_delinearize(mat, log_base)
+  # Recover linear intensities before CV (delinearize() leaves an NA/NULL/1 base
+  # unchanged and only exponentiates a real base).
+  mat <- delinearize(mat, base)
   groups <- unique(grouping)
   cv_cols <- vapply(groups, function(g) {
     cols <- which(grouping == g)

@@ -302,13 +302,12 @@ QCCV_Ome_Server <- function(id,
       combine_cdesc_cols(GCT_processed()@cdesc, selected_cols())
     })
 
-    # Unfiltered CV table. CV is computed on LINEAR intensities, so pass the
-    # dataset's declared log base; compute_cv_table delinearizes accordingly.
+    # Unfiltered CV table. CV is computed on LINEAR intensities, so delinearize
+    # by the numeric base detected from the dataset's setup log transformation.
     cv_table <- reactive({
       req(GCT_processed(), grouping_vector())
-      log_base <- (parameters() %||% list())$log_transformation %||% "None"
-      compute_cv_table(GCT_processed()@mat, grouping_vector(),
-                       log_base = log_base)
+      base <- qc_cv_detect_base((parameters() %||% list())$log_transformation)
+      compute_cv_table(GCT_processed()@mat, grouping_vector(), base = base)
     })
 
     # Filtered CV table (NULL when filter is off)
