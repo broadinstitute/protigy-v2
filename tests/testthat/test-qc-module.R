@@ -849,8 +849,9 @@ test_that("calculate_PCA handles edge cases correctly", {
                 cid = c("sample1", "sample2")
   )
   
-  # Should error appropriately
-  expect_error(calculate_PCA(na_gct), "No features remain after filtering")
+  # Should error appropriately: all-NA features leave 0 usable features, which
+  # trips the <2-features guard added by the PCA-guard fix.
+  expect_error(calculate_PCA(na_gct), "requires at least 2 features")
 
   # Single-sample dataset: PCA is undefined. Must fail with a clear message,
   # NOT the cryptic "argument is of length zero" from a dropped matrix dimension.
