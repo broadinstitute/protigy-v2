@@ -248,16 +248,13 @@ test_that("create_cv_violin_plot keeps box fill transparent and supports y_range
 # ---------------------------------------------------------------------------
 # CV intensity-source wording (source-level guard)
 #
-# compute_cv_table receives GCT_processed()@mat, which is log-transformed AND
-# normalized. pelsa_delinearize reverses only the log base, NOT normalization,
-# so the CV is computed on delinearized-but-still-normalized intensities -- NOT
-# strictly "raw" intensities. The UI note (tab_qc_cv.R) and the helper comment
-# (tab_qc_cv_helpers.R) must not over-claim "raw", and must acknowledge that
-# normalization stays applied. Reverting either to the "raw (linear)" wording
-# fails this test.
+# CV defaults to LINEAR, NON-normalized intensities (GCTs_original delinearized
+# by the detected/entered base); a toggle switches to the normalized processed
+# matrix. The UI note (tab_qc_cv.R) must describe the non-normalized default and
+# the normalized toggle, and must not over-claim "raw (linear)".
 # ---------------------------------------------------------------------------
 
-test_that("CV note + comment do not over-claim 'raw' intensities", {
+test_that("CV note describes the non-normalized default and normalized toggle", {
   note_path   <- testthat::test_path("..", "..", "R", "tab_qc_cv.R")
   helper_path <- testthat::test_path("..", "..", "R", "tab_qc_cv_helpers.R")
   # R/ source is absent under R CMD check (installed package); skip like the
@@ -271,9 +268,12 @@ test_that("CV note + comment do not over-claim 'raw' intensities", {
   # The misleading "raw (linear)" claim must be gone from the user-facing note.
   expect_false(grepl("raw \\(linear\\)", note),
                info = "tab_qc_cv.R UI note must not claim CV is on raw (linear) intensities")
-  # The note must acknowledge that normalization remains applied.
+  # The note must describe the non-normalized default.
+  expect_true(grepl("non-normalized", note, ignore.case = TRUE),
+              info = "tab_qc_cv.R UI note must mention the non-normalized default")
+  # The note must mention the normalized-data toggle.
   expect_true(grepl("normaliz", note, ignore.case = TRUE),
-              info = "tab_qc_cv.R UI note must mention normalization still applies")
+              info = "tab_qc_cv.R UI note must mention the normalized-data option")
   # The helper comment must not assert the matrix is RAW LINEAR.
   expect_false(grepl("RAW\\s*\\n?\\s*#?\\s*LINEAR|raw linear", helper, ignore.case = TRUE),
                info = "compute_cv_table comment must not claim raw linear intensities")
