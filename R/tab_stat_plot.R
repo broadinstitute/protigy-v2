@@ -61,6 +61,11 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     # gather relevant variables from globals
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
+
+    # Client WebGL capability (set by the app_UI probe via app_server). Reactive
+    # so the volcano re-renders into SVG if the probe reports FALSE. Default TRUE
+    # (webgl_capability(NULL)) keeps the WebGL path for capable clients.
+    use_webgl <- reactive(webgl_capability(globals$webgl_supported))
     
     # Check if statistical results exist
     stat_results_check <- reactive({
@@ -153,7 +158,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           stat_results = stat_results,
           poi_registry = poi_registry,
           top_n_registry = top_n_registry,
-          label_mode_registry = label_mode_registry
+          label_mode_registry = label_mode_registry,
+          use_webgl = use_webgl
         )
       }, simplify = FALSE)
       
@@ -188,7 +194,8 @@ statPlot_Ome_Server <- function(id,
                                    stat_results,
                                    poi_registry = NULL,
                                    top_n_registry = NULL,
-                                   label_mode_registry = NULL) {
+                                   label_mode_registry = NULL,
+                                   use_webgl = reactive(TRUE)) {
 
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -859,6 +866,13 @@ statPlot_Ome_Server <- function(id,
           n_top           = top_n_sig()
         )
       }
+
+      # Render points on the GPU via WebGL when the client supports it; otherwise
+      # keep the SVG scatter (scattergl would paint blank with no WebGL context).
+      # Pure render-backend switch: identical points/labels/data, click-to-select
+      # keys on click$x/$y which scattergl returns reliably. PDF export is a
+      # separate path and stays SVG.
+      p <- stat_volcano_apply_webgl(p, use_webgl = use_webgl())
 
       p <- event_register(p, "plotly_click")
       p

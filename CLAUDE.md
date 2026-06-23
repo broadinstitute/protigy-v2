@@ -40,6 +40,16 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   restyle and `plotlyProxyInvoke("relayout", annotations=)` do NOT reliably render on
   WebGL — bake labels/annotations into `pelsa_volcano_build_plot()` and do highlights
   as addTraces/deleteTraces overlay traces (only pan/zoom/select avoid a rebuild).
+  Both the PELSA and Statistics volcanoes share a **client WebGL fallback**:
+  `app_UI` probes the browser on `shiny:connected` and sets a top-level
+  `webgl_supported` input; `app_server` normalizes it via `webgl_capability()`
+  (`R/utilities.R`) onto `globals$webgl_supported` (default TRUE). Each volcano's
+  Ome server receives a `use_webgl` reactive: PELSA passes it into
+  `pelsa_volcano_build_plot()` + the gold-overlay builders (switch trace `type`
+  between `scattergl`/`scatter`); the Statistics volcano passes it into
+  `stat_volcano_apply_webgl()` (`R/tab_stat_plot_helpers.R`), which calls
+  `plotly::toWebGL()` only when capable (else keeps the SVG ggplotly plot).
+  Server GPU is irrelevant -- WebGL renders client-side.
 - **PELSA species convention**: a species is a subfolder of `inst/database/`. Its NAME
   is the sole signal (`R/tab_pelsa_species_resolve.R::pelsa_resolve_species`): an
   all-digits name (`9606`, `10090`) is a UniProt taxon code (pipe-aware FASTA parse +
