@@ -29,6 +29,27 @@ app_UI <- function(request) {dashboardPage(
     # include shinyjs
     shinyjs::useShinyjs(),
 
+    # One-time client WebGL capability probe. WebGL renders in the USER's
+    # browser, not on the Shiny server, so server GPU is irrelevant; what matters
+    # is whether THIS browser has a (hardware or software) WebGL context. On
+    # shiny:connected we test for one and report it to the top-level
+    # `webgl_supported` input. app_server() reads it to decide whether the
+    # Statistics volcano renders as WebGL scattergl or SVG scatter. ASCII-only.
+    tags$script(HTML("
+      (function() {
+        function hasWebGL() {
+          try {
+            var c = document.createElement('canvas');
+            return !!(window.WebGLRenderingContext &&
+              (c.getContext('webgl') || c.getContext('experimental-webgl')));
+          } catch (e) { return false; }
+        }
+        $(document).on('shiny:connected', function() {
+          Shiny.setInputValue('webgl_supported', hasWebGL(), {priority: 'event'});
+        });
+      })();
+    ")),
+
     # JavaScript to manage Clear All Notifications button visibility
     tags$script(HTML("
       $(document).ready(function() {

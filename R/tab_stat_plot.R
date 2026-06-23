@@ -61,6 +61,11 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     # gather relevant variables from globals
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
+
+    # Client WebGL capability (set by the app_UI probe via app_server). Reactive
+    # so the volcano re-renders into SVG if the probe reports FALSE. Default TRUE
+    # (webgl_capability(NULL)) keeps the WebGL path for capable clients.
+    use_webgl <- reactive(webgl_capability(globals$webgl_supported))
     
     # Check if statistical results exist
     stat_results_check <- reactive({
@@ -153,7 +158,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
           stat_results = stat_results,
           poi_registry = poi_registry,
           top_n_registry = top_n_registry,
-          label_mode_registry = label_mode_registry
+          label_mode_registry = label_mode_registry,
+          use_webgl = use_webgl
         )
       }, simplify = FALSE)
       
@@ -188,7 +194,8 @@ statPlot_Ome_Server <- function(id,
                                    stat_results,
                                    poi_registry = NULL,
                                    top_n_registry = NULL,
-                                   label_mode_registry = NULL) {
+                                   label_mode_registry = NULL,
+                                   use_webgl = reactive(TRUE)) {
 
   ## module function
   moduleServer(id, function (input, output, session) {
@@ -868,22 +875,10 @@ statPlot_Ome_Server <- function(id,
       # which scattergl returns reliably, so click-to-select is unaffected. The
       # PDF export path (volcano_plot_export_function) is separate and stays SVG.
       # Applied after add_volcano_labels so the overlaid label markers convert too.
-      # Falls back to the SVG plot if toWebGL ever errors on a given object.
-      p <- tryCatch(
-        withCallingHandlers(
-          plotly::toWebGL(p),
-          warning = function(w) {
-            # ggplotly sets 'hoveron' on SVG scatter traces; scattergl has no such
-            # attribute, so toWebGL drops it and emits a benign warning on every
-            # render. Mute only that specific warning; let any other surface.
-            if (grepl("hoveron", conditionMessage(w))) invokeRestart("muffleWarning")
-          }
-        ),
-        error = function(e) {
-          message("toWebGL conversion failed, falling back to SVG: ", conditionMessage(e))
-          p
-        }
-      )
+      # use_webgl() gates the conversion: WebGL renders in the client browser, so
+      # when the client reports no WebGL context we keep the SVG scatter (scattergl
+      # would paint blank). The helper also falls back to SVG if toWebGL errors.
+      p <- stat_volcano_apply_webgl(p, use_webgl = use_webgl())
 
       p <- event_register(p, "plotly_click")
       p
