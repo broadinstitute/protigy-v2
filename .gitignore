@@ -1,28 +1,65 @@
-# R package files
-.DS_Store
+# ──────────────────────────────────────────────────────────────────────────
+# R / package build artifacts
+# ──────────────────────────────────────────────────────────────────────────
 .Rhistory
-.RData
-Rplots.pdf
-.Rproj.user
 .Rapp.history
+.RData
+.Ruserdata
+.Renviron
+.Rproj.user/
+*.Rcheck/
+*.tar.gz
+Rplots.pdf
+/.quarto/
+**/*.quarto_ipynb
 
-# RStudio Connect
+# RStudio Connect / shinyapps.io deploy metadata
 rsconnect/
-
-# Documentation images
-# inst/doc_images/workflow_diagram.png  # Commented out so image appears on GitHub
-.claude/
-.cursor/
-
-CLAUDE.md
 
 # Pak lockfiles (optional, platform-specific)
 pkg.lock
 .github/pkg.lock
 
-.worktrees/
+# httr2/OAuth token cache (the PELSA UniProt fetch uses httr2; never commit creds)
+.httr-oauth
 
+# knitr/R Markdown render caches + figure scratch (vignettes, dev notebooks)
+*_cache/
+/cache/
+
+# ──────────────────────────────────────────────────────────────────────────
+# OS / editor / agent / tooling cruft
+# ──────────────────────────────────────────────────────────────────────────
+.DS_Store
+.cursor/
+.claude/
+.positai
+.worktrees/
+.superpowers/
 firebase-debug.log
 
+# ──────────────────────────────────────────────────────────────────────────
+# PELSA reference databases (inst/database/<species>/)
+#   IGNORED: everything under inst/database/ -- species folders, FASTAs, and the
+#   regenerable feature/membrane caches are all user-populated / rebuilt locally
+#   via the Setup page "refresh" (see tab_pelsa_species_resolve.R), so nothing
+#   here should be committed by default.
+#   EXAMPLE (kept tracked): the empty inst/database/9606/fasta/ folder (its
+#   .gitkeep only) so new users see the expected <species>/fasta/ layout and
+#   drop in their own chosen FASTA. The FASTA itself is NOT committed.
+# ──────────────────────────────────────────────────────────────────────────
+inst/database/*
+!inst/database/9606/
+inst/database/9606/*
+!inst/database/9606/fasta/
+inst/database/9606/fasta/*
+!inst/database/9606/fasta/.gitkeep
+
+# ──────────────────────────────────────────────────────────────────────────
+# Local planning / design docs (treated as scratch -- not version-controlled)
+# ──────────────────────────────────────────────────────────────────────────
 docs/
-.positai
+
+# testthat scratch dir + problems file (created when a test errors mid-run)
+tests/testthat/_problems/
+tests/testthat/testthat-problems.rds

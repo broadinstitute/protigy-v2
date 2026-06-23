@@ -116,6 +116,74 @@ app_server <- function(input, output, session) {
     globals = globals
   )
   
+  ## PELSA container: app-level dataset switcher + active-dataset coordination.
+  ## Lives at top-level session scope (not a module) so one switcher input
+  ## drives all three PELSA sections. Returns $active_dataset (reactive) +
+  ## $set_analyzed_datasets (the Phase-4/5D seam setter Start-Analysis drives).
+  pelsa_container <- pelsaContainer_Server(
+    input = input,
+    output = output,
+    session = session,
+    GCTs_and_params = GCTs_and_params
+  )
+  pelsa_active_dataset <- pelsa_container$active_dataset
+
+  ## Shared marker-add channel: the Volcano (Section 3) requests an accession be
+  # added to the marker list, the Setup module (Section 1) - the marker list's
+  # single owner - observes the request and merges it. A reactiveVal holding the
+  # last requested data.frame(accession, gene); Section 1 keeps removal authority.
+  pelsa_marker_add_request <- reactiveVal(NULL)
+
+  ## PELSA Section 1 module (Setup)
+  # Returns list(exports = <per-ome export reactiveVal>, setup_state = <live
+  # reactiveValues>, analysis = <per-dataset analysis cache reactiveVal>).
+  # $exports feeds the export gathering below (unchanged contract);
+  # $setup_state is the shared run-config seam Phases 5B/6/7 read;
+  # $analysis is the 5D Start-Analysis cache Phases 6/7 READ (never recompute).
+  # set_analyzed_datasets is threaded in so Start-Analysis can drive the
+  # container's analyzed-datasets seam on success.
+  all_PELSASection1 <- PELSASection1_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset,
+    setup_active_dataset = pelsa_container$setup_active_dataset,
+    set_analyzed_datasets = pelsa_container$set_analyzed_datasets,
+    marker_add_request = pelsa_marker_add_request,
+    parent_session = session
+  )
+  all_PELSASection1_exports <- all_PELSASection1$exports
+  pelsa_setup_state <- all_PELSASection1$setup_state  # consumed by Phases 5B-7
+  pelsa_analysis <- all_PELSASection1$analysis        # consumed by Phases 6-7
+
+  ## PELSA Section 2 module (Summary)
+  # Reads the 5D analysis cache (pelsa_analysis) + setup_state (for the canonical
+  # sample / condition ordering). NO recompute in render.
+  all_PELSASection2_exports <- PELSASection2_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset,
+    pelsa_analysis = pelsa_analysis,
+    pelsa_setup_state = pelsa_setup_state
+  )
+
+  ## PELSA Section 3 module (Volcano Plot)
+  # Consumes the Statistics tab's stat_results/stat_params (Decision A: PELSA
+  # does NOT recompute differential stats) + the 5D analysis cache + setup_state
+  # (markers + species for feature annotation). NO recompute in render.
+  all_PELSASection3_exports <- PELSASection3_Tab_Server(
+    GCTs_and_params = GCTs_and_params,
+    globals = globals,
+    GCTs_original = GCTs_original,
+    active_dataset = pelsa_active_dataset,
+    stat_results = stat_setup_output$stat_results,
+    stat_params = stat_setup_output$stat_params,
+    pelsa_analysis = pelsa_analysis,
+    pelsa_setup_state = pelsa_setup_state,
+    marker_add_request = pelsa_marker_add_request
+  )
+
   ## TEMPLATE module
   # all_template_exports <- templateSingleOme_Tab_Server(
   #   GCTs_and_params = GCTs_and_params,
@@ -123,6 +191,26 @@ app_server <- function(input, output, session) {
   #   GCTs_original = GCTs_original
   # )
   
+  ## PELSA: merge the three section export reactives into ONE "pelsa_exports" tab
+  ## so the exporter writes a single nested tree per ome (<ome>/pelsa_exports/<stage>/
+  ## ...). Each section's export functions carve their own stage subfolder; names are
+  ## unique across sections (setup / qc / volcano / intensity / woods).
+  all_pelsa_exports <- reactive({
+    s1 <- tryCatch(all_PELSASection1_exports(), error = function(e) {
+      warning("PELSA export (section 1) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
+    s2 <- tryCatch(all_PELSASection2_exports(), error = function(e) {
+      warning("PELSA export (section 2) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
+    s3 <- tryCatch(all_PELSASection3_exports(), error = function(e) {
+      warning("PELSA export (section 3) failed: ", conditionMessage(e)); NULL
+    }) %||% list()
+    omes <- union(union(names(s1), names(s2)), names(s3))
+    stats::setNames(lapply(omes, function(o) {
+      c(s1[[o]] %||% list(), s2[[o]] %||% list(), s3[[o]] %||% list())
+    }), omes)
+  })
+
   ## gather all exports
   all_exports <- list(
       omes = reactive(c(names(GCTs_and_params()$GCTs), 'multi_ome')),
@@ -136,7 +224,8 @@ app_server <- function(input, output, session) {
         QCPCA_exports = all_QCPCA_exports,
         multiomeHeatmap_exports = all_multiomeHeatmap_exports,
         statSummary_exports = all_statSummary_exports,
-        statPlot_exports = all_statPlot_exports
+        statPlot_exports = all_statPlot_exports,
+        pelsa_exports = all_pelsa_exports
       )
     )
 

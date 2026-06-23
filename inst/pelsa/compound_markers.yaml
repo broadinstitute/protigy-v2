@@ -1,0 +1,26 @@
+metadata:
+  description: Preset PELSA marker proteins per treatment compound.
+  schema_version: 1
+compounds:
+  Rapamycin:
+    markers:
+    - accession: P42345
+      gene: MTOR
+    - accession: P62942
+      gene: FKBP1A
+    - accession: Q13451
+      gene: FKBP5
+  AY9944:
+    markers:
+    - accession: Q9UBM7
+      gene: DHCR7
+    - accession: Q15125
+      gene: EBP
+  U-18666A:
+    markers:
+    - accession: O15118
+      gene: NPC1
+    - accession: Q9UHC9
+      gene: NPC1L1
+    - accession: Q15125
+      gene: EBP
