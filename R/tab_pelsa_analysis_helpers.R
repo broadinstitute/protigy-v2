@@ -799,11 +799,10 @@ pelsa_sequence_coverage <- function(matched_cache,
 #
 # Pure (non-reactive) helpers for the single CV definition used everywhere CV
 # appears in PELSA (per-condition KDE in Summary, per-sample companion CV).
-# CV is ALWAYS computed on RAW (un-log-transformed, LINEAR) intensities that
-# have first been SUM-NORMALIZED per condition, then sd/mean*100. This mirrors
-# the PELSA notebook pipeline (normalization.py: DELINEARIZE the log GCT, then
-# sum_normalize then CV). These helpers take whatever matrix they are given and
-# assume it is ALREADY LINEAR (the math here does NOT log/delinearize).
+# CV is ALWAYS computed on RAW (un-log-transformed, LINEAR), NON-normalized
+# intensities, then sd/mean*100. These helpers take whatever matrix they are
+# given and assume it is ALREADY LINEAR (the math here does NOT log/delinearize
+# and does NOT normalize).
 #
 # IMPORTANT CALLER CONTRACT: Protigy's `GCTs_original` is the LOG-TRANSFORMED
 # matrix (post perform_log_transformation), NOT raw linear. CV is NOT invariant
@@ -820,81 +819,11 @@ pelsa_sequence_coverage <- function(matched_cache,
 # apply(x, 1, sd) is the documented ~54x performance trap and is never used.
 #
 # KDE / density curve rendering is NOT this helper's concern (Phase 6 renders the
-# curve); these helpers only build the sum-normalized matrix and the tidy CV
-# table. Keep free of Shiny reactivity so they remain unit-testable.
+# curve); these helpers only build the tidy CV table. Keep free of Shiny
+# reactivity so they remain unit-testable.
 ################################################################################
 
-# Sum-normalize a RAW (linear, un-logged) intensity matrix on a PER-CONDITION
-# COMPLETE-CASE basis, scale = "mean".
-#
-# EXACT FORMULA IMPLEMENTED (the closed-form parity tests pin this):
-#   For each condition c (a group of replicate sample columns):
-#     1. complete-case feature set CC(c) = the peptide ROWS that are non-NA
-#        across ALL of condition c's replicate columns.
-#     2. For each column j in c, colSum_cc[j] = sum over rows in CC(c) of the
-#        raw value in column j.
-#     3. target = mean over condition c's columns of colSum_cc  (scale="mean").
-#     4. factor_j = target / colSum_cc[j].
-#     5. normalized_col_j = raw_col_j * factor_j   (applied to ALL rows,
-#        including rows not in CC(c)). NA positions stay NA.
-#   Columns of the SAME condition therefore share a common complete-case total
-#   equal to the condition's mean raw complete-case column sum.
-#
-# Only the `scale = "mean"` rescale is implemented (the PELSA default); the
-# argument exists to document/lock that choice. A condition column whose
-# complete-case sum is 0 yields a non-finite factor; that column is left scaled
-# by 1 (no rescale) rather than producing Inf/NaN intensities -- such degenerate
-# columns surface downstream as non_finite CV, not silently corrupted values.
-#
-# CONTRACT: callers must supply NON-NEGATIVE raw linear intensities. Negative
-# values are not guarded; a condition whose complete-case column sum is negative
-# would produce a negative rescale factor (sign-flipped intensities). PELSA
-# intensities are abundances (>= 0), so this is a precondition, not a guard.
-#
-# @param mat            numeric matrix (rows = peptides, cols = samples), OR a
-#                       data.frame intensity block (coerced to matrix).
-# @param condition_map  named character vector (names = colnames(mat)) OR a
-#                       character vector aligned positionally to the columns.
-# @param scale          rescale target; only "mean" is supported.
-# @return numeric matrix, same shape/dimnames as mat; NA positions preserved.
-# @noRd
-pelsa_sum_normalize <- function(mat, condition_map, scale = "mean") {
-  # Coerce a data.frame intensity block to a numeric matrix (documented).
-  if (is.data.frame(mat)) mat <- as.matrix(mat)
-
-  stopifnot(
-    "mat must be a matrix" = is.matrix(mat),
-    "mat must be numeric" = is.numeric(mat),
-    "scale must be 'mean'" = identical(scale, "mean")
-  )
-
-  cond <- .pelsa_resolve_condition_map(condition_map, mat)
-
-  out <- mat
-  conditions <- unique(cond)
-  # Loop over the FEW conditions only -- never over peptide rows.
-  for (cnd in conditions) {
-    cols <- which(cond == cnd)
-    block <- mat[, cols, drop = FALSE]
-
-    # Complete-case rows: non-NA across ALL of this condition's columns.
-    cc <- rowSums(is.na(block)) == 0L
-    if (!any(cc)) next # no complete-case features -> leave block unscaled
-
-    col_sums_cc <- colSums(block[cc, , drop = FALSE])
-    target <- mean(col_sums_cc) # scale = "mean"
-    factors <- target / col_sums_cc
-    # Guard degenerate columns (cc sum 0 -> Inf/NaN factor): do not rescale.
-    factors[!is.finite(factors)] <- 1
-
-    # Apply per-column factors to the WHOLE block (vectorized; NA stays NA).
-    out[, cols] <- sweep(block, 2L, factors, FUN = "*")
-  }
-
-  out
-}
-
-# Compute per-peptide-row CV within each condition on the SUM-NORMALIZED matrix.
+# Compute per-peptide-row CV within each condition on the RAW (non-normalized) matrix.
 #
 # Pipeline: for each condition compute, per peptide row over that condition's
 # RAW (non-normalized) replicate columns (NA ignored): cv_pct = sd / mean * 100,
@@ -914,10 +843,9 @@ pelsa_sum_normalize <- function(mat, condition_map, scale = "mean") {
 # rowMeans2() / rowSds() (na.rm = TRUE) and rowSums(!is.na(block)) for n_nonNA.
 # The only loop is over the handful of CONDITIONS. NEVER apply(x, 1, sd).
 #
-# CONTRACT: callers must supply NON-NEGATIVE raw linear intensities (see
-# pelsa_sum_normalize). A negative normalized mean is not guarded -- it would
-# yield a finite negative cv_pct flagged "ok" -- so non-negativity is a
-# precondition, not a runtime check.
+# CONTRACT: callers must supply NON-NEGATIVE raw linear intensities. A negative
+# mean is not guarded -- it would yield a finite negative cv_pct flagged "ok" --
+# so non-negativity is a precondition, not a runtime check.
 #
 # @param raw_mat        numeric matrix of RAW intensities (or data.frame block).
 # @param condition_map  named/positional condition vector (see sum_normalize).

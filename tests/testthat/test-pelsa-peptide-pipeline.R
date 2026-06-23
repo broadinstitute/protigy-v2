@@ -1127,9 +1127,8 @@ test_that("integration: shared peptide contributes to ALL its accessions", {
 
 # ==============================================================================
 # --- from cv ---
-# Tests for the PELSA within-condition CV helpers
-# (R/tab_pelsa_analysis_helpers.R): pelsa_sum_normalize() and
-# pelsa_within_condition_cv().
+# Tests for the PELSA within-condition CV helper
+# (R/tab_pelsa_analysis_helpers.R): pelsa_within_condition_cv().
 #
 # CLOSED-FORM GROUND TRUTH (these comments ARE the reference):
 #
@@ -1140,43 +1139,23 @@ test_that("integration: shared peptide contributes to ALL its accessions", {
 #        A1   A2   A3    B1   B2   B3
 #   r1: 100  200  300    10   20   60
 #   r2:  50   NA  100    30   40   20      (A2 is NA -> r2 not complete-case in A)
-#   r3:   0    0    0    20   10   10      (A all-zero -> normalized mean 0 in A)
+#   r3:   0    0    0    20   10   10      (A all-zero -> mean 0 in A)
 #   r4:  60  100  200    40   30   10
 #
-# --- Sum-normalization (per-condition, complete-case basis, scale="mean") ---
-# Condition A complete-case rows (non-NA across A1,A2,A3) = {r1, r3, r4}
-#   cc column sums: A1 = 100+0+60 = 160
-#                   A2 = 200+0+100 = 300
-#                   A3 = 300+0+200 = 500
-#   mean of cc column sums = (160 + 300 + 500) / 3 = 960 / 3 = 320
-#   factor_j = mean / colSum_cc[j]:
-#     fA1 = 320/160 = 2
-#     fA2 = 320/300 = 16/15
-#     fA3 = 320/500 = 0.64
+# --- CV per (row, condition) on the RAW (NON-normalized) matrix: cv=sd/mean*100 -
+#   CV is computed directly on the raw values (no sum-normalization). sd is the
+#   SAMPLE sd (ddof = 1), NA ignored.
 #
-# Condition B complete-case rows = {r1, r2, r3, r4} (no NAs in B)
-#   cc column sums: B1 = 10+30+20+40 = 100
-#                   B2 = 20+40+10+30 = 100
-#                   B3 = 60+20+10+10 = 100
-#   mean = 100  ->  fB1 = fB2 = fB3 = 1  (normalized B == raw B)
-#
-# Normalized values (norm_col_j = raw_col_j * factor_j); NA stays NA:
-#        A1   A2(=*16/15)  A3(=*0.64)   B1  B2  B3
-#   r1: 200   213.333...   192          10  20  60
-#   r2: 100    NA          64           30  40  20
-#   r3:   0     0            0          20  10  10
-#   r4: 120   106.666...   128          40  30  10
-#
-# --- CV per (row, condition) on the NORMALIZED matrix: cv = sd/mean*100 ---
-#   sd is the SAMPLE sd (ddof = 1), NA ignored.
-#
-#   r2, condition B (normalized = raw = {30, 40, 20}):
+#   r1, condition A (raw = {100, 200, 300}):
+#     mean = 200, sample sd = 100  ->  cv = 100/200*100 = 50%  (discriminates
+#     non-normalized from sum-normalized; the latter would give ~5.34%)
+#   r2, condition B (raw = {30, 40, 20}):
 #     mean = 30, sample sd = 10  ->  cv = 10/30*100 = 33.333...%  (CLEAN closed form)
 #   r1, condition B (= {10, 20, 60}): mean = 30, sd = sqrt(1400/2) = sqrt(700)
 #     cv = sqrt(700)/30*100
 #   r2, condition A: only A1, A3 non-NA -> n_nonNA = 2 < 3 ->
 #     cv_status = "insufficient_replicates", cv_pct = NA
-#   r3, condition A: normalized = {0,0,0} -> mean = 0 -> cv_status = "non_finite",
+#   r3, condition A: raw = {0,0,0} -> mean = 0 -> cv_status = "non_finite",
 #     cv_pct = NA  (n_nonNA = 3 >= min_nonNA, but result not finite)
 # ==============================================================================
 
@@ -1195,66 +1174,6 @@ test_that("integration: shared peptide contributes to ALL its accessions", {
   cond <- c(A1 = "A", A2 = "A", A3 = "A", B1 = "B", B2 = "B", B3 = "B")
   list(mat = mat, cond = cond)
 }
-
-# --------------------------------------------------------------------------
-# pelsa_sum_normalize
-# --------------------------------------------------------------------------
-
-test_that("pelsa_sum_normalize matches hand-computed per-condition complete-case rescale", {
-  io <- .cv_tiny_inputs()
-  got <- pelsa_sum_normalize(io$mat, io$cond)
-
-  # Build the exact expected matrix explicitly (avoid helper typo risk).
-  fA <- c(320 / 160, 320 / 300, 320 / 500) # 2, 16/15, 0.64
-  exp <- io$mat
-  exp[, "A1"] <- io$mat[, "A1"] * fA[1]
-  exp[, "A2"] <- io$mat[, "A2"] * fA[2]
-  exp[, "A3"] <- io$mat[, "A3"] * fA[3]
-  # B factors are all 1 -> normalized B == raw B.
-
-  expect_equal(dim(got), dim(io$mat))
-  expect_equal(colnames(got), colnames(io$mat))
-  expect_equal(got, exp, tolerance = 1e-8)
-})
-
-test_that("pelsa_sum_normalize leaves NA positions as NA", {
-  io <- .cv_tiny_inputs()
-  got <- pelsa_sum_normalize(io$mat, io$cond)
-  # exact NA cell: row 2, column A2 (index 2,2)
-  expect_true(is.na(got[2, 2]))
-  # everything else non-NA
-  expect_equal(sum(is.na(got)), 1L)
-})
-
-test_that("pelsa_sum_normalize accepts an unnamed condition vector aligned to columns", {
-  io <- .cv_tiny_inputs()
-  cond_unnamed <- unname(io$cond)
-  got_named <- pelsa_sum_normalize(io$mat, io$cond)
-  got_unnamed <- pelsa_sum_normalize(io$mat, cond_unnamed)
-  expect_equal(got_unnamed, got_named, tolerance = 1e-8)
-})
-
-test_that("pelsa_sum_normalize coerces a data.frame block to matrix", {
-  io <- .cv_tiny_inputs()
-  df <- as.data.frame(io$mat, check.names = FALSE)
-  got <- pelsa_sum_normalize(df, io$cond)
-  expect_true(is.matrix(got))
-  expect_equal(got, pelsa_sum_normalize(io$mat, io$cond), tolerance = 1e-8)
-})
-
-test_that("pelsa_sum_normalize validates inputs and fails fast", {
-  io <- .cv_tiny_inputs()
-  # character matrix -> not numeric
-  bad <- matrix(as.character(io$mat), nrow = 4,
-                dimnames = dimnames(io$mat))
-  expect_error(pelsa_sum_normalize(bad, io$cond))
-  # length mismatch
-  expect_error(pelsa_sum_normalize(io$mat, io$cond[1:3]))
-  # named condition vector whose names don't match columns
-  bad_names <- io$cond
-  names(bad_names) <- paste0("X", seq_along(bad_names))
-  expect_error(pelsa_sum_normalize(io$mat, bad_names))
-})
 
 # --------------------------------------------------------------------------
 # pelsa_within_condition_cv
@@ -1346,11 +1265,11 @@ test_that("within-condition CV: min_nonNA boundary and validation", {
   expect_error(pelsa_within_condition_cv(io$mat, io$cond, min_nonNA = 0L))
 })
 
-test_that("empty complete-case basis -> block unchanged + raw-basis CVs (fallback)", {
-  # Condition A: EVERY row carries an NA hole somewhere in A1/A2/A3, so A's
-  # complete-case set is empty -> pelsa_sum_normalize hits the factor=1 fallback
-  # and returns A unchanged. The CVs for A must therefore equal the raw-basis
-  # CVs (sd/mean*100 on the un-normalized values), NOT an error and NOT NA.
+test_that("within-condition CV: condition A uses raw-basis CVs (no normalization)", {
+  # Condition A: EVERY row carries an NA hole somewhere in A1/A2/A3. CV is
+  # computed directly on the raw (non-normalized) values, so the CVs for A must
+  # equal the raw-basis CVs (sd/mean*100 on the un-normalized values), NOT an
+  # error and NOT NA.
   mat <- matrix(
     c(
       # A1  A2  A3    B1  B2  B3
@@ -1363,11 +1282,7 @@ test_that("empty complete-case basis -> block unchanged + raw-basis CVs (fallbac
   )
   cond <- c(A1 = "A", A2 = "A", A3 = "A", B1 = "B", B2 = "B", B3 = "B")
 
-  norm <- pelsa_sum_normalize(mat, cond)
-  # (a) condition A block returned UNCHANGED (NA preserved, values identical).
-  expect_equal(norm[, c("A1", "A2", "A3")], mat[, c("A1", "A2", "A3")])
-
-  # (b) CVs for A equal raw-basis CVs (sd/mean*100 on un-normalized values).
+  # CVs for A equal raw-basis CVs (sd/mean*100 on un-normalized values).
   res <- pelsa_within_condition_cv(mat, cond, min_nonNA = 2L)
   resA <- res[res$condition == "A", , drop = FALSE]
   resA <- resA[order(resA$row_id), , drop = FALSE]
