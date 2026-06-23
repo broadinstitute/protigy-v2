@@ -563,12 +563,14 @@ pelsa_unannotated_accessions <- function(plot_df_or_accessions, feat_df) {
 #   n_with_features  accession (or its isoform base) has >= 1 REAL feature row
 #                    (feature_class != "none") in feat_df.
 #   n_zero_feature   accession is in feat_df but ONLY as sentinel row(s)
-#                    (feature_class "none") -- UniProt resolved it with zero
-#                    features (requires a cache rebuilt with sentinels; an old
-#                    cache has none, so such accessions fall into n_failed).
-#   n_failed         accession (and its base) absent from feat_df entirely.
+#                    (feature_class "none"). A user-uploaded raw annotation file
+#                    usually ships no sentinels, so this is typically 0.
+#   n_failed         accession (and its base) absent from the uploaded annotation
+#                    file entirely -- "failed to resolve annotation". An accession
+#                    not present in the file counts here, NOT as zero_feature.
 # The three sum to the unique dataset-accession-token count. n_failed equals the
-# legacy pelsa_unannotated_accessions() length.
+# legacy pelsa_unannotated_accessions() length (and the export's
+# missing_accessions list).
 #
 # @param plot_df_or_accessions data.frame (PG.ProteinAccessions / accession) or a
 #        character vector of (possibly ;-delimited) accession strings.

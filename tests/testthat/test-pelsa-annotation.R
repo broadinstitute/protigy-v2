@@ -536,6 +536,20 @@ test_that("annotation_status_counts: failed bucket equals legacy unannotated", {
                    length(pelsa_unannotated_accessions(plot_df, feat_df)))
 })
 
+test_that("annotation_status_counts: upload model with no sentinels -> unmatched are failed", {
+  # An uploaded raw annotation file carries only real feature rows (no "none"
+  # sentinels). Every dataset accession absent from it must count as FAILED, not
+  # zero_feature, so zero_feature stays 0.
+  feat_df <- data.frame(
+    accession = "P1", feature_type = "domain", start = 1L, end = 9L,
+    description = "d", feature_class = "folded_domain", class_score = 2L,
+    coord_quality = "exact", stringsAsFactors = FALSE)
+  cnt <- pelsa_annotation_status_counts(c("P1", "P2", "P3"), feat_df)
+  expect_identical(cnt$n_with_features, 1L)
+  expect_identical(cnt$n_zero_feature, 0L)
+  expect_identical(cnt$n_failed, 2L)
+})
+
 # ---- pelsa_read_feature_cache: schema columns on a tiny temp TSV + smoke ------
 
 test_that("pelsa_read_feature_cache reads a tiny TSV and returns schema columns", {
