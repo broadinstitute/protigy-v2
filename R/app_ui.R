@@ -99,6 +99,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("General", helpGeneralTabUI(), value = "Help-General"),
         tabPanel("Customize", helpCustomizationTabUI(), value = "Help-Customize"),
         tabPanel("Setup + Analysis", helpAnalysisTabUI(), value = "Help-Analysis"),
+        tabPanel("PELSA", helpPELSATabUI(), value = "Help-PELSA"),
         icon = icon("question")
       ),
       tabPanel("Customize",
