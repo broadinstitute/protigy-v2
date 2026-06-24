@@ -1312,6 +1312,10 @@ PELSASection3_Ome_Server <- function(id,
                                      .PELSA_SUB_INTENSITY, .PELSA_GRP_MARKER)
       d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
                                      .PELSA_SUB_INTENSITY, .PELSA_GRP_SIGNIF)
+      # y-axis label log base reflects this dataset's declared transform so a
+      # log10 dataset is not mislabeled "log2(intensity)".
+      log_xf <- isolate(parameters())$log_transformation %||% NA_character_
+      log_base <- if (identical(tolower(as.character(log_xf)), "log10")) 10L else 2L
       for (i in seq_len(nrow(prot))) {
         acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
         ld <- tryCatch(
@@ -1321,7 +1325,7 @@ PELSASection3_Ome_Server <- function(id,
           error = function(e) NULL)
         if (is.null(ld) || nrow(ld) == 0L) next
         gene <- pelsa_export_gene_for(matched, acc)
-        p <- tryCatch(pelsa_intensity_export_ggplot(ld, gene, acc, 2),
+        p <- tryCatch(pelsa_intensity_export_ggplot(ld, gene, acc, log_base),
                       error = function(e) NULL)
         if (is.null(p)) next
         base <- paste0("intensityLine_", pelsa_safe_name(gene), "_",

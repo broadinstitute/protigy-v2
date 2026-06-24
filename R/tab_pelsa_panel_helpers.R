@@ -489,6 +489,9 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
                                       accession, contrast,
                                       sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   prot_len <- max(1L, as.integer(prot_len))
+  # Human-readable contrast for the subtitle, matching the volcano export
+  # (pelsa_volcano_export_df): "DMSO_over_VEH" -> "DMSO vs VEH".
+  contrast_disp <- gsub("_over_", " vs ", contrast, fixed = TRUE)
   pk <- if (is.data.frame(peptides)) peptides else data.frame()
   if (nrow(pk) > 0L) {
     pk$.lfc  <- as.numeric(pk$logFC)
@@ -522,7 +525,8 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
           # where seq(0, len, 20) is just {0} and 0 sits below the axis) are not
           # left with a bare, label-less x-axis.
           breaks = unique(c(seq(0L, prot_len, by = 20L), prot_len))) +
-        ggplot2::labs(title = title, subtitle = sprintf("Wood's plot: %s", contrast),
+        ggplot2::labs(title = title,
+                      subtitle = sprintf("Wood's plot: %s", contrast_disp),
                       x = "Residue position", y = "log2FC") +
         base_theme)
   }
@@ -621,7 +625,7 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.04, 0.16))) +
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(
-      title = title, subtitle = sprintf("Wood's plot: %s", contrast),
+      title = title, subtitle = sprintf("Wood's plot: %s", contrast_disp),
       caption = sprintf("*Significant peptides (adj.P < %s)", format(sig_cutoff)),
       x = "Residue position", y = "log2FC") +
     base_theme
