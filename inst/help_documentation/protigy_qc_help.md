@@ -47,7 +47,7 @@ Full loadings table: `rank`, `cumulative_loading_PC1_10` (or `cumulative_loading
 
 CV is computed **per feature, per group**: SD / mean within each group’s samples. By default, CV is computed from the **raw (non-normalized) data**; use the "Compute CV on normalized data" toggle to switch to the processed matrix instead.
 
-CV is only meaningful on linear-scale intensities. If your data were log-transformed before upload, enter the log base in the **Log base** field so the app can back-transform to linear scale before computing CV. The log base is detected automatically from your setup parameters where possible.
+CV is only meaningful on linear-scale intensities. If your data were log-transformed before upload, enter the log base in the **Log base** field (e.g. 2 or 10) so the app can back-transform to linear scale before computing CV. Leave the field blank if your data are already on a linear scale. The log base is detected automatically from your setup parameters where possible.
 
 You can group by one or more metadata columns (combined with `_`). A preview table below the grouping selector shows sample counts per group before you run the analysis.
 

@@ -192,38 +192,30 @@ QCCV_Ome_Server <- function(id,
       }
 
       fluidRow(
-        column(
-          width = 8,
-          shinydashboardPlus::box(
-            div(
-              style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0; color: #495057;",
-              icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
-              strong("Note: ", style = "color: #495057;"),
-              paste(
-                "CV is computed on linear, non-normalized intensities by default.",
-                "log2/log10 datasets are delinearized automatically; if your data",
-                "was log-transformed before upload, enter its base in the settings",
-                "panel. Use the toggle to compute CV on the normalized data instead."
-              )
-            ),
-            uiOutput(ns("cv_plot_section")),
-            status       = "primary",
-            width        = 12,
-            title        = "Coefficient of Variation (CV)",
-            headerBorder = TRUE,
-            solidHeader  = TRUE
-          )
-        ),
-        column(
-          width = 4,
-          shinydashboardPlus::box(
+        shinydashboardPlus::box(
+          div(
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0; color: #495057;",
+            icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
+            strong("Note: ", style = "color: #495057;"),
+            paste(
+              "CV is computed on linear, non-normalized intensities by default.",
+              "log2/log10 datasets are delinearized automatically; if your data",
+              "was log-transformed before upload, enter its base in the settings",
+              "panel. Use the toggle to compute CV on the normalized data instead."
+            )
+          ),
+          uiOutput(ns("cv_plot_section")),
+          status       = "primary",
+          width        = 12,
+          title        = "Coefficient of Variation (CV)",
+          headerBorder = TRUE,
+          solidHeader  = TRUE,
+          sidebar = boxSidebar(
             uiOutput(ns("qc_cv_controls")),
-            status       = "primary",
-            width        = 12,
-            title        = "CV settings",
-            headerBorder = TRUE,
-            solidHeader  = TRUE,
-            collapsible  = FALSE
+            id         = ns("qc_cv_sidebar"),
+            width      = 25,
+            icon       = icon("gears", class = "fa-2xl"),
+            background = "rgba(91, 98, 104, 0.9)"
           )
         )
       )
@@ -255,18 +247,15 @@ QCCV_Ome_Server <- function(id,
           add_css_attributes(
             numericInput(
               ns("qc_cv_log_base"),
-              label = "Log base of your data",
-              value = NA, min = 1, step = 1
+              label = "Log base (if log-transformed before upload)",
+              value = NA, min = 2, step = 1
             ),
             classes = "small-input"
           ),
           div(
-            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 10px; margin-bottom: 12px; border-radius: 0 4px 4px 0; color: #495057;",
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 8px; margin-bottom: 10px; border-radius: 0 4px 4px 0; color: #495057; font-size: 8pt;",
             icon("info-circle", style = "color: #007bff; margin-right: 6px;"),
-            paste(
-              "Enter the base your data was log-transformed with (e.g. 2 or 10).",
-              "Enter 1 if your data is already linear (no delinearization)."
-            )
+            "If your data were log-transformed before upload, enter the base (e.g. 2 or 10). Leave blank if your data are already on a linear scale."
           )
         )
       }
@@ -316,15 +305,10 @@ QCCV_Ome_Server <- function(id,
           ),
           classes = "small-input"
         ),
-        conditionalPanel(
-          condition = "input.qc_cv_filter_enabled == true",
-          div(
-            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0; color: #495057;",
-            icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
-            strong("Note: ", style = "color: #495057;"),
-            "This CV filter is local to this tab and only affects CV plots/exports and the CV-tab filtered GCT export. It does not change the main processed GCT used by other tabs."
-          ),
-          ns = ns
+        div(
+          style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 8px; margin-bottom: 10px; border-radius: 0 4px 4px 0; color: #495057; font-size: 8pt;",
+          icon("info-circle", style = "color: #007bff; margin-right: 6px;"),
+          "This filter is local to this tab. It only affects CV plots/exports and the CV-tab filtered GCT export. It does not change the main processed GCT used by other tabs."
         ),
         # Filter options - only visible when filter is enabled
         # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
@@ -399,15 +383,16 @@ QCCV_Ome_Server <- function(id,
       combine_cdesc_cols(source_gct()@cdesc, selected_cols())
     })
 
-    # Unfiltered CV table, computed on the delinearized source matrix. A valid
-    # positive base is required (enter 1 for already-linear data).
+    # Unfiltered CV table, computed on the delinearized source matrix.
+    # base may be NA (blank = already linear); delinearize() passes the matrix
+    # through unchanged in that case. Only reject an explicitly invalid entry.
     cv_table <- reactive({
       req(source_gct(), grouping_vector())
       base <- effective_base()
       validate(need(
-        !is.null(base) && length(base) == 1L && !is.na(base) &&
-          is.numeric(base) && base > 0,
-        "Enter the log base of your data to compute CV (enter 1 if your data is already linear)."
+        is.null(base) || (length(base) == 1L && (is.na(base) ||
+          (is.numeric(base) && base > 1))),
+        "Enter the log base your data were transformed with before upload (e.g. 2 or 10), or leave blank if your data are already on a linear scale."
       ))
       compute_cv_table(source_gct()@mat, grouping_vector(), base = base)
     })
@@ -485,7 +470,8 @@ QCCV_Ome_Server <- function(id,
     ## Unfiltered plots -------------------------------------------------------
     cv_violin_reactive <- reactive({
       req(show_cv_plots(), cv_table())
-      create_cv_violin_plot(cv_table(), palette = cv_palette(),
+      source_label <- if (isTRUE(input$qc_cv_use_normalized)) "(normalized)" else "(non-normalized)"
+      create_cv_violin_plot(cv_table(), title_suffix = source_label, palette = cv_palette(),
                             log_scale = log_scale())
     })
 
