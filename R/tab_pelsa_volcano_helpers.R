@@ -2443,7 +2443,8 @@ pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides,
     r$winning_gene else as.character(r$PG.Genes)[1L]
   gene_disp <- if (is.na(gene) || !nzchar(gene)) "NA" else gene
   label_stem <- if (gene_disp == "NA") acc_fb else gene_disp
-  pep_label <- paste0(label_stem, "_aa", r$pep_start)
+  pep_label <- if (is.na(r$pep_start)) label_stem else
+    paste0(label_stem, "_aa", r$pep_start)
   cov_disp <- if (length(coverage_frac) != 1L || is.na(coverage_frac))
     "NA" else sprintf("%.1f%%", 100 * coverage_frac)
   data.frame(

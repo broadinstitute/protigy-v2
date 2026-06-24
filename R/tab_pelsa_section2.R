@@ -175,7 +175,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
     output$failed_match_count <- shinydashboard::renderValueBox({
       entry <- active_entry()
       n <- if (is.null(entry)) NA_integer_ else
-        (entry$qc$n_unmatched_rows %||% nrow(entry$unmatched))
+        (entry$qc$n_unmatched_rows %||% nrow(entry$unmatched %||% data.frame()))
       shinydashboard::valueBox(
         value    = format(n %||% NA_integer_, big.mark = ","),
         subtitle = "Peptides failed FASTA match",
