@@ -20,7 +20,7 @@ rsconnect/
 pkg.lock
 .github/pkg.lock
 
-# httr2/OAuth token cache (the PELSA UniProt fetch uses httr2; never commit creds)
+# httr/httr2 OAuth token cache (defensive ignore; never commit creds)
 .httr-oauth
 
 # knitr/R Markdown render caches + figure scratch (vignettes, dev notebooks)
