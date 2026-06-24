@@ -2208,8 +2208,12 @@ pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
 #   qc             list: n_peptides, n_fully_quantified (peptides quantified --
 #                  finite & non-zero -- in ALL samples), n_exploded,
 #                  n_matched_rows, n_unmatched_rows,
-#                  unmatched_by_reason (named integer vector reason -> count),
-#                  n_unannotated_accessions.
+#                  unmatched_by_reason (named list reason -> count),
+#                  n_unannotated_accessions,
+#                  n_annotated_with_features (accessions with >=1 real feature
+#                  row; isoform-base fallback applied),
+#                  n_annotated_zero_feature (accessions present only as sentinel
+#                  rows in feat_df).
 #
 # A FAILED dataset is instead list(error = <message>, stage = <last stage label
 # reached, or NA>). Test with pelsa_analysis_failed(entry); the stage names the
@@ -2309,11 +2313,17 @@ pelsa_run_analysis_one <- function(gct,
   } else {
     NULL
   }
-  if (is.null(cdesc_cond) || !is.data.frame(cdesc_cond) ||
+  # condition_col is NULL/absent for any dataset with no condition column set
+  # (condition_cols[[ds]] -> NULL). `NULL %in% x` is logical(0), and `||`/`&&`
+  # with a length-0 operand yields NA -> `if (NA)` crashes the whole dataset's
+  # analysis. Guard the arg to a single non-empty string before the %in% test.
+  cc_ok <- is.character(condition_col) && length(condition_col) == 1L &&
+    !is.na(condition_col) && nzchar(condition_col)
+  if (is.null(cdesc_cond) || !is.data.frame(cdesc_cond) || !cc_ok ||
       !(condition_col %in% names(cdesc_cond))) {
     cdesc_cond <- .pelsa_gct_cdesc(gct)
   }
-  has_cond_col <- !is.null(cdesc_cond) && is.data.frame(cdesc_cond) &&
+  has_cond_col <- cc_ok && is.data.frame(cdesc_cond) &&
     condition_col %in% names(cdesc_cond)
 
   .step("Computing CV")
