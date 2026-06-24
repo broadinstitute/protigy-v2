@@ -184,6 +184,15 @@ stat.testing <- function(
           match(levels(f), unname(group_name_map))
         ]
         col_perm <- match(design_group_order, agg_group_order)
+        # Defensive guard: a NA permutation index means the design and aggregate
+        # group orders failed to align (e.g. an unexpected group-name encoding or
+        # a make.names() collision), which would silently fill AveExpr columns
+        # with NA. Fail loudly rather than emit statistically wrong per-group means.
+        if (anyNA(col_perm)) {
+          stop("Internal error: per-group mean columns could not be aligned to ",
+               "the design (group order mismatch). Check for group names that ",
+               "collide under make.names().")
+        }
         avg <- avg[, col_perm, drop = FALSE]
         final.results[, grepl("AveExpr.", colnames(final.results), fixed = TRUE)] <- avg
         final.results[, colnames(final.results) == "AveExpr"] <- rowMeans(

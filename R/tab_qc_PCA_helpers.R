@@ -56,10 +56,7 @@ calculate_PCA <- function(gct) {
       n_usable_features
     ))
   }
-  if (nrow(data.norm) == 0) {
-    stop("No samples remain after filtering. Cannot perform PCA.")
-  }
-  
+
   # Calculate PCA
   my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
   

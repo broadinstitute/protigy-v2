@@ -832,6 +832,11 @@ setupSidebarServer <- function(id = "setupSidebar", parent) { moduleServer(
       # gather current label and parameters
       label = names(parameters_internal_reactive())[backNextLogic$place]
       parameters = parameters_internal_reactive()[[label]]
+      # Guard the pre-init window: if parameters_internal_reactive() has not yet
+      # populated the current label, `parameters` is NULL and the stored-value
+      # fallbacks below would collapse to logical(0) and error in the `&&` /
+      # `==` checks. req() silently no-ops until the panel state is ready.
+      req(parameters)
 
       # INT-1: read the LIVE widget values for the two fields this handler updates,
       # falling back to the STORED value only when the widget hasn't reported yet

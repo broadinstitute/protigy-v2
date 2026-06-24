@@ -31,7 +31,7 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(range(non.missing$group)),
+      midpoint = mean(range(non.missing$group, na.rm = TRUE)),
       na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
     )
   }
