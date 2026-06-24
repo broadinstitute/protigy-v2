@@ -9,3 +9,6 @@
 ^\.claude$
 ^\.Rprofile$
 ^setup\.R$
+^CLAUDE\.md$
+^docs$
+\.DS_Store$

@@ -1,6 +1,6 @@
 Package: Protigy
 Title: Proteomics Toolset for Integrative Data Analysis
-Version: 2.5.1
+Version: 2.6.0
 Authors@R: c(
     person("Natalie M", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre")),
     person("Cameron", "Lian", , "glian@broadinstitute.org ", role = "aut"),
@@ -13,7 +13,6 @@ Description: A tool for multiomics data analysis and visualization.
 License: BSD_3_clause + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Imports:
     AnnotationDbi,
     circlize,
@@ -35,7 +34,6 @@ Imports:
     shinydashboard,
     shinydashboardPlus,
     shinyjqui,
-    WriteXLS,
     yaml,
     grid,
     methods,
@@ -62,8 +60,7 @@ Imports:
     janitor,
     snakecase,
     shinyjs,
-    future,
-    furrr
+    matrixStats
 Depends:
     R (>= 4.0.0),
     shiny
@@ -71,6 +68,9 @@ Suggests:
     testthat (>= 3.2.0),
     shinytest2,
     chromote,
-    viridisLite
+    viridisLite,
+    withr
 Config/testthat/edition: 3
 LazyData: false
+RoxygenNote: 8.0.0
+Config/roxygen2/version: 8.0.0

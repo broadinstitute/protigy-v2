@@ -25,7 +25,6 @@
 #' @importFrom circlize colorRamp2
 #' @importFrom colourpicker colourInput updateColourInput
 #' @importFrom shinyBS tipify
-#' @importFrom WriteXLS WriteXLS
 #' @importFrom scales label_percent
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom yaml read_yaml write_yaml
@@ -35,11 +34,10 @@
 #' @importFrom stats density mad median quantile sd aggregate coef qnorm qt setNames cor anova lm prcomp var complete.cases model.matrix
 #' @importFrom zip zip
 #' @importFrom utils tail stack combn compareVersion packageVersion write.csv write.table head
-#' @importFrom rlang .data
+#' @importFrom rlang .data %||%
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput
-#' @importFrom future plan availableCores
-#' @importFrom furrr future_map future_map2
 #' @importFrom Matrix Matrix
+#' @importFrom matrixStats rowSds rowMeans2 rowMedians colMedians colMads
 ## usethis namespace: end
 NULL

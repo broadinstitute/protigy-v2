@@ -26,18 +26,37 @@ calculate_PCA <- function(gct) {
   
   # Ensure rownames (samples) match original column names
   rownames(data.norm) <- original_colnames
-  
-  # Filter out zero-variance features (columns after transpose)
-  data.norm <- data.norm[,apply(data.norm, 2, var, na.rm=TRUE) != 0]
-  
-  # Check if we have any data left after filtering
-  if (ncol(data.norm) == 0) {
-    stop("No features remain after filtering (all features have zero variance or are all NA). Cannot perform PCA.")
+
+  # PCA is undefined for a single sample (per-feature variance is undefined and
+  # scaling cannot standardize). Guard up front: with one sample the matrix is a
+  # single row, and the column subset below would silently drop to a vector,
+  # producing a cryptic "argument is of length zero" downstream.
+  if (nrow(data.norm) < 2) {
+    stop("PCA requires at least 2 samples. This dataset has ", nrow(data.norm),
+         " sample(s).")
   }
-  if (nrow(data.norm) == 0) {
-    stop("No samples remain after filtering. Cannot perform PCA.")
+
+  # Filter out zero-variance features (columns after transpose).
+  # drop = FALSE keeps data.norm a matrix even when a single feature survives,
+  # so the feature-count guard below reports a readable message rather than
+  # crashing on a length-zero ncol().
+  data.norm <- data.norm[, apply(data.norm, 2, var, na.rm = TRUE) != 0, drop = FALSE]
+
+  # PCA is only meaningful with at least 2 features. Guard the degenerate
+  # single-feature (and zero-feature) cases with a clear, user-facing message;
+  # this error propagates through cached_pca_result() to the PCA plot panels.
+  n_usable_features <- ncol(data.norm)
+  if (n_usable_features < 2) {
+    stop(sprintf(
+      paste0(
+        "PCA requires at least 2 features. Only %d feature(s) are usable for ",
+        "PCA after removing features with missing values or zero variance. ",
+        "PCA plots cannot be generated for this dataset."
+      ),
+      n_usable_features
+    ))
   }
-  
+
   # Calculate PCA
   my_pca <- prcomp(data.norm, center=TRUE, scale=TRUE)
   
@@ -202,7 +221,7 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
       low = low_col,
       mid = mid_col,
       high = high_col,
-      midpoint = mean(min(group, na.rm = TRUE), max(group, na.rm = TRUE)),
+      midpoint = mean(c(min(group, na.rm = TRUE), max(group, na.rm = TRUE))),
       na.value = na_col
     )
   }
@@ -337,13 +356,12 @@ ggplotly_with_gg_subtitle <- function(gg, ...) {
   p
 }
 
-## Feature loadings table (features x PCs) from a cached PCA result
-##' @param pca_result Cached output from `calculate_PCA()`.
-##' @param gct Optional processed GCT used to attach `id` and `geneSymbol` from `@rdesc`.
-##' @param for_export If TRUE, return rows sorted by `rank` (1 = highest). Includes
-##'   `cumulative_loading_PC1_k` where `k` is min(10, number of PCs), then `id`,
-##'   `geneSymbol`, and all raw PC loadings. Ignores `max_pcs`.
-##' @param max_pcs Maximum number of PC columns to return; `NULL` keeps all PCs.
+# Feature loadings table (features x PCs) from a cached PCA result.
+# pca_result: cached output from calculate_PCA().
+# gct: optional processed GCT used to attach id and geneSymbol from @rdesc.
+# for_export: if TRUE, return rows sorted by rank (1 = highest); includes
+#   cumulative_loading_PC1_k and all raw PC loadings; ignores max_pcs.
+# max_pcs: maximum number of PC columns to return; NULL keeps all PCs.
 get_pca_loadings_df <- function(pca_result, gct = NULL, for_export = FALSE, max_pcs = 10L) {
   loadings <- pca_result$pca$rotation
   df <- as.data.frame(loadings, check.names = FALSE)
@@ -466,8 +484,8 @@ pca_feature_display_label <- function(id, geneSymbol) {
   }
 }
 
-## Top-N feature names using `pca_rank_features_by_pc_loading()`.
-##' @param max_pcs Number of leading PCs used for ranking (default 10).
+# Top-N feature names using pca_rank_features_by_pc_loading().
+# max_pcs: number of leading PCs used for ranking (default 10).
 top_pca_loading_features <- function(loadings_df, topn, max_pcs = 10L) {
   if (is.null(max_pcs)) {
     max_pcs <- length(grep("^PC", names(loadings_df), value = TRUE))

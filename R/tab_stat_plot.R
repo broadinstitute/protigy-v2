@@ -61,7 +61,7 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     # gather relevant variables from globals
     default_ome <- reactive(globals$default_ome) # don't remove this variable!
     custom_colors <- reactive(globals$colors)
-    
+
     # Check if statistical results exist
     stat_results_check <- reactive({
       validate(need(stat_results(), "Statistical testing not yet run."))
@@ -74,7 +74,7 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     output$ome_tabset_box <- renderUI({
       # This will trigger the validate() statements and show "GCTs not yet processed"
       req(GCTs(), parameters())
-      req(stat_results_check())  # stop if these reactiveVals don’t exist
+      req(stat_results_check())  # stop if these reactiveVals don't exist
       req(all_omes(), default_ome())
       
       # generate a tab for each -ome
@@ -127,7 +127,7 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
     }, ignoreNULL = TRUE)
 
     # top_n_registry: parent-level named list keyed by "<ome>::<contrast_key>",
-    # each slot is a single integer — how many top significant features to label
+    # each slot is a single integer  -  how many top significant features to label
     # for that contrast. Independent per contrast; default 20L when not yet set.
     top_n_registry <- reactiveVal(list())
 
@@ -226,7 +226,7 @@ statPlot_Ome_Server <- function(id,
       reg[[key]] %||% character(0)
     })
 
-    # Setter helper — writes to the current contrast's slot in the shared registry.
+    # Setter helper  -  writes to the current contrast's slot in the shared registry.
     set_poi <- function(new_ids) {
       key <- isolate(current_contrast_key())
       if (is.null(key)) return()
@@ -243,7 +243,7 @@ statPlot_Ome_Server <- function(id,
       reg[[key]] %||% 20L
     })
 
-    # Setter — writes this contrast's top-N value into the shared registry.
+    # Setter  -  writes this contrast's top-N value into the shared registry.
     set_top_n <- function(n) {
       key <- isolate(current_contrast_key())
       if (is.null(key)) return()
@@ -261,7 +261,7 @@ statPlot_Ome_Server <- function(id,
       reg[[key]] %||% character(0)
     })
 
-    # Setter — writes this contrast's label modes into the shared registry.
+    # Setter  -  writes this contrast's label modes into the shared registry.
     set_label_mode <- function(modes) {
       key <- isolate(current_contrast_key())
       if (is.null(key)) return()
@@ -273,7 +273,7 @@ statPlot_Ome_Server <- function(id,
     # Persist checkbox state into registry when the user checks/unchecks.
     # ignoreInit = TRUE: the checkbox fires on load (value = character(0)), which
     # would overwrite a previously saved value before the contrast-sync observer
-    # has had a chance to restore it. Skipping init is safe — the contrast-change
+    # has had a chance to restore it. Skipping init is safe  -  the contrast-change
     # observer handles the initial population.
     observeEvent(input$label_mode, {
       set_label_mode(input$label_mode)
@@ -334,7 +334,7 @@ statPlot_Ome_Server <- function(id,
           grp_id
         ))
       } else {
-        # Neither checked — re-enable both
+        # Neither checked  -  re-enable both
         shinyjs::runjs(sprintf(
           "$('#%s input[value=\"significant_top20\"], #%s input[value=\"significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
           grp_id, grp_id
@@ -593,7 +593,7 @@ statPlot_Ome_Server <- function(id,
         )
 
       } else {
-        # "none" — per-contrast list with individual remove buttons
+        # "none"  -  per-contrast list with individual remove buttons
         pois <- proteins_of_interest()
         if (length(pois) == 0) {
           return(p("No features selected.", style = "color: #888; font-style: italic; font-size: 12px;"))
@@ -745,7 +745,7 @@ statPlot_Ome_Server <- function(id,
         return(NULL)
       }
 
-      # Build base ggplot (no labels) — wrapped in tryCatch to show friendly error
+      # Build base ggplot (no labels)  -  wrapped in tryCatch to show friendly error
       gg <- tryCatch(
         plotVolcano(
           ome               = ome,
@@ -810,8 +810,8 @@ statPlot_Ome_Server <- function(id,
             poi_reg <- poi_registry()
             sp <- stat_params()[[ome]]
             sr <- stat_results()[[ome]]
-            # Use all known contrasts from stat_params as the source of truth —
-            # not poi_reg keys — so contrasts with only label_mode set (no manual
+            # Use all known contrasts from stat_params as the source of truth  - 
+            # not poi_reg keys  -  so contrasts with only label_mode set (no manual
             # POI) are still included in the union.
             all_contrasts <- if (sp$test == "One-sample Moderated T-test")
               sp$groups
@@ -839,7 +839,7 @@ statPlot_Ome_Server <- function(id,
               union(c_poi, volcano_labeled_feature_ids(df_c, c_lm, c_poi, c_n_top))
             }), init = character(0))
           },
-          proteins_of_interest()           # "none" — per-contrast baseline
+          proteins_of_interest()           # "none"  -  per-contrast baseline
         )
         # Force "poi" into label_mode when union is active and produced IDs.
         effective_label_mode <- if (union_mode() != "none" && length(effective_poi) > 0) {
@@ -980,7 +980,7 @@ statPlot_Ome_Server <- function(id,
           }), init = character(0))
         },
         {
-          # "none" — use only the current contrast's POI for export
+          # "none"  -  use only the current contrast's POI for export
           isolate(proteins_of_interest())
         }
       )
@@ -1119,7 +1119,7 @@ statPlot_Ome_Server <- function(id,
               union(c_poi, volcano_labeled_feature_ids(df_c, c_lm, c_poi, c_n_top))
             }), init = character(0))
           },
-          poi  # "none" — current contrast's POI only
+          poi  # "none"  -  current contrast's POI only
         )
         # Force "poi" into label_mode when union is active and produced IDs.
         effective_label_mode_csv <- if (csv_union_mode != "none" && length(effective_poi_csv) > 0) {

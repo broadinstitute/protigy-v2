@@ -2,24 +2,22 @@
 % Please edit documentation in R/tab_customize_helpers.R
 \name{import_colors_from_yaml}
 \alias{import_colors_from_yaml}
-\title{Import colors from YAML format with smart matching}
+\title{Import colors from YAML format with smart matching (back-compat wrapper)}
 \usage{
 import_colors_from_yaml(file_path, custom_colors)
 }
 \arguments{
 \item{file_path}{Path to the YAML file}
 
-\item{custom_colors}{Current custom colors structure (to preserve structure)}
+\item{custom_colors}{Current custom colors structure}
 }
 \value{
 Updated custom_colors list
 }
 \description{
-Implements a three-scenario matching algorithm:
-\enumerate{
-\item All conditions match: Apply colors based on condition-color name matching
-\item Some conditions match: Apply colors to matches, then unused colors
-sequentially (alphabetically) to unmatched conditions
-\item No conditions match: Apply colors by order sequentially to conditions
-}
+Thin wrapper over \code{import_colors_from_yaml_full()}. Emits each warning via
+\code{warning()} and returns just the updated colors list. Existing call sites
+and tests that expect this signature continue to work unchanged. New code
+(the Shiny module) should use \code{import_colors_from_yaml_full()} to surface
+structured counts to the user.
 }

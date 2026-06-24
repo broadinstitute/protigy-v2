@@ -31,7 +31,7 @@ summary_quant_features <- function (gct, col_of_interest, ome, custom_color_map 
       low = custom_color_map$colors[which(custom_color_map$vals == "low")],
       mid = custom_color_map$colors[which(custom_color_map$vals == "mid")],
       high = custom_color_map$colors[which(custom_color_map$vals == "high")],
-      midpoint = mean(min(non.missing$group), max(non.missing$group)),
+      midpoint = mean(range(non.missing$group, na.rm = TRUE)),
       na.value = custom_color_map$colors[which(custom_color_map$vals == "na_color")]
     )
   }
@@ -243,7 +243,7 @@ summary_dataset <- function(params, gct_original, gct_processed) {
   # check if there are any unquantified features
   unquantified_features <- apply(gct_processed@mat, 1, function(x) all(is.na(x)))
   if (any(unquantified_features)) {
-    append(dataset_summary,
+    dataset_summary <- append(dataset_summary,
            list("Features w/o quantification" = sum(unquantified_features)),
            after = which(names(dataset_summary) == "Features (post-filtering)"))
   }

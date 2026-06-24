@@ -1,6 +1,6 @@
 ################################################################################
 # Smoke tests: verify the app launches and renders its initial state correctly.
-# These tests do not upload any data — they only confirm app startup health.
+# These tests do not upload any data  -  they only confirm app startup health.
 ################################################################################
 
 library(testthat)
@@ -13,7 +13,7 @@ test_that("app launches and renders initial state without errors", {
 
   app$wait_for_idle(duration = 500, timeout = 20000)
 
-  # Title contains "ProTIGY" — check the dashboard header logo, not the <title> tag
+  # Title contains "ProTIGY"  -  check the dashboard header logo, not the <title> tag
   # (the DOM contains multiple <title> elements from shinydashboard modules)
   title <- app$get_text(".main-header .logo")
   expect_match(title, "ProTIGY", ignore.case = TRUE)
@@ -23,7 +23,7 @@ test_that("app launches and renders initial state without errors", {
   expect_false(is.null(file_input_label))
   expect_gt(nchar(trimws(file_input_label)), 0)
 
-  # No data is loaded yet — GCTs_and_params export should be NULL
+  # No data is loaded yet  -  GCTs_and_params export should be NULL
   all_exports <- app$get_values(export = TRUE)
   if (!is.null(all_exports$export$GCTs_and_params)) {
     # If exported, should be NULL at startup

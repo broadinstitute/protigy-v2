@@ -271,8 +271,8 @@ set_annot_colors_continuous <- function( annot_table, # ====
         warning(paste0("The version of khroma loaded ", as.character(packageVersion('khroma')),
                        " is below version 1.11.0, and will cause errors if `continuous.return_function` is set to TRUE."))
       }
-      palettes = sapply(dplyr::filter(khroma::info(), type=="sequential")$palette, # use khroma sequential palettes
-                        khroma::color) # 
+      palettes = sapply(dplyr::filter(khroma::info(), .data$type=="sequential")$palette, # use khroma sequential palettes
+                        khroma::color) #
     } else { # otherwise, palettes = a list of three colors, named low mid and high
       # # Khroma Continuous Palettes
       # palettes = sapply(dplyr::filter(khroma::info(), type=="sequential")$palette, # use khroma sequential palettes

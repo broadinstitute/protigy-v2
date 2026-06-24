@@ -26,21 +26,76 @@ combine_cdesc_cols <- function(cdesc, cols, sep = "_") {
   do.call(paste, c(vals, list(sep = sep)))
 }
 
+# Map a setup `log_transformation` value to the numeric base used to delinearize
+# the CV source. "log2" -> 2, "log10" -> 10. Anything else ("None", NA, NULL, an
+# unrecognized value) -> NA_real_, meaning "base unknown" so the QC CV tab asks
+# the user to enter one (the data may have been log-transformed before upload).
+#
+# @param log_transformation  the per-ome setup parameter, or NA/NULL.
+# @return single numeric: 2, 10, or NA_real_.
+qc_cv_detect_base <- function(log_transformation) {
+  if (is.null(log_transformation) || length(log_transformation) == 0L) {
+    return(NA_real_)
+  }
+  switch(as.character(log_transformation)[[1]],
+         log2  = 2,
+         log10 = 10,
+         NA_real_)
+}
+
+# Align the non-normalized source GCT (GCTs_original: log-only, UNFILTERED) to the
+# processed analysis set, so the non-normalized CV uses exactly the samples and
+# features that were analyzed -- just without normalization. Samples are matched
+# by id (names are preserved through processing) in processed order. Features are
+# matched by id when the id spaces overlap; when they do not (e.g. setup converted
+# ids to gene symbols, so processed rids share nothing with the uploaded rids),
+# the full original feature set is kept as a graceful fallback so CV still renders.
+#
+# @param gct_original   the non-normalized GCT (log-transformed, unfiltered).
+# @param gct_processed  the processed GCT (filtered + normalized) defining the set.
+# @return a cmapR GCT subset of gct_original aligned to gct_processed.
+qc_cv_align_source <- function(gct_original, gct_processed) {
+  keep_cid <- intersect(gct_processed@cid, gct_original@cid)
+  if (length(keep_cid) == 0L) keep_cid <- gct_original@cid
+
+  common_rid <- intersect(gct_processed@rid, gct_original@rid)
+  keep_rid <- if (length(common_rid) > 0L) common_rid else gct_original@rid
+
+  # Use integer indices (id-based subset_gct requires an `id` meta column).
+  subset_gct(
+    gct_original,
+    rid = which(gct_original@rid %in% keep_rid),
+    cid = which(gct_original@cid %in% keep_cid)
+  )
+}
+
 # Compute CV (sd / mean) per group per feature.
+#
+# CV is NOT invariant under log transformation, so it must be computed on
+# LINEAR intensities. The matrix is DELINEARIZED by the numeric `base` before
+# sd/mean. The caller selects the source matrix (non-normalized by default, or
+# the normalized processed matrix when toggled) and supplies the base, so this
+# helper itself neither normalizes nor un-normalizes -- it only delinearizes.
 #
 # @param mat       numeric matrix, features (rows) x samples (cols).
 #                  rownames(mat) are used as feature IDs.
 # @param grouping  character vector of length ncol(mat) assigning each sample
 #                  to a group. Use combine_cdesc_cols() to produce this.
+# @param base      numeric log base of `mat` for delinearization: NA/NULL/1 pass
+#                  through unchanged (already linear), 2 -> 2^mat, 10 -> 10^mat,
+#                  or any positive number. Default NA (no delinearization).
 # @return data.frame with column `id` (feature identifier) followed by one
 #         `CV_<group>` column per unique group. Features with zero/NA mean
 #         produce NA CV (not Inf, not NaN).
-compute_cv_table <- function(mat, grouping) {
+compute_cv_table <- function(mat, grouping, base = NA) {
   stopifnot(
     is.matrix(mat),
     is.numeric(mat),
     length(grouping) == ncol(mat)
   )
+  # Recover linear intensities before CV (delinearize() leaves an NA/NULL/1 base
+  # unchanged and only exponentiates a real base).
+  mat <- delinearize(mat, base)
   groups <- unique(grouping)
   cv_cols <- vapply(groups, function(g) {
     cols <- which(grouping == g)
@@ -48,15 +103,15 @@ compute_cv_table <- function(mat, grouping) {
     mu   <- rowMeans(sub, na.rm = TRUE)
     sdv  <- apply(sub, 1L, function(x) sd(x, na.rm = TRUE))
     cv   <- sdv / mu
-    # Guard: zero or NA mean → NA CV (avoids Inf / NaN leaking downstream)
+    # Guard: zero or NA mean -> NA CV (avoids Inf / NaN leaking downstream)
     cv[is.nan(cv) | is.infinite(cv)] <- NA_real_
     cv
   }, numeric(nrow(mat)))
   # vapply returns:
-  #   nrow>1, groups>1 → matrix (nrow x ngroups), colnames = group names
-  #   nrow>1, groups==1 → named numeric vector (length = nrow)
-  #   nrow==1, groups>1 → named numeric vector (length = ngroups)
-  #   nrow==1, groups==1 → single named scalar
+  #   nrow>1, groups>1 -> matrix (nrow x ngroups), colnames = group names
+  #   nrow>1, groups==1 -> named numeric vector (length = nrow)
+  #   nrow==1, groups>1 -> named numeric vector (length = ngroups)
+  #   nrow==1, groups==1 -> single named scalar
   # Normalize to matrix with features as rows, groups as columns.
   if (!is.matrix(cv_cols)) {
     if (nrow(mat) == 1L) {
@@ -79,8 +134,8 @@ compute_cv_table <- function(mat, grouping) {
 # Filter a CV table by a cutoff value.
 # Features (rows) are kept if their CV satisfies the cutoff according to the
 # min_groups rule:
-#   "one" — at least one group's CV is strictly below the cutoff
-#   "all" — every group's CV is strictly below the cutoff
+#   "one"  -  at least one group's CV is strictly below the cutoff
+#   "all"  -  every group's CV is strictly below the cutoff
 # NA CVs are treated as "not satisfying" the cutoff.
 #
 # @param cv_df      data.frame returned by compute_cv_table()
@@ -111,7 +166,7 @@ filter_cv_table <- function(cv_df, cutoff, min_groups = c("one", "all")) {
 create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
                                   log_scale = FALSE, y_range = NULL) {
   title <- trimws(paste("CV distributions", title_suffix))
-  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -id)
+  long_df <- tidyr::gather(cv_df, key = "Group", value = "CV", -"id")
   # Extract group label from column name (strip leading "CV_")
   long_df$Group <- sub("^CV_", "", long_df$Group)
   y_axis_label <- if (log_scale) "log10(CV)" else "CV"

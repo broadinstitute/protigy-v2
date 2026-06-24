@@ -171,14 +171,20 @@ QCCorrelation_Ome_Server <- function(id,
       eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
+        # Single-sample omes cannot be correlated; grey out with a shared message.
+        validate(need(
+          is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")),
+          min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")
+        ))
+
         # get annotation column
         if (!is.null(input$qc_correlation_annotation)) {
           annot_column <- input$qc_correlation_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -186,7 +192,7 @@ QCCorrelation_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
+
         # generate plot
          create_corr_heatmap(gct = GCT_processed(),
                               col_of_interest = annot_column,
@@ -222,14 +228,20 @@ QCCorrelation_Ome_Server <- function(id,
       eventExpr = c(input$qc_correlation_annotation, color_map()), 
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
+        # Single-sample omes cannot be correlated; grey out with a shared message.
+        validate(need(
+          is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")),
+          min_samples_message(GCT_processed(), n = 2, analysis = "Correlation")
+        ))
+
         # get annotation column
         if (!is.null(input$qc_correlation_annotation)) {
           annot_column <- input$qc_correlation_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         # get custom colors
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
@@ -237,7 +249,7 @@ QCCorrelation_Ome_Server <- function(id,
         } else {
           annot_color_map <- NULL
         }
-        
+
         # generate plot
         create_corr_boxplot(gct = GCT_processed(),
                            col_of_interest = annot_column,
@@ -270,6 +282,13 @@ QCCorrelation_Ome_Server <- function(id,
     
     
     qc_corr_heatmap_export_function <- function(dir_name) {
+      # Single-sample omes grey out on screen via the validate(need(...)) gate in
+      # qc_corr_heatmap_out(). Skip the export cleanly (mirrors the PCA/CV tabs) so
+      # the gate does not raise a shiny.silent.error that tab_export.R would surface
+      # as a misleading "Could not save" failure.
+      if (!is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation"))) {
+        return(invisible(NULL))
+      }
       req(qc_corr_heatmap_out()$HM)
       pdf(file = file.path(dir_name, paste0("qc_corr_heatmap_", ome, ".pdf")),
           width = (corr_plot_height() + 48)/72,
@@ -279,6 +298,10 @@ QCCorrelation_Ome_Server <- function(id,
     }
     
     qc_corr_boxplot_export_function <- function(dir_name) {
+      # See qc_corr_heatmap_export_function: skip single-sample omes cleanly.
+      if (!is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation"))) {
+        return(invisible(NULL))
+      }
       ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("qc_corr_boxplot_", ome, ".pdf"), 
