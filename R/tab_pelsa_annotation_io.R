@@ -163,23 +163,42 @@ pelsa_read_annotation_file <- function(path) {
   if (nrow(raw) == 0L) return(pelsa_empty_feature_frame())
 
   accession    <- as.character(raw$accession)
-  feature_type <- as.character(raw$feature_type)
+  # Blank cells parse to NA via readr; normalize feature_type/description to ""
+  # so the sentinel test and the stored values match the canonical cache schema.
+  feature_type <- ifelse(is.na(raw$feature_type), "", as.character(raw$feature_type))
   start        <- as.integer(raw$start)
   end          <- as.integer(raw$end)
   description  <- ifelse(is.na(raw$description), "", as.character(raw$description))
 
+  # ZERO-FEATURE SENTINEL rows: the external fetch workflow emits one row per
+  # accession it RESOLVED but that carries no features -- blank feature_type +
+  # no interval (NA start/end) + blank coord_quality. These must become the
+  # canonical sentinel (feature_class "none", class_score 0, coord_quality "")
+  # so downstream consumers behave:
+  #   - pelsa_annotate_features() treats them as SILENT sentinels (its sentinel
+  #     test keys on feature_class == "none" + NA coords) rather than corrupt
+  #     NA-coordinate rows that warn + drop; and
+  #   - pelsa_annotation_status_counts() buckets the accession as zero-feature,
+  #     not feature-bearing.
+  # Detected as: blank feature_type AND no usable interval (NA start AND end).
+  is_sentinel <- !nzchar(trimws(feature_type)) & is.na(start) & is.na(end)
+
   coord_quality <- if ("coord_quality" %in% colnames(raw)) {
     cq <- ifelse(is.na(raw$coord_quality), "", as.character(raw$coord_quality))
-    cq[!nzchar(cq)] <- "exact"
+    # Default a blank (or whitespace-only) coord_quality to "exact" for REAL
+    # features only; sentinels keep "" to match the canonical schema. trimws()
+    # matches the sentinel test so a "  " cell is treated as blank consistently.
+    cq[!nzchar(trimws(cq)) & !is_sentinel] <- "exact"
     cq
   } else {
-    rep("exact", nrow(raw))
+    ifelse(is_sentinel, "", "exact")
   }
 
   feature_class <- pelsa_feature_to_class(feature_type, description)
+  feature_class[is_sentinel] <- NONE_FEATURE_CLASS
   scores <- pelsa_feature_class_scores()
   class_score <- as.integer(scores[feature_class])
-  class_score[is.na(class_score)] <- 0L
+  class_score[is.na(class_score)] <- 0L   # "none"/unknown -> 0 (sentinel score)
 
   data.frame(
     accession     = accession,

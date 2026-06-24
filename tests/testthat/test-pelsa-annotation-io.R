@@ -44,6 +44,46 @@ test_that("pelsa_read_annotation_file honors a provided coord_quality column", {
   expect_equal(out$coord_quality, "fuzzy")
 })
 
+test_that("pelsa_read_annotation_file maps zero-feature sentinel rows to 'none'", {
+  # The external fetch workflow emits a row per RESOLVED-but-0-feature accession:
+  # blank feature_type + blank start/end + blank coord_quality (readr -> NA).
+  p <- write_tmp_tsv(c(
+    "accession\tfeature_type\tstart\tend\tdescription\tcoord_quality",
+    "P12345\tdomain\t30\t120\tProtein kinase\texact",
+    "Q0SENT\t\t\t\t\t"  # zero-feature sentinel
+  ))
+  out <- pelsa_read_annotation_file(p)
+
+  expect_equal(nrow(out), 2L)
+  sent <- out[out$accession == "Q0SENT", ]
+  expect_equal(sent$feature_class, "none")   # NOT "other"
+  expect_equal(sent$class_score, 0L)
+  expect_equal(sent$coord_quality, "")        # NOT "exact"
+  expect_equal(sent$feature_type, "")         # NA normalized to ""
+  expect_true(is.na(sent$start) && is.na(sent$end))
+
+  # The real feature row is unaffected.
+  real <- out[out$accession == "P12345", ]
+  expect_equal(real$feature_class, "catalytic_domain")
+  expect_equal(real$coord_quality, "exact")
+})
+
+test_that("pelsa_read_annotation_file sentinel handling feeds annotation status counts", {
+  # End-to-end: a sentinel accession must count as zero-feature, NOT failed and
+  # NOT feature-bearing, in pelsa_annotation_status_counts().
+  p <- write_tmp_tsv(c(
+    "accession\tfeature_type\tstart\tend\tdescription\tcoord_quality",
+    "P12345\tdomain\t30\t120\tProtein kinase\texact",
+    "Q0SENT\t\t\t\t\t"
+  ))
+  feat_df <- pelsa_read_annotation_file(p)
+  counts <- pelsa_annotation_status_counts(c("P12345", "Q0SENT", "ABSENT9"),
+                                           feat_df)
+  expect_equal(counts$n_with_features, 1L)  # P12345
+  expect_equal(counts$n_zero_feature, 1L)   # Q0SENT sentinel
+  expect_equal(counts$n_failed, 1L)         # ABSENT9 not in feat_df
+})
+
 test_that("pelsa_read_annotation_file errors on a missing required column", {
   p <- write_tmp_tsv(c(
     "accession\tstart\tend\tdescription",   # no feature_type
