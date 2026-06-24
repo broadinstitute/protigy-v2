@@ -356,13 +356,12 @@ ggplotly_with_gg_subtitle <- function(gg, ...) {
   p
 }
 
-## Feature loadings table (features x PCs) from a cached PCA result
-##' @param pca_result Cached output from `calculate_PCA()`.
-##' @param gct Optional processed GCT used to attach `id` and `geneSymbol` from `@rdesc`.
-##' @param for_export If TRUE, return rows sorted by `rank` (1 = highest). Includes
-##'   `cumulative_loading_PC1_k` where `k` is min(10, number of PCs), then `id`,
-##'   `geneSymbol`, and all raw PC loadings. Ignores `max_pcs`.
-##' @param max_pcs Maximum number of PC columns to return; `NULL` keeps all PCs.
+# Feature loadings table (features x PCs) from a cached PCA result.
+# pca_result: cached output from calculate_PCA().
+# gct: optional processed GCT used to attach id and geneSymbol from @rdesc.
+# for_export: if TRUE, return rows sorted by rank (1 = highest); includes
+#   cumulative_loading_PC1_k and all raw PC loadings; ignores max_pcs.
+# max_pcs: maximum number of PC columns to return; NULL keeps all PCs.
 get_pca_loadings_df <- function(pca_result, gct = NULL, for_export = FALSE, max_pcs = 10L) {
   loadings <- pca_result$pca$rotation
   df <- as.data.frame(loadings, check.names = FALSE)
@@ -485,8 +484,8 @@ pca_feature_display_label <- function(id, geneSymbol) {
   }
 }
 
-## Top-N feature names using `pca_rank_features_by_pc_loading()`.
-##' @param max_pcs Number of leading PCs used for ranking (default 10).
+# Top-N feature names using pca_rank_features_by_pc_loading().
+# max_pcs: number of leading PCs used for ranking (default 10).
 top_pca_loading_features <- function(loadings_df, topn, max_pcs = 10L) {
   if (is.null(max_pcs)) {
     max_pcs <- length(grep("^PC", names(loadings_df), value = TRUE))

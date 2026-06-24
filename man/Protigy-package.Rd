@@ -13,7 +13,6 @@ A tool for multiomics data analysis and visualization.
 
 Authors:
 \itemize{
-  \item Natalie M Clark \email{nclark@broadinstitute.org}
   \item Cameron Lian \email{glian@broadinstitute.org}
   \item Stephanie Vartany \email{svartany@broadinstitute.org}
   \item Disha Abburi \email{disha.abburi@gmail.com}
