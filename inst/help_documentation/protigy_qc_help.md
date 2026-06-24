@@ -45,7 +45,11 @@ Full loadings table: `rank`, `cumulative_loading_PC1_10` (or `cumulative_loading
 
 ## Coefficient of variation (CV)
 
-CV is computed **per feature, per group**: SD / mean within each group’s samples (using the processed matrix). You can group by one or more metadata columns (combined with `_`).
+CV is computed **per feature, per group**: SD / mean within each group’s samples. By default, CV is computed from the **raw (non-normalized) data**; use the "Compute CV on normalized data" toggle to switch to the processed matrix instead.
+
+CV is only meaningful on linear-scale intensities. If your data were log-transformed before upload, enter the log base in the **Log base** field so the app can back-transform to linear scale before computing CV. The log base is detected automatically from your setup parameters where possible.
+
+You can group by one or more metadata columns (combined with `_`). A preview table below the grouping selector shows sample counts per group before you run the analysis.
 
 ### Violin plot
 
