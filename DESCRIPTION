@@ -60,13 +60,7 @@ Imports:
     janitor,
     snakecase,
     shinyjs,
-    data.table,
-    httr2,
-    IRanges,
-    jsonlite,
-    matrixStats,
-    ragg,
-    stringi
+    matrixStats
 Depends:
     R (>= 4.0.0),
     shiny

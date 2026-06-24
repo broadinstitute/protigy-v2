@@ -11,15 +11,4 @@
 ^setup\.R$
 ^CLAUDE\.md$
 ^docs$
-# NOTE: every line in .Rbuildignore is a Perl regex, so keep these comment lines
-# free of unbalanced regex metacharacters.
-# PELSA reference/annotation data is not shipped in the tarball -- kept in the
-# repo via Git LFS for dev but excluded to stay under CRAN/Bioc size limits.
-# Users supply the reference FASTA and fetch the UniProt feature annotation from
-# the Setup page; the membrane annotation is sourced separately. Only the tiny
-# schema.json and fasta/.gitkeep ship to preserve the fetch-target dirs; the
-# large .fasta, feature .tsv/.parquet, and membrane .tsv blobs are excluded.
-^inst/database/[^/]+/fasta/.*\.fasta$
-^inst/database/[^/]+/uniprot_features/uniprot_features\.(tsv|parquet)$
-^inst/database/[^/]+/uniprot_membrane$
 \.DS_Store$

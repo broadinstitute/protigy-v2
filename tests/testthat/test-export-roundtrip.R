@@ -8,9 +8,6 @@
 #   * customization/color_scheme.yaml round-trips through the real exporter/importer
 #   * folder layout is ome/tab/file
 #   * multi_ome gets a folder but NO parameters.yaml
-#
-# It also covers the pure .pelsa_pack_lanes lane allocator used by the PELSA
-# Woods static export.
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
@@ -220,33 +217,4 @@ test_that("P3.1: handler tolerates NULL colors (no customization write failure)"
       expect_true(file.exists(file.path(root, "proteome", "summary_exports", "summary1.txt")))
     }
   )
-})
-
-# ---------------------------------------------------------------------------
-# .pelsa_pack_lanes -- pure lane allocator used by the Woods static export
-# ---------------------------------------------------------------------------
-
-test_that("P3.1: .pelsa_pack_lanes returns integer(0) for empty input", {
-  expect_identical(.pelsa_pack_lanes(integer(0), integer(0)), integer(0))
-})
-
-test_that("P3.1: .pelsa_pack_lanes packs non-overlapping intervals on one lane", {
-  # [1,5] then [6,10] do not overlap -> both lane 1
-  lanes <- .pelsa_pack_lanes(c(1, 6), c(5, 10))
-  expect_equal(lanes, c(1L, 1L))
-})
-
-test_that("P3.1: .pelsa_pack_lanes pushes overlapping intervals to new lanes", {
-  # [1,10] and [5,15] overlap -> lanes 1 and 2
-  lanes <- .pelsa_pack_lanes(c(1, 5), c(10, 15))
-  expect_equal(sort(unique(lanes)), c(1L, 2L))
-  expect_equal(length(lanes), 2L)
-})
-
-test_that("P3.1: .pelsa_pack_lanes reuses a freed lane after an interval ends", {
-  # Input (in original order): [1,3], [5,7], [2,6]
-  # Processing order (by start): [1,3] -> lane 1; [2,6] overlaps lane1 -> lane 2;
-  #   [5,7] -> lane1 is free (lane_end[1] = 3, 5 > 3) -> reuses lane 1.
-  # Result in ORIGINAL input order: [1,3]->1, [5,7]->1, [2,6]->2 => c(1L, 1L, 2L)
-  expect_equal(.pelsa_pack_lanes(c(1, 5, 2), c(3, 7, 6)), c(1L, 1L, 2L))
 })

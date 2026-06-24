@@ -241,9 +241,7 @@ min_samples_message <- function(gct, n = 2, analysis = "This analysis") {
 
 # Undo a log transform of an arbitrary base, recovering linear intensities.
 # Used by the QC CV tab so CV (which is NOT invariant under log) is always
-# computed on linear data, regardless of the log base applied upstream. This is
-# self-contained (no PELSA dependency) so the QC CV tab does not rely on the
-# PELSA subsystem.
+# computed on linear data, regardless of the log base applied upstream.
 #
 # `base` semantics:
 #   NULL / NA / 1            -> passthrough (data already linear). base 1 is the

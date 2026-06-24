@@ -32,35 +32,6 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   `sidebar_setup*.R` = upload/processing pipeline. Keep this split when adding code.
 - Templates for new modules: `R/tab_TEMPLATE.R` and `R/tab_TEMPLATE_SINGLE-OME.R`.
   Full guide: `dev/module_requirements.md`.
-- **PELSA** is the largest subsystem (~1/4 of `R/`, 14 files): a `tab_pelsa_container.R` tab with
-  numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus many `tab_pelsa_*_helpers.R`
-  (note: section1/2 have a `_helpers` sibling; section3's helpers live in `tab_pelsa_volcano_helpers.R`).
-  It extends the naming rule above — follow the existing `section`/`_helpers` split there.
-  The volcano is a native plotly `scattergl` (WebGL) build: per-point `marker.color`
-  restyle and `plotlyProxyInvoke("relayout", annotations=)` do NOT reliably render on
-  WebGL — bake labels/annotations into `pelsa_volcano_build_plot()` and do highlights
-  as addTraces/deleteTraces overlay traces (only pan/zoom/select avoid a rebuild).
-- **PELSA species convention**: a species is a subfolder of `inst/database/`. Its NAME
-  is the sole signal (`R/tab_pelsa_species_resolve.R::pelsa_resolve_species`): an
-  all-digits name (`9606`, `10090`) is a UniProt taxon code (pipe-aware FASTA parse +
-  UniProt annotation fetch + name validated via `rest.uniprot.org/taxonomy/{id}`); any
-  other name is a self-curated species (first-token FASTA parse, NO annotation fetch,
-  annotation UI disabled, accession-based labels). Verdicts cache in a gitignored
-  `inst/database/species_meta.json`. The reactive render path resolves CACHE-ONLY
-  (`allow_fetch = FALSE`); network is touched only at Start-Analysis and once per app
-  start (`pelsa_refresh_species_meta_on_start`). `pelsa_read_fasta(path, mode=)` picks
-  the parse mode from the resolved type.
-- **PELSA feature cache = resolved vs feature-present**: `pelsa_fetch_uniprot` returns
-  `features` (>=1 row per resolved+feature-bearing accession), `zero_feature` (resolved,
-  entry returned, 0 features), and `unresolved` (no entry). "Resolved" = ENTRY returned,
-  not feature presence. 0-feature accessions are persisted as SENTINEL rows
-  (`feature_class="none"`, NA coords) so `cache$accession` includes them — this is what
-  lets INCREMENTAL refresh skip them (universe = `(dataset U fasta) - cache$accession`).
-  FULL refresh wipes `<species>/` except `fasta/` then rebuilds from the FASTA only.
-- **`pelsa_annotate_features` soft-fails on a corrupt cache** (warn + drop the row, never
-  error) and silently drops sentinel rows. Any NA-aware predicate there MUST be NA-safe:
-  `feature_class` can be NA from a blank TSV cell, and a bare `== "none"` yields NA that
-  crashes `if (any(...))`.
 
 ## Data-flow contract (passed into every module server)
 - `GCTs_and_params()` — reactiveVal with `$GCTs` (named list of per-ome cmapR GCTs),
@@ -81,7 +52,7 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
 
 ## Conventions / gotchas
 - **Uploads are read with `readr::read_tsv`/`read_delim`** (`R/sidebar_setup_helpers_csv-excel-processing.R`),
-  which renders a missing cell as `NA`, not `""`. When reproducing a setup/PELSA
+  which renders a missing cell as `NA`, not `""`. When reproducing a setup
   data-handling bug, read with `readr` (NOT `read.delim`, which gives `""`) or the
   NA-vs-blank divergence will hide the failure.
 - **`ns()`**: required for every `inputId`/`outputId` in module UI and inside `renderUI()`;
@@ -97,8 +68,8 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
   for id-based subset/reorder, and `mat()`/`meta()`/`ids()`/`melt_gct()` accessors,
   rather than rebuilding `data.frame`s from `mat()`+rownames (which silently mangles
   non-syntactic sample names and can desync rdesc/cdesc order). cmapR is already an Import.
-- **Significance cutoff is shared**: the PELSA volcano and the Statistics tab both read
-  `stat_params()[[ome]]$cutoff` (set in Statistics > Summary, code in `R/tab_stat_setup.R` +
+- **Significance cutoff is shared**: read `stat_params()[[ome]]$cutoff` (set in
+  Statistics > Summary, code in `R/tab_stat_setup.R` +
   `R/tab_stat_summary_helpers.R`). Don't hardcode `0.05`.
 - Reusable helpers: `R/utilities.R`.
 - **ASCII-only R source**: no literal Unicode in `R/`; use `\uXXXX` escapes (e.g.
@@ -107,9 +78,6 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
 ## Test data
 `data(brca_retrospective_v5.0_proteome_gct)` (also `_phosphoproteome_`, `_rnaseq_`);
 sample files in `inst/extdata/`.
-Tests live in `tests/testthat/test-*.R` (~60 files). PELSA tests build on synthetic ground-truth
-fixtures in `tests/testthat/fixtures/pelsa/` (`generate_synthetic.R` + canned UniProt
-JSON) — prefer these over real data for deterministic assertions.
-Adding/removing a field on a list-returning helper (e.g. `pelsa_fetch_uniprot`) breaks
-`expect_named()` contract tests in sibling files — grep the field set across
-`tests/testthat/` before changing it.
+Tests live in `tests/testthat/test-*.R`.
+Adding/removing a field on a list-returning helper breaks `expect_named()` contract
+tests in sibling files — grep the field set across `tests/testthat/` before changing it.
