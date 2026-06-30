@@ -119,10 +119,18 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     top_n_registry      <- reactiveVal(list())  # <key> -> integer top-N
     label_mode_registry <- reactiveVal(list())  # <key> -> character() label mode
 
-    # Per-ome (per-dataset) server: instantiate once per ome and reuse.
-    all_exports <- reactiveVal()
+    # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. Each
+    # PELSASection3_Ome_Server() registers many live observers (volcano/Woods
+    # click, marker-add, cache persisters); re-calling it for an already-started
+    # ome stacks duplicate observers (a leak). all_omes() re-emits on every
+    # dataset add/remove (GCTs_and_params is replaced whole during setup), so we
+    # guard with a started-registry and only instantiate omes we have not seen.
+    ome_export_store <- reactiveVal(list())  # ome -> exports, persists re-emits
+    started_omes     <- reactiveVal(character(0))
     observeEvent(all_omes(), {
-      ome_exports <- sapply(all_omes(), function(ome) {
+      new_omes <- setdiff(all_omes(), started_omes())
+      if (length(new_omes) == 0L) return()
+      new_exports <- sapply(new_omes, function(ome) {
         PELSASection3_Ome_Server(
           id                        = ome,
           ome                       = ome,
@@ -141,7 +149,15 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           use_webgl                 = use_webgl
         )
       }, simplify = FALSE)
-      all_exports(ome_exports)
+      started_omes(c(started_omes(), new_omes))
+      ome_export_store(modifyList(ome_export_store(), new_exports))
+    })
+
+    # Expose exports for the CURRENTLY-present omes only (a removed ome's stored
+    # exports are dropped from the gathered set without re-instantiating others).
+    all_exports <- reactive({
+      store <- ome_export_store()
+      store[intersect(all_omes(), names(store))]
     })
 
     return(all_exports)
@@ -1030,7 +1046,8 @@ PELSASection3_Ome_Server <- function(id,
     # is pinned / unresolvable. Gene falls back winning_gene -> PG.Genes -> "".
     pinned_marker_row <- reactive({
       sel <- selection()
-      if (is.null(sel) || is.null(sel$accession) || !nzchar(sel$accession)) {
+      if (is.null(sel) || is.null(sel$accession) || is.na(sel$accession) ||
+          !nzchar(sel$accession)) {
         return(NULL)
       }
       df <- tryCatch(active_volcano_df(), error = function(e) NULL)
@@ -1080,9 +1097,9 @@ PELSASection3_Ome_Server <- function(id,
       # routes it to the right per-dataset marker list.
       if (is.function(marker_add_request)) {
         marker_add_request(list(ome = ome, rows = mr))
+        showNotification(sprintf("Added %s to the marker list.", acc),
+                         type = "message", duration = 3)
       }
-      showNotification(sprintf("Added %s to the marker list.", acc),
-                       type = "message", duration = 3)
     })
 
     output$pelsa_intensity_plot <- plotly::renderPlotly({
