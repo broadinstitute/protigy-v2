@@ -64,3 +64,60 @@ test_that("rank_frame returns an empty typed frame when no finite values", {
   expect_true(all(c("row_id","sequence","accessions","genes",
                     "display_intensity","rank") %in% names(rf)))
 })
+
+test_that("marker_topn caps at N per accession and is marker-scoped", {
+  rf <- data.frame(
+    row_id = 1:5, sequence = paste0("S", 1:5),
+    accessions = "x", genes = "x",
+    display_intensity = c(50, 40, 30, 20, 10), rank = 1:5,
+    stringsAsFactors = FALSE)
+  matched <- data.frame(
+    .row_id   = c(1L, 2L, 3L, 4L, 5L),
+    accession = c("M1","M1","M1","M1","M2"),
+    gene      = c("GA","GA","GA","GA","GB"),
+    pep_start = c(10L, 20L, 30L, 40L, 5L),
+    PEP.StrippedSequence = paste0("S", 1:5),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  res <- pelsa_splot_marker_topn(matched, c("M1","M2"), rf, n = 3L)
+  expect_setequal(res$highlight, 1:5)             # all 5 highlighted
+  expect_setequal(res$labels$row_id, c(1L, 2L, 3L, 5L))  # M1 top3 (1,2,3) + M2 (5)
+  expect_equal(res$labels$label[res$labels$row_id == 1L], "GA_aa10")
+  expect_equal(res$labels$label[res$labels$row_id == 5L], "GB_aa5")
+})
+
+test_that("marker_topn shares a peptide across markers with a ;-joined label", {
+  rf <- data.frame(row_id = 1:2, sequence = c("S1","S2"),
+                   accessions = "x", genes = "x",
+                   display_intensity = c(9, 8), rank = 1:2,
+                   stringsAsFactors = FALSE)
+  matched <- data.frame(
+    .row_id   = c(1L, 1L, 2L),
+    accession = c("M1","M2","M2"),
+    gene      = c("GA","GB","GB"),
+    pep_start = c(11L, 22L, 33L),
+    PEP.StrippedSequence = c("S1","S1","S2"),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  res <- pelsa_splot_marker_topn(matched, c("M1","M2"), rf, n = 3L)
+  expect_equal(res$labels$label[res$labels$row_id == 1L], "GA_aa11;GB_aa22")
+})
+
+test_that("marker_topn drops NA-in-sample peptides and falls back to accession label", {
+  rf <- data.frame(row_id = 1L, sequence = "S1", accessions = "x", genes = "x",
+                   display_intensity = 5, rank = 1L, stringsAsFactors = FALSE)
+  matched <- data.frame(
+    .row_id = c(1L, 2L), accession = c("M1","M1"), gene = c("", ""),
+    pep_start = c(7L, 8L),
+    PEP.StrippedSequence = c("S1","S2"),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  res <- pelsa_splot_marker_topn(matched, "M1", rf, n = 3L)
+  expect_equal(res$highlight, 1L)                 # row 2 absent from rf (NA)
+  expect_equal(res$labels$label, "M1_aa7")        # blank gene -> accession
+})
+
+test_that("marker_topn returns empty on no markers / no matches", {
+  rf <- data.frame(row_id = 1L, sequence = "S1", accessions = "x", genes = "x",
+                   display_intensity = 5, rank = 1L, stringsAsFactors = FALSE)
+  empty_m <- pelsa_splot_marker_topn(data.frame(), "M1", rf)
+  expect_length(empty_m$highlight, 0L)
+  expect_equal(nrow(empty_m$labels), 0L)
+})
