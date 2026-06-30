@@ -55,7 +55,7 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
           ),
           column(2,
                  div(class = "stat-setup-controls",
-                     uiOutput(ns("select_test")),
+                     uiOutput(ns("select_test_ui")),
                      uiOutput(ns("select_groups_ui"))
                  )
           ),
@@ -343,7 +343,11 @@ statSetup_Tab_Server <- function(id = "statSetupTab", GCTs_and_params, globals, 
     })
     
     #displaying the test choices
-    output$select_test <- renderUI ({
+    # NOTE: the renderUI CONTAINER id (select_test_ui) must differ from the
+    # selectInput id it renders (select_test). Sharing one id registers it as
+    # BOTH a Shiny input and output, which floods the client with "Shared
+    # input/output ID" + output-state errors. Keep the container *_ui suffixed.
+    output$select_test_ui <- renderUI ({
       req(selected_ome())
       current <- stat_param()
       ome <- selected_ome()

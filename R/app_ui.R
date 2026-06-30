@@ -29,6 +29,21 @@ app_UI <- function(request) {dashboardPage(
     # include shinyjs
     shinyjs::useShinyjs(),
 
+    # HTMLWIDGET LIBRARY PRE-LOAD (paired with addResourcePath in app_onStart;
+    # do not remove). Load plotly.js and DataTables as NATIVE <script src> tags
+    # at page startup so window.Plotly / $.fn.DataTable are defined before any
+    # widget renders. Delivered this way, the webpack-UMD headers take the
+    # browser branch and define their globals; delivered the htmlwidgets way (at
+    # render time) Shiny injects them via jQuery globalEval, where the UMD header
+    # diverts to the CommonJS branch and throws "require is not defined", leaving
+    # every plot/table blank. The DataTables script is a jQuery plugin, so it is
+    # listed AFTER useShinyjs() (Shiny's jQuery is already on the page here).
+    # ASCII-only.
+    tags$head(
+      tags$script(src = "protigy-plotlyjs/plotly-latest.min.js"),
+      tags$script(src = "protigy-datatables/js/jquery.dataTables.min.js")
+    ),
+
     # One-time client WebGL capability probe. WebGL renders in the USER's
     # browser, not on the Shiny server, so server GPU is irrelevant; what matters
     # is whether THIS browser has a (hardware or software) WebGL context. On
