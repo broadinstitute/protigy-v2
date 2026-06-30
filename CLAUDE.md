@@ -32,7 +32,7 @@ CI: `.github/workflows/check-standard.yaml` runs `devtools::check()` on push;
   `sidebar_setup*.R` = upload/processing pipeline. Keep this split when adding code.
 - Templates for new modules: `R/tab_TEMPLATE.R` and `R/tab_TEMPLATE_SINGLE-OME.R`.
   Full guide: `dev/module_requirements.md`.
-- **PELSA** is the largest subsystem (~14 of 60 `R/` files but ~45% of R/ lines): a
+- **PELSA** is the largest subsystem (~13 of 61 `R/` files but ~40% of R/ lines): a
   `tab_pelsa_container.R` tab with numbered sub-modules (`tab_pelsa_section1/2/3.R`) plus
   many `tab_pelsa_*_helpers.R` (analysis/annotation/annotation_io/export/panel/volcano + constants).
   It extends the naming rule above — follow the existing `section`/`_helpers` split there.
@@ -118,7 +118,7 @@ on-screen rendered objects). See `dev/module_requirements.md` → "Exporting fro
 ## Test data
 `data(brca_retrospective_v5.0_proteome_gct)` (also `_phosphoproteome_`, `_rnaseq_`);
 sample files in `inst/extdata/`.
-Tests live in `tests/testthat/test-*.R` (~46 files, 13 of them `test-pelsa-*`). PELSA tests build on synthetic ground-truth
+Tests live in `tests/testthat/test-*.R` (~65 files, 14 of them `test-pelsa-*`). PELSA tests build on synthetic ground-truth
 fixtures in `tests/testthat/fixtures/pelsa/` (`generate_synthetic.R` + canned UniProt
 JSON) — prefer these over real data for deterministic assertions.
 Adding/removing a field on a list-returning helper (e.g. `pelsa_run_analysis_one`) breaks
