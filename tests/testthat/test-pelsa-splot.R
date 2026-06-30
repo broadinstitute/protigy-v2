@@ -121,3 +121,38 @@ test_that("marker_topn returns empty on no markers / no matches", {
   expect_length(empty_m$highlight, 0L)
   expect_equal(nrow(empty_m$labels), 0L)
 })
+
+test_that("tooltip lists accessions, bolds matched keys, caps with always-show", {
+  rf <- data.frame(
+    row_id = 1L, rank = 1L, display_intensity = 12.345,
+    sequence = "PEPTIDE",
+    accessions = "P1;Q2;R3",
+    genes = "GA;GB;",
+    stringsAsFactors = FALSE)
+  tip <- pelsa_splot_tooltip(rf, bold_keys = "q2", cap = 8L)
+  expect_match(tip, "Rank: #1")
+  expect_match(tip, "Intensity: 12.35")            # 2 decimals
+  expect_match(tip, "Sequence: PEPTIDE")
+  expect_match(tip, "P1 \\(GA\\)")
+  expect_match(tip, "<b>Q2 \\(GB\\)</b>")          # bolded
+  expect_match(tip, "R3", fixed = FALSE)           # blank gene -> bare accession
+})
+
+test_that("tooltip cap keeps bolded accession beyond the cap", {
+  accs <- paste0("A", 1:10)
+  rf <- data.frame(row_id = 1L, rank = 1L, display_intensity = 1,
+                   sequence = "S",
+                   accessions = paste(accs, collapse = ";"),
+                   genes = paste(rep("g", 10), collapse = ";"),
+                   stringsAsFactors = FALSE)
+  tip <- pelsa_splot_tooltip(rf, bold_keys = "a10", cap = 3L)
+  expect_match(tip, "<b>A10 \\(g\\)</b>")          # bold shown despite cap 3
+  expect_match(tip, "\\(\\+[0-9]+ more\\)")
+})
+
+test_that("tooltip handles unmapped peptides", {
+  rf <- data.frame(row_id = 1L, rank = 2L, display_intensity = 3,
+                   sequence = "S", accessions = "", genes = "",
+                   stringsAsFactors = FALSE)
+  expect_match(pelsa_splot_tooltip(rf, character(0)), "Maps to: \\(unmapped\\)")
+})

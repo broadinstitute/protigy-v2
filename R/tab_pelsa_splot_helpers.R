@@ -142,3 +142,42 @@ pelsa_splot_marker_topn <- function(matched, accessions, rank_frame, n = 3L) {
                        label = as.character(agg), stringsAsFactors = FALSE)
   list(highlight = highlight, labels = labels)
 }
+
+# Vectorized per-peptide hover HTML. `Maps to` lists every reported accession as
+# "accession (gene)" (gene omitted when blank); accessions whose isoform key is
+# in `bold_keys` are <b>-wrapped and ALWAYS shown even past `cap`, other entries
+# capped with a "\u2026(+N more)" suffix. In-app only (the export has no hover).
+# @noRd
+pelsa_splot_tooltip <- function(rank_frame, bold_keys, cap = 8L) {
+  n <- nrow(rank_frame)
+  if (n == 0L) return(character(0))
+  bold_keys <- unique(bold_keys[!is.na(bold_keys) & nzchar(bold_keys)])
+  acc_lists  <- strsplit(as.character(rank_frame$accessions), ";", fixed = TRUE)
+  gene_lists <- strsplit(as.character(rank_frame$genes), ";", fixed = TRUE)
+
+  vapply(seq_len(n), function(i) {
+    accs  <- trimws(if (length(acc_lists) >= i) acc_lists[[i]] else character(0))
+    genes <- trimws(if (length(gene_lists) >= i) gene_lists[[i]] else character(0))
+    keep  <- !is.na(accs) & nzchar(accs)
+    accs  <- accs[keep]
+    genes <- if (length(genes) >= length(accs)) genes[seq_along(accs)] else
+      c(genes, rep("", length(accs)))[seq_along(accs)]
+    genes[is.na(genes)] <- ""
+
+    if (length(accs) == 0L) {
+      maps <- "(unmapped)"
+    } else {
+      key   <- tolower(pelsa_isoform_base(accs))
+      bold  <- key %in% bold_keys
+      entry <- ifelse(nzchar(genes), paste0(accs, " (", genes, ")"), accs)
+      entry <- ifelse(bold, paste0("<b>", entry, "</b>"), entry)
+      shown <- (seq_along(entry) <= cap) | bold
+      hidden <- sum(!shown)
+      maps <- paste(entry[shown], collapse = "; ")
+      if (hidden > 0L) maps <- paste0(maps, "; \u2026(+", hidden, " more)")
+    }
+    sprintf("Rank: #%d<br>Intensity: %.2f<br>Sequence: %s<br>Maps to: %s",
+            rank_frame$rank[i], rank_frame$display_intensity[i],
+            rank_frame$sequence[i], maps)
+  }, character(1))
+}
