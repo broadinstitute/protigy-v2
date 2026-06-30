@@ -373,7 +373,9 @@ pelsa_splot_export_for <- function(dir_name, gct, matched, marker_accs,
     tryCatch(
       pelsa_save_figure(g, out, paste0("intensity_rank_", pelsa_safe_name(s)),
                         width = 9, height = 6),
-      error = function(e) NULL)
+      error = function(e) warning(sprintf(
+        "pelsa_splot_export_for: failed to write sample '%s': %s",
+        s, conditionMessage(e)), call. = FALSE))
   }
   invisible(out)
 }

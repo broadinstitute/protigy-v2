@@ -279,3 +279,42 @@ test_that("export writes one PNG per sample with customization applied", {
   expect_true(file.exists(file.path(out, "intensity_rank_S2.png")))
   unlink(tmp, recursive = TRUE)
 })
+
+test_that("export is a no-op writing no PNGs when gct is NULL", {
+  tmp <- file.path(tempdir(), paste0("splotnull_", as.integer(runif(1, 1, 1e6))))
+  dir.create(tmp, recursive = TRUE, showWarnings = FALSE)
+  out <- pelsa_splot_export_for(tmp, NULL, data.frame(), character(0),
+                                params = list(), custom = NULL)
+  expect_true(dir.exists(out))
+  expect_length(list.files(out, pattern = "\\.png$"), 0L)
+  unlink(tmp, recursive = TRUE)
+})
+
+test_that("export defaults to all markers and returns the subdir when custom is NULL", {
+  mat <- matrix(c(50,40,30, 45,35,25), nrow = 3,
+                dimnames = list(c("p1","p2","p3"), c("S1","S2")))
+  rdesc <- data.frame(
+    PEP.StrippedSequence = c("AAA","BBB","CCC"),
+    PG.ProteinAccessions = c("M1","M1","P9"),
+    PG.Genes             = c("GA","GA","G9"),
+    row.names = c("p1","p2","p3"), stringsAsFactors = FALSE)
+  cdesc <- data.frame(condition = c("c","c"),
+                      row.names = c("S1","S2"), stringsAsFactors = FALSE)
+  g <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+  matched <- data.frame(
+    .row_id = 1:2, accession = c("M1","M1"), gene = c("GA","GA"),
+    pep_start = c(10L, 20L), PEP.StrippedSequence = c("AAA","BBB"),
+    check.names = FALSE, stringsAsFactors = FALSE)
+
+  tmp <- file.path(tempdir(), paste0("splotcustom_", as.integer(runif(1, 1, 1e6))))
+  dir.create(tmp, recursive = TRUE, showWarnings = FALSE)
+  out <- pelsa_splot_export_for(
+    tmp, g, matched, marker_accs = c("M1","P9"),
+    params = list(log_transformation = "log2",
+                  data_normalization = "Median (non-zero)"),
+    custom = NULL)
+  expect_equal(out, file.path(tmp, "02_qc", "intensity_rank"))
+  expect_true(file.exists(file.path(out, "intensity_rank_S1.png")))
+  expect_true(file.exists(file.path(out, "intensity_rank_S2.png")))
+  unlink(tmp, recursive = TRUE)
+})
