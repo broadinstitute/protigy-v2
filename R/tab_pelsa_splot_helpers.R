@@ -181,3 +181,73 @@ pelsa_splot_tooltip <- function(rank_frame, bold_keys, cap = 8L) {
             rank_frame$sequence[i], maps)
   }, character(1))
 }
+
+# Assemble everything both builders (plotly + ggplot) consume, from the raw
+# inputs available in the Section 2 server. Pure. `selected_markers` is the
+# multiselect SUBSET; `trypsin_accs` is .PELSA_TRYPSIN_ACCESSIONS (used only when
+# label_trypsin). Marker > trypsin precedence: a peptide highlighted as a marker
+# is removed from the trypsin overlay + labels.
+# @noRd
+pelsa_splot_prepare <- function(mat, sample, peptide_frame, matched,
+                                selected_markers, trypsin_accs, label_trypsin,
+                                params, top_n = .PELSA_SPLOT_TOP_N) {
+  y_title <- pelsa_splot_axis_title(params)
+  show_trypsin <- isTRUE(label_trypsin)
+  empty_df3 <- data.frame(rank = integer(0), y = numeric(0),
+                          hovertext = character(0), stringsAsFactors = FALSE)
+  empty_lab <- data.frame(rank = integer(0), y = numeric(0),
+                          label = character(0), stringsAsFactors = FALSE)
+
+  rf <- pelsa_splot_rank_frame(mat, sample, peptide_frame,
+                               params$log_transformation %||% "None")
+  if (nrow(rf) == 0L) {
+    return(list(background = empty_df3, marker_pts = empty_df3,
+                trypsin_pts = empty_df3, marker_labels = empty_lab,
+                trypsin_labels = empty_lab, y_title = y_title,
+                show_trypsin = show_trypsin))
+  }
+
+  bold_keys <- tolower(pelsa_isoform_base(trimws(as.character(selected_markers))))
+  if (show_trypsin) {
+    bold_keys <- c(bold_keys,
+                   tolower(pelsa_isoform_base(trimws(as.character(trypsin_accs)))))
+  }
+  bold_keys <- unique(bold_keys[!is.na(bold_keys) & nzchar(bold_keys)])
+  rf$hovertext <- pelsa_splot_tooltip(rf, bold_keys)
+
+  mk <- pelsa_splot_marker_topn(matched, selected_markers, rf, n = top_n)
+  ty <- if (show_trypsin) {
+    pelsa_splot_marker_topn(matched, trypsin_accs, rf, n = top_n)
+  } else {
+    list(highlight = integer(0),
+         labels = data.frame(row_id = integer(0), label = character(0),
+                             stringsAsFactors = FALSE))
+  }
+  ty_ids <- setdiff(ty$highlight, mk$highlight)            # marker precedence
+
+  to_pts <- function(ids) {
+    sub <- rf[rf$row_id %in% ids, , drop = FALSE]
+    data.frame(rank = sub$rank, y = sub$display_intensity,
+               hovertext = sub$hovertext, stringsAsFactors = FALSE)
+  }
+  to_lab <- function(labels_df, exclude_ids = integer(0)) {
+    if (is.null(labels_df) || nrow(labels_df) == 0L) return(empty_lab)
+    labels_df <- labels_df[!labels_df$row_id %in% exclude_ids, , drop = FALSE]
+    if (nrow(labels_df) == 0L) return(empty_lab)
+    sub <- rf[match(labels_df$row_id, rf$row_id), , drop = FALSE]
+    data.frame(rank = sub$rank, y = sub$display_intensity,
+               label = labels_df$label, stringsAsFactors = FALSE)
+  }
+
+  list(
+    background      = data.frame(rank = rf$rank, y = rf$display_intensity,
+                                 hovertext = rf$hovertext,
+                                 stringsAsFactors = FALSE),
+    marker_pts      = to_pts(mk$highlight),
+    trypsin_pts     = to_pts(ty_ids),
+    marker_labels   = to_lab(mk$labels),
+    trypsin_labels  = if (show_trypsin) to_lab(ty$labels, mk$highlight) else empty_lab,
+    y_title         = y_title,
+    show_trypsin    = show_trypsin
+  )
+}

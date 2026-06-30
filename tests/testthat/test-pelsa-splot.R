@@ -156,3 +156,45 @@ test_that("tooltip handles unmapped peptides", {
                    stringsAsFactors = FALSE)
   expect_match(pelsa_splot_tooltip(rf, character(0)), "Maps to: \\(unmapped\\)")
 })
+
+test_that("prepare bundles background, marker overlay, labels, and title", {
+  mat <- matrix(c(50, 40, 30, 20, 10), nrow = 5,
+                dimnames = list(paste0("p", 1:5), "S1"))
+  pf <- data.frame(
+    PEP.StrippedSequence = paste0("S", 1:5),
+    PG.ProteinAccessions = c("M1","M1","M1","M2","P9"),
+    PG.Genes             = c("GA","GA","GA","GB","G9"),
+    stringsAsFactors = FALSE)
+  matched <- data.frame(
+    .row_id = 1:4, accession = c("M1","M1","M1","M2"),
+    gene = c("GA","GA","GA","GB"), pep_start = c(10L,20L,30L,5L),
+    PEP.StrippedSequence = paste0("S", 1:4),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  prep <- pelsa_splot_prepare(
+    mat, "S1", pf, matched,
+    selected_markers = c("M1","M2"), trypsin_accs = .PELSA_TRYPSIN_ACCESSIONS,
+    label_trypsin = FALSE,
+    params = list(log_transformation = "log2",
+                  data_normalization = "Median (non-zero)"))
+  expect_equal(nrow(prep$background), 5L)
+  expect_setequal(prep$marker_pts$rank, 1:4)            # M1+M2 peptides
+  expect_equal(nrow(prep$trypsin_pts), 0L)
+  expect_setequal(prep$marker_labels$label,
+                  c("GA_aa10","GA_aa20","GA_aa30","GB_aa5"))
+  expect_false(prep$show_trypsin)
+  expect_equal(prep$y_title, "log2(intensity), Median (non-zero) normalized")
+  # background hovertext bolds the selected markers
+  expect_true(any(grepl("<b>M1", prep$background$hovertext)))
+})
+
+test_that("prepare yields an empty-but-typed bundle when no finite peptides", {
+  mat <- matrix(NA_real_, nrow = 2, dimnames = list(NULL, "S1"))
+  pf <- data.frame(PEP.StrippedSequence = c("A","B"),
+                   PG.ProteinAccessions = c("M1","M2"),
+                   PG.Genes = c("a","b"), stringsAsFactors = FALSE)
+  prep <- pelsa_splot_prepare(mat, "S1", pf, data.frame(),
+                              "M1", .PELSA_TRYPSIN_ACCESSIONS, FALSE,
+                              list(log_transformation = "log2"))
+  expect_equal(nrow(prep$background), 0L)
+  expect_equal(nrow(prep$marker_labels), 0L)
+})
