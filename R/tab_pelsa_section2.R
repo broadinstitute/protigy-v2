@@ -309,6 +309,116 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       ggplotly(depth_plot_reactive())
     })
 
+    ## 6F - INTENSITY RANK (S-PLOT) ##
+
+    # Client WebGL capability (default TRUE for the pre-probe NULL).
+    use_webgl <- reactive(webgl_capability(globals$webgl_supported))
+
+    # Per-ome STICKY customization store: [[ome]] -> list(selected_markers,
+    # label_trypsin, sample). Seeded on first visit; read by render + export.
+    splot_state <- reactiveValues()
+
+    # The active dataset's processed GCT + params + marker rows.
+    splot_gct <- reactive({
+      gp <- GCTs_and_params(); ome <- active_dataset()
+      if (is.null(gp) || is.null(ome)) NULL else gp$GCTs[[ome]]
+    })
+    splot_params <- reactive({
+      gp <- GCTs_and_params(); ome <- active_dataset()
+      if (is.null(gp) || is.null(ome)) list() else (gp$parameters[[ome]] %||% list())
+    })
+    splot_marker_rows <- reactive({
+      ss <- setup_state_r(); ome <- active_dataset()
+      mr <- if (is.null(ss) || is.null(ome)) NULL else ss$marker_rows[[ome]]
+      if (is.null(mr) || !is.data.frame(mr) || !"accession" %in% names(mr))
+        pelsa_empty_marker_rows() else mr
+    })
+
+    # Marker choices: ALL markers, but DISABLE those with no matched peptide
+    # anywhere in the dataset (dataset-wide, isoform-matched).
+    splot_marker_choices <- reactive({
+      rows <- splot_marker_rows(); entry <- active_entry()
+      accs  <- as.character(rows$accession)
+      genes <- as.character(rows$gene %||% rep("", length(accs)))
+      labels <- ifelse(nzchar(genes), paste0(accs, " (", genes, ")"), accs)
+      matched_keys <- if (!is.null(entry) && is.data.frame(entry$matched))
+        unique(tolower(pelsa_isoform_base(trimws(
+          as.character(entry$matched$accession))))) else character(0)
+      disabled <- !(tolower(pelsa_isoform_base(trimws(accs))) %in% matched_keys)
+      list(accs = accs, labels = labels, disabled = disabled)
+    })
+
+    # Sample list ordered by the dataset's confirmed sample_order (alpha fallback).
+    splot_samples <- reactive({
+      gct <- splot_gct(); if (is.null(gct)) return(character(0))
+      cols <- colnames(pelsa_dataset_matrix(gct, character(0)))
+      so <- active_sample_order()
+      c(intersect(so, cols), setdiff(cols, so))
+    })
+
+    # Seed the store on first visit + push the active ome's state into the inputs.
+    observeEvent(active_dataset(), {
+      ome <- active_dataset(); req(ome)
+      ch <- splot_marker_choices(); samples <- splot_samples()
+      if (is.null(splot_state[[ome]])) {
+        splot_state[[ome]] <- list(
+          selected_markers = ch$accs[!ch$disabled],
+          label_trypsin = FALSE,
+          sample = if (length(samples) > 0L) samples[[1]] else NULL)
+      }
+      st <- splot_state[[ome]]
+      shinyWidgets::updatePickerInput(
+        session, "splot_markers",
+        choices = stats::setNames(ch$accs, ch$labels),
+        selected = st$selected_markers,
+        choicesOpt = list(disabled = ch$disabled))
+      updateSelectInput(session, "splot_sample", choices = samples,
+                        selected = st$sample)
+      updateCheckboxInput(session, "splot_trypsin", value = isTRUE(st$label_trypsin))
+    }, ignoreNULL = TRUE)
+
+    # Write input edits back into the active ome's sticky store.
+    # ignoreNULL = TRUE (default): skips the initial NULL before picker is
+    # populated; the picker returns character(0) on deselect-all (not NULL).
+    observeEvent(input$splot_markers, {
+      ome <- active_dataset(); req(ome)
+      st <- splot_state[[ome]] %||% list()
+      st$selected_markers <- input$splot_markers
+      splot_state[[ome]] <- st
+    })
+    observeEvent(input$splot_trypsin, {
+      ome <- active_dataset(); req(ome)
+      st <- splot_state[[ome]] %||% list()
+      st$label_trypsin <- isTRUE(input$splot_trypsin)
+      splot_state[[ome]] <- st
+    })
+    observeEvent(input$splot_sample, {
+      ome <- active_dataset(); req(ome)
+      st <- splot_state[[ome]] %||% list()
+      st$sample <- input$splot_sample
+      splot_state[[ome]] <- st
+    })
+
+    splot_prep <- reactive({
+      ome <- active_dataset(); entry <- active_entry(); gct <- splot_gct()
+      req(ome, entry, gct)
+      st <- splot_state[[ome]]; req(st)
+      peptides <- pelsa_dataset_peptide_frame(gct)
+      mat <- pelsa_dataset_matrix(gct, colnames(peptides))
+      sample <- st$sample
+      if (is.null(sample) || !(sample %in% colnames(mat))) sample <- colnames(mat)[[1]]
+      pelsa_splot_prepare(mat, sample, peptides, entry$matched,
+                          st$selected_markers %||% character(0),
+                          .PELSA_TRYPSIN_ACCESSIONS, isTRUE(st$label_trypsin),
+                          splot_params())
+    })
+    output$splot_plot <- renderPlotly({
+      prep <- splot_prep()
+      validate(need(nrow(prep$background) > 0L,
+                    "No finite intensities in this sample."))
+      pelsa_splot_build_plotly(prep, use_webgl = use_webgl())
+    })
+
     ## 6D - MAPPING / ANNOTATION QC (collapsible, bottom) ##
 
     output$unmatched_table <- DT::renderDataTable({
@@ -355,11 +465,20 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       datasets <- names(cache)
       datasets <- datasets[!vapply(cache, pelsa_analysis_failed, logical(1))]
       ss <- setup_state_r()
+      gp <- GCTs_and_params()
       stats::setNames(lapply(datasets, function(ome) {
         co <- if (is.null(ss)) NULL else ss$condition_order[[ome]]
         so <- if (is.null(ss)) NULL else ss$sample_order[[ome]]
+        gct <- if (is.null(gp)) NULL else gp$GCTs[[ome]]
+        params <- if (is.null(gp)) list() else (gp$parameters[[ome]] %||% list())
+        mr <- if (is.null(ss)) NULL else ss$marker_rows[[ome]]
+        marker_accs <- if (is.data.frame(mr) && "accession" %in% names(mr))
+          unique(as.character(mr$accession)) else character(0)
+        custom <- isolate(splot_state[[ome]])
         pelsa_section2_exports_for(cache[[ome]], ome,
-                                   condition_order = co, sample_order = so)
+                                   condition_order = co, sample_order = so,
+                                   gct = gct, marker_accs = marker_accs,
+                                   params = params, custom = custom)
       }), datasets)
     })
 
@@ -952,7 +1071,9 @@ pelsa_qc_experiment_summary <- function(entry) {
 # confirmed ordering (NULL -> the builders' alphabetical fallback).
 # @noRd
 pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
-                                       sample_order = NULL) {
+                                       sample_order = NULL, gct = NULL,
+                                       marker_accs = NULL, params = NULL,
+                                       custom = NULL) {
   qc_bundle <- function(dir_name) {
     out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_QC)
 
@@ -981,6 +1102,13 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
       save_fig(pelsa_cv_kde_plot(cvd, condition_order), "cv_kde")
     if (length(nq) > 0L)
       save_fig(pelsa_depth_bar_plot(nq, sample_order), "n_peptides_per_sample")
+
+    if (!is.null(gct)) {
+      tryCatch(
+        pelsa_splot_export_for(dir_name, gct, entry$matched, marker_accs,
+                               params, custom),
+        error = function(e) NULL)
+    }
 
     invisible(out)
   }

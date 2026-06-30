@@ -328,3 +328,50 @@ test_that("dashboard UI includes the intensity-rank panel outputs", {
   expect_match(html, "PELSASection2Tab-splot_trypsin")
   expect_match(html, "Intensity rank")
 })
+
+test_that("server seeds per-ome S-plot state and renders the plot", {
+  source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 12)
+  rids <- paste0("pep", seq_len(nrow(syn$peptides)))
+  mat <- as.matrix(syn$peptides[, syn$sample_cols]); rownames(mat) <- rids
+  rdesc <- syn$peptides[, setdiff(colnames(syn$peptides), syn$sample_cols),
+                        drop = FALSE]; rownames(rdesc) <- rids
+  cdesc <- data.frame(condition = sub("_R[0-9]+$", "", syn$sample_cols),
+                      row.names = syn$sample_cols, stringsAsFactors = FALSE)
+  g <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+  cache <- pelsa_run_analysis(
+    gcts = list(ds1 = g), gcts_original = list(ds1 = g),
+    setup_snapshot = list(datasets = "ds1", species = "human",
+                          condition_col = list(ds1 = "condition")),
+    fasta_map = syn$fasta, feat_df = data.frame(
+      accession = "SHARED1", start = 1L, end = 50L,
+      feature_class = "domain", stringsAsFactors = FALSE))
+  marker_acc <- as.character(cache$ds1$matched$accession[1])
+
+  GCTs_and_params <- shiny::reactiveVal(list(
+    GCTs = list(ds1 = g),
+    parameters = list(ds1 = list(log_transformation = "log2",
+                                 data_normalization = "Median (non-zero)"))))
+  globals <- shiny::reactiveValues(webgl_supported = TRUE)
+  setup_state <- shiny::reactive(list(
+    sample_order = list(ds1 = syn$sample_cols),
+    marker_rows = list(ds1 = data.frame(accession = marker_acc, gene = "GA",
+                                        stringsAsFactors = FALSE))))
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = shiny::reactiveVal(NULL),
+                active_dataset = shiny::reactive("ds1"),
+                pelsa_analysis = shiny::reactive(cache),
+                pelsa_setup_state = setup_state),
+    {
+      session$flushReact()
+      expect_false(is.null(splot_state[["ds1"]]))
+      expect_true(marker_acc %in% splot_state[["ds1"]]$selected_markers)
+      prep <- splot_prep()
+      expect_gt(nrow(prep$background), 0L)
+      expect_s3_class(pelsa_splot_build_plotly(prep, use_webgl()), "plotly")
+      expect_false(is.null(output$splot_plot))        # render produced output
+    })
+})
