@@ -235,8 +235,9 @@ pelsa_splot_prepare <- function(mat, sample, peptide_frame, matched,
     labels_df <- labels_df[!labels_df$row_id %in% exclude_ids, , drop = FALSE]
     if (nrow(labels_df) == 0L) return(empty_lab)
     sub <- rf[match(labels_df$row_id, rf$row_id), , drop = FALSE]
-    data.frame(rank = sub$rank, y = sub$display_intensity,
-               label = labels_df$label, stringsAsFactors = FALSE)
+    ok  <- !is.na(sub$rank)
+    data.frame(rank = sub$rank[ok], y = sub$display_intensity[ok],
+               label = labels_df$label[ok], stringsAsFactors = FALSE)
   }
 
   list(
