@@ -252,3 +252,65 @@ pelsa_splot_prepare <- function(mat, sample, peptide_frame, matched,
     show_trypsin    = show_trypsin
   )
 }
+
+# Bake top-N labels as NATIVE plotly annotations (offset boxes, border colored
+# to the overlay). Native annotations survive toWebGL where a geom_text/text
+# trace restyle would not (see CLAUDE.md WebGL note). @noRd
+pelsa_splot_add_label_annotations <- function(p, labels, color) {
+  if (is.null(labels) || nrow(labels) == 0L) return(p)
+  for (i in seq_len(nrow(labels))) {
+    p <- plotly::add_annotations(
+      p, x = labels$rank[i], y = labels$y[i], text = labels$label[i],
+      showarrow = TRUE, arrowhead = 0, arrowsize = 0.6, arrowcolor = color,
+      ax = 24, ay = -22, font = list(size = 10, color = color),
+      bgcolor = "rgba(255,255,255,0.7)", bordercolor = color, borderwidth = 1)
+  }
+  p
+}
+
+# Interactive S-plot: grey background cloud + magenta marker overlay (+ teal
+# trypsin overlay when on), top-N labels baked as annotations. `use_webgl`
+# switches the trace backend (scattergl GPU vs scatter SVG fallback). @noRd
+pelsa_splot_build_plotly <- function(prep, use_webgl = TRUE,
+                                     source_id = "pelsa_splot") {
+  trace_type <- if (isTRUE(use_webgl)) "scattergl" else "scatter"
+  p <- plotly::plot_ly(source = source_id)
+
+  bg <- prep$background
+  p <- plotly::add_trace(
+    p, type = trace_type, mode = "markers", name = "Other peptides",
+    x = bg$rank, y = bg$y, hoverinfo = "text", hovertext = bg$hovertext,
+    marker = list(color = "rgba(150,150,150,0.45)", size = 4))
+
+  mk <- prep$marker_pts
+  p <- plotly::add_trace(
+    p, type = trace_type, mode = "markers", name = "Marker",
+    x = mk$rank, y = mk$y, hoverinfo = "text", hovertext = mk$hovertext,
+    marker = list(color = .PELSA_VOLCANO_MARKER_COLOR, size = 7,
+                  line = list(color = "black", width = 0.5)))
+
+  if (isTRUE(prep$show_trypsin)) {
+    ty <- prep$trypsin_pts
+    p <- plotly::add_trace(
+      p, type = trace_type, mode = "markers", name = "Trypsin",
+      x = ty$rank, y = ty$y, hoverinfo = "text", hovertext = ty$hovertext,
+      marker = list(color = .PELSA_SPLOT_TRYPSIN_COLOR, size = 7,
+                    line = list(color = "black", width = 0.5)))
+  }
+
+  p <- plotly::layout(
+    p,
+    xaxis = list(title = "Intensity rank (highest \u2192 lowest)",
+                 zeroline = FALSE, showgrid = TRUE, gridcolor = "grey92"),
+    yaxis = list(title = prep$y_title, zeroline = FALSE, showgrid = TRUE,
+                 gridcolor = "grey92"),
+    plot_bgcolor = "white", paper_bgcolor = "white", showlegend = TRUE)
+
+  p <- pelsa_splot_add_label_annotations(p, prep$marker_labels,
+                                         .PELSA_VOLCANO_MARKER_COLOR)
+  if (isTRUE(prep$show_trypsin)) {
+    p <- pelsa_splot_add_label_annotations(p, prep$trypsin_labels,
+                                           .PELSA_SPLOT_TRYPSIN_COLOR)
+  }
+  p
+}

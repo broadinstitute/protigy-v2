@@ -198,3 +198,38 @@ test_that("prepare yields an empty-but-typed bundle when no finite peptides", {
   expect_equal(nrow(prep$background), 0L)
   expect_equal(nrow(prep$marker_labels), 0L)
 })
+
+test_that("build_plotly returns a plotly with 2 traces (trypsin off) and webgl switch", {
+  prep <- list(
+    background = data.frame(rank = 1:3, y = c(9,8,7),
+                            hovertext = c("a","b","c"), stringsAsFactors = FALSE),
+    marker_pts = data.frame(rank = 1L, y = 9, hovertext = "a",
+                            stringsAsFactors = FALSE),
+    trypsin_pts = data.frame(rank = integer(0), y = numeric(0),
+                             hovertext = character(0)),
+    marker_labels = data.frame(rank = 1L, y = 9, label = "GA_aa10",
+                               stringsAsFactors = FALSE),
+    trypsin_labels = data.frame(rank = integer(0), y = numeric(0),
+                                label = character(0)),
+    y_title = "log2(intensity)", show_trypsin = FALSE)
+  p <- pelsa_splot_build_plotly(prep, use_webgl = TRUE)
+  expect_s3_class(p, "plotly")
+  b <- plotly::plotly_build(p)
+  expect_length(b$x$data, 2L)                       # background + marker
+  expect_equal(b$x$data[[1]]$type, "scattergl")
+  expect_true(length(b$x$layout$annotations) >= 1L) # baked label
+  p_svg <- pelsa_splot_build_plotly(prep, use_webgl = FALSE)
+  expect_equal(plotly::plotly_build(p_svg)$x$data[[1]]$type, "scatter")
+})
+
+test_that("build_plotly adds a trypsin trace only when show_trypsin", {
+  prep <- list(
+    background = data.frame(rank = 1:2, y = c(9,8), hovertext = c("a","b")),
+    marker_pts = data.frame(rank = integer(0), y = numeric(0), hovertext = character(0)),
+    trypsin_pts = data.frame(rank = 2L, y = 8, hovertext = "b"),
+    marker_labels = data.frame(rank = integer(0), y = numeric(0), label = character(0)),
+    trypsin_labels = data.frame(rank = 2L, y = 8, label = "PRSS1_aa5"),
+    y_title = "log2(intensity)", show_trypsin = TRUE)
+  b <- plotly::plotly_build(pelsa_splot_build_plotly(prep))
+  expect_length(b$x$data, 3L)                       # bg + marker + trypsin
+})
