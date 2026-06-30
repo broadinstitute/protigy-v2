@@ -1,14 +1,14 @@
 ################################################################################
 # Tests: volcano plot UI controls
 #
-# Both tests use shiny::testServer() with injected mock data -- no browser,
+# Both tests use shiny::testServer() with injected mock data  -  no browser,
 # no real statistics run, fully deterministic.
 #
-# Test 1 -- sidebar controls
+# Test 1  -  sidebar controls
 #   Verifies the new controls introduced for this feature are present in the
 #   rendered sidebar HTML.
 #
-# Test 2 -- POI list layout
+# Test 2  -  POI list layout
 #   Triggers the feature search, then inspects output$poi_list_ui HTML to
 #   confirm the scroll container and Clear-all button are structured correctly.
 ################################################################################
@@ -100,7 +100,7 @@ test_that("volcano sidebar HTML contains new controls (testServer)", {
 })
 
 # ---------------------------------------------------------------------------
-# Test 2: POI list layout -- scroll container + Clear-all placement
+# Test 2: POI list layout  -  scroll container + Clear-all placement
 # ---------------------------------------------------------------------------
 
 test_that("volcano POI list has scrollable container with Clear all outside it (testServer)", {

@@ -32,7 +32,7 @@ set.seed(42)
 N_PROTEINS <- 200
 N_SAMPLES  <- 6
 
-# Synthetic run labels -- no real project codes, dates, or instrument prefixes.
+# Synthetic run labels  -  no real project codes, dates, or instrument prefixes.
 sample_labels <- sprintf("SYN_sample_%02d", seq_len(N_SAMPLES))
 
 # Conditions: 3 groups x 2 replicates each, assigned round-robin.

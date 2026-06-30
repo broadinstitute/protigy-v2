@@ -12,6 +12,39 @@
 
 These are the most bare-bones requirements to make a functioning module in the Protigy revamp app. This functionality is mirrored in `R/tab_TEMPLATE.R` for your reference.
 
+### UI layout standard: plots + cogwheel settings sidebar
+
+All modules that display plots with user-configurable settings **must** use `shinydashboardPlus::box()` with a `boxSidebar` for the settings panel. Do **not** place settings in a separate side column or a standalone box next to the plot box. The standard pattern is:
+
+```r
+shinydashboardPlus::box(
+  # plot outputs go here
+  plotlyOutput(ns("my_plot")),
+  status       = "primary",
+  width        = 12,
+  title        = "My Plot Title",
+  headerBorder = TRUE,
+  solidHeader  = TRUE,
+  sidebar = boxSidebar(
+    uiOutput(ns("my_sidebar_contents")),
+    id         = ns("my_sidebar"),
+    width      = 25,
+    icon       = icon("gears", class = "fa-2xl"),
+    background = "rgba(91, 98, 104, 0.9)"
+  )
+)
+```
+
+Render the sidebar contents via `renderUI` in the server:
+
+```r
+output$my_sidebar_contents <- renderUI({
+  # selectInput, numericInput, checkboxInput, etc.
+})
+```
+
+This keeps the full viewport width available for plots and provides a consistent settings UX across all modules.
+
 1.  A module must contain one UI function and one server function. Both of these functions must take in a string input `id` that is used to pair the module's UI and server together.
     -   `id` must be identical in the UI and server functions for them to communicate with each other.
     -   `id` can be set as a function default (like it is in `R/tab_TEMPLATE.R`) or fed into the server/UI function when it is called.

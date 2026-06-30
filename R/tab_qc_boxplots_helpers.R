@@ -82,7 +82,7 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
       low = low_col,
       mid = mid_col,
       high = high_col,
-      midpoint = mean(min(group, na.rm = TRUE), max(group, na.rm = TRUE)),
+      midpoint = mean(c(min(group, na.rm = TRUE), max(group, na.rm = TRUE))),
       na.value = na_col
     )
   }

@@ -121,7 +121,7 @@ app_UI <- function(request) {dashboardPage(
         tabPanel("Volcano Plot", statPlot_Tab_UI(), value = "Statistics-Volcano")
         # tabPanel("Table", statTable_Tab_UI())
       ),
-      
+
       navbarMenu(
         "PELSA",
         # The PELSA dataset switcher input (pelsa_active_dataset) lives at the

@@ -45,7 +45,7 @@ std_params <- list(
 
 # Helper: execute code with Shiny session functions mocked out.
 # processGCTs / stat.testing use withProgress, incProgress, setProgress, and
-# showNotification -- these all require a live Shiny session.
+# showNotification  -  these all require a live Shiny session.
 # suppressWarnings() prevents known benign validateGCT warnings (e.g. "Gene
 # symbol column already exists") from failing the CI check (error_on="warning").
 mock_shiny <- function(code) {

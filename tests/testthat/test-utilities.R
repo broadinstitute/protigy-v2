@@ -325,3 +325,117 @@ test_that("is.continuous handles edge cases", {
   # Test mixed numeric and character (should be treated as discrete)
   expect_false(is.continuous(c("1", "2", "1", "3")))
 })
+
+# INT-3 regression: is.discrete/is.continuous dropped the internal sort(unique())
+# in favor of unique(). The classification depends only on the COUNT of unique
+# values and whether they are all numeric  -  both order-independent  -  so the result
+# must be invariant to input ordering and identical to the pre-optimization output.
+test_that("is.discrete is invariant to input order (INT-3)", {
+  # 1. Column with multiple NA values
+  multi_na <- c("A", "B", NA, NA, NA, "C")
+  expect_equal(is.discrete(multi_na), is.discrete(sample(multi_na)))
+  expect_equal(is.discrete(multi_na), is.discrete(rev(multi_na)))
+
+  # 2. Column with multiple identical non-NA values
+  dups <- c("ctrl", "ctrl", "ctrl", "treat", "treat")
+  expect_equal(is.discrete(dups), is.discrete(sample(dups)))
+  expect_true(is.discrete(dups))  # 2 unique categories -> discrete
+
+  # 3. Column where all values are unique
+  uniq_small <- paste0("g", 1:15)            # <= cutoff -> discrete
+  uniq_large_num <- as.character(1:5000)     # > cutoff & numeric -> continuous
+  expect_true(is.discrete(uniq_small))
+  expect_equal(is.discrete(uniq_small), is.discrete(sample(uniq_small)))
+  expect_false(is.discrete(uniq_large_num))
+  expect_equal(is.discrete(uniq_large_num), is.discrete(sample(uniq_large_num)))
+
+  # Additional: cutoff boundary is order-independent
+  exactly_cutoff <- as.character(1:20)       # 20 uniques -> discrete (not > cutoff)
+  over_cutoff    <- as.character(1:21)        # 21 uniques numeric -> continuous
+  expect_true(is.discrete(exactly_cutoff))
+  expect_false(is.discrete(over_cutoff))
+  expect_equal(is.discrete(over_cutoff), is.discrete(sample(over_cutoff)))
+
+  # Additional: surviving NA after dropping sort() must not change the verdict.
+  # sort() drops NA but unique() keeps it; the NA->"NA" string is counted in both
+  # length() and n_na, so (length - n_na) is unchanged. Numeric column + NAs that
+  # would otherwise be continuous must still classify as continuous.
+  numeric_with_na <- c(as.character(1:50), NA, NA)
+  expect_false(is.discrete(numeric_with_na))
+  expect_equal(is.discrete(numeric_with_na), is.discrete(sample(numeric_with_na)))
+})
+
+test_that("is.continuous is invariant to input order (INT-3)", {
+  multi_na        <- c("A", "B", NA, NA, NA, "C")
+  dups            <- c("ctrl", "ctrl", "treat", "treat")
+  uniq_large_num  <- as.character(1:5000)
+  numeric_with_na <- c(as.character(1:50), NA, NA)
+
+  expect_equal(is.continuous(multi_na),        is.continuous(sample(multi_na)))
+  expect_equal(is.continuous(dups),            is.continuous(sample(dups)))
+  expect_equal(is.continuous(uniq_large_num),  is.continuous(sample(uniq_large_num)))
+  expect_equal(is.continuous(numeric_with_na), is.continuous(sample(numeric_with_na)))
+
+  # Still the exact inverse of is.discrete on every scenario above
+  for (x in list(multi_na, dups, uniq_large_num, numeric_with_na)) {
+    expect_equal(is.continuous(x), !is.discrete(x))
+  }
+})
+
+# --------------------------------------------------------------------------- #
+# delinearize                                                                  #
+# --------------------------------------------------------------------------- #
+
+test_that("delinearize with base 2 computes 2^mat and preserves dimnames", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2,
+              dimnames = list(c("r1", "r2"), c("c1", "c2")))
+  expect_equal(delinearize(m, 2), 2 ^ m)
+  expect_equal(dimnames(delinearize(m, 2)), dimnames(m))
+})
+
+test_that("delinearize with base 10 computes 10^mat", {
+  m <- matrix(c(0, 1, 2, 3), nrow = 2)
+  expect_equal(delinearize(m, 10), 10 ^ m)
+})
+
+test_that("delinearize accepts an arbitrary positive base (natural log)", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_equal(delinearize(m, exp(1)), exp(1) ^ m)
+})
+
+test_that("delinearize base 1 is a passthrough (NOT 1^mat)", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_identical(delinearize(m, 1), m)
+})
+
+test_that("delinearize base NA and NULL are passthroughs", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_identical(delinearize(m, NA), m)
+  expect_identical(delinearize(m, NULL), m)
+})
+
+test_that("delinearize preserves NA positions", {
+  m <- matrix(c(1, NA, 3, 4), nrow = 2)  # column-major: NA at [2, 1]
+  out <- delinearize(m, 2)
+  expect_true(is.na(out[2, 1]))
+  expect_equal(sum(is.na(out)), 1L)
+})
+
+test_that("delinearize coerces a data.frame block to a matrix", {
+  df <- as.data.frame(matrix(c(1, 2, 3, 4), nrow = 2))
+  out <- delinearize(df, 2)
+  expect_true(is.matrix(out))
+  expect_equal(out, 2 ^ as.matrix(df))
+})
+
+test_that("delinearize errors on non-positive or non-numeric base", {
+  m <- matrix(c(1, 2, 3, 4), nrow = 2)
+  expect_error(delinearize(m, 0))
+  expect_error(delinearize(m, -2))
+  expect_error(delinearize(m, "2"))
+})
+
+test_that("delinearize errors on a non-numeric matrix", {
+  m <- matrix(letters[1:4], nrow = 2)
+  expect_error(delinearize(m, 2))
+})

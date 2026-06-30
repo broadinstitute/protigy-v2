@@ -608,3 +608,34 @@ test_that("summary_dataset reports original and post-filtering expression column
   expect_equal(out["Expression columns (original)", "Number"], 4)
   expect_equal(out["Expression columns (post-filtering)", "Number"], 2)
 })
+
+# INT-1 structural guard (runs without a browser): the intensity-toggle observer
+# must NOT call collectInputs(). collectInputs() writes parameters_internal_reactive,
+# which output$sideBarMain reads  -  so calling it on toggle forces a full panel
+# rebuild (the grey-out INT-1 removes). The behavioral proof that no in-progress
+# edit is lost lives in the shinytest2 test "INT-1: intensity toggle preserves
+# in-progress edits..."; this lightweight check prevents the slow call from being
+# silently reintroduced into the toggle handler by a future edit.
+test_that("INT-1: intensity toggle observer does not call collectInputs (no full rebuild)", {
+  src_path <- testthat::test_path("..", "..", "R", "sidebar_setup.R")
+  skip_if_not(file.exists(src_path), "sidebar_setup.R source not found")
+  src <- readLines(src_path, warn = FALSE)
+
+  # Locate the toggle observer block: observeEvent(current_intensity(), { ... })
+  start <- grep("observeEvent\\(current_intensity\\(\\)", src)
+  expect_length(start, 1)
+
+  # The handler ends at the next observe(/observeEvent that begins a new block.
+  block_starts <- grep("^\\s*(observe|observeEvent)\\(", src)
+  end_candidates <- block_starts[block_starts > start]
+  end <- if (length(end_candidates)) min(end_candidates) - 1L else length(src)
+
+  handler_body <- src[start:end]
+  # collectInputs() also appears in a comment explaining its removal; only fail on
+  # a real call (ignore commented lines).
+  code_lines <- handler_body[!grepl("^\\s*#", handler_body)]
+  expect_false(
+    any(grepl("collectInputs\\s*\\(", code_lines)),
+    info = "Intensity-toggle handler must not call collectInputs() (would force a full panel rebuild)"
+  )
+})

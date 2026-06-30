@@ -30,7 +30,8 @@ QCCV_Tab_UI <- function(id = "QCCVTab") {
 
 QCCV_Tab_Server <- function(id = "QCCVTab",
                              GCTs_and_params,
-                             globals) {
+                             globals,
+                             GCTs_original) {
 
   moduleServer(id, function(input, output, session) {
 
@@ -57,6 +58,12 @@ QCCV_Tab_Server <- function(id = "QCCVTab",
     all_omes    <- reactive(names(GCTs()))
     default_ome <- reactive(globals$default_ome)
     custom_colors <- reactive(globals$colors)
+
+    # Pre-normalization (log-transformed) GCTs -- the non-normalized CV source.
+    original_GCTs <- reactive({
+      validate(need(GCTs_original(), "Original GCTs not yet available"))
+      GCTs_original()
+    })
 
     ## Build per-ome tabset
 
@@ -96,6 +103,7 @@ QCCV_Tab_Server <- function(id = "QCCVTab",
           id                       = ome,
           ome                      = ome,
           GCT_processed            = reactive(GCTs()[[ome]]),
+          GCT_original             = reactive(original_GCTs()[[ome]]),
           parameters               = reactive(parameters()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map                = reactive(custom_colors()[[ome]])
@@ -125,6 +133,7 @@ QCCV_Ome_UI <- function(id, ome) {
 QCCV_Ome_Server <- function(id,
                               ome,
                               GCT_processed,
+                              GCT_original,
                               parameters,
                               default_annotation_column,
                               color_map) {
@@ -137,6 +146,14 @@ QCCV_Ome_Server <- function(id,
     show_cv_plots <- reactive({
       req(parameters())
       intensity_data_param_is_yes(parameters()$intensity_data)
+    })
+
+    # Numeric log base detected from setup: 2 (log2), 10 (log10), or NA (None).
+    # NA means the base is unknown (e.g. data log-transformed before upload), so
+    # the user must enter it.
+    detected_base <- reactive({
+      req(parameters())
+      qc_cv_detect_base(parameters()$log_transformation)
     })
 
     output$cv_contents <- renderUI({
@@ -155,22 +172,51 @@ QCCV_Ome_Server <- function(id,
         )
       }
 
+      # CV is undefined for a single sample (sd/mean needs replicates). Grey out
+      # the whole panel for single-sample omes with the shared message.
+      req(GCT_processed())
+      cv_min_samples_msg <- min_samples_message(GCT_processed(), n = 2, analysis = "CV")
+      if (!is.null(cv_min_samples_msg)) {
+        return(
+          fluidRow(
+            shinydashboardPlus::box(
+              h4(cv_min_samples_msg),
+              status       = "primary",
+              width        = 12,
+              title        = "Coefficient of Variation (CV)",
+              headerBorder = TRUE,
+              solidHeader  = TRUE
+            )
+          )
+        )
+      }
+
       fluidRow(
         shinydashboardPlus::box(
           div(
-            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0; color: #495057;",
             icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
             strong("Note: ", style = "color: #495057;"),
-            "CV calculations in this tab are only valid for raw (non-log-transformed) intensity values.",
-            style = "color: #495057;"
+            paste(
+              "CV is computed on linear, non-normalized intensities by default.",
+              "log2/log10 datasets are delinearized automatically; if your data",
+              "was log-transformed before upload, enter its base in the settings",
+              "panel. Use the toggle to compute CV on the normalized data instead."
+            )
           ),
-          uiOutput(ns("qc_cv_controls")),
           uiOutput(ns("cv_plot_section")),
           status       = "primary",
           width        = 12,
           title        = "Coefficient of Variation (CV)",
           headerBorder = TRUE,
-          solidHeader  = TRUE
+          solidHeader  = TRUE,
+          sidebar = boxSidebar(
+            uiOutput(ns("qc_cv_controls")),
+            id         = ns("qc_cv_sidebar"),
+            width      = 25,
+            icon       = icon("gears", class = "fa-2xl"),
+            background = "rgba(91, 98, 104, 0.9)"
+          )
         )
       )
     })
@@ -181,86 +227,116 @@ QCCV_Ome_Server <- function(id,
       req(GCT_processed())
 
       cdesc_cols <- names(GCT_processed()@cdesc)
+      db <- detected_base()
+
+      # Case #1 (log2/log10 at setup): prefilled + disabled. Case #2 (None at
+      # setup): editable + blank; the user must enter the base (or 1 for linear).
+      base_field <- if (!is.na(db)) {
+        shinyjs::disabled(
+          add_css_attributes(
+            numericInput(
+              ns("qc_cv_log_base"),
+              label = "Log base (detected from setup)",
+              value = db, min = 1, step = 1
+            ),
+            classes = "small-input"
+          )
+        )
+      } else {
+        tagList(
+          add_css_attributes(
+            numericInput(
+              ns("qc_cv_log_base"),
+              label = "Log base (if log-transformed before upload)",
+              value = NA, min = 2, step = 1
+            ),
+            classes = "small-input"
+          ),
+          div(
+            style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 8px; margin-bottom: 10px; border-radius: 0 4px 4px 0; color: #495057; font-size: 8pt;",
+            icon("info-circle", style = "color: #007bff; margin-right: 6px;"),
+            "If your data were log-transformed before upload, enter the base (e.g. 2 or 10). Leave blank if your data are already on a linear scale."
+          )
+        )
+      }
 
       tagList(
-        fluidRow(
-          column(4,
-            # Multi-column grouping selector
-            add_css_attributes(
-              selectInput(
-                ns("qc_cv_annotation"),
-                label    = "Group by",
-                choices  = cdesc_cols,
-                selected = default_annotation_column(),
-                multiple = TRUE
-              ),
-              classes = "small-input"
-            ),
-            # Live preview table
-            tableOutput(ns("group_preview_table"))
+        # Multi-column grouping selector
+        add_css_attributes(
+          selectInput(
+            ns("qc_cv_annotation"),
+            label    = "Group by",
+            choices  = cdesc_cols,
+            selected = default_annotation_column(),
+            multiple = TRUE
           ),
-          column(4,
-            # Y-axis scale toggle
-            add_css_attributes(
-              radioButtons(
-                ns("qc_cv_y_scale"),
-                label    = "Y-axis scale",
-                choices  = c("Linear" = "linear", "Logarithmic" = "log"),
-                selected = "linear",
-                inline   = TRUE
-              ),
-              classes = "small-input"
+          classes = "small-input"
+        ),
+        # Live preview table
+        tableOutput(ns("group_preview_table")),
+        # Log base for delinearization (detected or user-entered)
+        base_field,
+        # Normalized vs non-normalized source (default: non-normalized)
+        add_css_attributes(
+          checkboxInput(
+            ns("qc_cv_use_normalized"),
+            label = "Compute CV on normalized data",
+            value = FALSE
+          ),
+          classes = "small-input"
+        ),
+        # Y-axis scale toggle
+        add_css_attributes(
+          radioButtons(
+            ns("qc_cv_y_scale"),
+            label    = "Y-axis scale",
+            choices  = c("Linear" = "linear", "Logarithmic" = "log"),
+            selected = "linear",
+            inline   = TRUE
+          ),
+          classes = "small-input"
+        ),
+        # Filter checkbox
+        add_css_attributes(
+          checkboxInput(
+            ns("qc_cv_filter_enabled"),
+            label = "Apply CV filter",
+            value = FALSE
+          ),
+          classes = "small-input"
+        ),
+        div(
+          style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 8px; margin-bottom: 10px; border-radius: 0 4px 4px 0; color: #495057; font-size: 8pt;",
+          icon("info-circle", style = "color: #007bff; margin-right: 6px;"),
+          "This filter is local to this tab. It only affects CV plots/exports and the CV-tab filtered GCT export. It does not change the main processed GCT used by other tabs."
+        ),
+        # Filter options - only visible when filter is enabled
+        # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
+        conditionalPanel(
+          condition = "input.qc_cv_filter_enabled == true",
+          add_css_attributes(
+            numericInput(
+              ns("qc_cv_cutoff"),
+              label = "CV cutoff",
+              value = 0.2,
+              min   = 0,
+              step  = 0.05
             ),
-            # Filter checkbox
-            add_css_attributes(
-              checkboxInput(
-                ns("qc_cv_filter_enabled"),
-                label = "Apply CV filter",
-                value = FALSE
+            classes = "small-input"
+          ),
+          add_css_attributes(
+            radioButtons(
+              ns("qc_cv_min_groups"),
+              label    = "Keep features where the CV cutoff is satisfied by:",
+              choices  = c(
+                "At least one group (keeps features reproducible in any condition)" = "one",
+                "All groups (keeps only features reproducible across every condition)" = "all"
               ),
-              classes = "small-input"
+              selected = "one"
             ),
-            conditionalPanel(
-              condition = "input.qc_cv_filter_enabled == true",
-              div(
-                style = "background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 15px; border-radius: 0 4px 4px 0;",
-                icon("info-circle", style = "color: #007bff; margin-right: 8px;"),
-                strong("Note: ", style = "color: #495057;"),
-                "This CV filter is local to this tab and only affects CV plots/exports and the CV-tab filtered GCT export. It does not change the main processed GCT used by other tabs."
-                ,
-                style = "color: #495057;"
-              ),
-              ns = ns
-            ),
-            # Filter options -- only visible when filter is enabled
-            # Per CLAUDE.md: plain input reference in condition string; ns = ns as arg
-            conditionalPanel(
-              condition = "input.qc_cv_filter_enabled == true",
-              add_css_attributes(
-                numericInput(
-                  ns("qc_cv_cutoff"),
-                  label = "CV cutoff",
-                  value = 0.2,
-                  min   = 0,
-                  step  = 0.05
-                ),
-                classes = "small-input"
-              ),
-              add_css_attributes(
-                radioButtons(
-                  ns("qc_cv_min_groups"),
-                  label    = "Keep features where the CV cutoff is satisfied by:",
-                  choices  = c(
-                    "At least one group (keeps features reproducible in any condition)" = "one",
-                    "All groups (keeps only features reproducible across every condition)" = "all"
-                  ),
-                  selected = "one"
-                ),
-                classes = "small-input"
-              ),
-              ns = ns
-            )
-          )
+            classes = "small-input"
+          ),
+          ns = ns
         )
       )
     })
@@ -277,16 +353,48 @@ QCCV_Ome_Server <- function(id,
       }
     })
 
-    # Combined grouping vector (one label per sample)
-    grouping_vector <- reactive({
-      req(GCT_processed(), selected_cols())
-      combine_cdesc_cols(GCT_processed()@cdesc, selected_cols())
+    # Effective base for delinearization: the locked detected base wins (case #1);
+    # otherwise the user-entered base (case #2). May be NA until the user enters one.
+    effective_base <- reactive({
+      db <- detected_base()
+      if (!is.na(db)) return(db)
+      input$qc_cv_log_base
     })
 
-    # Unfiltered CV table
+    # CV source GCT: non-normalized GCTs_original by default, or the normalized
+    # processed GCT when the toggle is on. Delinearization (below) applies to both.
+    source_gct <- reactive({
+      if (isTRUE(input$qc_cv_use_normalized)) {
+        req(GCT_processed())
+        GCT_processed()
+      } else {
+        req(GCT_original(), GCT_processed())
+        # GCTs_original is log-only and UNFILTERED; align it to the processed
+        # analysis set so non-normalized CV reflects exactly the analyzed
+        # samples/features, just without normalization.
+        qc_cv_align_source(GCT_original(), GCT_processed())
+      }
+    })
+
+    # Combined grouping vector (one label per sample), built from the SELECTED
+    # source GCT's own cdesc so labels always align with that matrix's columns.
+    grouping_vector <- reactive({
+      req(source_gct(), selected_cols())
+      combine_cdesc_cols(source_gct()@cdesc, selected_cols())
+    })
+
+    # Unfiltered CV table, computed on the delinearized source matrix.
+    # base may be NA (blank = already linear); delinearize() passes the matrix
+    # through unchanged in that case. Only reject an explicitly invalid entry.
     cv_table <- reactive({
-      req(GCT_processed(), grouping_vector())
-      compute_cv_table(GCT_processed()@mat, grouping_vector())
+      req(source_gct(), grouping_vector())
+      base <- effective_base()
+      validate(need(
+        is.null(base) || (length(base) == 1L && (is.na(base) ||
+          (is.numeric(base) && base > 1))),
+        "Enter the log base your data were transformed with before upload (e.g. 2 or 10), or leave blank if your data are already on a linear scale."
+      ))
+      compute_cv_table(source_gct()@mat, grouping_vector(), base = base)
     })
 
     # Filtered CV table (NULL when filter is off)
@@ -297,7 +405,9 @@ QCCV_Ome_Server <- function(id,
       filter_cv_table(cv_table(), cutoff = cutoff, min_groups = min_groups)
     })
 
-    # Filtered GCT
+    # Filtered GCT. The export deliberately re-anchors to the PROCESSED GCT's row
+    # set (not the CV source): filtered_cv() ids come from the selected source,
+    # so the %in% intersection keeps only features that also survive processing.
     filtered_gct <- reactive({
       req(filtered_cv(), GCT_processed())
       keep_ids <- filtered_cv()$id
@@ -306,7 +416,8 @@ QCCV_Ome_Server <- function(id,
 
     ## Group preview table ----------------------------------------------------
     output$group_preview_table <- renderTable({
-      req(GCT_processed(), selected_cols())
+      # Gate on the source actually consumed (grouping is built from source_gct).
+      req(source_gct(), selected_cols())
       tab <- table(grouping_vector())
       data.frame(
         Group       = names(tab),
@@ -359,7 +470,8 @@ QCCV_Ome_Server <- function(id,
     ## Unfiltered plots -------------------------------------------------------
     cv_violin_reactive <- reactive({
       req(show_cv_plots(), cv_table())
-      create_cv_violin_plot(cv_table(), palette = cv_palette(),
+      source_label <- if (isTRUE(input$qc_cv_use_normalized)) "(normalized)" else "(non-normalized)"
+      create_cv_violin_plot(cv_table(), title_suffix = source_label, palette = cv_palette(),
                             log_scale = log_scale())
     })
 
@@ -379,7 +491,16 @@ QCCV_Ome_Server <- function(id,
 
     ## Export functions -------------------------------------------------------
 
+    # CV needs >= 2 samples (sd/mean across replicates). For single-sample omes
+    # the on-screen panel is greyed out; skip the exports too rather than write
+    # an all-NA CV table/plot into the zip.
+    cv_export_available <- function() {
+      isTRUE(show_cv_plots()) &&
+        is.null(min_samples_message(GCT_processed(), n = 2, analysis = "CV"))
+    }
+
     cv_results_csv_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       write.csv(
         cv_table(),
         file      = file.path(dir_name, paste0("cv_results_", ome, ".csv")),
@@ -388,7 +509,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_export <- function(dir_name) {
-      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
+      if (!cv_export_available()) return(invisible(NULL))
       ggsave_params <- get_ggsave_params()
       ggsave(
         filename = paste0("cv_violin_", ome, ".pdf"),
@@ -402,6 +523,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_results_filtered_csv_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
@@ -414,7 +536,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_violin_filtered_export <- function(dir_name) {
-      if (!isTRUE(show_cv_plots())) return(invisible(NULL))
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"
@@ -431,6 +553,7 @@ QCCV_Ome_Server <- function(id,
     }
 
     cv_filtered_gct_export <- function(dir_name) {
+      if (!cv_export_available()) return(invisible(NULL))
       if (!isTRUE(isolate(input$qc_cv_filter_enabled))) return(invisible(NULL))
       cutoff     <- isolate(input$qc_cv_cutoff)    %||% 0.2
       min_groups <- isolate(input$qc_cv_min_groups) %||% "one"

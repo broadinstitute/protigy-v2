@@ -91,7 +91,7 @@ complete_csv_wizard <- function(app, file_name, label,
                                 annotation_col = NULL) {
   app$wait_for_idle(duration = 800, timeout = 20000)
 
-  # Step 1: label -- wait for the label input to be bound first (renderUI-rendered)
+  # Step 1: label  -  wait for the label input to be bound first (renderUI-rendered)
   label_id <- paste0("setupSidebar-CSVExcelLabel_", file_name)
   wait_for_input_bound(app, label_id, timeout = 20000)
   label_args <- list(wait_ = FALSE)
@@ -143,7 +143,7 @@ complete_csv_wizard <- function(app, file_name, label,
 complete_csv_wizard_multi <- function(app, file_names, labels, annotation_col = NULL) {
   app$wait_for_idle(duration = 800, timeout = 20000)
 
-  # Step 1: labels -- wait for the first label input to be bound before setting
+  # Step 1: labels  -  wait for the first label input to be bound before setting
   # any values, since these are renderUI-rendered and may not be bound immediately.
   first_label_id <- paste0("setupSidebar-CSVExcelLabel_", file_names[[1]])
   wait_for_input_bound(app, first_label_id, timeout = 20000)
@@ -172,7 +172,7 @@ complete_csv_wizard_multi <- function(app, file_names, labels, annotation_col = 
   app$click(input = "setupSidebar-processCSVExcel")
   app$wait_for_idle(duration = 4000, timeout = 50000)
 
-  # Step 4: GCT setup -- navigate all omes
+  # Step 4: GCT setup  -  navigate all omes
   n_omes <- length(labels)
   for (i in seq_len(n_omes)) {
     if (!is.null(annotation_col)) {

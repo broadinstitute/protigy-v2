@@ -81,8 +81,21 @@ stat.testing <- function(
         # This handles group names with hyphens (e.g., "Non-inflamed")
         unique_groups <- unique(groups)
         group_name_map <- setNames(make.names(unique_groups), unique_groups)
+        # make.names() can map two distinct group names to the same syntactic
+        # value (e.g. "A-B" and "A.B" both -> "A.B"). That collapses a factor
+        # level and silently misaligns the AveExpr.<group> column permutation
+        # below (match() returns the first hit for both). Warn so the misalignment
+        # is not invisible; the 2-group full-collision case is still caught by the
+        # length(levels(f)) < 2 guard.
+        if (anyDuplicated(unname(group_name_map))) {
+          warning(
+            "Two or more group names map to identical syntactic names via ",
+            "make.names(); per-group average-expression columns may be ",
+            "misaligned for ome ", ome_name, "."
+          )
+        }
         groups_valid <- group_name_map[as.character(groups)]
-        
+
         f <- factor(groups_valid, levels = unique(groups_valid))
         if (length(levels(f)) < 2) {
           message(paste(
@@ -151,13 +164,37 @@ stat.testing <- function(
           colnames(final.results)
         )
 
-        #replace zero-centered average with the true average expression
-        avg <- t(aggregate(t(data), by = list(groups), function(x) {
+        #replace zero-centered average with the true average expression.
+        # aggregate() sorts its output ALPHABETICALLY by Group.1, but the design
+        # (and thus the AveExpr.<group> columns) follows factor level order =
+        # order of appearance. Reorder the aggregate columns to the factor level
+        # order BEFORE the positional assignment, else each group's mean lands
+        # in the wrong AveExpr column when the two orders differ.
+        agg <- aggregate(t(data), by = list(groups), function(x) {
           mean(x, na.rm = T)
-        }))
-        avg <- avg[-1, ]
+        })
+        agg_group_order <- as.character(agg$Group.1)        # alphabetical
+        avg <- t(agg)
+        avg <- avg[-1, , drop = FALSE]
         avg <- matrix(as.numeric(avg), ncol = ncol(avg))
-        final.results[, grepl("AveExpr.", colnames(final.results))] <- avg
+        # Design columns are in levels(f) order; map those make.names-valid
+        # levels back to the original group names aggregate used, then to its
+        # (sorted) column positions.
+        design_group_order <- names(group_name_map)[
+          match(levels(f), unname(group_name_map))
+        ]
+        col_perm <- match(design_group_order, agg_group_order)
+        # Defensive guard: a NA permutation index means the design and aggregate
+        # group orders failed to align (e.g. an unexpected group-name encoding or
+        # a make.names() collision), which would silently fill AveExpr columns
+        # with NA. Fail loudly rather than emit statistically wrong per-group means.
+        if (anyNA(col_perm)) {
+          stop("Internal error: per-group mean columns could not be aligned to ",
+               "the design (group order mismatch). Check for group names that ",
+               "collide under make.names().")
+        }
+        avg <- avg[, col_perm, drop = FALSE]
+        final.results[, grepl("AveExpr.", colnames(final.results), fixed = TRUE)] <- avg
         final.results[, colnames(final.results) == "AveExpr"] <- rowMeans(
           avg,
           na.rm = T
@@ -175,8 +212,13 @@ stat.testing <- function(
             contrast_pair <- selected_contrasts[[i]]
             group1 <- contrast_pair[1]
             group2 <- contrast_pair[2]
-            # Use backticks to handle special characters in group names
-            contrast_strings[i] <- paste0("`f", group1, "` - `f", group2, "`")
+            # Design columns are named "f" + make.names(group), so contrast
+            # strings must use make.names-valid forms (mirrors the two-sample
+            # branch's group_name_map pattern).  The user-facing contrast NAME
+            # keeps the original labels so downstream column names are unchanged.
+            contrast_strings[i] <- paste0(
+              "`f", make.names(group1), "` - `f", make.names(group2), "`"
+            )
             contrast_names[i] <- paste0(group1, "_over_", group2)
           }
 
@@ -203,7 +245,7 @@ stat.testing <- function(
               AveExpr = fit2$Amean,
               t = fit2$t[, i],
               P.Value = fit2$p.value[, i],
-              adj.P.Val = p.adjust(fit2$p.value[, i], method = "BH"),
+              adj.P.Val = stats::p.adjust(fit2$p.value[, i], method = "BH"),
               B = fit2$lods[, i],
               stringsAsFactors = FALSE
             )
@@ -268,8 +310,17 @@ stat.testing <- function(
         cdesc <- gct[[ome_name]]@cdesc
         tab <- as.data.frame(ome_data)
 
-        id.col <- names(Filter(function(col) !is.numeric(col), rdesc))[1]
-        tab <- cbind(rdesc[[id.col]], tab)
+        # Prefer the literal "id" column (cmapR orders it LAST in rdesc, so
+        # picking the first non-numeric column would grab an annotation column
+        # like geneSymbol and desync the downstream join). Mirror the F-test /
+        # two-sample branches.
+        if ("id" %in% colnames(rdesc)) {
+          id.col <- "id"
+          tab <- cbind(rdesc[["id"]], tab)
+        } else {
+          id.col <- "id"
+          tab <- cbind(rownames(rdesc), tab)
+        }
         colnames(tab)[1] <- id.col
 
         for (group_name in chosen_groups) {
@@ -510,7 +561,12 @@ stat.testing <- function(
         # OPTIMIZATION STRATEGY 5: Use cbind instead of repeated merge (30-40% faster)
         # OPTIMIZATION STRATEGY 6: Vectorize derived calculations (5% faster)
         # Extract results for each contrast - access fit2 object directly instead of N topTable calls
-        results_list <- vector("list", n_contrasts)
+        # STAT-07: this per-contrast list previously reused the name `results_list`,
+        # shadowing the outer per-ome accumulator (created above) and clobbering it on
+        # every ome iteration. With a single ome (the current caller) the output was
+        # unaffected, but a multi-ome batch would drop all but the last ome. Use a
+        # distinct name (matching the F-test branch's `posthoc_results_list` convention).
+        contrast_results_list <- vector("list", n_contrasts)
 
         for (i in seq_along(contrast_names)) {
           contrast_name <- contrast_names[i]
@@ -521,7 +577,7 @@ stat.testing <- function(
             AveExpr = fit2$Amean,
             t = fit2$t[, i],
             P.Value = fit2$p.value[, i],
-            adj.P.Val = p.adjust(fit2$p.value[, i], method = "BH"),
+            adj.P.Val = stats::p.adjust(fit2$p.value[, i], method = "BH"),
             B = fit2$lods[, i],
             stringsAsFactors = FALSE
           )
@@ -538,14 +594,14 @@ stat.testing <- function(
           # Rename columns with contrast name
           colnames(contrast_results) <- paste(colnames(contrast_results), contrast_name, sep = '.')
 
-          results_list[[i]] <- contrast_results
+          contrast_results_list[[i]] <- contrast_results
         }
 
         # Combine all contrasts at once using cbind (O(N) instead of O(N*M^2))
         # All results have same features in same order, so cbind is safe and fast
         combined_results <- cbind(
           data.frame(id = id, stringsAsFactors = FALSE),
-          do.call(cbind, results_list)
+          do.call(cbind, contrast_results_list)
         )
         rownames(combined_results) <- id
 

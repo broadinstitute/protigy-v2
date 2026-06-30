@@ -171,14 +171,28 @@ QCPCA_Ome_Server <- function(id,
     
     ## CACHED PCA CALCULATION ##
     # Calculate PCA once per dataset - only recalculates when GCT_processed changes
+    # Per-ome sample-count gate: PCA is undefined for a single sample. NULL when
+    # the ome has >= 2 samples, otherwise the greyed message shown in each output.
+    pca_min_samples_msg <- reactive({
+      req(GCT_processed())
+      min_samples_message(GCT_processed(), n = 2, analysis = "PCA")
+    })
+
+    # Returns either the PCA result list or, on failure (e.g. a single-sample
+    # dataset), list(error = <message>). Catching here keeps an unrunnable PCA
+    # from crashing the app via the downstream observer.
     cached_pca_result <- reactive({
       req(GCT_processed())
-      calculate_PCA(GCT_processed())
+      tryCatch(
+        calculate_PCA(GCT_processed()),
+        error = function(e) list(error = conditionMessage(e))
+      )
     })
-    
+
     # Keep PC axis choices in range for the current PCA model
     observeEvent(cached_pca_result(), {
       pca_result <- cached_pca_result()
+      req(is.null(pca_result$error))
       n_pc <- ncol(pca_result$pca$x)
       pc_choices <- seq_len(min(10L, n_pc))
       pc1_sel <- as.numeric(input$qc_PCA_PC1 %||% 1)
@@ -302,13 +316,17 @@ QCPCA_Ome_Server <- function(id,
         cached_pca_result()
       ),
       valueExpr = {
-        
+
+        validate(need(is.null(pca_min_samples_msg()), pca_min_samples_msg()))
+        pca_result <- cached_pca_result()
+        validate(need(is.null(pca_result$error), pca_result$error))
+
         if (!is.null(input$qc_PCA_annotation)) {
           annot_column <- input$qc_PCA_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         second_annot_column <- NULL
         var1_display <- "color"
         var2_display <- "shape"
@@ -353,7 +371,7 @@ QCPCA_Ome_Server <- function(id,
           var1_display = var1_display,
           var2_display = var2_display,
           fill_shapes = fill_shapes,
-          pca_result = cached_pca_result()
+          pca_result = pca_result
         )
       }
     )
@@ -366,26 +384,30 @@ QCPCA_Ome_Server <- function(id,
       eventExpr = c(input$qc_PCA_annotation, color_map(), cached_pca_result()),
       valueExpr = {
         req(GCT_processed(), default_annotation_column(), color_map())
-        
+
+        validate(need(is.null(pca_min_samples_msg()), pca_min_samples_msg()))
+        pca_result <- cached_pca_result()
+        validate(need(is.null(pca_result$error), pca_result$error))
+
         if (!is.null(input$qc_PCA_annotation)) {
           annot_column <- input$qc_PCA_annotation
         } else {
           annot_column <- default_annotation_column()
         }
-        
+
         custom_colors <- color_map()
         if (annot_column %in% names(custom_colors)) {
           annot_color_map <- custom_colors[[annot_column]]
         } else {
           annot_color_map <- NULL
         }
-        
+
         create_PCA_reg(
           gct = GCT_processed(),
           col_of_interest = annot_column,
           ome = ome,
           custom_color_map = annot_color_map,
-          pca_result = cached_pca_result()
+          pca_result = pca_result
         )
       }
     )
@@ -398,8 +420,11 @@ QCPCA_Ome_Server <- function(id,
     
     qc_PCA_loadings_table_df <- reactive({
       req(GCT_processed())
+      validate(need(is.null(pca_min_samples_msg()), pca_min_samples_msg()))
+      pca_result <- cached_pca_result()
+      validate(need(is.null(pca_result$error), pca_result$error))
       get_pca_loadings_df(
-        cached_pca_result(),
+        pca_result,
         gct = GCT_processed(),
         for_export = TRUE
       )
@@ -408,8 +433,11 @@ QCPCA_Ome_Server <- function(id,
     qc_PCA_loadings_cumulative_reactive <- eventReactive(
       eventExpr = cached_pca_result(),
       valueExpr = {
+        validate(need(is.null(pca_min_samples_msg()), pca_min_samples_msg()))
+        pca_result <- cached_pca_result()
+        validate(need(is.null(pca_result$error), pca_result$error))
         create_PCA_loadings_cumulative(
-          pca_result = cached_pca_result(),
+          pca_result = pca_result,
           ome = ome,
           gct = GCT_processed()
         )
@@ -423,8 +451,18 @@ QCPCA_Ome_Server <- function(id,
     ## EXPORTS (single bundle per ome) ##
     
     qc_PCA_export_bundle <- function(dir_name) {
+      # PCA may be unrunnable: a single-sample ome (sample-count gate) or a PCA
+      # that errored on a degenerate matrix (cached_pca_result()$error). In both
+      # cases the on-screen panels grey out and the export reactives carry the same
+      # validate(need(...)) gates. Skip the exports cleanly (mirrors the CV tab's
+      # cv_export_available guard) so the bundle does not raise a shiny.silent.error
+      # inside ggsave()/write.csv() that tab_export.R would surface as a misleading
+      # "Could not save" failure.
+      if (!is.null(pca_min_samples_msg())) return(invisible(NULL))
+      if (!is.null(cached_pca_result()$error)) return(invisible(NULL))
+
       ggsave_params <- get_ggsave_params()
-      
+
       ggsave(
         filename = paste0("qc_PCA_scores_", ome, ".pdf"),
         plot = qc_PCA_plot_reactive(),

@@ -54,7 +54,7 @@ extract_select_input_choices_by_id <- function(tag_list, input_id) {
     return(character(0))
   }
 
-  # Current Shiny/htmltools: <select> often has one child -- an `html()` blob of all
+  # Current Shiny/htmltools: <select> often has one child  -  an `html()` blob of all
   # <option> tags, not separate shiny.tag "option" nodes. Walking only tags yields
   # character(0) and makes tests look "broken" while the app is fine.
   ch <- select_input$children
@@ -425,35 +425,17 @@ test_that("gctSetupUI handles missing parameters gracefully", {
   expect_true(length(result) > 0)
 })
 
-test_that("gctSetupUI filters out 2-component normalization for datasets with >20 samples", {
-  # Create mock GCT object with 25 samples (>20)
-  mock_gct_large <- new("GCT",
-    mat = matrix(1:100, nrow = 4, ncol = 25),
-    rdesc = data.frame(id = paste0("gene_", 1:4)),
-    cdesc = data.frame(
-      group1 = rep(c("A", "B"), length.out = 25),
-      row.names = paste0("sample_", 1:25)
-    ),
-    rid = paste0("gene_", 1:4),
-    cid = paste0("sample_", 1:25)
-  )
-  
-  # Create mock parameters
-  mock_parameters <- list(
-    test_ome = list(
-      annotation_column = "group1",
-      intensity_data = "raw",
-      log_transformation = "log2",
-      data_normalization = "Median",
-      group_normalization = FALSE,
-      max_missing = 50,
-      data_filter = "None"
-    )
-  )
-  
-  # Create mock parameter choices including 2-component
-  mock_parameter_choices <- list(
-    intensity_data = c("raw", "normalized"),
+## FIX D (P2.3): the three tests below previously re-implemented the
+## `if (n_samples > 20L) norm_choices <- norm_choices[...]` guard inline and
+## asserted against their own copy.  They never called gctSetupUI, so they
+## would pass even if that function's guard were deleted.
+## Replacement: call the REAL gctSetupUI and inspect the rendered <select>
+## using extract_select_input_choices_by_id (already defined above), matching
+## the style of the intensity-branch tests later in this file.
+
+make_2comp_pc <- function() {
+  # parameter_choices with 2-component in the intensity_data_no branch
+  list(
     log_transformation = c("None", "log2", "log10"),
     data_normalization = list(
       intensity_data_no = c("None", "Median", "Quantile", "2-component")
@@ -464,122 +446,140 @@ test_that("gctSetupUI filters out 2-component normalization for datasets with >2
     data_filter = c("None", "StdDev"),
     data_filter_sd_pct = list(min = 0, max = 100, step = 5)
   )
-  
-  # Test the filtering logic directly (simulating what happens in gctSetupUI)
-  norm_choices <- mock_parameter_choices$data_normalization$intensity_data_no
-  n_samples <- ncol(mock_gct_large@mat)
-  if (n_samples > 20) {
-    norm_choices <- norm_choices[norm_choices != "2-component"]
-  }
-  
-  # Verify 2-component is not in the choices
-  expect_false("2-component" %in% norm_choices, 
-                "2-component should not be in choices for datasets with >20 samples")
-  expect_true("None" %in% norm_choices, "None should still be in choices")
-  expect_true("Median" %in% norm_choices, "Median should still be in choices")
-  expect_true("Quantile" %in% norm_choices, "Quantile should still be in choices")
-})
+}
 
-test_that("gctSetupUI includes 2-component normalization for datasets with <=20 samples", {
-  # Create mock GCT object with 20 samples (boundary case)
-  mock_gct_small <- new("GCT",
-    mat = matrix(1:80, nrow = 4, ncol = 20),
+make_2comp_params <- function(n_norm = "Median") {
+  list(
+    test_ome = list(
+      annotation_column         = "group1",
+      intensity_data            = "No",
+      log_transformation        = "log2",
+      data_normalization        = n_norm,
+      group_normalization       = FALSE,
+      max_missing               = 50,
+      data_filter               = "None",
+      data_filter_sd_pct        = 25,
+      gene_symbol_column        = "None",
+      convert_ids_to_gene_symbol = FALSE,
+      sample_filter_enabled     = FALSE,
+      sample_filter_column      = "",
+      sample_filter_values      = character(0),
+      row_filter_enabled        = FALSE,
+      row_filter_column         = "",
+      row_filter_values         = character(0),
+      id_source_column          = "",
+      id_mapping_species        = "Homo sapiens"
+    )
+  )
+}
+
+test_that("gctSetupUI filters out 2-component from <select> for datasets with >20 samples", {
+  # FIX D: call the REAL gctSetupUI and parse the rendered HTML.
+  mock_gct_large <- new("GCT",
+    mat   = matrix(seq_len(4 * 25), nrow = 4, ncol = 25),
     rdesc = data.frame(id = paste0("gene_", 1:4)),
     cdesc = data.frame(
-      group1 = rep(c("A", "B"), each = 10),
+      group1   = rep(c("A", "B"), length.out = 25),
+      row.names = paste0("sample_", 1:25)
+    ),
+    rid = paste0("gene_", 1:4),
+    cid = paste0("sample_", 1:25)
+  )
+
+  ns <- shiny::NS("tst")
+  ui <- gctSetupUI(
+    ns = ns,
+    label = "test_ome",
+    parameter_choices = make_2comp_pc(),
+    parameters = make_2comp_params(),
+    current_place = 1L,
+    max_place = 1L,
+    GCTs = list(test_ome = mock_gct_large)
+  )
+
+  norm_choices <- extract_select_input_choices_by_id(ui, ns("test_ome_data_normalization"))
+  expect_false("2-component" %in% norm_choices,
+    info = paste("2-component must be absent for 25-sample dataset; got:", paste(norm_choices, collapse = ", ")))
+  expect_true("None" %in% norm_choices)
+  expect_true("Median" %in% norm_choices)
+  expect_true("Quantile" %in% norm_choices)
+})
+
+test_that("gctSetupUI includes 2-component in <select> for datasets with <=20 samples (boundary)", {
+  # FIX D: 20 columns is the boundary; 2-component must NOT be stripped.
+  mock_gct_small <- new("GCT",
+    mat   = matrix(seq_len(4 * 20), nrow = 4, ncol = 20),
+    rdesc = data.frame(id = paste0("gene_", 1:4)),
+    cdesc = data.frame(
+      group1   = rep(c("A", "B"), each = 10),
       row.names = paste0("sample_", 1:20)
     ),
     rid = paste0("gene_", 1:4),
     cid = paste0("sample_", 1:20)
   )
-  
-  # Create mock parameter choices including 2-component
-  mock_parameter_choices <- list(
-    intensity_data = c("raw", "normalized"),
-    log_transformation = c("None", "log2", "log10"),
-    data_normalization = list(
-      intensity_data_no = c("None", "Median", "Quantile", "2-component")
-    ),
-    max_missing = list(
-      intensity_data_no = list(min = 0, max = 100, step = 5)
-    ),
-    data_filter = c("None", "StdDev"),
-    data_filter_sd_pct = list(min = 0, max = 100, step = 5)
+
+  ns <- shiny::NS("tst")
+  ui <- gctSetupUI(
+    ns = ns,
+    label = "test_ome",
+    parameter_choices = make_2comp_pc(),
+    parameters = make_2comp_params(),
+    current_place = 1L,
+    max_place = 1L,
+    GCTs = list(test_ome = mock_gct_small)
   )
-  
-  # Test the filtering logic directly (simulating what happens in gctSetupUI)
-  norm_choices <- mock_parameter_choices$data_normalization$intensity_data_no
-  n_samples <- ncol(mock_gct_small@mat)
-  if (n_samples > 20) {
-    norm_choices <- norm_choices[norm_choices != "2-component"]
-  }
-  
-  # Verify 2-component is in the choices (n_samples = 20, so <= 20, should not be filtered)
-  expect_true("2-component" %in% norm_choices, 
-              "2-component should be in choices for datasets with <=20 samples")
+
+  norm_choices <- extract_select_input_choices_by_id(ui, ns("test_ome_data_normalization"))
+  expect_true("2-component" %in% norm_choices,
+    info = paste("2-component must be present for 20-sample dataset; got:", paste(norm_choices, collapse = ", ")))
   expect_true("None" %in% norm_choices)
   expect_true("Median" %in% norm_choices)
 })
 
-test_that("gctSetupUI resets selection to None when 2-component is selected but disabled", {
-  # Create mock GCT object with 25 samples (>20)
+test_that("gctSetupUI resets selected value to None when 2-component is stored but disabled", {
+  # FIX D: when data_normalization = "2-component" is stored but n_samples > 20,
+  # the rendered selectInput must show "None" as the selected value, not "2-component".
+  # The previous test re-implemented this reset inline; this test drives gctSetupUI
+  # and inspects the rendered HTML.
   mock_gct_large <- new("GCT",
-    mat = matrix(1:100, nrow = 4, ncol = 25),
+    mat   = matrix(seq_len(4 * 25), nrow = 4, ncol = 25),
     rdesc = data.frame(id = paste0("gene_", 1:4)),
     cdesc = data.frame(
-      group1 = rep(c("A", "B"), length.out = 25),
+      group1   = rep(c("A", "B"), length.out = 25),
       row.names = paste0("sample_", 1:25)
     ),
     rid = paste0("gene_", 1:4),
     cid = paste0("sample_", 1:25)
   )
-  
-  # Create mock parameters with 2-component selected (should be reset)
-  mock_parameters <- list(
-    test_ome = list(
-      annotation_column = "group1",
-      intensity_data = "raw",
-      log_transformation = "log2",
-      data_normalization = "2-component", # This should be reset to None
-      group_normalization = FALSE,
-      max_missing = 50,
-      data_filter = "None"
-    )
+
+  # Stored selection is "2-component" but should be downgraded to "None".
+  params_2comp <- make_2comp_params(n_norm = "2-component")
+
+  ns <- shiny::NS("tst")
+  ui <- gctSetupUI(
+    ns = ns,
+    label = "test_ome",
+    parameter_choices = make_2comp_pc(),
+    parameters = params_2comp,
+    current_place = 1L,
+    max_place = 1L,
+    GCTs = list(test_ome = mock_gct_large)
   )
-  
-  # Create mock parameter choices including 2-component
-  mock_parameter_choices <- list(
-    intensity_data = c("raw", "normalized"),
-    log_transformation = c("None", "log2", "log10"),
-    data_normalization = list(
-      intensity_data_no = c("None", "Median", "Quantile", "2-component")
-    ),
-    max_missing = list(
-      intensity_data_no = list(min = 0, max = 100, step = 5)
-    ),
-    data_filter = c("None", "StdDev"),
-    data_filter_sd_pct = list(min = 0, max = 100, step = 5)
+
+  # 2-component must not appear in the choices list at all.
+  norm_choices <- extract_select_input_choices_by_id(ui, ns("test_ome_data_normalization"))
+  expect_false("2-component" %in% norm_choices,
+    info = paste("2-component must be absent; got:", paste(norm_choices, collapse = ", ")))
+
+  # The rendered HTML must carry selected="selected" on "None", not "2-component".
+  # We check this by searching the raw HTML for the selected option.
+  html_txt <- as.character(shiny::tagList(ui))
+  # "None" option should be marked selected; "2-component" must not appear as selected.
+  # A selected <option> renders as: <option value="None" selected>None</option>
+  expect_true(
+    grepl('value="None"[^>]*selected|selected[^>]*value="None"', html_txt, perl = TRUE),
+    info = "Expected 'None' to be the selected option in the rendered HTML"
   )
-  
-  # Test the reset logic directly (simulating what happens in gctSetupUI)
-  norm_choices <- mock_parameter_choices$data_normalization$intensity_data_no
-  n_samples <- ncol(mock_gct_large@mat)
-  if (n_samples > 20) {
-    norm_choices <- norm_choices[norm_choices != "2-component"]
-  }
-  
-  # If current selection is 2-component but it should be disabled, use default
-  norm_selected <- mock_parameters$test_ome$data_normalization
-  if (n_samples > 20 && norm_selected == "2-component") {
-    norm_selected <- "None"
-  }
-  
-  # Verify 2-component is not in the choices
-  expect_false("2-component" %in% norm_choices, 
-               "2-component should not be in choices for datasets with >20 samples")
-  
-  # Verify selection is reset to None
-  expect_equal(norm_selected, "None")
 })
 
 ## Regression: intensity_data Yes/No must drive normalization + max_missing in gctSetupUI

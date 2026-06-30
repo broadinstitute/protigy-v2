@@ -1,27 +1,40 @@
 ################################################################################
-# Regression guard for NAMESPACE / roxygen import desync.
+# Regression guard for the normalization dependencies.
 #
-# The normalization helpers in R/sidebar_setup_helpers_normalization.R call
-# preprocessCore::normalize.quantiles, vsn::justvsn, mixtools::normalmixEM and
-# mclust::Mclust/mclustBIC by their BARE (unqualified) names. Those four packages
-# are Imports-only (loaded, not attached), so each symbol MUST be importFrom'd in
-# NAMESPACE or the normalization code paths fail at runtime with
-# "could not find function". A dependency cleanup once dropped these importFrom
-# lines while leaving the unqualified calls in place; this test prevents that
-# regression from recurring.
+# R/sidebar_setup_helpers_normalization.R reaches its optional-engine deps via
+# fully QUALIFIED calls -- preprocessCore::normalize.quantiles, vsn::justvsn,
+# mixtools::normalmixEM and mclust::Mclust/mclustBIC. Those four packages are
+# Imports-only (loaded, not attached), so the qualified calls fail at runtime
+# with "there is no package called ..." if a package is ever dropped from
+# DESCRIPTION Imports. This test pins each function to its package namespace so
+# that an accidental Imports removal is caught before it reaches users.
+#
+# (Earlier these symbols were called unqualified and pinned via importFrom in
+# NAMESPACE; the normalization helper was later refactored to qualified calls,
+# so the guard now checks namespace reachability instead.)
 ################################################################################
 
 library(testthat)
 
-test_that("normalization dependencies are imported into the Protigy namespace", {
-  imports_env <- parent.env(asNamespace("Protigy"))
-  needed <- c("normalize.quantiles", "justvsn", "normalmixEM", "Mclust", "mclustBIC")
-  for (fn in needed) {
+test_that("normalization dependencies are reachable via their namespaces", {
+  needed <- list(
+    normalize.quantiles = "preprocessCore",
+    justvsn             = "vsn",
+    normalmixEM         = "mixtools",
+    Mclust              = "mclust",
+    mclustBIC           = "mclust"
+  )
+  for (fn in names(needed)) {
+    pkg <- needed[[fn]]
     expect_true(
-      exists(fn, envir = imports_env, inherits = FALSE),
+      requireNamespace(pkg, quietly = TRUE),
+      info = sprintf("package '%s' (provides %s) is not installed/available", pkg, fn)
+    )
+    expect_true(
+      exists(fn, envir = asNamespace(pkg), inherits = FALSE),
       info = sprintf(
-        "%s is called unqualified in sidebar_setup_helpers_normalization.R but is not importFrom'd in NAMESPACE",
-        fn
+        "%s is called as %s::%s in sidebar_setup_helpers_normalization.R but is not exported by '%s'",
+        fn, pkg, fn, pkg
       )
     )
   }

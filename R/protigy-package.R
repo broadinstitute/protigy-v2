@@ -38,7 +38,7 @@
 #' @importFrom ggthemes geom_tufteboxplot
 #' @importFrom DT datatable renderDataTable dataTableOutput
 #' @importFrom Matrix Matrix
-#' @importFrom matrixStats rowSds rowMeans2 rowMedians colMedians
+#' @importFrom matrixStats rowSds rowMeans2 rowMedians colMedians colMads
 #' @importFrom stringi stri_locate_all_fixed stri_replace_all_fixed
 #' @importFrom data.table data.table setDT setkey foverlaps setorder rbindlist .SD :=
 #' @importFrom IRanges IRanges reduce disjointBins

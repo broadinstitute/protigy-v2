@@ -3,7 +3,7 @@
 #
 # Tests the 20 conditionalPanel instances, prioritised by risk:
 #
-# Tier 1 (highest) -- sidebar_setup_helpers_shiny.R, use ns = ns pattern
+# Tier 1 (highest)  -  sidebar_setup_helpers_shiny.R, use ns = ns pattern
 #   - data_normalization != 'None' -> group_normalization checkbox visible
 #   - data_normalization != 'None' && group_normalization -> column selector visible
 #   - data_filter == 'StdDev' -> percentile input visible
@@ -14,7 +14,7 @@
 #   - 2-component normalization absent for >20 samples
 #   - intensity_data toggle updates normalization choices and max_missing bounds
 #
-# Tier 2 -- sidebar_setup_helpers_csv-excel-processing.R
+# Tier 2  -  sidebar_setup_helpers_csv-excel-processing.R
 #   - delimit_id_<file_id> toggle (CSV step 2)
 #   - use_condition_setup_<file_id> toggle (requires spectronaut flag ON)
 #
@@ -59,7 +59,7 @@ test_that("data_normalization != None reveals group normalization checkbox", {
 
   # Default: data_normalization is "Median" (non-None), so group normalization
   # checkbox should already be visible. First set to None, verify hidden.
-  # wait_for_panel_hidden/visible throw on timeout -- that IS the assertion.
+  # wait_for_panel_hidden/visible throw on timeout  -  that IS the assertion.
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization"),
@@ -83,14 +83,14 @@ test_that("group normalization checkbox reveals column selector", {
   app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Median", wait_ = FALSE)
   wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization")
 
-  # Disable group normalization -- column selector should be hidden
+  # Disable group normalization  -  column selector should be hidden
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = FALSE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_group_normalization_column"),
     message = "Group normalization column selector should be hidden when group_normalization = FALSE"
   )
 
-  # Enable group normalization -- column selector should appear
+  # Enable group normalization  -  column selector should appear
   app$set_inputs(`setupSidebar-Proteome_group_normalization` = TRUE, wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_group_normalization_column"),
@@ -103,14 +103,14 @@ test_that("data_filter StdDev reveals percentile input", {
   app <- reach_gct_setup_step()
   on.exit(app$stop(), add = TRUE)
 
-  # None selected -- percentile input should be hidden
+  # None selected  -  percentile input should be hidden
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "None", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_hidden(app, "setupSidebar-Proteome_data_filter_sd_pct"),
     message = "Percentile input should be hidden when data_filter = None"
   )
 
-  # StdDev selected -- percentile input should appear
+  # StdDev selected  -  percentile input should appear
   app$set_inputs(`setupSidebar-Proteome_data_filter` = "StdDev", wait_ = FALSE)
   expect_no_error(
     wait_for_panel_visible(app, "setupSidebar-Proteome_data_filter_sd_pct"),
@@ -146,7 +146,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
   # Enable filter and select a column
   app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE, wait_ = FALSE)
   app$wait_for_idle(duration = 600)
-  # The dataset has a "Type" column -- use first available column
+  # The dataset has a "Type" column  -  use first available column
   # The values selector should appear once a non-empty column is selected
   current_col <- app$get_value(input = "setupSidebar-Proteome_sample_filter_column")
   if (is.null(current_col) || identical(current_col, "")) {
@@ -166,7 +166,7 @@ test_that("selecting a sample_filter_column reveals values selector", {
     )
   }
 
-  # Clear the column -- values selector should hide
+  # Clear the column  -  values selector should hide
   app$set_inputs(`setupSidebar-Proteome_sample_filter_column` = "", wait_ = FALSE)
   app$wait_for_idle(duration = 600)
   expect_false(
@@ -322,12 +322,111 @@ test_that("intensity data toggle updates normalization choices and max missing b
 })
 
 # ---------------------------------------------------------------------------
+# INT-1: toggling intensity must NOT lose in-progress edits.
+#
+# The intensity toggle observer no longer calls collectInputs() (which used to
+# write parameters_internal_reactive and force a full setup-panel rebuild / grey-out).
+# This test guards the safety property the removal must preserve: an in-progress
+# edit the user made BEFORE toggling must still be present AFTER toggling (the
+# widget must not be reset/reverted), AND the toggle's own job (recomputing the
+# normalization choices + max_missing bounds from the live checkbox) must still work.
+# ---------------------------------------------------------------------------
+test_that("INT-1: intensity toggle preserves in-progress edits and still recomputes choices", {
+  skip_if_no_shinytest2()
+  app <- reach_gct_setup_step()
+  on.exit(app$stop(), add = TRUE)
+
+  get_norm_choices <- function() {
+    tryCatch(
+      as.character(unlist(app$run_js(paste0(
+        "Array.from(document.querySelectorAll(",
+        "  '#setupSidebar-Proteome_data_normalization option'",
+        ")).map(o => o.value)"
+      )))),
+      error = function(e) character(0)
+    )
+  }
+
+  # 1. Make an in-progress edit that the toggle's collectInputs() USED to persist:
+  #    enable the sample filter (a boolean that controls a conditionalPanel).
+  app$set_inputs(`setupSidebar-Proteome_sample_filter_enabled` = TRUE, wait_ = FALSE)
+  app$wait_for_idle(duration = 600, timeout = 20000)
+  expect_true(
+    is_visible(app, "setupSidebar-Proteome_sample_filter_column"),
+    info = "Precondition: enabling sample filter reveals its column selector"
+  )
+
+  # 2. Toggle intensity data. Previously this forced a full panel rebuild; the
+  #    sample_filter_enabled edit must survive the toggle (no reset to default).
+  app$set_inputs(`setupSidebar-Proteome_intensity_data` = TRUE, wait_ = FALSE)
+  app$wait_for_idle(duration = 800, timeout = 20000)
+
+  # 3a. The edit is preserved: the sample-filter column selector is STILL visible
+  #     (i.e. sample_filter_enabled was NOT reverted to its default of FALSE).
+  expect_true(
+    is_visible(app, "setupSidebar-Proteome_sample_filter_column"),
+    info = "INT-1: sample_filter_enabled edit must survive an intensity toggle (no rebuild reset)"
+  )
+
+  # 3b. The toggle still did its job: intensity ON ('Yes' branch) drops plain
+  #     'Median' from the normalization choices.
+  choices_yes <- get_norm_choices()
+  if (length(choices_yes) > 0) {
+    expect_false(
+      "Median" %in% choices_yes,
+      info = "INT-1: toggle still recomputes normalization choices (plain 'Median' gone when intensity ON)"
+    )
+  }
+
+  # 3c. CRITICAL regression guard (the edit-then-toggle case): a normalization
+  #     choice the user picked, that is VALID in both intensity branches, must
+  #     survive a toggle. The bug (bare collectInputs removal reading STALE stored
+  #     params) reset such a pick back to the stored pre-edit value. "Quantile" is
+  #     present in both the "Yes" and "No" branches, so toggling must NOT change it.
+  get_norm_selected <- function() {
+    tryCatch(
+      as.character(app$get_value(input = "setupSidebar-Proteome_data_normalization")),
+      error = function(e) NA_character_
+    )
+  }
+  # Pick "Quantile" while intensity is currently ON, then toggle OFF.
+  if ("Quantile" %in% choices_yes) {
+    app$set_inputs(`setupSidebar-Proteome_data_normalization` = "Quantile", wait_ = FALSE)
+    app$wait_for_idle(duration = 500, timeout = 20000)
+    app$set_inputs(`setupSidebar-Proteome_intensity_data` = FALSE, wait_ = FALSE)
+    app$wait_for_idle(duration = 800, timeout = 20000)
+    expect_equal(
+      get_norm_selected(), "Quantile",
+      info = "INT-1: an in-progress normalization pick valid in both branches must survive a toggle (not reset to stale stored value)"
+    )
+    # restore intensity ON for the steps below
+    app$set_inputs(`setupSidebar-Proteome_intensity_data` = TRUE, wait_ = FALSE)
+    app$wait_for_idle(duration = 800, timeout = 20000)
+  }
+
+  # 4. Toggle back OFF and confirm the edit STILL survives and choices recompute.
+  app$set_inputs(`setupSidebar-Proteome_intensity_data` = FALSE, wait_ = FALSE)
+  app$wait_for_idle(duration = 800, timeout = 20000)
+  expect_true(
+    is_visible(app, "setupSidebar-Proteome_sample_filter_column"),
+    info = "INT-1: edit survives a second toggle as well"
+  )
+  choices_no <- get_norm_choices()
+  if (length(choices_no) > 0) {
+    expect_true(
+      "Median" %in% choices_no,
+      info = "INT-1: toggling intensity OFF restores plain 'Median' in normalization choices"
+    )
+  }
+})
+
+# ---------------------------------------------------------------------------
 # Tier 2: sidebar_setup_helpers_csv-excel-processing.R
 # ---------------------------------------------------------------------------
 
 test_that("CSV identifier delimiter toggle reveals source column input", {
   skip_if_no_shinytest2()
-  # delimit_id UI is not yet implemented in the app -- skip until feature lands
+  # delimit_id UI is not yet implemented in the app  -  skip until feature lands
   skip("delimit_id_<file_id> checkbox not yet implemented in sidebar_setup")
   app <- make_app_driver(testthat::test_path("apps/full-app"))
   on.exit(app$stop(), add = TRUE)
@@ -364,7 +463,7 @@ test_that("CSV identifier delimiter toggle reveals source column input", {
     info = "Source column input should be hidden when delimiter checkbox is unchecked"
   )
 
-  # Check it -- source column input should appear
+  # Check it  -  source column input should appear
   checked_args <- list(wait_ = FALSE)
   checked_args[[checkbox_id]] <- TRUE
   do.call(app$set_inputs, checked_args)

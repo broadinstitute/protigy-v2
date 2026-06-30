@@ -355,7 +355,7 @@ test_that("add_volcano_labels sets hidden_count_rv to 0 when all labels fit", {
 
 test_that("add_volcano_labels hidden_count_rv reflects dropped overlapping labels", {
   skip_if_not_installed("plotly")
-  # 10 points at identical (x, y) -- all but the first must be hidden
+  # 10 points at identical (x, y)  -  all but the first must be hidden
   n <- 10
   df <- data.frame(
     id          = paste0("P", 1:n),
@@ -447,7 +447,7 @@ test_that("regex_escape escapes PCRE metacharacters", {
   expect_equal(regex_escape(""),            "")
 })
 
-## get_volcano_cols -- metacharacter safety ####################################
+## get_volcano_cols  -  metacharacter safety ####################################
 
 test_that("get_volcano_cols handles group names with regex metacharacters", {
   group_name <- "Group(A)"
@@ -471,7 +471,7 @@ test_that("get_volcano_cols handles group names with regex metacharacters", {
                               volcano_groups    = group_name,
                               volcano_contrasts = NULL)
 
-  expect_false(is.na(result$logfc), info = "logfc col not found -- metacharacter escaping likely missing")
+  expect_false(is.na(result$logfc), info = "logfc col not found  -  metacharacter escaping likely missing")
   expect_false(is.na(result$logp),  info = "logp col not found")
   expect_false(is.na(result$adjp),  info = "adjp col not found")
   expect_false(is.na(result$pval),  info = "pval col not found")
@@ -504,7 +504,7 @@ test_that("get_volcano_cols handles contrast names with regex metacharacters (tw
   expect_false(is.na(result$pval))
 })
 
-## get_volcano_cols -- normal cases ############################################
+## get_volcano_cols  -  normal cases ############################################
 
 # Helper: build a minimal stat_results df with standard column naming
 make_one_sample_df <- function(group = "GroupA") {
@@ -836,7 +836,7 @@ test_that("global union uses each ome's own POI, not a shared one", {
                    contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
   prot_poi <- c("p2")
 
-  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig) -- completely separate IDs
+  # Phos ome: one contrast, sig = q1, POI = q2 (non-sig)  -  completely separate IDs
   phos_df <- make_two_sample_stat_results(
     contrast_a = "Ctrl / Treated", contrast_b = "Ctrl / Other",
     sig_ids_a  = "q1",
@@ -875,8 +875,8 @@ test_that("passing wrong ome POI to another ome misses that ome's POI (old bug r
   )
   phos_sp  <- list(test = "Two-sample Moderated T-test",
                    contrasts = "Ctrl / Treated", cutoff = 0.05, stat = "p.val")
-  prot_poi <- c("p1")  # Prot's POI -- not in phos_df
-  phos_poi <- c("q2")  # Phos's POI -- only in phos_df
+  prot_poi <- c("p1")  # Prot's POI  -  not in phos_df
+  phos_poi <- c("q2")  # Phos's POI  -  only in phos_df
 
   # OLD (buggy) path: Prot's POI passed to Phos iteration
   buggy_phos_union <- volcano_label_union_for_ome(phos_df, phos_sp, "poi", prot_poi)

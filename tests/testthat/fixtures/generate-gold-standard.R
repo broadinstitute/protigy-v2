@@ -54,7 +54,7 @@ params <- list(
 
 # Helper: run code with Shiny session functions mocked out.
 # processGCTs / stat.testing use withProgress, incProgress, setProgress,
-# showNotification -- all require a live Shiny session.
+# showNotification  -  all require a live Shiny session.
 mock_shiny <- function(code) {
   testthat::with_mocked_bindings(
     withProgress    = function(expr, ...) { force(expr) },

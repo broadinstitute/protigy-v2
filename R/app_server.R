@@ -71,7 +71,8 @@ app_server <- function(input, output, session) {
   ## QC CV module
   all_QCCV_exports <- QCCV_Tab_Server(
     GCTs_and_params = GCTs_and_params,
-    globals = globals
+    globals = globals,
+    GCTs_original = GCTs_original
   )
 
   ## QC correlation module
@@ -123,7 +124,7 @@ app_server <- function(input, output, session) {
     GCTs_and_params = GCTs_and_params,
     globals = globals
   )
-  
+
   ## PELSA container: app-level dataset switcher + active-dataset coordination.
   ## Lives at top-level session scope (not a module) so one switcher input
   ## drives all three PELSA sections. Returns $active_dataset (reactive) +
@@ -198,7 +199,7 @@ app_server <- function(input, output, session) {
   #   globals = globals,
   #   GCTs_original = GCTs_original
   # )
-  
+
   ## PELSA: merge the three section export reactives into ONE "pelsa_exports" tab
   ## so the exporter writes a single nested tree per ome (<ome>/pelsa_exports/<stage>/
   ## ...). Each section's export functions carve their own stage subfolder; names are
