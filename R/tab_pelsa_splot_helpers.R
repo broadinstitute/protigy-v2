@@ -352,3 +352,28 @@ pelsa_splot_build_ggplot <- function(prep) {
                     y = prep$y_title) +
     ggplot2::theme_bw()
 }
+
+# Write one intensity-rank PNG per sample for ONE dataset into the
+# 02_qc/intensity_rank/ subfolder, honoring `custom` (the per-ome sticky store;
+# NULL -> defaults: all markers selected, trypsin off). Re-derives the matrix +
+# peptide frame from the processed GCT at export time. @noRd
+pelsa_splot_export_for <- function(dir_name, gct, matched, marker_accs,
+                                   params, custom = NULL) {
+  out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_QC, .PELSA_SPLOT_SUBDIR)
+  if (is.null(gct)) return(invisible(out))
+  peptides <- pelsa_dataset_peptide_frame(gct)
+  mat <- pelsa_dataset_matrix(gct, colnames(peptides))
+  selected <- custom$selected_markers %||% marker_accs %||% character(0)
+  label_trypsin <- isTRUE(custom$label_trypsin)
+  for (s in colnames(mat)) {
+    prep <- pelsa_splot_prepare(mat, s, peptides, matched, selected,
+                                .PELSA_TRYPSIN_ACCESSIONS, label_trypsin, params)
+    if (nrow(prep$background) == 0L) next
+    g <- pelsa_splot_build_ggplot(prep)
+    tryCatch(
+      pelsa_save_figure(g, out, paste0("intensity_rank_", pelsa_safe_name(s)),
+                        width = 9, height = 6),
+      error = function(e) NULL)
+  }
+  invisible(out)
+}

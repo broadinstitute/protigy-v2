@@ -249,3 +249,33 @@ test_that("build_ggplot returns a ggplot with point + label layers", {
   expect_gte(length(g$layers), 3L)                  # bg + marker + repel label
   expect_equal(g$labels$y, "log2(intensity)")
 })
+
+test_that("export writes one PNG per sample with customization applied", {
+  mat <- matrix(c(50,40,30, 45,35,25), nrow = 3,
+                dimnames = list(c("p1","p2","p3"), c("S1","S2")))
+  rdesc <- data.frame(
+    PEP.StrippedSequence = c("AAA","BBB","CCC"),
+    PG.ProteinAccessions = c("M1","M1","P9"),
+    PG.Genes             = c("GA","GA","G9"),
+    row.names = c("p1","p2","p3"), stringsAsFactors = FALSE)
+  cdesc <- data.frame(condition = c("c","c"),
+                      row.names = c("S1","S2"), stringsAsFactors = FALSE)
+  g <- cmapR::GCT(mat = mat, rdesc = rdesc, cdesc = cdesc)
+  matched <- data.frame(
+    .row_id = 1:2, accession = c("M1","M1"), gene = c("GA","GA"),
+    pep_start = c(10L, 20L), PEP.StrippedSequence = c("AAA","BBB"),
+    check.names = FALSE, stringsAsFactors = FALSE)
+
+  tmp <- file.path(tempdir(), paste0("splotexp_", as.integer(runif(1, 1, 1e6))))
+  dir.create(tmp, recursive = TRUE, showWarnings = FALSE)
+  pelsa_splot_export_for(
+    tmp, g, matched, marker_accs = c("M1","P9"),
+    params = list(log_transformation = "log2",
+                  data_normalization = "Median (non-zero)"),
+    custom = list(selected_markers = "M1", label_trypsin = FALSE))
+
+  out <- file.path(tmp, "02_qc", "intensity_rank")
+  expect_true(file.exists(file.path(out, "intensity_rank_S1.png")))
+  expect_true(file.exists(file.path(out, "intensity_rank_S2.png")))
+  unlink(tmp, recursive = TRUE)
+})
