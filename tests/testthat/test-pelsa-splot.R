@@ -373,5 +373,21 @@ test_that("server seeds per-ome S-plot state and renders the plot", {
       expect_gt(nrow(prep$background), 0L)
       expect_s3_class(pelsa_splot_build_plotly(prep, use_webgl()), "plotly")
       expect_false(is.null(output$splot_plot))        # render produced output
+
+      # write-back: deselect-all arrives as a non-NULL empty value and updates
+      # the store to character(0) WITHOUT deleting the field (the ignoreNULL=TRUE
+      # contract the marker observer relies on).
+      session$setInputs(splot_markers = character(0))
+      expect_true("selected_markers" %in% names(splot_state[["ds1"]]))
+      expect_length(splot_state[["ds1"]]$selected_markers, 0L)
+      expect_gt(nrow(splot_prep()$background), 0L)   # plot still renders w/o markers
+
+      # write-back: trypsin toggle persists into the per-ome store
+      session$setInputs(splot_trypsin = TRUE)
+      expect_true(isTRUE(splot_state[["ds1"]]$label_trypsin))
+
+      # write-back: sample selection persists into the per-ome store
+      session$setInputs(splot_sample = syn$sample_cols[[2]])
+      expect_equal(splot_state[["ds1"]]$sample, syn$sample_cols[[2]])
     })
 })

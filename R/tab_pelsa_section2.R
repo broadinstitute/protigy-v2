@@ -379,7 +379,8 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
 
     # Write input edits back into the active ome's sticky store.
     # ignoreNULL = TRUE (default): skips the initial NULL before picker is
-    # populated; the picker returns character(0) on deselect-all (not NULL).
+    # populated; the picker returns a non-NULL empty value on deselect-all, so
+    # ignoreNULL = TRUE still fires the write-back.
     observeEvent(input$splot_markers, {
       ome <- active_dataset(); req(ome)
       st <- splot_state[[ome]] %||% list()
