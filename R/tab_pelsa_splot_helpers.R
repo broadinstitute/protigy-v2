@@ -314,3 +314,41 @@ pelsa_splot_build_plotly <- function(prep, use_webgl = TRUE,
   }
   p
 }
+
+# Static S-plot for export (ggplot2 + ggrepel; saved as PNG via ragg). Mirrors
+# the plotly view: grey cloud, magenta marker overlay (+ teal trypsin when on),
+# repelled top-N labels. @noRd
+pelsa_splot_build_ggplot <- function(prep) {
+  g <- ggplot2::ggplot() +
+    ggplot2::geom_point(
+      data = prep$background, ggplot2::aes(x = .data$rank, y = .data$y),
+      color = "grey70", size = 0.5, alpha = 0.5) +
+    ggplot2::geom_point(
+      data = prep$marker_pts, ggplot2::aes(x = .data$rank, y = .data$y),
+      color = .PELSA_VOLCANO_MARKER_COLOR, size = 1.4)
+
+  if (isTRUE(prep$show_trypsin) && nrow(prep$trypsin_pts) > 0L) {
+    g <- g + ggplot2::geom_point(
+      data = prep$trypsin_pts, ggplot2::aes(x = .data$rank, y = .data$y),
+      color = .PELSA_SPLOT_TRYPSIN_COLOR, size = 1.4)
+  }
+
+  if (nrow(prep$marker_labels) > 0L) {
+    g <- g + ggrepel::geom_text_repel(
+      data = prep$marker_labels,
+      ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
+      color = .PELSA_VOLCANO_MARKER_COLOR, size = 2.6, direction = "y",
+      min.segment.length = 0, max.overlaps = Inf)
+  }
+  if (isTRUE(prep$show_trypsin) && nrow(prep$trypsin_labels) > 0L) {
+    g <- g + ggrepel::geom_text_repel(
+      data = prep$trypsin_labels,
+      ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
+      color = .PELSA_SPLOT_TRYPSIN_COLOR, size = 2.6, direction = "y",
+      min.segment.length = 0, max.overlaps = Inf)
+  }
+
+  g + ggplot2::labs(x = "Intensity rank (highest \u2192 lowest)",
+                    y = prep$y_title) +
+    ggplot2::theme_bw()
+}

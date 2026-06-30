@@ -233,3 +233,19 @@ test_that("build_plotly adds a trypsin trace only when show_trypsin", {
   b <- plotly::plotly_build(pelsa_splot_build_plotly(prep))
   expect_length(b$x$data, 3L)                       # bg + marker + trypsin
 })
+
+test_that("build_ggplot returns a ggplot with point + label layers", {
+  prep <- list(
+    background = data.frame(rank = 1:3, y = c(9,8,7)),
+    marker_pts = data.frame(rank = 1L, y = 9),
+    trypsin_pts = data.frame(rank = integer(0), y = numeric(0)),
+    marker_labels = data.frame(rank = 1L, y = 9, label = "GA_aa10",
+                               stringsAsFactors = FALSE),
+    trypsin_labels = data.frame(rank = integer(0), y = numeric(0),
+                                label = character(0)),
+    y_title = "log2(intensity)", show_trypsin = FALSE)
+  g <- pelsa_splot_build_ggplot(prep)
+  expect_s3_class(g, "ggplot")
+  expect_gte(length(g$layers), 3L)                  # bg + marker + repel label
+  expect_equal(g$labels$y, "log2(intensity)")
+})
