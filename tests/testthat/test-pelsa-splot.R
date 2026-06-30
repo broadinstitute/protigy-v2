@@ -318,3 +318,13 @@ test_that("export defaults to all markers and returns the subdir when custom is 
   expect_true(file.exists(file.path(out, "intensity_rank_S2.png")))
   unlink(tmp, recursive = TRUE)
 })
+
+test_that("dashboard UI includes the intensity-rank panel outputs", {
+  ui <- pelsa_section2_dashboard_ui(shiny::NS("PELSASection2Tab"), "ds1")
+  html <- as.character(ui)
+  expect_match(html, "PELSASection2Tab-splot_plot")
+  expect_match(html, "PELSASection2Tab-splot_sample")
+  expect_match(html, "PELSASection2Tab-splot_markers")
+  expect_match(html, "PELSASection2Tab-splot_trypsin")
+  expect_match(html, "Intensity rank")
+})

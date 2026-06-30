@@ -467,6 +467,32 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
       )
     ),
 
+    # 6F Intensity rank (S-plot): full-width; dedicated right-hand control column.
+    fluidRow(
+      shinydashboardPlus::box(
+        title = "Intensity rank (S-plot)", status = "primary", width = 12,
+        headerBorder = TRUE, solidHeader = TRUE,
+        fluidRow(
+          column(9, plotlyOutput(ns("splot_plot"), height = "520px")),
+          column(
+            3,
+            selectInput(ns("splot_sample"), "Sample", choices = NULL),
+            tags$div(
+              title = paste0("Peptides from the following trypsin proteins are ",
+                             "to be labeled: \"Q29463\", \"P00760\", \"P00761\""),
+              checkboxInput(ns("splot_trypsin"),
+                            "Label trypsin peptides on the plot", value = FALSE)
+            ),
+            shinyWidgets::pickerInput(
+              ns("splot_markers"), "Label markers",
+              choices = NULL, multiple = TRUE,
+              options = list(actionsBox = TRUE)
+            )
+          )
+        )
+      )
+    ),
+
     # 6D collapsible QC tables PINNED AT THE BOTTOM. Auto-expanded when they have
     # rows; only an empty table stays collapsed.
     fluidRow(
