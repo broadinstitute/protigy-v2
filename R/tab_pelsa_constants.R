@@ -79,6 +79,17 @@
                               ns   = "Non-significant",
                               up   = "Upregulated")
 
+# ---- Intensity-rank (S-plot) panel ------------------------------------------
+# Common trypsin autolysis contaminant accessions; labeled on the S-plot when
+# the "Label trypsin peptides" toggle is on (isoform-matched, like markers).
+.PELSA_TRYPSIN_ACCESSIONS <- c("Q29463", "P00760", "P00761")
+# Highest-intensity peptides labeled per marker / trypsin protein (per sample).
+.PELSA_SPLOT_TOP_N <- 3L
+# Teal overlay color for trypsin peptides (distinct from marker magenta + greys).
+.PELSA_SPLOT_TRYPSIN_COLOR <- "#1B9E77"
+# Export subfolder (under 02_qc) holding the per-sample intensity-rank PNGs.
+.PELSA_SPLOT_SUBDIR <- "intensity_rank"
+
 # ---- Placeholder UI helper (moved from tab_pelsa_helpers.R) -----------------
 # Standard placeholder box shown in each PELSA section before its analysis has
 # been implemented. Returns a shinydashboardPlus box describing the section.
