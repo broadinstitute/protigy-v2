@@ -1108,7 +1108,9 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
       tryCatch(
         pelsa_splot_export_for(dir_name, gct, entry$matched, marker_accs,
                                params, custom),
-        error = function(e) NULL)
+        error = function(e) warning(sprintf(
+          "pelsa_section2_exports_for: S-plot export failed for '%s': %s",
+          ome, conditionMessage(e)), call. = FALSE))
     }
 
     invisible(out)

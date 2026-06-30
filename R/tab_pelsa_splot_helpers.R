@@ -118,13 +118,25 @@ pelsa_splot_marker_topn <- function(matched, accessions, rank_frame, n = 3L) {
   )
   highlight <- unique(sub$row_id)
 
-  # One representative row per (acc_key, row_id): smallest pep_start.
   sub <- sub[order(sub$acc_key, sub$row_id, sub$pep_start, na.last = TRUE), ,
              drop = FALSE]
-  rep_rows <- sub[!duplicated(sub[, c("acc_key", "row_id")]), , drop = FALSE]
 
-  # Top-N peptides per accession by display_intensity (desc), then a stable
-  # within-group head() via split (preserves the -y order set just below).
+  # Per-mapping label entry "<gene-or-accession>_aa<pep_start>" (gene fallback).
+  sub$lid <- ifelse(is.na(sub$gene) | !nzchar(trimws(sub$gene)),
+                    sub$accession, sub$gene)
+  sub$pos_entry <- paste0(sub$lid, "_aa", sub$pep_start)
+
+  # One representative per (acc_key, row_id): the peptide's intensity, plus a
+  # ;-joined label over ALL its positions on that accession (repeat motif), in
+  # the pep_start order set by the sort above.
+  grp <- paste(sub$acc_key, sub$row_id, sep = "\r")
+  entry_by_grp <- tapply(sub$pos_entry, grp, function(e) paste(e, collapse = ";"))
+  rep_rows <- sub[!duplicated(grp), c("acc_key", "row_id", "y"), drop = FALSE]
+  rep_rows$entry <- as.character(
+    entry_by_grp[paste(rep_rows$acc_key, rep_rows$row_id, sep = "\r")])
+
+  # Top-N peptides per accession by display_intensity (desc); stable within-group
+  # head() via split (preserves the -y order).
   rep_rows <- rep_rows[order(rep_rows$acc_key, -rep_rows$y), , drop = FALSE]
   keep_idx <- unlist(lapply(
     split(seq_len(nrow(rep_rows)), rep_rows$acc_key),
@@ -132,12 +144,12 @@ pelsa_splot_marker_topn <- function(matched, accessions, rank_frame, n = 3L) {
   top <- rep_rows[sort(keep_idx), , drop = FALSE]
   if (nrow(top) == 0L) return(list(highlight = highlight, labels = empty$labels))
 
-  lid <- ifelse(is.na(top$gene) | !nzchar(trimws(top$gene)),
-                top$accession, top$gene)
-  top$entry <- paste0(lid, "_aa", top$pep_start)
-
-  agg <- tapply(top$entry, top$row_id,
-                function(e) paste(unique(e), collapse = ";"))
+  # Collapse per peptide across accessions: split to individual positions,
+  # de-duplicate, and ;-join (handles repeat-motif AND shared-peptide).
+  agg <- tapply(top$entry, top$row_id, function(e) {
+    parts <- unlist(strsplit(e, ";", fixed = TRUE))
+    paste(unique(parts), collapse = ";")
+  })
   labels <- data.frame(row_id = as.integer(names(agg)),
                        label = as.character(agg), stringsAsFactors = FALSE)
   list(highlight = highlight, labels = labels)

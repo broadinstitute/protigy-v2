@@ -391,3 +391,16 @@ test_that("server seeds per-ome S-plot state and renders the plot", {
       expect_equal(splot_state[["ds1"]]$sample, syn$sample_cols[[2]])
     })
 })
+
+test_that("marker_topn ;-joins multiple positions of the same accession (repeat motif)", {
+  rf <- data.frame(row_id = 1L, sequence = "S1", accessions = "x", genes = "x",
+                   display_intensity = 9, rank = 1L, stringsAsFactors = FALSE)
+  matched <- data.frame(
+    .row_id = c(1L, 1L), accession = c("M1", "M1"), gene = c("GA", "GA"),
+    pep_start = c(20L, 10L),
+    PEP.StrippedSequence = c("S1", "S1"),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  res <- pelsa_splot_marker_topn(matched, "M1", rf, n = 3L)
+  expect_equal(res$highlight, 1L)
+  expect_equal(res$labels$label, "GA_aa10;GA_aa20")
+})
