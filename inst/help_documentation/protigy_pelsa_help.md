@@ -144,6 +144,52 @@ PELSA exports are written under `<ome>/pelsa_exports/`:
 
 Figures are PNG at 300 DPI, re-derived from the analysis cache at export time.
 
+## Feature classes
+
+When you upload a feature annotation file, Protigy classifies every UniProt
+sequence feature into one of eight **feature classes**, used to colour the
+volcano and label peptides. A peptide that overlaps several features is assigned
+the single highest-priority class among them.
+
+| Feature class | Priority | Example UniProt features |
+|---|---|---|
+| active_or_binding_site | 1 (highest) | Active site, Binding site, Metal/Nucleotide binding, Site, DNA binding |
+| catalytic_domain | 2 | Domain whose note names a catalytic activity (kinase, protease, helicase, methyltransferase, transferase, ATPase, dehydrogenase) |
+| folded_domain | 3 | Any other Domain (including inhibitor/inactive/pseudo domains) |
+| region_or_motif | 4 | Region, Motif |
+| transmembrane_or_signal | 5 | Transmembrane, Signal, Topological domain, Intramembrane |
+| repeat_or_coiled_coil | 6 | Repeat, Coiled coil |
+| low_complexity_or_disorder | 7 | Compositional bias; a Region/Motif described as disordered or low-complexity |
+| other | 8 (lowest) | Everything else (Helix, Beta strand, Modified residue, Natural variant, Chain, Disulfide bond, Glycosylation, Zinc finger, Cross-link, Mutagenesis, ...) |
+
+**How a feature is classified.** The type of the feature is checked first; a few
+classes also look at the description text:
+
+- A **Domain** is `catalytic_domain` if its note names a catalytic activity, and
+  `folded_domain` otherwise.
+- A **Region** or **Motif** whose note says *disordered*, *low complexity*, or
+  *compositionally biased* becomes `low_complexity_or_disorder`; otherwise it is
+  `region_or_motif`.
+- **Compositional bias** is always `low_complexity_or_disorder`.
+
+**Deliberate differences from the analysis pipeline.** Protigy's classifier
+matches the upstream PELSA pipeline exactly, with two intentional refinements:
+
+- A catalytic keyword in a domain note only makes it `catalytic_domain` when the
+  note does **not** also say *inhibitor* or *inactive* (so a "kinase inhibitor"
+  domain is treated as a folded, non-catalytic domain).
+- A *disordered* / *low complexity* mention in a description reclassifies a
+  feature only for **Region/Motif** types, not for experimental annotations
+  (Mutagenesis, Chain, Natural variant) or named Domains that merely mention a
+  disordered region in passing.
+
+Because of these two refinements, a small number of features may be coloured
+differently in Protigy than in a pre-computed pipeline annotation.
+
+**Note on scores.** Each class also carries a numeric *binder-likelihood* score
+used only by sidecar analyses; the volcano colour and the single-class-per-peptide
+label are decided by the **priority** order above, not by the score.
+
 ## Scientific notes and caveats
 
 - **Fold change and p-values come from the Statistics tab**, not from PELSA. Define the
