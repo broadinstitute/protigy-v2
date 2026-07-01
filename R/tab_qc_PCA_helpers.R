@@ -284,14 +284,14 @@ create_PCA_plot <- function (gct, col_of_interest, ome, custom_color_map = NULL,
     geom_point(size = 2) +
     geom_hline(yintercept = 0, linetype = "longdash", color = "darkgrey") +
     geom_vline(xintercept = 0, linetype = "longdash", color = "darkgrey") +
-    theme_bw() +
-    theme(text = element_text(size = 12)) +
+    protigy_plot_theme() +
     labs(
       title = plot_title,
       subtitle = pca_feature_count_subtitle(pca_result),
       x = paste0("PC", comp.x, " (", round(prop_vars[comp.x] * 100, 1), "%)"),
       y = paste0("PC", comp.y, " (", round(prop_vars[comp.y] * 100, 1), "%)")
-    )
+    ) +
+    guides(colour = guide_legend(override.aes = list(size = 2)))
   
   # Apply color definition
   if (!is.null(color_definition)) {
@@ -583,11 +583,9 @@ create_PCA_loadings_cumulative <- function(pca_result, ome = "", gct = NULL) {
     ) +
     scale_x_continuous(breaks = seq_len(n_pc_plot), labels = paste0("PC", seq_len(n_pc_plot))) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, NA)) +
-    theme_bw() +
-    theme(
-      text = element_text(size = 12),
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    ) +
+    protigy_plot_theme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    guides(color = guide_legend(override.aes = list(size = 2))) +
     labs(
       title = title,
       x = NULL,
@@ -675,7 +673,7 @@ pca_variance_explained <- function (pca,cdesc,components=c(1:10)){
       x = "Component (% total variance explained)",
       y = "% variance explained within component"
     ) +
-    theme_bw() +
+    protigy_plot_theme() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
   return (list (plot=g, table=expt.var))
