@@ -86,13 +86,13 @@ create_profile_plot <- function (gct, col_of_interest, ome, custom_color_map = N
                     colour = .data$annot,
                     text = paste0("Sample ID: ", .data$sample))) +
       geom_line(stat="density",alpha=0.7) + #make density plot
-      theme_bw() + #change theme
       color_definition + #color scale
-      theme(text= element_text(size=12)) + #change font sizes
       ylab("Density") + #y axis title
       xlab("Expression") + #x axis title
       labs(colour = col_of_interest) + #legend title
-      ggtitle(ifelse(type=="org", paste("Profile plot before normalization and filtering:", ome), paste("Profile plot after normalization and filtering:",ome))) #plot title
+      ggtitle(ifelse(type=="org", paste("Profile plot before normalization and filtering:", ome), paste("Profile plot after normalization and filtering:",ome))) + #plot title
+      protigy_plot_theme() + #shared typography
+      guides(colour = guide_legend(override.aes = list(size = 2))) #smaller legend lines/dots
   }
   
   # Return ggplot object (Shiny's renderPlot() will handle printing automatically)
