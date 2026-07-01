@@ -499,6 +499,8 @@ test_that("pelsa_annotate_features does NOT remap demerged/deleted (no primary)"
   )
   out <- pelsa_annotate_features(plot_df, feat_df)
   expect_equal(out$feature_class_primary, "none")   # no primary -> no remap
+  # No remap fired, so winning_accession is the original queried id unchanged.
+  expect_equal(out$winning_accession, "S_DEMERGED")
 })
 
 test_that("pelsa_annotate_features preserves exact-accession behavior without a disposition column", {

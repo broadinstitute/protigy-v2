@@ -362,11 +362,14 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
   # empty primary is skipped. Absent columns (legacy 4-col feat_df) -> no map.
   join_accession <- grid$accession
   if (all(c("disposition", "primary_accession") %in% colnames(feat_df))) {
-    disp <- tolower(trimws(as.character(feat_df$disposition)))
-    prim <- as.character(feat_df$primary_accession)
-    sec  <- as.character(feat_df$accession)
-    is_merged <- !is.na(disp) & disp == "merged" &
-      !is.na(prim) & nzchar(prim) & !is.na(sec) & nzchar(sec)
+    # Coerce NA -> "" first so the predicates below are genuinely NA-safe
+    # (as.character(NA) would yield the string "NA", making an is.na() guard
+    # dead). `disp %in% "merged"` and nzchar() then never see NA.
+    na_to_blank <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+    disp <- tolower(trimws(na_to_blank(feat_df$disposition)))
+    prim <- na_to_blank(feat_df$primary_accession)
+    sec  <- na_to_blank(feat_df$accession)
+    is_merged <- disp == "merged" & nzchar(prim) & nzchar(sec)
     if (any(is_merged)) {
       # secondary -> primary (dedupe on secondary; first wins).
       m_sec  <- sec[is_merged]
