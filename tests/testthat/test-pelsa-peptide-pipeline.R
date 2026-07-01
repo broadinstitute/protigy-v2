@@ -2015,6 +2015,55 @@ test_that("peptide length coerces factor input like character input", {
   )
 })
 
+# --- pelsa_resolve_label_stem() ----------------------------------------------
+# Fallback order gene -> protein_name -> accession. Missing = NA OR blank.
+
+test_that("resolve_label_stem prefers the gene when present", {
+  expect_equal(
+    pelsa_resolve_label_stem("GENEA", "NameA_HUMAN", "P1"),
+    "GENEA"
+  )
+})
+
+test_that("resolve_label_stem falls back to protein name when gene is missing", {
+  expect_equal(
+    pelsa_resolve_label_stem(c("", NA), c("NameA_HUMAN", "NameB_HUMAN"),
+                             c("P1", "P2")),
+    c("NameA_HUMAN", "NameB_HUMAN")
+  )
+})
+
+test_that("resolve_label_stem falls back to accession when gene AND name missing", {
+  expect_equal(
+    pelsa_resolve_label_stem(c("", NA), c("", NA), c("P1", "P2")),
+    c("P1", "P2")
+  )
+})
+
+test_that("resolve_label_stem treats a blank/whitespace protein name as missing", {
+  expect_equal(
+    pelsa_resolve_label_stem("", "   ", "P1"),
+    "P1"
+  )
+})
+
+test_that("resolve_label_stem forces accession for self-curated regardless of name", {
+  expect_equal(
+    pelsa_resolve_label_stem("GENEA", "NameA_HUMAN", "P1",
+                             is_self_curated = TRUE),
+    "P1"
+  )
+})
+
+test_that("resolve_label_stem is NULL-protein-name tolerant (treated as all-missing)", {
+  # A caller with no PG.ProteinNames column passes NULL; the middle tier is
+  # then a no-op and the fallback is gene -> accession (legacy behavior).
+  expect_equal(
+    pelsa_resolve_label_stem(c("GENEA", ""), NULL, c("P1", "P2")),
+    c("GENEA", "P2")
+  )
+})
+
 # --- pelsa_build_multilabel() ------------------------------------------------
 
 test_that("distinct genes/positions join in input order with ;", {

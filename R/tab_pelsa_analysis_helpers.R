@@ -1153,6 +1153,48 @@ pelsa_peptide_length <- function(seq) {
   as.integer(nchar(as.character(seq)))
 }
 
+# Resolve the label STEM (the text before "_aa<pos>") for a set of peptide
+# mappings. Fallback order: gene -> protein_name -> accession. A stem is
+# "missing" when it is NA or blank/whitespace after trimming (readr renders a
+# blank report cell as NA, so both must count as missing). Self-curated species
+# have no UniProt gene and no protein name, so they force the accession stem.
+#
+# Vectorized: every argument is a character vector (or a scalar recycled by the
+# fifelse cascade). `protein_name` may be NULL when the caller's report has no
+# PG.ProteinNames column, in which case the middle tier is skipped and the
+# fallback degrades to the legacy gene -> accession behavior.
+#
+# @param gene            character vector of gene symbols (may be NA/"")
+# @param protein_name    character vector of protein names (may be NA/""), or
+#                        NULL when unavailable
+# @param accession       character vector of accessions (the final fallback)
+# @param is_self_curated single logical; TRUE forces the accession stem
+# @return character vector of label stems, same length as `accession`
+# @noRd
+pelsa_resolve_label_stem <- function(gene, protein_name, accession,
+                                     is_self_curated = FALSE) {
+  accession <- as.character(accession)
+  if (isTRUE(is_self_curated)) return(accession)
+
+  gene <- as.character(gene)
+  if (is.null(protein_name)) {
+    protein_name <- rep(NA_character_, length(accession))
+  } else {
+    protein_name <- as.character(protein_name)
+  }
+
+  missing_gene <- is.na(gene) | !nzchar(trimws(gene))
+  missing_name <- is.na(protein_name) | !nzchar(trimws(protein_name))
+
+  # gene -> protein_name -> accession, applied as a two-step cascade so a blank
+  # gene with a real protein name lands on the name, and both blank lands on the
+  # accession.
+  stem <- ifelse(missing_gene,
+                 ifelse(missing_name, accession, protein_name),
+                 gene)
+  as.character(stem)
+}
+
 # Build one ;-joined multi-label string for a single peptide/dot.
 #
 # Given the per-mapping (gene, position, accession) vectors for ONE peptide
