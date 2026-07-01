@@ -50,6 +50,14 @@ test_that("woods peptide data: nom.p.val flags the peptide significant", {
   expect_true(all(out$sig))
 })
 
+test_that("woods peptide data: carries raw P.Value (for sig_stat-aware coloring)", {
+  stat <- .sig_stat_df()
+  matched <- .sig_stat_matched()
+  out <- pelsa_woods_peptide_data("ACC1", matched, stat, "C1", sig_cutoff = 0.05)
+  expect_true("P.Value" %in% colnames(out))
+  expect_equal(out$P.Value, 0.01)
+})
+
 test_that("woods peptide data: adj.p.val (default) leaves it non-significant", {
   stat <- .sig_stat_df()
   matched <- .sig_stat_matched()
@@ -112,7 +120,15 @@ test_that("export df: adj.p.val (default) leaves it non-significant", {
   nrow(star_layer$data)
 }
 
-test_that("woods export ggplot: nom.p.val stars the peptide + labels nom.P", {
+# The color-gradient scale's legend title (the scale keyed on the `colour`
+# aesthetic). Must read "-log10(nom.P)" or "-log10(adj.P)" per sig_stat.
+.woods_color_name <- function(g) {
+  sc <- g$scales$scales[[which(vapply(g$scales$scales,
+    function(s) "colour" %in% s$aesthetics, logical(1)))[1]]]
+  sc$name
+}
+
+test_that("woods export ggplot: nom.p.val stars + labels caption AND gradient nom.P", {
   pep <- pelsa_woods_peptide_data("ACC1", .sig_stat_matched(), .sig_stat_df(),
                                   "C1", sig_cutoff = 0.05, sig_stat = "nom.p.val")
   g <- pelsa_woods_export_ggplot(pep, features = data.frame(), prot_len = 20L,
@@ -122,9 +138,10 @@ test_that("woods export ggplot: nom.p.val stars the peptide + labels nom.P", {
   expect_match(cap, "nom\\.P", perl = TRUE)
   expect_false(grepl("adj\\.P", cap))
   expect_equal(.woods_star_rows(g), 1L)
+  expect_match(.woods_color_name(g), "nom\\.P", perl = TRUE)
 })
 
-test_that("woods export ggplot: adj.p.val (default) stars nothing + labels adj.P", {
+test_that("woods export ggplot: adj.p.val stars nothing + labels caption AND gradient adj.P", {
   pep <- pelsa_woods_peptide_data("ACC1", .sig_stat_matched(), .sig_stat_df(),
                                   "C1", sig_cutoff = 0.05)
   g <- pelsa_woods_export_ggplot(pep, features = data.frame(), prot_len = 20L,
@@ -134,6 +151,7 @@ test_that("woods export ggplot: adj.p.val (default) stars nothing + labels adj.P
   expect_match(cap, "adj\\.P", perl = TRUE)
   # discriminating peptide is NOT significant under adj.p.val -> no star
   expect_equal(.woods_star_rows(g), 0L)
+  expect_match(.woods_color_name(g), "adj\\.P", perl = TRUE)
 })
 
 test_that("woods export ggplot: falls back to adj.P.Val when no sig column", {
@@ -160,6 +178,22 @@ test_that("woods export ggplot: NA sig values are not starred (%in% TRUE)", {
                                  gene = "G", accession = "ACC1", contrast = "C1",
                                  sig_cutoff = 0.05, sig_stat = "nom.p.val")
   expect_equal(.woods_star_rows(g), 1L)  # only the TRUE row, NA excluded
+})
+
+# --- pelsa_woods_track_ggplot (interactive): gradient follows sig_stat ---------
+
+test_that("woods track (interactive): nom.p.val colors + labels by nom.P", {
+  pep <- pelsa_woods_peptide_data("ACC1", .sig_stat_matched(), .sig_stat_df(),
+                                  "C1", sig_cutoff = 0.05, sig_stat = "nom.p.val")
+  g <- pelsa_woods_track_ggplot(pep, prot_len = 20L, sig_stat = "nom.p.val")
+  expect_match(.woods_color_name(g), "nom\\.P", perl = TRUE)
+})
+
+test_that("woods track (interactive): adj.p.val (default) colors + labels by adj.P", {
+  pep <- pelsa_woods_peptide_data("ACC1", .sig_stat_matched(), .sig_stat_df(),
+                                  "C1", sig_cutoff = 0.05)
+  g <- pelsa_woods_track_ggplot(pep, prot_len = 20L)
+  expect_match(.woods_color_name(g), "adj\\.P", perl = TRUE)
 })
 
 # --- pelsa_intensity_line_data: the remaining sig_stat consumer ---------------

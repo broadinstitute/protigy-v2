@@ -1243,7 +1243,8 @@ PELSASection3_Ome_Server <- function(id,
                     "Click a point to pin its protein's coverage & Woods plot."))
       suppressWarnings(pelsa_woods_panel(
         peptides = w$pep, features_lanes = w$lanes, intervals = w$intervals,
-        prot_len = w$prot_len, source_id = ns("pelsa_woods")))
+        prot_len = w$prot_len, source_id = ns("pelsa_woods"),
+        sig_stat = sig_stat_r()))
     })
 
     # CROSS-PLOT HIGHLIGHT: click a Woods peptide -> resolve it to a peptide and
@@ -1274,16 +1275,6 @@ PELSASection3_Ome_Server <- function(id,
     # Each export_fn writes ONE file into dir_name, recomputing from the cache +
     # the Statistics-tab results (NOT the on-screen objects). The all-peptide
     # volcano PDF reuses the shared plot builder.
-    build_export_df <- function(panel) {
-      entry <- cache_entry()
-      pelsa_volcano_export_df(
-        stat_results()[[ome]],
-        if (is.null(entry)) NULL else entry$matched,
-        feat_df(), isolate(marker_accessions()), active_contrast(), panel,
-        is_self_curated = isolate(is_self_curated_r()),
-        sig_stat = isolate(sig_stat_r()))
-    }
-
     # Common tryCatch wrapper: log the failure (with the ome + a label) and
     # no-op so one bad export never aborts the whole zip.
     safe_export <- function(label, body) function(dir_name) tryCatch(

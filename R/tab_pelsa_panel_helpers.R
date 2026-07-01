@@ -96,7 +96,8 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
                                      sig_stat = "adj.p.val") {
   empty <- data.frame(
     peptide_seq = character(0), pep_start = integer(0), pep_end = integer(0),
-    logFC = numeric(0), adj.P.Val = numeric(0), sig = logical(0),
+    logFC = numeric(0), adj.P.Val = numeric(0), P.Value = numeric(0),
+    sig = logical(0),
     stringsAsFactors = FALSE
   )
   if (!is.data.frame(matched) || nrow(matched) == 0L) return(empty)
@@ -107,10 +108,10 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
 
   lfc_col  <- paste0("logFC.", contrast)
   adjp_col <- paste0("adj.P.Val.", contrast)
+  pval_col <- paste0("P.Value.", contrast)
   # The significance flag uses the SHARED stat choice: raw P.Value for
   # "nom.p.val", else adj.P.Val. The reported adj.P.Val column is unchanged.
-  sig_col  <- if (identical(sig_stat, "nom.p.val"))
-    paste0("P.Value.", contrast) else adjp_col
+  sig_col  <- if (identical(sig_stat, "nom.p.val")) pval_col else adjp_col
   if (!all(c(lfc_col, adjp_col, sig_col) %in% colnames(stat_df))) return(empty)
 
   m <- matched[as.character(matched$accession) == accession, , drop = FALSE]
@@ -122,6 +123,10 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
   logfc <- as.numeric(stat_df[[lfc_col]])[idx]
   adjp  <- as.numeric(stat_df[[adjp_col]])[idx]
   sigp  <- as.numeric(stat_df[[sig_col]])[idx]
+  # Carry the raw P.Value (when present) so downstream Woods coloring can follow
+  # the shared sig_stat; NA when the stat frame lacks the nominal-p column.
+  pval  <- if (pval_col %in% colnames(stat_df))
+    as.numeric(stat_df[[pval_col]])[idx] else rep(NA_real_, length(idx))
 
   out <- data.frame(
     peptide_seq = as.character(m[["PEP.StrippedSequence"]]),
@@ -129,6 +134,7 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
     pep_end     = as.integer(m$pep_end),
     logFC       = logfc,
     adj.P.Val   = adjp,
+    P.Value     = pval,
     sig         = !is.na(sigp) & sigp < sig_cutoff,
     stringsAsFactors = FALSE
   )
@@ -378,7 +384,8 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
 # @param prot_len protein length.
 # @return a ggplot.
 # @noRd
-pelsa_woods_track_ggplot <- function(peptides, prot_len) {
+pelsa_woods_track_ggplot <- function(peptides, prot_len,
+                                     sig_stat = "adj.p.val") {
   prot_len <- max(1L, as.integer(prot_len))
   if (!is.data.frame(peptides) || nrow(peptides) == 0L) {
     return(
@@ -396,15 +403,21 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
     )
   }
   pk <- peptides
+  # Color gradient + tooltip encode the SHARED significance statistic: raw
+  # P.Value for "nom.p.val" (when present), else adj.P.Val. Matches the export
+  # Woods figure (pelsa_woods_export_ggplot) so on-screen and exported agree.
+  use_nom <- identical(sig_stat, "nom.p.val") && "P.Value" %in% colnames(pk)
+  pcol <- if (use_nom) as.numeric(pk$P.Value) else pk$adj.P.Val
+  p_label <- if (use_nom) "nom.P" else "adj.P"
   if (is.null(pk$.tip)) {
-    pk$.tip <- sprintf("%s\naa %d-%d (len %d)\nlogFC: %.2f\nadj.P: %.2g",
+    pk$.tip <- sprintf("%s\naa %d-%d (len %d)\nlogFC: %.2f\n%s: %.2g",
                        pk$peptide_seq, pk$pep_start, pk$pep_end,
-                       pk$pep_end - pk$pep_start + 1L, pk$logFC, pk$adj.P.Val)
+                       pk$pep_end - pk$pep_start + 1L, pk$logFC, p_label, pcol)
   }
   pk$y <- pk$logFC
-  pk$neglogp <- pmin(-log10(pmax(pk$adj.P.Val, .Machine$double.xmin)),
+  pk$neglogp <- pmin(-log10(pmax(pcol, .Machine$double.xmin)),
                      .PELSA_WOODS_NEGLOG_CAP)
-  pk$neglogp[is.na(pk$adj.P.Val)] <- 0
+  pk$neglogp[is.na(pcol)] <- 0
   gg <- ggplot2::ggplot(pk, ggplot2::aes(text = .data$.tip)) +
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.3, color = "grey70")
   gg +
@@ -413,7 +426,8 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
                    y = .data$y, yend = .data$y, color = .data$neglogp),
       linewidth = 1.8, lineend = "round", alpha = 0.95) +
     ggplot2::scale_color_gradient(low = "grey92", high = "#B2182B",
-      limits = c(0, .PELSA_WOODS_NEGLOG_CAP), name = "-log10(adj.P)") +
+      limits = c(0, .PELSA_WOODS_NEGLOG_CAP),
+      name = sprintf("-log10(%s)", p_label)) +
     ggplot2::scale_x_continuous(limits = c(1, prot_len), expand = c(0, 0)) +
     ggplot2::labs(x = "Residue position", y = "logFC") +
     ggplot2::theme_minimal(base_size = 10) +
@@ -436,10 +450,11 @@ pelsa_woods_track_ggplot <- function(peptides, prot_len) {
 # @return a plotly subplot.
 # @noRd
 pelsa_woods_panel <- function(peptides, features_lanes, intervals, prot_len,
-                              source_id = "pelsa_woods") {
+                              source_id = "pelsa_woods",
+                              sig_stat = "adj.p.val") {
   g_cov   <- pelsa_coverage_track_ggplot(intervals, prot_len)
   g_feat  <- pelsa_feature_track_ggplot(features_lanes, prot_len)
-  g_woods <- pelsa_woods_track_ggplot(peptides, prot_len)
+  g_woods <- pelsa_woods_track_ggplot(peptides, prot_len, sig_stat = sig_stat)
 
   # Build each track WITHOUT a per-panel source (subplot errors if more than one
   # child carries a source); set the source on the assembled subplot instead.
@@ -538,9 +553,15 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
         base_theme)
   }
 
-  pk$neglogp <- pmin(-log10(pmax(pk$.adjp, .Machine$double.xmin)),
+  # Color gradient encodes the SHARED significance statistic: -log10 of the raw
+  # P.Value for "nom.p.val" (when present), else -log10(adj.P.Val). Falls back to
+  # adj.P.Val when the raw-p column is absent so older frames still color.
+  use_nom <- identical(sig_stat, "nom.p.val") && "P.Value" %in% colnames(pk)
+  pcol <- if (use_nom) as.numeric(pk$P.Value) else pk$.adjp
+  p_label <- if (use_nom) "nom.P" else "adj.P"  # legend + caption stat label
+  pk$neglogp <- pmin(-log10(pmax(pcol, .Machine$double.xmin)),
                      .PELSA_WOODS_NEGLOG_CAP)
-  pk$neglogp[is.na(pk$.adjp)] <- 0
+  pk$neglogp[is.na(pcol)] <- 0
   # The "*" significance markers follow the SHARED stat choice. Prefer the
   # authoritative `sig` column computed upstream by pelsa_woods_peptide_data()
   # (sig_stat-aware); fall back to recomputing on adj.P.Val if it is absent.
@@ -632,7 +653,8 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
       guide = ggplot2::guide_legend(order = 1)) +
     ggplot2::scale_color_gradient(
       low = "grey80", high = "#B2182B", limits = c(0, .PELSA_WOODS_NEGLOG_CAP),
-      name = "-log10(adj.P)", guide = ggplot2::guide_colourbar(order = 2)) +
+      name = sprintf("-log10(%s)", p_label),
+      guide = ggplot2::guide_colourbar(order = 2)) +
     ggplot2::scale_x_continuous(
       limits = c(1, prot_len), expand = ggplot2::expansion(mult = 0.01),
       # always keep the protein end as a break (see empty-data path above).
@@ -642,8 +664,7 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
     ggplot2::labs(
       title = title, subtitle = sprintf("Wood's plot: %s", contrast_disp),
       caption = sprintf("*Significant peptides (%s < %s)",
-                        if (identical(sig_stat, "nom.p.val")) "nom.P" else "adj.P",
-                        format(sig_cutoff)),
+                        p_label, format(sig_cutoff)),
       x = "Residue position", y = "log2FC") +
     base_theme
   gg
