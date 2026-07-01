@@ -38,13 +38,62 @@ test_that("pelsa_read_annotation_file classifies a valid raw file", {
   expect_equal(unique(out$coord_quality), "exact")
 })
 
-test_that("pelsa_read_annotation_file honors a provided coord_quality column", {
+test_that("pelsa_read_annotation_file drops fuzzy-coordinate feature rows", {
+  # A 'fuzzy' coord_quality means UniProt itself flags at least one endpoint as
+  # non-EXACT (OUTSIDE/UNKNOWN/UNSURE). Those uncertain boundaries must NOT enter
+  # the exact-interval overlap join, so the reader EXCLUDES them at parse time.
   p <- write_tmp_tsv(c(
     "accession\tfeature_type\tstart\tend\tdescription\tcoord_quality",
-    "P12345\tdomain\t30\t120\tProtein kinase\tfuzzy"
+    "P12345\tdomain\t30\t120\tProtein kinase\texact",
+    "P12345\tregion\t50\t60\tFuzzy region\tfuzzy",
+    "Q99999\tdomain\t5\t40\tIg-like\tFUZZY"  # case-insensitive
   ))
   out <- pelsa_read_annotation_file(p)
-  expect_equal(out$coord_quality, "fuzzy")
+
+  # Only the exact row survives; both fuzzy rows (any case) are gone.
+  expect_equal(nrow(out), 1L)
+  expect_equal(out$accession, "P12345")
+  expect_equal(out$feature_type, "domain")
+  expect_false(any(tolower(out$coord_quality) == "fuzzy"))
+})
+
+test_that("pelsa_read_annotation_file keeps sentinels while dropping fuzzy rows", {
+  # Fuzzy exclusion must not disturb sentinel handling: a disposition/zero-feature
+  # sentinel carries coord_quality "" (never "fuzzy") and must be retained.
+  p <- write_tmp_tsv(c(
+    "accession\tfeature_type\tstart\tend\tdescription\tcoord_quality\tdisposition\tprimary_accession",
+    "P12345\tdomain\t30\t120\tProtein kinase\tfuzzy\tresolved\t",
+    "Q0SENT\t\t\t\t\t\tresolved\t",
+    "Q0DEL\t\t\t\t\t\tdeleted\t"
+  ))
+  out <- pelsa_read_annotation_file(p)
+
+  # The lone real feature was fuzzy -> dropped; both sentinels remain.
+  expect_setequal(out$accession, c("Q0SENT", "Q0DEL"))
+  expect_equal(unique(out$feature_class), "none")
+})
+
+test_that("pelsa_read_annotation_file keeps a disposition sentinel with a 'fuzzy' cell", {
+  # Regression: a merged/deleted/demerged sentinel row can carry a literal "fuzzy"
+  # coord_quality cell. The fuzzy-drop filter must NOT eat it -- dropping it would
+  # mis-bucket an accounted (merged/deleted) accession as n_failed. Sentinels are
+  # exempt from the fuzzy exclusion because they carry no interval to be uncertain.
+  p <- write_tmp_tsv(c(
+    "accession\tfeature_type\tstart\tend\tdescription\tcoord_quality\tdisposition\tprimary_accession",
+    "P12345\tdomain\t30\t120\tProtein kinase\texact\tresolved\t",
+    "Q9MERG\t\t\t\t\tfuzzy\tmerged\tP12345",
+    "Q9DEL2\t\t\t\t\tfuzzy\tdeleted\t"
+  ))
+  out <- pelsa_read_annotation_file(p)
+
+  # Real exact feature + both disposition sentinels survive; sentinels keep coords
+  # NULLed and feature_class "none".
+  expect_setequal(out$accession, c("P12345", "Q9MERG", "Q9DEL2"))
+  merged <- out[out$accession == "Q9MERG", ]
+  expect_equal(merged$feature_class, "none")
+  expect_equal(merged$disposition, "merged")
+  expect_equal(merged$primary_accession, "P12345")
+  expect_true(is.na(merged$start) && is.na(merged$end))
 })
 
 test_that("pelsa_read_annotation_file maps zero-feature sentinel rows to 'none'", {

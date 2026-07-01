@@ -151,6 +151,10 @@ PELSA_ACCOUNTED_DISPOSITIONS <- c("merged", "demerged", "deleted")
 # pelsa_feature_class_scores(), returning the canonical 8-column frame that
 # pelsa_annotate_features() also consumes.
 #
+# FUZZY EXCLUSION: rows with coord_quality "fuzzy" (UniProt flags an endpoint as
+# non-EXACT) are DROPPED here so they never reach the exact-interval overlap join.
+# Sentinels carry coord_quality "" and are unaffected.
+#
 # NOTE: the input format is PROVISIONAL. When the finalized example file arrives,
 # adjust ONLY the column mapping below.
 #
@@ -254,6 +258,29 @@ pelsa_read_annotation_file <- function(path) {
   scores <- pelsa_feature_class_scores()
   class_score <- as.integer(scores[feature_class])
   class_score[is.na(class_score)] <- 0L   # "none"/unknown -> 0 (sentinel score)
+
+  # EXCLUDE fuzzy-coordinate features. A "fuzzy" coord_quality means UniProt
+  # itself flags at least one endpoint as non-EXACT (OUTSIDE/UNKNOWN/UNSURE), so
+  # the residue boundary is not precisely known. pelsa_annotate_features() joins
+  # feature intervals as EXACT closed intervals, so a fuzzy feature would be
+  # mapped with false precision. Drop these rows at the source. The match is
+  # case-insensitive to tolerate upstream casing (e.g. "FUZZY").
+  # Sentinels are EXEMPT: a merged/deleted/demerged (or zero-feature) row carries
+  # no interval to be uncertain about, and dropping one would mis-bucket an
+  # accounted accession as n_failed. They usually ship blank coord_quality, but a
+  # disposition sentinel can retain a literal "fuzzy" cell (line above only blanks
+  # non-sentinels), so guard on is_sentinel here.
+  keep_exact <- is_sentinel | tolower(trimws(coord_quality)) != "fuzzy"
+  accession         <- accession[keep_exact]
+  feature_type      <- feature_type[keep_exact]
+  start             <- start[keep_exact]
+  end               <- end[keep_exact]
+  description       <- description[keep_exact]
+  feature_class     <- feature_class[keep_exact]
+  class_score       <- class_score[keep_exact]
+  coord_quality     <- coord_quality[keep_exact]
+  disposition       <- disposition[keep_exact]
+  primary_accession <- primary_accession[keep_exact]
 
   data.frame(
     accession         = accession,
