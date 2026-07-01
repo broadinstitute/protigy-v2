@@ -207,6 +207,33 @@ test_that("disposition sentinels count as accounted, not failed", {
                  cnt$n_demerged + cnt$n_deleted + cnt$n_failed, 3L)
 })
 
+# ---- D6 deviation tests: disorder-desc override gated to region/motif ----------
+
+test_that("pelsa_feature_to_class D6: disorder desc reclassifies ONLY region/motif", {
+  # Structural types honor a disorder description.
+  expect_equal(pelsa_feature_to_class("Region", "Disordered"), "low_complexity_or_disorder")
+  expect_equal(pelsa_feature_to_class("Motif", "Low complexity"), "low_complexity_or_disorder")
+  # Non-structural types IGNORE an incidental disorder mention (D6 deviation).
+  expect_equal(
+    pelsa_feature_to_class("Mutagenesis",
+      "Abolishes folding of the intrinsically disordered protein."),
+    "other")
+  expect_equal(pelsa_feature_to_class("Chain", "part of a disordered region"), "other")
+  expect_equal(pelsa_feature_to_class("Natural variant", "in a disordered stretch"), "other")
+  # A named Domain stays folded even if its note mentions disorder (D6 deviation).
+  expect_equal(pelsa_feature_to_class("Domain", "disordered linker domain"), "folded_domain")
+  # Compositional bias is unaffected (forced disorder at the top, regardless of desc).
+  expect_equal(pelsa_feature_to_class("Compositional bias", "Basic residues"),
+               "low_complexity_or_disorder")
+})
+
+test_that("pelsa_feature_to_class D6 is vectorized", {
+  ft <- c("Region", "Mutagenesis", "Compositional bias")
+  d  <- c("Disordered", "disordered protein", "Basic")
+  expect_equal(pelsa_feature_to_class(ft, d),
+               c("low_complexity_or_disorder", "other", "low_complexity_or_disorder"))
+})
+
 test_that("full disposition round-trip: every category counts correctly", {
   # Mirrors a real workflow annotation (verified live against UniProt 2026-07-01):
   # a with-feature primary + its merged secondary sentinel, a zero-feature

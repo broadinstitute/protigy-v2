@@ -80,16 +80,17 @@ test_that("pelsa_feature_to_class respects ORDER-sensitive checks", {
     )
   }
 
-  # HARDEST case: the desc-disorder check (step 4) must BEAT the domain branch
-  # (step 6). A Domain whose description is disordered classifies as
-  # low_complexity_or_disorder, NOT folded/catalytic. Guards against a future
-  # reorder that moves the disorder block below the domain block.
+  # D6 DEVIATION (deliberate): the desc-disorder override is now GATED to
+  # structural types (region/motif) only. A Domain whose description mentions
+  # disorder is no longer reclassified to low_complexity_or_disorder; it keeps
+  # its type-based class (folded or catalytic). Updated from the pre-D6 contract
+  # which had "Domain" + "Disordered" -> "low_complexity_or_disorder".
   expect_equal(pelsa_feature_to_class("Domain", "Disordered"),
-               "low_complexity_or_disorder")
-  # ...even when a catalytic keyword is ALSO present: disorder still wins over
-  # the domain catalytic branch.
+               "folded_domain")
+  # ...even when a catalytic keyword is ALSO present: domain catalytic-keyword
+  # branch wins over the (now-gated) disorder check for non-region/motif types.
   expect_equal(pelsa_feature_to_class("Domain", "Disordered kinase domain"),
-               "low_complexity_or_disorder")
+               "catalytic_domain")
 })
 
 test_that("pelsa_feature_to_class is vectorized and case/space-insensitive", {

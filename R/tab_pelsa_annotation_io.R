@@ -49,6 +49,14 @@ pelsa_feature_class_scores <- function() {
 #   8. else                                     -> other
 # ftype and desc are lower-cased + trimmed (NA -> "").
 #
+# DELIBERATE DEVIATION (D6) from notebook parity at check 4:
+# The upstream notebook applies the disorder-description override to ALL feature
+# types. This Protigy port restricts it to structural types only (region/motif)
+# because experimental rows (Mutagenesis/Chain/Natural variant) and named Domains
+# whose notes incidentally mention disorder should NOT be reclassified to
+# low_complexity_or_disorder -- that mis-scores them. compositional bias is
+# unaffected (forced unconditionally at step 1, before this gate).
+#
 # @param ftype character vector of UniProt feature types
 # @param desc  character vector of feature descriptions (recycled to ftype)
 # @return character vector of feature_class labels
@@ -97,8 +105,14 @@ pelsa_feature_to_class <- function(ftype, desc) {
   is_repeat <- ftype %in% repeat_set
   out[is_repeat] <- "repeat_or_coiled_coil"
 
-  # desc-keyword disorder check BEATS repeat + region/motif + domain
-  out[disorder_desc] <- "low_complexity_or_disorder"
+  # D6 DEVIATION from notebook parity (deliberate): a disorder/low-complexity
+  # DESCRIPTION only reclassifies STRUCTURAL feature types (region/motif). The
+  # upstream notebook applies this to ALL types, which mis-scores experimental
+  # rows (Mutagenesis/Chain/Natural variant/Domain) whose note incidentally
+  # mentions a disordered region. compositional bias is already forced to
+  # low_complexity_or_disorder above, independent of this gate.
+  is_region_motif_disorder <- disorder_desc & (ftype %in% c("region", "motif"))
+  out[is_region_motif_disorder] <- "low_complexity_or_disorder"
 
   is_tm <- ftype %in% tm_set
   out[is_tm] <- "transmembrane_or_signal"
