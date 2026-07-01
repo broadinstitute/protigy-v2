@@ -941,12 +941,18 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
     df$missed, prettyNum(df$count, big.mark = ","), df$percent
   )
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
+  # Absolute count + percent of all identified peptides, stacked above each bar.
+  df$bar_label <- sprintf("%s\n%.1f%%", prettyNum(df$count, big.mark = ","),
+                          df$percent)
   ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
-    scale_y_continuous(labels = scales::label_comma()) +
+    geom_text(aes(label = .data$bar_label), vjust = -0.3, size = 3,
+              fontface = "bold") +
+    scale_y_continuous(labels = scales::label_comma(),
+                       expand = expansion(mult = c(0, 0.12))) +
     labs(x = "Missed cleavages", y = "# of peptides",
          title = "Missed-cleavage distribution") +
-    theme_bw()
+    protigy_plot_theme()
 }
 
 # 6B: per-condition CV KDE. One density curve per ELIGIBLE condition (>= 20

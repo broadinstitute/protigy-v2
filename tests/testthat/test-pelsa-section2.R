@@ -106,3 +106,12 @@ test_that("cv kde median labels are bold", {
   faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
   expect_true(any(faces == "bold"))
 })
+
+# ---- Task 8: missed-cleavage bar labels --------------------------------------
+
+test_that("missed-cleavage plot draws a count+percent label per bar", {
+  pm <- data.frame(missed_cleavages = c(0,0,0,1,1,2))
+  p <- pelsa_missed_cleavage_plot(pm)
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  expect_length(text_layers, 1)
+})
