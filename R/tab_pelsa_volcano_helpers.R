@@ -2157,7 +2157,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
         gg <- gg + ggrepel::geom_label_repel(
           data = lab,
           ggplot2::aes(x = .data$logFC, y = .data$logP, label = .data$label),
-          size = 2.6, force = 20, max.overlaps = Inf,
+          size = 2, force = 20, max.overlaps = Inf,
           fill = "white", color = "black",
           label.size = 0.3, label.padding = 0.18,
           min.segment.length = 0, segment.size = 0.3, segment.color = "black")
@@ -2167,8 +2167,11 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 
   title_txt <- if (is.null(contrast)) NULL else
     gsub("_over_", " vs ", contrast, fixed = TRUE)
-  subtitle_txt <- if (is.null(volcano_label)) spec$method else
-    paste0(volcano_label, " | ", spec$method)
+  # Capitalize the first letter of the coloring-method word so the subtitle reads
+  # "<volcano type> | Significance coloring" / "... | Feature coloring".
+  method_cap <- sub("^(.)", "\\U\\1", spec$method, perl = TRUE)
+  subtitle_txt <- if (is.null(volcano_label)) method_cap else
+    paste0(volcano_label, " | ", method_cap)
 
   gg +
     ggplot2::scale_color_manual(name = NULL, values = spec$values,
@@ -2187,22 +2190,24 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
     ggplot2::theme_bw() +
     ggplot2::theme(
       plot.title.position = "plot",
-      plot.title    = ggplot2::element_text(face = "bold", size = 12,
+      plot.title    = ggplot2::element_text(face = "bold", size = 14,
                                             hjust = 0.5),
-      plot.subtitle = ggplot2::element_text(size = 10, color = "grey30",
+      plot.subtitle = ggplot2::element_text(size = 12, color = "grey30",
                                             hjust = 0.5),
-      axis.title = ggplot2::element_text(size = 9, face = "bold"),
-      axis.text  = ggplot2::element_text(size = 6),
+      axis.title = ggplot2::element_text(size = 12, face = "bold"),
+      axis.text  = ggplot2::element_text(size = 10),
+      panel.grid.major = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
       legend.position = "right",
       legend.title  = ggplot2::element_blank(),
-      legend.text   = ggplot2::element_text(size = 6),
+      legend.text   = ggplot2::element_text(size = 11),
       legend.key    = ggplot2::element_blank(),
-      legend.key.size = ggplot2::unit(8, "pt"),
+      legend.key.size = ggplot2::unit(12, "pt"),
       legend.spacing.y = ggplot2::unit(2, "pt"),
       legend.margin = ggplot2::margin(2, 4, 2, 4),
       legend.box.spacing = ggplot2::unit(4, "pt"),
       legend.box.background = ggplot2::element_rect(color = "black", fill = NA,
-                                                    linewidth = 0.4),
+                                                    linewidth = 0.2),
       legend.box.margin = ggplot2::margin(2, 2, 2, 2))
 }
 ################################################################################
