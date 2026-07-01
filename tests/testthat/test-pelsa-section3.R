@@ -3810,3 +3810,25 @@ test_that(".pelsa_volcano_labels tolerates a missing protein_name column", {
   expect_equal(out$label, "P1_aa10")
 })
 
+test_that(".pelsa_best_back_map carries won_protein_name from the matched cache", {
+  rolled <- data.frame(
+    peptide_seq    = "PEPK",
+    won_accessions = "P1",
+    adj_p          = 0.01,
+    logFC          = -2,
+    stringsAsFactors = FALSE
+  )
+  m <- data.frame(
+    PEP.StrippedSequence = "PEPK",
+    accession            = "P1",
+    gene                 = "",
+    protein_name         = "NameA",
+    pep_start            = 10L,
+    pep_end              = 13L,
+    P.Value              = 0.005,
+    stringsAsFactors     = FALSE
+  )
+  back <- Protigy:::.pelsa_best_back_map(rolled, m)
+  expect_equal(back$won_protein_name, "NameA")
+})
+

@@ -406,6 +406,19 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   } else {
     annotated$winning_gene
   }
+  # winning_protein_name: the matched cache's protein_name for this row's
+  # winning accession (representative first occurrence). NA when the cache lacks
+  # the column or the accession has no matched row. Self-curated blanks it.
+  if (isTRUE(is_self_curated) || !"protein_name" %in% colnames(matched_cache)) {
+    df$winning_protein_name <- rep(if (isTRUE(is_self_curated)) "" else
+      NA_character_, nrow(df))
+  } else {
+    macc <- as.character(matched_cache[["accession"]])
+    mname <- as.character(matched_cache[["protein_name"]])
+    first <- !duplicated(macc)
+    name_by_acc <- stats::setNames(mname[first], macc[first])
+    df$winning_protein_name <- unname(name_by_acc[as.character(df$winning_accession)])
+  }
 
   # ---- 2J marker flag over the ;-accession tokens --------------------------
   df$is_marker <- pelsa_match_markers(df$PG.ProteinAccessions, markers)
@@ -511,13 +524,15 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   # is unique per occurrence; take the LEADING (smallest pep_start) occurrence so
   # a peptide mapping to the same accession at several positions is deterministic.
   mm <- data.frame(
-    seq       = as.character(m[["PEP.StrippedSequence"]]),
-    acc       = as.character(m[["accession"]]),
-    gene      = as.character(m[["gene"]]),
-    pep_start = as.integer(m[["pep_start"]]),
-    pep_end   = if ("pep_end" %in% colnames(m)) as.integer(m[["pep_end"]]) else
+    seq          = as.character(m[["PEP.StrippedSequence"]]),
+    acc          = as.character(m[["accession"]]),
+    gene         = as.character(m[["gene"]]),
+    protein_name = if ("protein_name" %in% colnames(m))
+      as.character(m[["protein_name"]]) else rep(NA_character_, nrow(m)),
+    pep_start    = as.integer(m[["pep_start"]]),
+    pep_end      = if ("pep_end" %in% colnames(m)) as.integer(m[["pep_end"]]) else
       rep(NA_integer_, nrow(m)),
-    P.Value   = if ("P.Value" %in% colnames(m)) as.numeric(m[["P.Value"]]) else
+    P.Value      = if ("P.Value" %in% colnames(m)) as.numeric(m[["P.Value"]]) else
       rep(NA_real_, nrow(m)),
     stringsAsFactors = FALSE
   )
@@ -530,11 +545,12 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   idx <- match(qry_key, lookup_key)
 
   data.frame(
-    won_accession = won_acc,
-    won_gene      = mm$gene[idx],
-    pep_start     = mm$pep_start[idx],
-    pep_end       = mm$pep_end[idx],
-    P.Value       = mm$P.Value[idx],
+    won_accession    = won_acc,
+    won_gene         = mm$gene[idx],
+    won_protein_name = mm$protein_name[idx],
+    pep_start        = mm$pep_start[idx],
+    pep_end          = mm$pep_end[idx],
+    P.Value          = mm$P.Value[idx],
     stringsAsFactors = FALSE
   )
 }
@@ -610,6 +626,12 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   } else {
     annotated$winning_gene
   }
+  # Self-curated: no protein name either, blank it so the tip/pin fall to acc.
+  df$winning_protein_name <- if (isTRUE(is_self_curated)) {
+    rep("", nrow(df))
+  } else {
+    back$won_protein_name
+  }
 
   # 2J marker flag on the WON accession (consistent with the dot's protein).
   df$is_marker <- pelsa_match_markers(back$won_accession, markers)
@@ -641,8 +663,8 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 .pelsa_volcano_out_cols <- function() {
   c("id", "logFC", "adj.P.Val", "P.Value", "logP", "Significant",
     "sig_direction", "sig_color", "feature_class_primary", "feature_color",
-    "winning_accession", "winning_gene", "label", "is_marker",
-    "PG.ProteinAccessions", "PG.Genes", "pep_start", "pep_end")
+    "winning_accession", "winning_gene", "winning_protein_name", "label",
+    "is_marker", "PG.ProteinAccessions", "PG.Genes", "pep_start", "pep_end")
 }
 ################################################################################
 # Module: PELSA volcano background thinning (Task 3B) - pure, no Shiny.
