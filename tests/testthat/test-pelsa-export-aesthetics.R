@@ -47,3 +47,19 @@ test_that("intensity export subtitle shows peptide count and coverage", {
                                      coverage_frac = 0.4213)
   expect_equal(p$labels$subtitle, "2 peptides | 42.1% sequence coverage")
 })
+
+test_that("intensity export subtitle shows singular peptide when coverage is NA", {
+  ld <- data.frame(
+    condition = factor(c("A", "B"), levels = c("A", "B")),
+    mean_log2 = c(10, 11),
+    peptide_seq = c("PEPA", "PEPA"),
+    pep_occurrence_idx = c(1L, 1L),
+    aa_label = c("aa10", "aa10"),
+    panel = c("Significant", "Significant"),
+    pep_start = c(10L, 10L),
+    pep_end = c(15L, 15L),
+    stringsAsFactors = FALSE
+  )
+  p <- pelsa_intensity_export_ggplot(ld, "GENE", "P12345", log_base = 2)
+  expect_equal(p$labels$subtitle, "1 peptide")
+})
