@@ -485,6 +485,54 @@ test_that("explicit id_col is used as the stable identifier instead of .row_id",
   expect_equal(nrow(p1_rows), 2L)
 })
 
+test_that("explode aligns PG.ProteinNames tokens to accession slots", {
+  df <- data.frame(
+    PG.ProteinAccessions = "P1;P2;P3",
+    PG.Genes             = "GA;;GC",
+    PG.ProteinNames      = "NameA;NameB;",
+    PEP.PeptidePosition  = "10;20;30",
+    PEP.StrippedSequence = "PEPTIDEK",
+    stringsAsFactors     = FALSE,
+    check.names          = FALSE
+  )
+  out <- pelsa_explode_accessions(df)
+  expect_equal(out$accession, c("P1", "P2", "P3"))
+  # "NameA;NameB;" has 3 slots (trailing ";") but strsplit yields only 2 tokens;
+  # P3's slot is beyond available tokens -> NA (same rule as gene/pos).
+  expect_equal(out$protein_name, c("NameA", "NameB", NA_character_))
+})
+
+test_that("explode yields NA protein_name when PG.ProteinNames column absent", {
+  df <- data.frame(
+    PG.ProteinAccessions = "P1;P2",
+    PG.Genes             = "GA;GB",
+    PEP.PeptidePosition  = "10;20",
+    PEP.StrippedSequence = "PEPTIDEK",
+    stringsAsFactors     = FALSE,
+    check.names          = FALSE
+  )
+  out <- pelsa_explode_accessions(df)
+  expect_true("protein_name" %in% colnames(out))
+  expect_true(all(is.na(out$protein_name)))
+})
+
+test_that("explode drops the protein_name slot of a pruned empty accession", {
+  # Empty middle accession "P1;;P3" -> only P1 and P3 survive; their names must
+  # stay paired (NameA with P1, NameC with P3), NOT shift onto the dropped slot.
+  df <- data.frame(
+    PG.ProteinAccessions = "P1;;P3",
+    PG.Genes             = "GA;GB;GC",
+    PG.ProteinNames      = "NameA;NameB;NameC",
+    PEP.PeptidePosition  = "10;20;30",
+    PEP.StrippedSequence = "PEPTIDEK",
+    stringsAsFactors     = FALSE,
+    check.names          = FALSE
+  )
+  out <- pelsa_explode_accessions(df)
+  expect_equal(out$accession, c("P1", "P3"))
+  expect_equal(out$protein_name, c("NameA", "NameC"))
+})
+
 # ==============================================================================
 # --- from fasta ---
 # Tests for the PELSA FASTA reader + FASTA-substring peptide position mapping.

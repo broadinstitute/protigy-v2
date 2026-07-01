@@ -126,13 +126,15 @@
 #                  NULL, a .row_id (1-based original row index) is synthesized
 #                  and included
 # @return long data.frame with columns: the id (id_col or .row_id), accession,
-#         gene, pep_position_token, plus all other original columns
+#         gene, protein_name (;-aligned PG.ProteinNames token, NA when absent),
+#         pep_position_token, plus all other original columns
 # @noRd
 pelsa_explode_accessions <- function(df,
                                      acc_col  = "PG.ProteinAccessions",
                                      gene_col = "PG.Genes",
                                      pos_col  = "PEP.PeptidePosition",
-                                     id_col   = NULL) {
+                                     id_col   = NULL,
+                                     name_col = "PG.ProteinNames") {
   stopifnot(is.data.frame(df))
   if (!acc_col %in% colnames(df)) {
     stop("pelsa_explode_accessions: acc_col '", acc_col, "' not found in df")
@@ -159,6 +161,7 @@ pelsa_explode_accessions <- function(df,
     out <- df[0L, , drop = FALSE]
     out$accession <- character(0)
     out$gene <- character(0)
+    out$protein_name <- character(0)
     out$pep_position_token <- character(0)
     return(out)
   }
@@ -203,23 +206,31 @@ pelsa_explode_accessions <- function(df,
   } else {
     vector("list", n_row)
   }
+  name_lists <- if (name_col %in% colnames(df)) {
+    strsplit(as.character(df[[name_col]]), ";", fixed = TRUE)
+  } else {
+    vector("list", n_row)
+  }
 
-  # Align gene/position against the RAW accession slots (including empties), then
-  # apply the SAME keep-mask used for accessions. This keeps each kept accession
-  # paired with its own gene/position even when an empty token is interspersed
-  # (e.g. "A;;B" -> A keeps slot 1, B keeps slot 3, not the dropped middle slot).
+  # Align gene/position/protein_name against the RAW accession slots (including
+  # empties), then apply the SAME keep-mask used for accessions. This keeps each
+  # kept accession paired with its own gene/position/name even when an empty token
+  # is interspersed (e.g. "A;;B" -> A keeps slot 1, B keeps slot 3, not dropped).
   flat_row_idx_raw <- rep.int(seq_len(n_row), n_acc_raw)
   # True per-row slot counts (count ";" separators + 1) so trailing-empty slots
   # that strsplit() drops are still counted. An NA / empty field is 1 slot. This
   # stops the recycle branch from firing on "GENE1;" (1 split token, 2 slots),
   # while a genuinely separator-free single token ("SHARED") still recycles.
-  gene_slots <- .pelsa_count_slots(if (gene_col %in% colnames(df)) df[[gene_col]] else NA, n_row)
-  pos_slots  <- .pelsa_count_slots(if (pos_col  %in% colnames(df)) df[[pos_col]]  else NA, n_row)
-  gene_raw <- .pelsa_align_tokens(gene_lists, n_acc_raw, flat_row_idx_raw, gene_slots)
-  pos_raw  <- .pelsa_align_tokens(pos_lists,  n_acc_raw, flat_row_idx_raw, pos_slots)
+  gene_slots <- .pelsa_count_slots(if (gene_col  %in% colnames(df)) df[[gene_col]]  else NA, n_row)
+  pos_slots  <- .pelsa_count_slots(if (pos_col   %in% colnames(df)) df[[pos_col]]   else NA, n_row)
+  name_slots <- .pelsa_count_slots(if (name_col  %in% colnames(df)) df[[name_col]]  else NA, n_row)
+  gene_raw <- .pelsa_align_tokens(gene_lists,  n_acc_raw, flat_row_idx_raw, gene_slots)
+  pos_raw  <- .pelsa_align_tokens(pos_lists,   n_acc_raw, flat_row_idx_raw, pos_slots)
+  name_raw <- .pelsa_align_tokens(name_lists,  n_acc_raw, flat_row_idx_raw, name_slots)
 
   out$accession <- accession
   out$gene <- gene_raw[keep]
+  out$protein_name <- name_raw[keep]
   out$pep_position_token <- pos_raw[keep]
 
   # Drop the original ;-delimited acc/gene/pos columns? No - carry originals
