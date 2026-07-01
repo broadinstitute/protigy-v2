@@ -76,3 +76,13 @@ test_that("failed_annotation_count stays orange for a non-self-curated dataset w
     }
   )
 })
+
+# ---- Task 7: bold density-plot annotations -----------------------------------
+
+test_that("overall density mean/median labels are bold", {
+  vals <- rnorm(200, 20, 5)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
+  expect_true(all(faces == "bold"))
+})

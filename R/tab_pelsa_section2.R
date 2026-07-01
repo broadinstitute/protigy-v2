@@ -757,12 +757,12 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
     geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
     geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
     annotate("text", x = m,  y = ys[1], label = paste0("mean = ", value_fmt(m)),
-             color = "#e15759", hjust = -0.05, size = 3.2) +
+             color = "#e15759", hjust = -0.05, size = 3.2, fontface = "bold") +
     annotate("text", x = md, y = ys[2],
              label = paste0("median = ", value_fmt(md)),
-             color = "#4e79a7", hjust = -0.05, size = 3.2) +
+             color = "#4e79a7", hjust = -0.05, size = 3.2, fontface = "bold") +
     labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
-    theme_bw()
+    protigy_plot_theme()
   if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) {
     p <- p + coord_cartesian(xlim = c(0, x_hi))
   }
@@ -847,11 +847,13 @@ pelsa_per_condition_density_plot <- function(df, value_col,
     geom_text(data = medians,
               aes(x = .data$x, y = .data$y, label = .data$label,
                   color = .data$condition),
-              hjust = -0.05, size = 3, show.legend = FALSE) +
+              hjust = -0.05, size = 3, show.legend = FALSE, fontface = "bold") +
     coord_cartesian(xlim = c(x_lo, x_hi)) +
     labs(x = x_label, y = "Density", color = "Condition", fill = "Condition",
          title = title) +
-    theme_bw()
+    protigy_plot_theme() +
+    guides(color = guide_legend(override.aes = list(size = 2)),
+           fill  = guide_legend(override.aes = list(size = 2)))
 }
 
 # 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
@@ -996,11 +998,13 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
     geom_text(data = medians,
               aes(x = .data$x, y = .data$y, label = .data$label,
                   color = .data$condition),
-              hjust = -0.05, size = 3, show.legend = FALSE) +
+              hjust = -0.05, size = 3, show.legend = FALSE, fontface = "bold") +
     coord_cartesian(xlim = c(0, x_hi)) +
     labs(x = "CV (%)", y = "Density", color = "Condition", fill = "Condition",
          title = "Per-condition CV distribution") +
-    theme_bw()
+    protigy_plot_theme() +
+    guides(color = guide_legend(override.aes = list(size = 2)),
+           fill  = guide_legend(override.aes = list(size = 2)))
 }
 
 # White-halo outline for the per-condition median labels. ggplot has no native
@@ -1025,7 +1029,7 @@ pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
   geom_text(data = halo,
             aes(x = .data$x, y = .data$y, label = .data$label),
             color = "white", hjust = -0.05, size = size,
-            inherit.aes = FALSE, show.legend = FALSE)
+            inherit.aes = FALSE, show.legend = FALSE, fontface = "bold")
 }
 
 # 6C: per-sample depth bar, ordered by sample_order (alphabetical fallback).
