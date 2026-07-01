@@ -96,7 +96,7 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
   if(type=="norm" & parameters$data_normalization=="None"){
     g <- ggplot() + theme_void() +
       ggtitle(paste("No normalization was performed for",ome)) +
-      theme(text= element_text(size=14))
+      theme(text= element_text(size=12))
   } else{
     g <- ggplot(data = stats,    #base boxplot with calculated stats
                 aes(x = .data$sample,
@@ -108,13 +108,13 @@ create_boxplot <- function (gct, col_of_interest, ome, custom_color_map = NULL, 
       geom_tufteboxplot(stat="identity",aes(colour=.data$annot), show.legend = FALSE) + #convert to tufte boxplot
       geom_point(size = 1, aes(y = .data$middle, colour = .data$annot))+ #make the median point bigger (and fixes the legend too!)
       geom_point(data=outliers, aes(x=.data$sample, y=.data$values), inherit.aes=FALSE, size=0.1, pch=1, show.legend = FALSE) + #add outliers
-      theme_bw() + #change theme
       color_definition + #color scale
-      theme(text= element_text(size=14)) + #change font sizes
       ylab("Expression") + #y axis title
       xlab("Sample") + #x axis title
       labs(colour = col_of_interest) + #legend title
-      ggtitle(ifelse(type=="org", paste("Boxplot before normalization and filtering:", ome), paste("Boxplot after normalization and filtering:",ome))) #plot title
+      ggtitle(ifelse(type=="org", paste("Boxplot before normalization and filtering:", ome), paste("Boxplot after normalization and filtering:",ome))) + #plot title
+      protigy_plot_theme() + #shared typography (theme_bw base, no gridlines)
+      guides(colour = guide_legend(override.aes = list(size = 2))) #smaller legend dots
     
     # if font size is too small, hide the labels
     if(font.size < 8){
