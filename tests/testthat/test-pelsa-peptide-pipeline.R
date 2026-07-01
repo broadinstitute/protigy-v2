@@ -2183,6 +2183,38 @@ test_that("mismatched input lengths error rather than silently recycle", {
   )
 })
 
+test_that("multilabel uses protein name when gene missing but name present", {
+  expect_equal(
+    pelsa_build_multilabel(c("", NA), c(50, 60), c("P1", "P2"),
+                           protein_names = c("NameA", "NameB")),
+    "NameA_aa50;NameB_aa60"
+  )
+})
+
+test_that("multilabel falls to accession when gene AND protein name missing", {
+  expect_equal(
+    pelsa_build_multilabel(c("", NA), c(50, 60), c("P1", "P2"),
+                           protein_names = c("", NA)),
+    "P1_aa50;P2_aa60"
+  )
+})
+
+test_that("multilabel without protein_names keeps legacy gene->accession", {
+  expect_equal(
+    pelsa_build_multilabel(c("", NA), c(50, 60), c("P1", "P2")),
+    "P1_aa50;P2_aa60"
+  )
+})
+
+test_that("multilabel self-curated still forces accession over protein name", {
+  expect_equal(
+    pelsa_build_multilabel(c("GA", "GB"), c(50, 60), c("P1", "P2"),
+                           is_self_curated = TRUE,
+                           protein_names = c("NameA", "NameB")),
+    "P1_aa50;P2_aa60"
+  )
+})
+
 # ==============================================================================
 # --- from thinning ---
 # Tests for pelsa_thin_background()  -  density-proportional volcano background

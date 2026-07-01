@@ -1211,8 +1211,8 @@ pelsa_resolve_label_stem <- function(gene, protein_name, accession,
 # Given the per-mapping (gene, position, accession) vectors for ONE peptide
 # (all the same length; these are the distinct accession x occurrence mappings
 # in PG.ProteinAccessions token order), produce a single label string:
-#   - each entry is "<gene>_aa<pos>", falling back to "<accession>_aa<pos>"
-#     when the gene is empty/NA;
+#   - each entry is "<gene>_aa<pos>", falling back to protein-name then
+#     accession when the gene is empty/NA;
 #   - fully-identical entries collapse to one;
 #   - distinct entries (e.g. same gene at different positions) are kept;
 #   - no cap; entries are joined with ";" in first-occurrence input order.
@@ -1223,13 +1223,17 @@ pelsa_resolve_label_stem <- function(gene, protein_name, accession,
 # design, since callers pass FASTA-resolved positions (positions are expected to
 # be resolved before this builder is reached).
 #
-# @param genes       character vector of gene symbols (may contain "" or NA)
-# @param positions   integer or character vector of residue positions
-# @param accessions  character vector of protein accessions (gene fallback)
+# @param genes         character vector of gene symbols (may contain "" or NA)
+# @param positions     integer or character vector of residue positions
+# @param accessions    character vector of protein accessions (final fallback)
+# @param is_self_curated single logical; TRUE forces accession stem
+# @param protein_names character vector of PG.ProteinNames tokens (may be
+#                      NA/""), or NULL when unavailable
 # @return character scalar label for the peptide
 # @noRd
 pelsa_build_multilabel <- function(genes, positions, accessions,
-                                   is_self_curated = FALSE) {
+                                   is_self_curated = FALSE,
+                                   protein_names = NULL) {
   if (length(genes) == 0L) return(NA_character_)
 
   # Fail fast on length mismatch: a silent scalar recycle would emit a
@@ -1238,14 +1242,15 @@ pelsa_build_multilabel <- function(genes, positions, accessions,
     length(genes) == length(positions),
     length(genes) == length(accessions)
   )
+  if (!is.null(protein_names)) {
+    stopifnot(length(genes) == length(protein_names))
+  }
 
-  # Gene -> accession fallback when the gene is missing/empty. Self-curated
-  # species have no UniProt gene: force the accession label unconditionally.
-  genes <- as.character(genes)
-  accessions <- as.character(accessions)
-  empty_gene <- is.na(genes) | !nzchar(trimws(genes))
-  label_id <- if (isTRUE(is_self_curated)) accessions else
-    ifelse(empty_gene, accessions, genes)
+  # Stem fallback gene -> protein_name -> accession (single source of truth).
+  # Self-curated species have no UniProt gene/name: the resolver forces the
+  # accession stem.
+  label_id <- pelsa_resolve_label_stem(genes, protein_names, accessions,
+                                       is_self_curated)
 
   entries <- paste0(label_id, "_aa", as.character(positions))
 
@@ -1337,12 +1342,15 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
 
   # ---- Project to a minimal, stably-named data.table ----------------------
   dt <- data.table::data.table(
-    peptide_seq = as.character(exploded_stat_df[[pep_col]]),
-    accession   = as.character(exploded_stat_df[[acc_col]]),
-    gene        = as.character(exploded_stat_df[[gene_col]]),
-    pep_start   = exploded_stat_df[[pos_col]],
-    adj_p       = as.numeric(exploded_stat_df[[adjp_col]]),
-    logFC       = as.numeric(exploded_stat_df[[logfc_col]])
+    peptide_seq  = as.character(exploded_stat_df[[pep_col]]),
+    accession    = as.character(exploded_stat_df[[acc_col]]),
+    gene         = as.character(exploded_stat_df[[gene_col]]),
+    protein_name = if ("protein_name" %in% colnames(exploded_stat_df))
+      as.character(exploded_stat_df[["protein_name"]]) else
+      rep(NA_character_, nrow(exploded_stat_df)),
+    pep_start    = exploded_stat_df[[pos_col]],
+    adj_p        = as.numeric(exploded_stat_df[[adjp_col]]),
+    logFC        = as.numeric(exploded_stat_df[[logfc_col]])
   )
 
   # ---- Step 1: stable total-order sort + first row per accession ----------
@@ -1376,7 +1384,8 @@ pelsa_best_peptide_rollup <- function(exploded_stat_df,
       logFC          = logFC[1L],
       label          = pelsa_build_multilabel(gene[lab_ord], pep_start[lab_ord],
                                                accession[lab_ord],
-                                               is_self_curated),
+                                               is_self_curated,
+                                               protein_names = protein_name[lab_ord]),
       won_accessions = paste(accession, collapse = ";"),
       n_won          = .N
     )
