@@ -1748,6 +1748,10 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
     fp <- fasta_path[[ds]]
     if (is.null(fp) || !nzchar(fp %||% "")) {
       errors <- c(errors, sprintf("Dataset '%s': upload a FASTA file.", ds))
+    } else if (!file.exists(fp)) {
+      errors <- c(errors, sprintf(
+        paste0("Dataset '%s': the FASTA file is missing or was moved -- ",
+               "re-upload it."), ds))
     }
     if (!isTRUE(self_curated[[ds]])) {
       ap <- annotation_path[[ds]]

@@ -174,7 +174,8 @@ test_that("validate fails when a non-self-curated dataset has no annotation file
 test_that("validate passes for a self-curated dataset with only a FASTA", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)
-  snap <- list(datasets = "ds1", fasta_path = list(ds1 = "/tmp/f.fasta"),
+  fa <- tempfile(fileext = ".fasta"); writeLines(">sp|P00000|X\nMKV", fa)
+  snap <- list(datasets = "ds1", fasta_path = list(ds1 = fa),
                annotation_path = list(),            # none, but self-curated
                self_curated = list(ds1 = TRUE),
                condition_col = list(ds1 = "condition"),
@@ -202,8 +203,9 @@ test_that("validate flags a condition column missing from a dataset's cdesc", {
 test_that("validate passes with everything present (empty markers still ok)", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)
+  fa <- tempfile(fileext = ".fasta"); writeLines(">sp|P00000|X\nMKV", fa)
   ann <- tempfile(fileext = ".tsv"); writeLines("accession\tfeature_type\tstart\tend\tdescription", ann)
-  snap <- list(datasets = "ds1", fasta_path = list(ds1 = "/tmp/f.fasta"),
+  snap <- list(datasets = "ds1", fasta_path = list(ds1 = fa),
                annotation_path = list(ds1 = ann),
                self_curated = list(ds1 = FALSE),
                marker_rows = list(ds1 = pelsa_empty_marker_rows()),  # EMPTY ok
@@ -229,6 +231,22 @@ test_that("validate fails when the annotation file path does not exist", {
   expect_false(v$ok)
   expect_true(any(grepl("annotation file", v$errors) &
                     grepl("missing|moved", v$errors)))
+})
+
+test_that("validate fails when the FASTA file path does not exist", {
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  gct <- .mk_gct(syn)
+  missing_fasta <- tempfile(fileext = ".fasta")   # never created
+  ann <- tempfile(fileext = ".tsv"); writeLines("accession\tfeature_type\tstart\tend\tdescription", ann)
+  snap <- list(datasets = "ds1", fasta_path = list(ds1 = missing_fasta),
+               annotation_path = list(ds1 = ann),
+               self_curated = list(ds1 = FALSE),
+               condition_col = list(ds1 = "condition"),
+               replicate_col = list(ds1 = "condition"),
+               condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN")))
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = NULL)
+  expect_false(v$ok)
+  expect_true(any(grepl("FASTA file", v$errors) & grepl("missing|moved", v$errors)))
 })
 
 test_that("validate accumulates ALL failures at once", {
@@ -301,10 +319,11 @@ test_that("validate ignores skipped datasets (only non-skipped are checked)", {
   gct <- .mk_gct(syn)
   # ds2 is invalid but SKIPPED, so it is absent from `datasets`; only ds1 (valid)
   # is checked => ok.
+  fa <- tempfile(fileext = ".fasta"); writeLines(">sp|P00000|X\nMKV", fa)
   ann <- tempfile(fileext = ".tsv"); writeLines("accession\tfeature_type\tstart\tend\tdescription", ann)
   snap <- list(
     datasets        = "ds1",
-    fasta_path      = list(ds1 = "/tmp/f.fasta"),
+    fasta_path      = list(ds1 = fa),
     annotation_path = list(ds1 = ann),
     self_curated    = list(ds1 = FALSE),
     condition_col   = list(ds1 = "condition", ds2 = "(none)"),
