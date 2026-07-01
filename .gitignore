@@ -56,3 +56,7 @@ tests/testthat/testthat-problems.rds
 
 # Local-only Claude memory (machine-specific paths, not version-controlled)
 CLAUDE.local.md
+
+# Local-only PELSA dev inspection / acceptance scripts (machine-specific, not version-controlled)
+dev/inspect_pelsa_intensity_rank_export.R
+dev/pelsa_unaccounted_acceptance_check.R
