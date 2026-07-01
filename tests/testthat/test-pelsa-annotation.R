@@ -457,6 +457,65 @@ test_that("overlap merge is on EXACT accession (isoform P12345-2 does NOT match 
   expect_equal(out$winning_accession, "P12345-2")
 })
 
+# ---- Merged-accession remap tests --------------------------------------------
+
+test_that("pelsa_annotate_features remaps a merged accession to its primary for the join", {
+  feat_df <- data.frame(
+    accession         = c("Q_PRIMARY", "S_MERGED"),
+    start             = c(30L,          NA_integer_),
+    end               = c(120L,         NA_integer_),
+    feature_class     = c("catalytic_domain", "none"),
+    disposition       = c("resolved",   "merged"),
+    primary_accession = c("",           "Q_PRIMARY"),
+    stringsAsFactors  = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "S_MERGED",
+    PG.Genes             = "GENEX",
+    pep_start            = 40L,
+    pep_end              = 60L,
+    stringsAsFactors     = FALSE
+  )
+  out <- pelsa_annotate_features(plot_df, feat_df)
+  # Peptide on the merged ID inherits the primary's feature class...
+  expect_equal(out$feature_class_primary, "catalytic_domain")
+  # ...but winning_accession keeps the ORIGINAL reported (merged) accession.
+  expect_equal(out$winning_accession, "S_MERGED")
+})
+
+test_that("pelsa_annotate_features does NOT remap demerged/deleted (no primary)", {
+  feat_df <- data.frame(
+    accession         = c("Q_PRIMARY", "S_DEMERGED"),
+    start             = c(30L,          NA_integer_),
+    end               = c(120L,         NA_integer_),
+    feature_class     = c("catalytic_domain", "none"),
+    disposition       = c("resolved",   "demerged"),
+    primary_accession = c("",           ""),
+    stringsAsFactors  = FALSE
+  )
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "S_DEMERGED", PG.Genes = "G",
+    pep_start = 40L, pep_end = 60L, stringsAsFactors = FALSE
+  )
+  out <- pelsa_annotate_features(plot_df, feat_df)
+  expect_equal(out$feature_class_primary, "none")   # no primary -> no remap
+})
+
+test_that("pelsa_annotate_features preserves exact-accession behavior without a disposition column", {
+  # Legacy 4-column feat_df: no disposition/primary_accession -> identical to today.
+  feat_df <- data.frame(
+    accession = "P12345", start = 30L, end = 120L,
+    feature_class = "catalytic_domain", stringsAsFactors = FALSE
+  )
+  # Isoform must STILL NOT match base (exact-accession semantics unchanged).
+  plot_df <- data.frame(
+    PG.ProteinAccessions = "P12345-2", PG.Genes = "G",
+    pep_start = 40L, pep_end = 60L, stringsAsFactors = FALSE
+  )
+  out <- pelsa_annotate_features(plot_df, feat_df)
+  expect_equal(out$feature_class_primary, "none")
+})
+
 # ---- pelsa_unannotated_accessions: isoform-base fallback APPLIES here --------
 
 test_that("unannotated set = plot accessions absent from feat_df", {

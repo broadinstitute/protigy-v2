@@ -353,18 +353,44 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
     return(out)
   }
 
+  # ---- Merged-accession remap (self-describing annotation only) ------------
+  # UniProt "merged" rows redirect a secondary accession to its primary via
+  # primary_accession. Those rows carry NA coords (nulled at read time) so they
+  # never join directly; instead we rewrite a query token that IS a merged
+  # secondary to its primary, so the peptide inherits the primary's features.
+  # Only `merged` populates primary_accession; demerged/deleted do not, so an
+  # empty primary is skipped. Absent columns (legacy 4-col feat_df) -> no map.
+  join_accession <- grid$accession
+  if (all(c("disposition", "primary_accession") %in% colnames(feat_df))) {
+    disp <- tolower(trimws(as.character(feat_df$disposition)))
+    prim <- as.character(feat_df$primary_accession)
+    sec  <- as.character(feat_df$accession)
+    is_merged <- !is.na(disp) & disp == "merged" &
+      !is.na(prim) & nzchar(prim) & !is.na(sec) & nzchar(sec)
+    if (any(is_merged)) {
+      # secondary -> primary (dedupe on secondary; first wins).
+      m_sec  <- sec[is_merged]
+      m_prim <- prim[is_merged]
+      keep   <- !duplicated(m_sec)
+      remap  <- stats::setNames(m_prim[keep], m_sec[keep])
+      hit    <- join_accession %in% names(remap)
+      join_accession[hit] <- unname(remap[join_accession[hit]])
+    }
+  }
+
   # ---- foverlaps overlap join (CLOSED interval, EXACT accession) ------------
   # x = query (grid): keyed on (accession, pep_start, pep_end).
   # y = lookup (features): keyed on (accession, start, end).
   # type="any" => closed-interval overlap: feat.start <= pep_end &
   #               feat.end >= pep_start.
   qry <- data.table::data.table(
-    accession  = grid$accession,
-    pep_start  = grid$pep_start,
-    pep_end    = grid$pep_end,
-    `_row_id`  = grid[["_row_id"]],
-    token_idx  = grid$token_idx,
-    gene_token = grid$gene_token
+    accession      = join_accession,      # remapped for the join
+    pep_start      = grid$pep_start,
+    pep_end        = grid$pep_end,
+    `_row_id`      = grid[["_row_id"]],
+    token_idx      = grid$token_idx,
+    gene_token     = grid$gene_token,
+    orig_accession = grid$accession       # original reported id (for write-back)
   )
   feat <- data.table::data.table(
     accession     = as.character(feat_df$accession),
@@ -422,10 +448,10 @@ pelsa_annotate_features <- function(plot_df, feat_df) {
   # Write winners back by 0-based _row_id -> 1-based positional index.
   pos <- winners[["_row_id"]] + 1L
   feature_class_primary[pos] <- winners$feature_class
-  winning_accession[pos] <- winners$accession
+  winning_accession[pos] <- winners$orig_accession
   # winning_gene: the gene_token; if empty -> the (winning) accession.
   wg <- winners$gene_token
-  wg[is.na(wg) | !nzchar(wg)] <- winners$accession[is.na(wg) | !nzchar(wg)]
+  wg[is.na(wg) | !nzchar(wg)] <- winners$orig_accession[is.na(wg) | !nzchar(wg)]
   winning_gene[pos] <- wg
 
   out$feature_class_primary <- feature_class_primary
