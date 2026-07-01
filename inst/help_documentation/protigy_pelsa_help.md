@@ -173,7 +173,7 @@ classes also look at the description text:
 - **Compositional bias** is always `low_complexity_or_disorder`.
 
 **Deliberate differences from the analysis pipeline.** Protigy's classifier
-matches the upstream PELSA pipeline exactly, with two intentional refinements:
+matches the upstream PELSA pipeline except for two intentional refinements:
 
 - A catalytic keyword in a domain note only makes it `catalytic_domain` when the
   note does **not** also say *inhibitor* or *inactive* (so a "kinase inhibitor"
