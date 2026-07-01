@@ -2521,6 +2521,7 @@ pelsa_run_analysis_one <- function(gct,
     peptide_metrics     = peptide_metrics,
     length_by_condition = length_by_condition,
     annotation_features = annotation_features,
+    feat_raw            = feat_df,
     unannotated         = unannotated,
     qc                  = qc
   )

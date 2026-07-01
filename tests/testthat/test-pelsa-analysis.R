@@ -453,7 +453,7 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
       "coverage", "coverage_by_condition", "n_peptides_by_condition",
       "peptide_metrics", "length_by_condition", "annotation_features",
-      "unannotated", "qc")
+      "feat_raw", "unannotated", "qc")
   )
   # The full-duplicate `annotation` frame is NOT stored (memory win).
   expect_false("annotation" %in% names(one))
@@ -544,6 +544,22 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_equal(one$qc$n_peptides, nrow(syn$peptides))
   # The failed bucket still equals the legacy unannotated length.
   expect_identical(one$qc$n_unannotated_accessions, length(one$unannotated))
+})
+
+test_that("pelsa_run_analysis_one caches the raw feature table as feat_raw", {
+  syn     <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 10)
+  gct     <- .mk_gct(syn)
+  feat_df <- .mk_feat_df()
+
+  one <- pelsa_run_analysis_one(
+    gct = gct, gct_original = gct,
+    fasta_map = syn$fasta, feat_df = feat_df,
+    condition_col = "condition"
+  )
+
+  expect_true("feat_raw" %in% names(one))
+  expect_true(is.data.frame(one$feat_raw))
+  expect_identical(one$feat_raw, feat_df)
 })
 
 test_that("run_analysis_one counts zero-feature (sentinel) accessions in QC", {
