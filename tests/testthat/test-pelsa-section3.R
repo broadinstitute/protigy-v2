@@ -3777,3 +3777,36 @@ test_that("pelsa_export_prot_len floors a non-positive max(pep_end) at 1L", {
   expect_equal(pelsa_export_prot_len(cov, "P1", peptides), 1L)
 })
 
+################################################################################
+# --- .pelsa_volcano_labels: protein-name fallback (Task 4) ---
+################################################################################
+
+test_that(".pelsa_volcano_labels uses protein-name fallback when gene missing", {
+  matched <- data.frame(
+    .key         = c("k1", "k1", "k2"),
+    gene         = c("", NA, "GC"),
+    protein_name = c("NameA", "NameB", "NameC"),
+    accession    = c("P1", "P2", "P3"),
+    pep_start    = c(10L, 20L, 30L),
+    stringsAsFactors = FALSE
+  )
+  out <- Protigy:::.pelsa_volcano_labels(matched, ".key")
+  # k1: two mappings, both gene-missing -> protein names; k2: gene present.
+  lab_k1 <- out$label[out$.key == "k1"]
+  expect_equal(lab_k1, "NameA_aa10;NameB_aa20")
+  lab_k2 <- out$label[out$.key == "k2"]
+  expect_equal(lab_k2, "GC_aa30")
+})
+
+test_that(".pelsa_volcano_labels tolerates a missing protein_name column", {
+  matched <- data.frame(
+    .key      = "k1",
+    gene      = "",
+    accession = "P1",
+    pep_start = 10L,
+    stringsAsFactors = FALSE
+  )
+  out <- Protigy:::.pelsa_volcano_labels(matched, ".key")
+  expect_equal(out$label, "P1_aa10")
+})
+

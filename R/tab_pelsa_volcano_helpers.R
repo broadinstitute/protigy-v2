@@ -93,27 +93,24 @@
 # @noRd
 .pelsa_volcano_labels <- function(matched, key_col, is_self_curated = FALSE) {
   dt <- data.table::data.table(
-    .key      = matched[[key_col]],
-    gene      = as.character(matched[["gene"]]),
-    pep_start = matched[["pep_start"]],
-    accession = as.character(matched[["accession"]])
+    .key         = matched[[key_col]],
+    gene         = as.character(matched[["gene"]]),
+    protein_name = if ("protein_name" %in% colnames(matched))
+      as.character(matched[["protein_name"]]) else
+      rep(NA_character_, nrow(matched)),
+    pep_start    = matched[["pep_start"]],
+    accession    = as.character(matched[["accession"]])
   )
   # Deterministic within-group order: by pep_start then accession. setorder is a
   # stable sort, so equal-start entries keep input order.
   data.table::setorder(dt, .key, pep_start, accession, na.last = TRUE)
 
-  # Per-mapping entry string, VECTORIZED over the whole column (no per-peptide
-  # call). fifelse: empty/NA gene -> accession fallback, then "<id>_aa<pos>".
-  # This is byte-identical to pelsa_build_multilabel()'s per-entry construction.
-  # Self-curated species have no UniProt genes: force the accession label even
-  # when the input report carried a gene token.
-  lid <- if (isTRUE(is_self_curated)) {
-    dt$accession
-  } else {
-    data.table::fifelse(
-      is.na(dt$gene) | !nzchar(trimws(dt$gene)), dt$accession, dt$gene
-    )
-  }
+  # Per-mapping stem, VECTORIZED over the whole column (no per-peptide call):
+  # gene -> protein_name -> accession, byte-identical to
+  # pelsa_build_multilabel()'s stem via the shared resolver. Self-curated species
+  # have no UniProt gene/name: force the accession label.
+  lid <- pelsa_resolve_label_stem(dt$gene, dt$protein_name, dt$accession,
+                                  is_self_curated)
   dt[, entry := paste0(lid, "_aa", pep_start)]
 
   # Collapse per peptide: unique() preserves first-occurrence (sorted) order,
