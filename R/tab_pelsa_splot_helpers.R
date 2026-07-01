@@ -328,41 +328,74 @@ pelsa_splot_build_plotly <- function(prep, use_webgl = TRUE,
 }
 
 # Static S-plot for export (ggplot2 + ggrepel; saved as PNG via ragg). Mirrors
-# the plotly view: grey cloud, magenta marker overlay (+ teal trypsin when on),
-# repelled top-N labels. @noRd
-pelsa_splot_build_ggplot <- function(prep) {
+# the plotly view: grey cloud, magenta marker overlay (+ teal trypsin overlay
+# when on) with a right-hand legend, repelled top-N labels via
+# ggrepel::geom_label_repel. `title`/`subtitle` feed ggplot2::labs() directly
+# (export passes the sample name as subtitle). @noRd
+pelsa_splot_build_ggplot <- function(prep,
+                                     title = "Intensity rank (S-plot)",
+                                     subtitle = NULL) {
+  SERIES_COLORS <- c(Marker  = .PELSA_VOLCANO_MARKER_COLOR,
+                     Trypsin = .PELSA_SPLOT_TRYPSIN_COLOR)
+
+  # Legend breaks: Trypsin only when the overlay is on AND has points.
+  show_trypsin <- isTRUE(prep$show_trypsin) && nrow(prep$trypsin_pts) > 0L
+  legend_breaks <- if (show_trypsin) c("Marker", "Trypsin") else "Marker"
+
   g <- ggplot2::ggplot() +
+    # grey background cloud (unmapped -> not in legend)
     ggplot2::geom_point(
       data = prep$background, ggplot2::aes(x = .data$rank, y = .data$y),
       color = "grey70", size = 0.5, alpha = 0.5) +
+    # marker overlay (color mapped -> legend entry)
     ggplot2::geom_point(
-      data = prep$marker_pts, ggplot2::aes(x = .data$rank, y = .data$y),
-      color = .PELSA_VOLCANO_MARKER_COLOR, size = 1.4)
+      data = prep$marker_pts,
+      ggplot2::aes(x = .data$rank, y = .data$y, color = "Marker"), size = 1.4)
 
-  if (isTRUE(prep$show_trypsin) && nrow(prep$trypsin_pts) > 0L) {
+  if (show_trypsin) {
     g <- g + ggplot2::geom_point(
-      data = prep$trypsin_pts, ggplot2::aes(x = .data$rank, y = .data$y),
-      color = .PELSA_SPLOT_TRYPSIN_COLOR, size = 1.4)
+      data = prep$trypsin_pts,
+      ggplot2::aes(x = .data$rank, y = .data$y, color = "Trypsin"), size = 1.4)
   }
 
-  if (nrow(prep$marker_labels) > 0L) {
-    g <- g + ggrepel::geom_text_repel(
-      data = prep$marker_labels,
+  # Repelled labels: white box + colored outline/text. max.overlaps is a CAP
+  # (not Inf): in crowded clusters ggrepel drops the least-room labels (with a
+  # warning) instead of stacking overlapping boxes; the point stays drawn.
+  .SPLOT_MAX_OVERLAPS <- 20L
+  repel_label <- function(g, df, color) {
+    if (is.null(df) || nrow(df) == 0L) return(g)
+    g + ggrepel::geom_label_repel(
+      data = df,
       ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
-      color = .PELSA_VOLCANO_MARKER_COLOR, size = 2.6, direction = "y",
-      min.segment.length = 0, max.overlaps = Inf)
+      color = color, fill = "white", size = 2, label.padding = 0.2,
+      box.padding = 0.1, direction = "y", force = 50,
+      min.segment.length = 0, max.overlaps = .SPLOT_MAX_OVERLAPS,
+      seed = 42L, show.legend = FALSE)
   }
-  if (isTRUE(prep$show_trypsin) && nrow(prep$trypsin_labels) > 0L) {
-    g <- g + ggrepel::geom_text_repel(
-      data = prep$trypsin_labels,
-      ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
-      color = .PELSA_SPLOT_TRYPSIN_COLOR, size = 2.6, direction = "y",
-      min.segment.length = 0, max.overlaps = Inf)
-  }
+  g <- repel_label(g, prep$marker_labels, .PELSA_VOLCANO_MARKER_COLOR)
+  if (show_trypsin) g <- repel_label(g, prep$trypsin_labels,
+                                     .PELSA_SPLOT_TRYPSIN_COLOR)
 
-  g + ggplot2::labs(x = "Intensity rank (highest \u2192 lowest)",
-                    y = prep$y_title) +
-    ggplot2::theme_bw()
+  g +
+    ggplot2::scale_color_manual(
+      name = NULL, values = SERIES_COLORS, breaks = legend_breaks) +
+    ggplot2::guides(
+      color = ggplot2::guide_legend(override.aes = list(size = 3))) +
+    ggplot2::labs(x = "Intensity rank", y = prep$y_title,
+                  title = title, subtitle = subtitle) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      plot.title       = ggplot2::element_text(face = "bold"),   # bold plot title
+      axis.title       = ggplot2::element_text(face = "bold"),   # bold axis titles
+      panel.grid.major = ggplot2::element_blank(),               # no grid lines
+      panel.grid.minor = ggplot2::element_blank(),
+      legend.position  = "right",                                # legend on right
+      # --- Compact legend: pull it in tight to the panel + shrink internals ---
+      legend.box.spacing = ggplot2::unit(4, "pt"),   # gap panel <-> legend
+      legend.margin      = ggplot2::margin(0, 0, 0, 0),
+      legend.key.size    = ggplot2::unit(12, "pt"),  # swatch box size
+      legend.spacing.y   = ggplot2::unit(2, "pt"),   # gap between entries
+      legend.text        = ggplot2::element_text(margin = ggplot2::margin(l = 2)))
 }
 
 # Write one intensity-rank PNG per sample for ONE dataset into the
@@ -381,10 +414,10 @@ pelsa_splot_export_for <- function(dir_name, gct, matched, marker_accs,
     prep <- pelsa_splot_prepare(mat, s, peptides, matched, selected,
                                 .PELSA_TRYPSIN_ACCESSIONS, label_trypsin, params)
     if (nrow(prep$background) == 0L) next
-    g <- pelsa_splot_build_ggplot(prep)
+    g <- pelsa_splot_build_ggplot(prep, subtitle = s)
     tryCatch(
       pelsa_save_figure(g, out, paste0("intensity_rank_", pelsa_safe_name(s)),
-                        width = 9, height = 6),
+                        width = 8, height = 5),
       error = function(e) warning(sprintf(
         "pelsa_splot_export_for: failed to write sample '%s': %s",
         s, conditionMessage(e)), call. = FALSE))
