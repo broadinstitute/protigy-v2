@@ -115,3 +115,13 @@ test_that("missed-cleavage plot draws a count+percent label per bar", {
   text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
   expect_length(text_layers, 1)
 })
+
+# ---- Task 9: depth bar count labels + x-axis text size 11 -------------------
+
+test_that("depth bar draws a count label per sample and sizes x-axis text to 11", {
+  nq <- c(S1 = 100L, S2 = 250L, S3 = 175L)
+  p <- pelsa_depth_bar_plot(nq)
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  expect_length(text_layers, 1)
+  expect_equal(p$theme$axis.text.x$size, 11)
+})

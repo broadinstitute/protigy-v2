@@ -1047,10 +1047,14 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
   }
   ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
+    geom_text(aes(label = prettyNum(.data$n, big.mark = ",")),
+              vjust = -0.3, size = 3, fontface = "bold") +
+    scale_y_continuous(labels = scales::label_comma(),
+                       expand = expansion(mult = c(0, 0.12))) +
     labs(x = "Sample", y = "Peptides quantified",
          title = "Peptides quantified per sample") +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    protigy_plot_theme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 11))
 }
 
 ################################################################################
