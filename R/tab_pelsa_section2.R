@@ -210,6 +210,18 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
     })
 
     output$failed_annotation_count <- shinydashboard::renderValueBox({
+      ome <- active_dataset()
+      ss  <- setup_state_r()
+      is_self_curated <- !is.null(ss) && !is.null(ome) &&
+        isTRUE(ss$self_curated[[ome]])
+      if (is_self_curated) {
+        return(shinydashboard::valueBox(
+          value    = "-",
+          subtitle = "Self-curated database (no UniProt feature annotation)",
+          icon     = icon("circle-info"),
+          color    = "blue"
+        ))
+      }
       entry <- active_entry()
       # TRUE failure residual = accessions absent from the annotation for NO known
       # reason. A self-describing annotation (with a `disposition` column) buckets
