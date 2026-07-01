@@ -83,6 +83,26 @@ test_that("overall density mean/median labels are bold", {
   vals <- rnorm(200, 20, 5)
   p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
   text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  expect_length(text_layers, 2L)
   faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
   expect_true(all(faces == "bold"))
+})
+
+test_that("per-condition density median labels are bold", {
+  df <- data.frame(value = rnorm(60, 20, 5), condition = rep(c("A","B"), 30))
+  p <- pelsa_per_condition_density_plot(df, value_col = "value",
+                                        x_label = "x", title = "t")
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
+  expect_true(any(faces == "bold"))
+})
+
+test_that("cv kde median labels are bold", {
+  cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
+                   cv_status = rep("ok", 60),
+                   condition = rep(c("A","B"), 30))
+  p <- pelsa_cv_kde_plot(cv)
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
+  expect_true(any(faces == "bold"))
 })
