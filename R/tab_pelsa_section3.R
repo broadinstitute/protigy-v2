@@ -306,7 +306,18 @@ PELSASection3_Ome_Server <- function(id,
     # Per-dataset feature table (2I/3A feat_df), read + classified once per
     # uploaded annotation file via pelsa_read_annotation_file(). Read-only; NO
     # network. NULL when unavailable / self-curated (3A then colors "none").
+    #
+    # Cache preference (D10/D11): when a run cache entry exists and carries the
+    # feat_raw table captured at run time, return it directly so the volcano,
+    # Woods, and exports all colour from the SAME annotation snapshot the
+    # Summary QC counts used.  Fall through to the live-file path only when no
+    # cache entry is present (pre-run state or older cache without feat_raw).
     feat_df <- reactive({
+      entry <- cache_entry()
+      if (!is.null(entry) && is.data.frame(entry$feat_raw)) {
+        return(entry$feat_raw)
+      }
+      # Fallback (no run yet / older cache): read the live annotation file.
       ap <- annotation_path_r()
       # Silent NULL: self-curated or nothing uploaded (no path to fail).
       if (is.null(ap) || length(ap) != 1L || is.na(ap) || !nzchar(ap)) {

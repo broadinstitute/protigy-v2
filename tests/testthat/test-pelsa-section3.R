@@ -3944,3 +3944,124 @@ test_that("pin metadata Peptide row uses winning protein name when gene missing"
   expect_equal(gene_val, "NA")
 })
 
+# ---------------------------------------------------------------------------
+# feat_df cache-preference tests (D10/D11)
+#
+# When a cache entry carries feat_raw, feat_df() must return it without
+# consulting the live annotation file.  When no feat_raw is present, the
+# existing live-file fallback (with D3 notifications) must run unchanged.
+# ---------------------------------------------------------------------------
+
+test_that("feat_df prefers the cached feat_raw over the live annotation file", {
+  # Arrange: a cache entry that passes pelsa_analysis_failed() (no $error field)
+  # and carries a known feat_raw data.frame.
+  cached_feat <- data.frame(
+    accession     = "Q_CACHE",
+    start         = 1L,
+    end           = 9L,
+    feature_class = "folded_domain",
+    stringsAsFactors = FALSE
+  )
+  entry_with_feat <- list(
+    matched             = data.frame(
+      PEP.StrippedSequence = "PEPA", accession = "Q_CACHE",
+      gene = "G1", pep_start = 1L, pep_end = 9L,
+      stringsAsFactors = FALSE
+    ),
+    annotation_features = .mk_annotation_features(1L),
+    feat_raw            = cached_feat   # the new field Task 1 added
+  )
+  # The live annotation path points at a file that does NOT exist on disk.
+  # If the cache branch is NOT in place, feat_df() hits the missing-file branch
+  # and emits a message() -> the test would fail on the inner assertion AND on
+  # the outer expect_no_message wrapper.
+  missing_path <- tempfile(fileext = ".tsv")   # never created
+
+  result_val <- NULL
+  expect_no_message(
+    shiny::testServer(
+      PELSASection3_Ome_Server,
+      args = list(
+        id = "Proteome", ome = "Proteome",
+        GCT_processed                = reactive(NULL),
+        parameters                   = reactive(NULL),
+        default_annotation_column    = reactive(NULL),
+        color_map                    = reactive(NULL),
+        stat_results                 = reactive(NULL),
+        stat_params                  = reactive(.mk_stat_params()),
+        pelsa_analysis               = reactive(list(Proteome = entry_with_feat)),
+        pelsa_setup_state            = reactive(list(
+          species          = list(Proteome = NULL),
+          marker_rows      = list(Proteome = data.frame(
+            accession = "Q_CACHE", gene = "G1", stringsAsFactors = FALSE)),
+          self_curated     = list(Proteome = FALSE),
+          annotation_path  = list(Proteome = missing_path)
+        )),
+        poi_registry          = reactiveVal(list()),
+        top_n_registry        = reactiveVal(list()),
+        label_mode_registry   = reactiveVal(list())
+      ),
+      {
+        result_val <<- feat_df()
+      }
+    )
+  )
+  # Cache wins: we get the cached frame, NOT NULL (which the missing-file branch
+  # would have returned).
+  expect_equal(result_val$accession, "Q_CACHE")
+})
+
+test_that("feat_df falls back to live file when cache entry lacks feat_raw", {
+  # Arrange: a cache entry WITHOUT feat_raw (older cache / pre-Task-1 entry).
+  # The live annotation path points at a REAL temporary file so the fallback
+  # succeeds and returns a parsed data.frame.
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(
+    c("accession\tfeature_type\tstart\tend\tdescription",
+      "Q_LIVE\tDomain\t1\t9\tTest domain"),
+    tmp
+  )
+  on.exit(unlink(tmp), add = TRUE)
+
+  entry_no_feat <- list(
+    matched             = data.frame(
+      PEP.StrippedSequence = "PEPA", accession = "Q_LIVE",
+      gene = "G1", pep_start = 1L, pep_end = 9L,
+      stringsAsFactors = FALSE
+    ),
+    annotation_features = .mk_annotation_features(1L)
+    # No feat_raw field -> fallback to live file
+  )
+
+  result_val <- NULL
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed                = reactive(NULL),
+      parameters                   = reactive(NULL),
+      default_annotation_column    = reactive(NULL),
+      color_map                    = reactive(NULL),
+      stat_results                 = reactive(NULL),
+      stat_params                  = reactive(.mk_stat_params()),
+      pelsa_analysis               = reactive(list(Proteome = entry_no_feat)),
+      pelsa_setup_state            = reactive(list(
+        species          = list(Proteome = NULL),
+        marker_rows      = list(Proteome = data.frame(
+          accession = "Q_LIVE", gene = "G1", stringsAsFactors = FALSE)),
+        self_curated     = list(Proteome = FALSE),
+        annotation_path  = list(Proteome = tmp)
+      )),
+      poi_registry          = reactiveVal(list()),
+      top_n_registry        = reactiveVal(list()),
+      label_mode_registry   = reactiveVal(list())
+    ),
+    {
+      result_val <<- feat_df()
+    }
+  )
+  # Fallback: live file was read; Q_LIVE accession is present.
+  expect_true(is.data.frame(result_val))
+  expect_true("Q_LIVE" %in% result_val$accession)
+})
+
