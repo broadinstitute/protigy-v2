@@ -53,3 +53,6 @@ docs/
 # testthat scratch dir + problems file (created when a test errors mid-run)
 tests/testthat/_problems/
 tests/testthat/testthat-problems.rds
+
+# Local-only Claude memory (machine-specific paths, not version-controlled)
+CLAUDE.local.md
