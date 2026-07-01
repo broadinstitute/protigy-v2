@@ -153,7 +153,8 @@ PELSA_ACCOUNTED_DISPOSITIONS <- c("merged", "demerged", "deleted")
 #
 # FUZZY EXCLUSION: rows with coord_quality "fuzzy" (UniProt flags an endpoint as
 # non-EXACT) are DROPPED here so they never reach the exact-interval overlap join.
-# Sentinels carry coord_quality "" and are unaffected.
+# Sentinels are EXEMPT from the fuzzy drop even if a cell says "fuzzy"
+# (they carry no interval to be uncertain about).
 #
 # NOTE: the input format is PROVISIONAL. When the finalized example file arrives,
 # adjust ONLY the column mapping below.
@@ -254,6 +255,10 @@ pelsa_read_annotation_file <- function(path) {
   }
 
   feature_class <- pelsa_feature_to_class(feature_type, description)
+  # NONE_FEATURE_CLASS is defined in tab_pelsa_annotation_helpers.R (co-located
+  # with its first user pelsa_annotate_features); referenced here across files.
+  # Safe under load_all/package build (all R/ sourced first). If that constant is
+  # renamed/moved, grep both files.
   feature_class[is_sentinel] <- NONE_FEATURE_CLASS
   scores <- pelsa_feature_class_scores()
   class_score <- as.integer(scores[feature_class])
