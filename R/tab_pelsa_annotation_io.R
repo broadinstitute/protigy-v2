@@ -57,6 +57,14 @@ pelsa_feature_class_scores <- function() {
 # low_complexity_or_disorder -- that mis-scores them. compositional bias is
 # unaffected (forced unconditionally at step 1, before this gate).
 #
+# DELIBERATE DEVIATION (D7) from notebook parity at check 6 (domain branch):
+# A Domain whose description matches a catalytic keyword (kinase/protease/...)
+# but ALSO contains "inhibitor" or "inactive" is classified as folded_domain,
+# not catalytic_domain. These are regulatory/pseudo-enzyme domains (e.g.
+# "Cyclin-dependent kinase inhibitor", "Protein kinase; inactive") that the
+# upstream notebook mis-flags as catalytic via a bare substring match.
+# Genuine catalytic domains ("Protein kinase", "Serine protease") are unchanged.
+#
 # @param ftype character vector of UniProt feature types
 # @param desc  character vector of feature descriptions (recycled to ftype)
 # @return character vector of feature_class labels
@@ -98,9 +106,16 @@ pelsa_feature_to_class <- function(ftype, desc) {
   is_region_motif <- ftype %in% c("region", "motif")
   out[is_region_motif] <- "region_or_motif"
 
+  # D7 DEVIATION from notebook parity (deliberate): a Domain whose note contains
+  # a catalytic keyword but ALSO "inhibitor" or "inactive" is a non-catalytic
+  # (regulatory/pseudo) domain -> folded_domain, not catalytic_domain. The
+  # upstream notebook uses a bare substring match that mis-flags these.
   is_domain <- ftype == "domain"
-  out[is_domain] <- ifelse(has_kw(desc[is_domain], catalytic_kw),
-                           "catalytic_domain", "folded_domain")
+  dom_desc  <- desc[is_domain]
+  dom_catalytic <- has_kw(dom_desc, catalytic_kw) &
+    !(grepl("inhibitor", dom_desc, fixed = TRUE) |
+      grepl("inactive",  dom_desc, fixed = TRUE))
+  out[is_domain] <- ifelse(dom_catalytic, "catalytic_domain", "folded_domain")
 
   is_repeat <- ftype %in% repeat_set
   out[is_repeat] <- "repeat_or_coiled_coil"

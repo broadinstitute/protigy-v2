@@ -265,3 +265,24 @@ test_that("full disposition round-trip: every category counts correctly", {
   expect_equal(cnt$n_with_features + cnt$n_zero_feature + cnt$n_merged +
                  cnt$n_demerged + cnt$n_deleted + cnt$n_failed, 8L)  # unique tokens
 })
+
+# ---- D7 deviation tests: inhibitor/inactive domains excluded from catalytic ---
+
+test_that("pelsa_feature_to_class D7: inhibitor/inactive domains are not catalytic", {
+  expect_equal(pelsa_feature_to_class("Domain", "Cyclin-dependent kinase inhibitor"),
+               "folded_domain")
+  expect_equal(pelsa_feature_to_class("Domain", "Protein kinase; inactive"),
+               "folded_domain")
+  # Genuine catalytic domains unchanged.
+  expect_equal(pelsa_feature_to_class("Domain", "Protein kinase"), "catalytic_domain")
+  expect_equal(pelsa_feature_to_class("Domain", "Serine protease"), "catalytic_domain")
+  # Non-catalytic named domain unchanged.
+  expect_equal(pelsa_feature_to_class("Domain", "Ig-like"), "folded_domain")
+})
+
+test_that("pelsa_feature_to_class D7 is vectorized and case-insensitive", {
+  ft <- c("Domain", "Domain", "Domain")
+  d  <- c("Protein KINASE", "Kinase INHIBITOR", "Helicase")
+  expect_equal(pelsa_feature_to_class(ft, d),
+               c("catalytic_domain", "folded_domain", "catalytic_domain"))
+})
