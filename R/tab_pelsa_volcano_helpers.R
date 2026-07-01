@@ -1808,7 +1808,7 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
   }
   gg +
     ggplot2::labs(x = NULL, y = "mean log2 intensity", color = NULL) +
-    ggplot2::theme_bw() +
+    protigy_plot_theme(gridlines = TRUE) +
     ggplot2::theme(
       # Legend removed: the floating hover tooltip identifies each peptide line.
       legend.position = "none",
@@ -1922,7 +1922,8 @@ pelsa_intensity_line_plot <- function(ld, pinned_label = NULL) {
 # @param log_base  intensity transform applied at setup (2 or 10) -> y label.
 # @return a ggplot.
 # @noRd
-pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
+pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2,
+                                          coverage_frac = NA_real_) {
   conds <- levels(ld$condition)
   if (is.null(conds)) {
     conds <- unique(as.character(ld$condition))
@@ -1943,8 +1944,12 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
   }))
 
   n_total <- length(unique(ld$grp))
-  sub_txt <- if (n_total == 1L) "Mapped with 1 peptide"
-             else sprintf("Mapped with %d peptides", n_total)
+  pep_txt <- sprintf("%d peptide%s", n_total, if (n_total == 1L) "" else "s")
+  sub_txt <- if (is.finite(coverage_frac)) {
+    sprintf("%s | %.1f%% sequence coverage", pep_txt, 100 * coverage_frac)
+  } else {
+    pep_txt
+  }
   y_lab <- sprintf("Average log%d(intensity)", as.integer(log_base))
 
   ggplot2::ggplot(ld, ggplot2::aes(x = .data$condition, y = .data$mean_log2,
@@ -1964,15 +1969,14 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = sprintf("%s (%s)", gene, accession),
                   subtitle = sub_txt, x = "Condition", y = y_lab) +
-    ggplot2::theme_bw(base_size = 11) +
+    protigy_plot_theme(gridlines = TRUE) +
     ggplot2::theme(
-      plot.title    = ggplot2::element_text(face = "bold", hjust = 0.5),
-      plot.subtitle = ggplot2::element_text(hjust = 0.5, color = "grey25"),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5,
+                                            color = "grey25"),
       axis.text.x = ggplot2::element_text(angle = 30, hjust = 1),
       strip.text  = ggplot2::element_text(face = "bold"),
       strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
       panel.spacing = ggplot2::unit(1.4, "lines"),
-      panel.grid.minor = ggplot2::element_blank(),
       # Reserve a wider left gutter so a long rotated leftmost condition label
       # (e.g. "AY9944_U18666A_DMSO") is not clipped off the panel edge.
       plot.margin = ggplot2::margin(t = 5.5, r = 5.5, b = 5.5, l = 40))

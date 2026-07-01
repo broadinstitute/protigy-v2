@@ -1406,6 +1406,15 @@ PELSASection3_Ome_Server <- function(id,
       # log10 dataset is not mislabeled "log2(intensity)".
       log_xf <- isolate(parameters())$log_transformation %||% NA_character_
       log_base <- if (identical(tolower(as.character(log_xf)), "log10")) 10L else 2L
+      cov <- entry$coverage %||% data.frame()
+      cov_lookup <- function(acc) {
+        if (is.data.frame(cov) &&
+            all(c("accession", "coverage") %in% colnames(cov))) {
+          idx <- which(as.character(cov$accession) == acc)
+          if (length(idx) > 0L) return(as.numeric(cov$coverage[idx[1L]]))
+        }
+        NA_real_
+      }
       for (i in seq_len(nrow(prot))) {
         acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
         ld <- tryCatch(
@@ -1415,8 +1424,10 @@ PELSASection3_Ome_Server <- function(id,
           error = function(e) NULL)
         if (is.null(ld) || nrow(ld) == 0L) next
         gene <- pelsa_export_gene_for(matched, acc)
-        p <- tryCatch(pelsa_intensity_export_ggplot(ld, gene, acc, log_base),
-                      error = function(e) NULL)
+        p <- tryCatch(
+          pelsa_intensity_export_ggplot(ld, gene, acc, log_base,
+                                        coverage_frac = cov_lookup(acc)),
+          error = function(e) NULL)
         if (is.null(p)) next
         base <- paste0("intensityLine_", pelsa_safe_name(gene), "_",
                        pelsa_safe_name(acc))
