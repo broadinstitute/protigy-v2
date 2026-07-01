@@ -932,7 +932,7 @@ test_that(".pelsa_export_ggplot: title from contrast, subtitle from type + mode"
                             volcano_label = "All-peptide volcano")
   expect_s3_class(g, "ggplot")
   expect_equal(g$labels$title, "A vs B")
-  expect_equal(g$labels$subtitle, "All-peptide volcano | significance coloring")
+  expect_equal(g$labels$subtitle, "All-peptide volcano | Significance coloring")
   # the whole figure builds (legend + annotation + label layer) without error.
   expect_silent(suppressWarnings(ggplot2::ggplot_build(g)))
 })
@@ -942,7 +942,7 @@ test_that(".pelsa_export_ggplot: feature mode subtitle + NULL contrast -> no tit
   g <- .pelsa_export_ggplot(df, df, color_mode = "feature",
                             volcano_label = "Best-peptide volcano")
   expect_null(g$labels$title)
-  expect_equal(g$labels$subtitle, "Best-peptide volcano | feature coloring")
+  expect_equal(g$labels$subtitle, "Best-peptide volcano | Feature coloring")
   expect_silent(suppressWarnings(ggplot2::ggplot_build(g)))
 })
 
