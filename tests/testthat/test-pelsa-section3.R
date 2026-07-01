@@ -3847,6 +3847,10 @@ test_that("volcano tip Peptide label uses winning protein name when gene missing
   )
   tip <- Protigy:::pelsa_volcano_tip(d)
   expect_true(grepl("Peptide: NameA_aa10", tip, fixed = TRUE))
+  # Gene display must stay gene (or its "NA" fallback), never the protein name.
+  # winning_gene="" and PG.Genes="" so gene_fb="" -> Gene line renders as "NA".
+  expect_false(grepl("Gene: NameA", tip, fixed = TRUE))
+  expect_true(grepl("Gene: NA", tip, fixed = TRUE))
 })
 
 test_that("pin metadata Peptide row uses winning protein name when gene missing", {
@@ -3866,5 +3870,10 @@ test_that("pin metadata Peptide row uses winning protein name when gene missing"
   rows <- Protigy:::pelsa_pin_metadata_rows(vdf, 1L, n_peptides = 1L)
   pep_val <- rows$value[rows$label == "Peptide"]
   expect_equal(pep_val, "NameA_aa10")
+  # Gene row must stay gene (or its "NA" fallback), never the protein name.
+  # winning_gene="" and PG.Genes="" so gene_disp="NA".
+  gene_val <- rows$value[rows$label == "Gene"]
+  expect_false(identical(gene_val, "NameA"))
+  expect_equal(gene_val, "NA")
 })
 
