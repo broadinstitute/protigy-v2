@@ -145,7 +145,8 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         (entry$qc$n_unannotated_accessions %||% length(entry$unannotated)) > 0L
       pelsa_section2_dashboard_ui(ns, ome,
                                   has_unmatched = has_unmatched,
-                                  has_unannotated = has_unannotated)
+                                  has_unannotated = has_unannotated,
+                                  splot_choices = splot_choices_for_ui())
     })
 
     ## 6A - EXPERIMENT-WIDE ##
@@ -375,25 +376,50 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       c(intersect(so, cols), setdiff(cols, so))
     })
 
-    # Seed the store on first visit + push the active ome's state into the inputs.
-    observeEvent(active_dataset(), {
+    # Seed the sticky store on first visit and expose the S-plot input choices
+    # (samples + marker choices + the sticky selection) for the dashboard UI to
+    # BAKE IN at build time. Building the inputs with their choices avoids the
+    # update*Input-vs-renderUI race: summary_box re-renders on cache updates and
+    # recreates these inputs, so a one-shot post-render update (keyed only on
+    # active_dataset()) would land on a replaced DOM node and leave them blank.
+    splot_choices_for_ui <- reactive({
       ome <- active_dataset(); req(ome)
       ch <- splot_marker_choices(); samples <- splot_samples()
-      if (is.null(splot_state[[ome]])) {
-        splot_state[[ome]] <- list(
-          selected_markers = ch$accs[!ch$disabled],
-          label_trypsin = FALSE,
-          sample = if (length(samples) > 0L) samples[[1]] else NULL)
-      }
+      # Read/seed the sticky store under isolate(): the UI needs only the CURRENT
+      # sticky value at render time, and depending reactively on splot_state
+      # would re-render the whole summary_box on every S-plot input edit (the
+      # write-back observers mutate splot_state) - flickering the dashboard.
+      st <- isolate({
+        if (is.null(splot_state[[ome]])) {
+          splot_state[[ome]] <- list(
+            selected_markers = ch$accs[!ch$disabled],
+            label_trypsin = FALSE,
+            sample = if (length(samples) > 0L) samples[[1]] else NULL)
+        }
+        splot_state[[ome]]
+      })
+      # Keep the sticky sample valid against the current sample set.
+      sample_sel <- st$sample
+      if (is.null(sample_sel) || !(sample_sel %in% samples))
+        sample_sel <- if (length(samples) > 0L) samples[[1]] else NULL
+      list(
+        samples          = samples,
+        sample_selected  = sample_sel,
+        marker_accs      = ch$accs,
+        marker_labels    = ch$labels,
+        marker_disabled  = ch$disabled,
+        markers_selected = st$selected_markers %||% character(0)
+      )
+    })
+
+    # Keep the trypsin checkbox in sync with the sticky store on dataset switch
+    # (the checkbox default in the UI is FALSE; re-apply the remembered value).
+    observeEvent(active_dataset(), {
+      ome <- active_dataset(); req(ome)
       st <- splot_state[[ome]]
-      shinyWidgets::updatePickerInput(
-        session, "splot_markers",
-        choices = stats::setNames(ch$accs, ch$labels),
-        selected = st$selected_markers,
-        choicesOpt = list(disabled = ch$disabled))
-      updateSelectInput(session, "splot_sample", choices = samples,
-                        selected = st$sample)
-      updateCheckboxInput(session, "splot_trypsin", value = isTRUE(st$label_trypsin))
+      if (!is.null(st))
+        updateCheckboxInput(session, "splot_trypsin",
+                            value = isTRUE(st$label_trypsin))
     }, ignoreNULL = TRUE)
 
     # Write input edits back into the active ome's sticky store.
@@ -545,7 +571,22 @@ pelsa_mode_toggle <- function(ns, id, default = "overall") {
 # @noRd
 pelsa_section2_dashboard_ui <- function(ns, ome,
                                         has_unmatched = FALSE,
-                                        has_unannotated = FALSE) {
+                                        has_unannotated = FALSE,
+                                        splot_choices = NULL) {
+  # S-plot input choices are baked in at BUILD time (not applied via a post-
+  # render update*Input, which races the renderUI that recreates this box on
+  # cache updates). splot_choices is a list(samples, sample_selected,
+  # marker_accs, marker_labels, marker_disabled, markers_selected); NULL yields
+  # empty controls (the pre-analysis / no-data case). See the caller in
+  # PELSASection2_Tab_Server's summary_box renderUI.
+  sc <- splot_choices %||% list()
+  splot_samples_choices  <- sc$samples %||% character(0)
+  splot_sample_selected  <- sc$sample_selected
+  splot_marker_values    <- sc$marker_accs %||% character(0)
+  splot_marker_labels    <- sc$marker_labels %||% splot_marker_values
+  splot_marker_choices_v <- stats::setNames(splot_marker_values, splot_marker_labels)
+  splot_marker_disabled  <- sc$marker_disabled %||% logical(0)
+  splot_markers_selected <- sc$markers_selected %||% character(0)
   tagList(
     # 6A value boxes (inline counts incl. the 6D mapping/annotation QC totals).
     # Row 1: peptide identification + FASTA match. Row 2: the three-way
@@ -615,7 +656,9 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
           column(9, plotlyOutput(ns("splot_plot"), height = "520px")),
           column(
             3,
-            selectInput(ns("splot_sample"), "Sample", choices = NULL),
+            selectInput(ns("splot_sample"), "Sample",
+                        choices = splot_samples_choices,
+                        selected = splot_sample_selected),
             tags$div(
               title = paste0("Peptides from the following trypsin proteins are ",
                              "to be labeled: \"Q29463\", \"P00760\", \"P00761\""),
@@ -624,7 +667,10 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
             ),
             shinyWidgets::pickerInput(
               ns("splot_markers"), "Label markers",
-              choices = NULL, multiple = TRUE,
+              choices = splot_marker_choices_v, multiple = TRUE,
+              selected = splot_markers_selected,
+              choicesOpt = if (length(splot_marker_disabled))
+                list(disabled = splot_marker_disabled) else NULL,
               options = list(actionsBox = TRUE)
             )
           )

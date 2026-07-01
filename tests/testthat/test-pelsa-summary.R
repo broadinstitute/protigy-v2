@@ -525,6 +525,48 @@ test_that("Summary renders metrics + exports for a good cache entry", {
   )
 })
 
+test_that("S-plot Sample + Label-markers inputs are populated in summary_box", {
+  # End-to-end guard for the renderUI-vs-update*Input race: the S-plot inputs
+  # must render WITH their choices (sample columns + marker labels) baked in, so
+  # a later summary_box re-render never leaves them blank.
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 12)
+  g <- .summary_mk_gct(syn)
+  cache <- .summary_build_cache("ds1")
+  expect_false(pelsa_analysis_failed(cache$ds1))
+
+  # A marker that is matched somewhere in the dataset (so it is not disabled).
+  matched_acc <- as.character(cache$ds1$matched$accession)[1]
+
+  GCTs_and_params <- shiny::reactiveVal(list(
+    GCTs = list(ds1 = g), parameters = list(ds1 = list())))
+  globals <- shiny::reactiveValues(default_ome = "ds1", colors = list())
+  GCTs_original <- shiny::reactiveVal(list(ds1 = g))
+  active_dataset <- shiny::reactive("ds1")
+  pelsa_analysis <- shiny::reactiveVal(cache)
+  pelsa_setup_state <- shiny::reactive(list(
+    sample_order = list(ds1 = character(0)),
+    marker_rows  = list(ds1 = data.frame(
+      accession = matched_acc, gene = "GMK",
+      stringsAsFactors = FALSE))
+  ))
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = list(GCTs_and_params = GCTs_and_params, globals = globals,
+                GCTs_original = GCTs_original, active_dataset = active_dataset,
+                pelsa_analysis = pelsa_analysis,
+                pelsa_setup_state = pelsa_setup_state),
+    {
+      html <- as.character(output$summary_box$html %||% output$summary_box)
+      # Sample dropdown carries the GCT's sample columns.
+      sample_cols <- colnames(g@mat)
+      expect_true(grepl(sample_cols[[1]], html, fixed = TRUE))
+      # Label-markers picker carries the marker accession label.
+      expect_true(grepl(matched_acc, html, fixed = TRUE))
+    }
+  )
+})
+
 test_that("exports work when pelsa_setup_state is NULL (the legacy/default wiring)", {
   # all_exports must read setup_state through the in-scope NULL-safe wrapper
   # (setup_state_r), so the module produces exports even when pelsa_setup_state
@@ -935,4 +977,40 @@ test_that("dashboard exposes the three annotation value boxes", {
   expect_match(html, ns("annotated_with_features_count"), fixed = TRUE)
   expect_match(html, ns("annotated_zero_feature_count"), fixed = TRUE)
   expect_match(html, ns("failed_annotation_count"), fixed = TRUE)
+})
+
+# ---- 6F S-plot inputs are populated at BUILD TIME (no update* race) ----------
+# The Sample selectInput and Label-markers pickerInput must carry their choices
+# when the dashboard renders, so a later summary_box re-render (on cache update)
+# recreates them already-populated instead of blank.
+
+test_that("dashboard builds the S-plot Sample select with its choices + selection", {
+  ns <- shiny::NS("PELSASection2Tab")
+  choices <- list(
+    samples = c("S_2", "S_1"), sample_selected = "S_2",
+    marker_accs = character(0), marker_labels = character(0),
+    marker_disabled = logical(0), markers_selected = character(0)
+  )
+  html <- as.character(
+    pelsa_section2_dashboard_ui(ns, ome = "proteome", splot_choices = choices))
+  # sample options present in the rendered <select>
+  expect_match(html, "S_1", fixed = TRUE)
+  expect_match(html, "S_2", fixed = TRUE)
+  # the sticky selection is applied
+  expect_match(html, "selected", fixed = TRUE)
+})
+
+test_that("dashboard builds the Label-markers picker with its choices", {
+  ns <- shiny::NS("PELSASection2Tab")
+  choices <- list(
+    samples = "S_1", sample_selected = "S_1",
+    marker_accs = c("P00760", "P00761"),
+    marker_labels = c("P00760 (TRY1)", "P00761 (TRY2)"),
+    marker_disabled = c(FALSE, TRUE),
+    markers_selected = "P00760"
+  )
+  html <- as.character(
+    pelsa_section2_dashboard_ui(ns, ome = "proteome", splot_choices = choices))
+  expect_match(html, "P00760 (TRY1)", fixed = TRUE)
+  expect_match(html, "P00761 (TRY2)", fixed = TRUE)
 })
