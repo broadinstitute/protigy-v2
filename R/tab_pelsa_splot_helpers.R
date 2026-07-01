@@ -113,6 +113,9 @@ pelsa_splot_marker_topn <- function(matched, accessions, rank_frame, n = 3L) {
     acc_key   = m_acc_key[hit],
     gene      = as.character(matched[["gene"]])[hit],
     accession = as.character(matched[["accession"]])[hit],
+    protein_name = if ("protein_name" %in% colnames(matched))
+      as.character(matched[["protein_name"]])[hit] else
+      rep(NA_character_, sum(hit)),
     pep_start = as.integer(matched[["pep_start"]])[hit],
     stringsAsFactors = FALSE
   )
@@ -121,9 +124,9 @@ pelsa_splot_marker_topn <- function(matched, accessions, rank_frame, n = 3L) {
   sub <- sub[order(sub$acc_key, sub$row_id, sub$pep_start, na.last = TRUE), ,
              drop = FALSE]
 
-  # Per-mapping label entry "<gene-or-accession>_aa<pep_start>" (gene fallback).
-  sub$lid <- ifelse(is.na(sub$gene) | !nzchar(trimws(sub$gene)),
-                    sub$accession, sub$gene)
+  # Per-mapping label entry "<stem>_aa<pep_start>", stem = gene -> protein_name
+  # -> accession (shared resolver, same fallback as the volcano labels).
+  sub$lid <- pelsa_resolve_label_stem(sub$gene, sub$protein_name, sub$accession)
   sub$pos_entry <- paste0(sub$lid, "_aa", sub$pep_start)
 
   # One representative per (acc_key, row_id): the peptide's intensity, plus a

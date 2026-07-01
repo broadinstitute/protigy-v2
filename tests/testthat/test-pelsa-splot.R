@@ -404,3 +404,26 @@ test_that("marker_topn ;-joins multiple positions of the same accession (repeat 
   expect_equal(res$highlight, 1L)
   expect_equal(res$labels$label, "GA_aa10;GA_aa20")
 })
+
+test_that("splot marker labels use protein-name fallback when gene missing", {
+  matched <- data.frame(
+    .row_id      = c(1L, 2L),
+    PEP.StrippedSequence = c("PEPK", "TIDEK"),
+    accession    = c("P1", "P2"),
+    gene         = c("", NA),
+    protein_name = c("NameA", "NameB"),
+    pep_start    = c(10L, 20L),
+    pep_occurrence_idx = c(1L, 1L),
+    stringsAsFactors = FALSE
+  )
+  rank_frame <- data.frame(
+    row_id            = c(1L, 2L),
+    sequence          = c("PEPK", "TIDEK"),
+    display_intensity = c(100, 90),
+    stringsAsFactors  = FALSE
+  )
+  out <- pelsa_splot_marker_topn(matched, accessions = c("P1", "P2"),
+                                 rank_frame, n = 3L)
+  labs <- out$labels$label[order(out$labels$row_id)]
+  expect_equal(labs, c("NameA_aa10", "NameB_aa20"))
+})
