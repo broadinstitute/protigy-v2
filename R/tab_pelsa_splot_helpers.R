@@ -376,7 +376,7 @@ pelsa_splot_build_ggplot <- function(prep,
       data = df,
       ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
       color = color, fill = "white", size = 2, label.padding = 0.2,
-      box.padding = 0.1, direction = "y", force = 50,
+      box.padding = 0.1, direction = "both", force = 50,
       min.segment.length = 0, max.overlaps = .SPLOT_MAX_OVERLAPS,
       seed = 42L, show.legend = FALSE)
   }

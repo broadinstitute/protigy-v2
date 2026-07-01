@@ -427,3 +427,20 @@ test_that("splot marker labels use protein-name fallback when gene missing", {
   labs <- out$labels$label[order(out$labels$row_id)]
   expect_equal(labs, c("NameA_aa10", "NameB_aa20"))
 })
+
+test_that("S-plot repel labels dodge in both directions", {
+  prep <- list(
+    background = data.frame(rank = 1:50, y = rnorm(50)),
+    marker_pts = data.frame(rank = c(3, 8), y = c(2, -2)),
+    marker_labels = data.frame(rank = c(3, 8), y = c(2, -2),
+                               label = c("A", "B")),
+    trypsin_pts = data.frame(rank = integer(0), y = numeric(0)),
+    trypsin_labels = data.frame(rank = integer(0), y = numeric(0),
+                                label = character(0)),
+    show_trypsin = FALSE, y_title = "y"
+  )
+  g <- pelsa_splot_build_ggplot(prep)
+  repel <- Filter(function(l) inherits(l$geom, "GeomLabelRepel"), g$layers)
+  dirs <- vapply(repel, function(l) l$geom_params$direction %||% "", character(1))
+  expect_true(all(dirs == "both"))
+})
