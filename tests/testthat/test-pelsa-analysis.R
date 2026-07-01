@@ -202,8 +202,9 @@ test_that("validate flags a condition column missing from a dataset's cdesc", {
 test_that("validate passes with everything present (empty markers still ok)", {
   syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
   gct <- .mk_gct(syn)
+  ann <- tempfile(fileext = ".tsv"); writeLines("accession\tfeature_type\tstart\tend\tdescription", ann)
   snap <- list(datasets = "ds1", fasta_path = list(ds1 = "/tmp/f.fasta"),
-               annotation_path = list(ds1 = "/tmp/a.tsv"),
+               annotation_path = list(ds1 = ann),
                self_curated = list(ds1 = FALSE),
                marker_rows = list(ds1 = pelsa_empty_marker_rows()),  # EMPTY ok
                condition_col = list(ds1 = "condition"),
@@ -212,6 +213,22 @@ test_that("validate passes with everything present (empty markers still ok)", {
   v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = NULL)
   expect_true(v$ok)
   expect_length(v$errors, 0L)
+})
+
+test_that("validate fails when the annotation file path does not exist", {
+  syn <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 2)
+  gct <- .mk_gct(syn)
+  missing <- tempfile(fileext = ".tsv")   # never created -> file.exists() FALSE
+  snap <- list(datasets = "ds1", fasta_path = list(ds1 = "/tmp/f.fasta"),
+               annotation_path = list(ds1 = missing),
+               self_curated = list(ds1 = FALSE),
+               condition_col = list(ds1 = "condition"),
+               replicate_col = list(ds1 = "condition"),
+               condition_order = list(ds1 = c("AY9944_10uM", "DMSO", "LowN")))
+  v <- pelsa_validate_setup(snap, gcts = list(ds1 = gct), database_dir = NULL)
+  expect_false(v$ok)
+  expect_true(any(grepl("annotation file", v$errors) &
+                    grepl("missing|moved", v$errors)))
 })
 
 test_that("validate accumulates ALL failures at once", {
@@ -284,10 +301,11 @@ test_that("validate ignores skipped datasets (only non-skipped are checked)", {
   gct <- .mk_gct(syn)
   # ds2 is invalid but SKIPPED, so it is absent from `datasets`; only ds1 (valid)
   # is checked => ok.
+  ann <- tempfile(fileext = ".tsv"); writeLines("accession\tfeature_type\tstart\tend\tdescription", ann)
   snap <- list(
     datasets        = "ds1",
     fasta_path      = list(ds1 = "/tmp/f.fasta"),
-    annotation_path = list(ds1 = "/tmp/a.tsv"),
+    annotation_path = list(ds1 = ann),
     self_curated    = list(ds1 = FALSE),
     condition_col   = list(ds1 = "condition", ds2 = "(none)"),
     replicate_col   = list(ds1 = "condition", ds2 = "(none)"),

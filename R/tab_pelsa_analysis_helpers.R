@@ -1755,6 +1755,10 @@ pelsa_validate_setup <- function(setup_snapshot, gcts, database_dir) {
         errors <- c(errors, sprintf(
           paste0("Dataset '%s': upload a feature annotation file (or check ",
                  "'Self-curated database')."), ds))
+      } else if (!file.exists(ap)) {
+        errors <- c(errors, sprintf(
+          paste0("Dataset '%s': the feature annotation file is missing or was ",
+                 "moved -- re-upload it."), ds))
       }
     }
   }
