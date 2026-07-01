@@ -67,7 +67,10 @@ pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
   written <- character(0)
   copy_one <- function(path, name) {
     if (is.null(path) || !nzchar(path %||% "") || !file.exists(path)) return(NULL)
-    dest <- file.path(dir_name, name %||% basename(path))
+    # basename() the upload name so a crafted filename (e.g. "../../evil") cannot
+    # steer file.copy outside dir_name (path traversal). The browser normally
+    # sends a bare basename, but never trust it -- strip any directory component.
+    dest <- file.path(dir_name, basename(name %||% basename(path)))
     file.copy(path, dest, overwrite = TRUE)
     dest
   }

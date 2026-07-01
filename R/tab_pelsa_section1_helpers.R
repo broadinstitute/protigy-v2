@@ -270,11 +270,16 @@ pelsa_write_compound_markers <- function(path, compound_markers) {
     metadata  = metadata,
     compounds = compound_markers$compounds %||% list()
   )
+  tmp <- NULL
   ok <- tryCatch({
     tmp <- tempfile(tmpdir = dir, fileext = ".yaml")
     yaml::write_yaml(payload, tmp)
     file.rename(tmp, path)
   }, error = function(e) FALSE)
+  # file.rename returning FALSE does NOT throw, so the tempfile survives the
+  # rename failure -- unlink it here so repeated failed saves don't accumulate
+  # orphaned .yaml temp files in the target (installed-package) directory.
+  if (!isTRUE(ok) && !is.null(tmp) && file.exists(tmp)) unlink(tmp)
   isTRUE(ok)
 }
 

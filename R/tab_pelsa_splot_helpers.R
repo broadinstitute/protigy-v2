@@ -173,10 +173,15 @@ pelsa_splot_tooltip <- function(rank_frame, bold_keys, cap = 8L) {
   vapply(seq_len(n), function(i) {
     accs  <- trimws(if (length(acc_lists) >= i) acc_lists[[i]] else character(0))
     genes <- trimws(if (length(gene_lists) >= i) gene_lists[[i]] else character(0))
-    keep  <- !is.na(accs) & nzchar(accs)
-    accs  <- accs[keep]
+    # Pad/truncate genes to accs length BEFORE dropping empty accessions so gene
+    # i stays paired with accession i; then apply the SAME keep mask to both. If
+    # genes were filtered only positionally after `accs` shrank, a leading/interior
+    # empty accession token would slide every gene onto the wrong accession.
     genes <- if (length(genes) >= length(accs)) genes[seq_along(accs)] else
       c(genes, rep("", length(accs)))[seq_along(accs)]
+    keep  <- !is.na(accs) & nzchar(accs)
+    accs  <- accs[keep]
+    genes <- genes[keep]
     genes[is.na(genes)] <- ""
 
     if (length(accs) == 0L) {
