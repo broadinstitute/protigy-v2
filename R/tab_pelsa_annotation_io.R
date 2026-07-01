@@ -115,21 +115,31 @@ pelsa_feature_to_class <- function(ftype, desc) {
 
 # ---- Empty frame -------------------------------------------------------------
 
-# Empty 0-row frame with the 8 schema columns + correct types.
+# Empty 0-row frame with the 10 schema columns + correct types.
+# `disposition` (resolved/merged/demerged/deleted) + `primary_accession` make the
+# annotation self-describing: merged/deleted/demerged accessions ship as sentinel
+# rows so the app can tell "excluded for a reason" from "genuinely unaccounted".
 # @noRd
 pelsa_empty_feature_frame <- function() {
   data.frame(
-    accession     = character(0),
-    feature_type  = character(0),
-    start         = integer(0),
-    end           = integer(0),
-    description   = character(0),
-    feature_class = character(0),
-    class_score   = integer(0),
-    coord_quality = character(0),
+    accession         = character(0),
+    feature_type      = character(0),
+    start             = integer(0),
+    end               = integer(0),
+    description       = character(0),
+    feature_class     = character(0),
+    class_score       = integer(0),
+    coord_quality     = character(0),
+    disposition       = character(0),
+    primary_accession = character(0),
     stringsAsFactors = FALSE
   )
 }
+
+# Disposition values that mark an accession as ACCOUNTED-but-featureless (an
+# "excluded for a reason" sentinel), as opposed to a genuine mapping failure.
+# `resolved` (real feature rows or zero-feature sentinels) is NOT in this set.
+PELSA_ACCOUNTED_DISPOSITIONS <- c("merged", "demerged", "deleted")
 
 # ---- Raw annotation-file reader ----------------------------------------------
 
@@ -152,7 +162,14 @@ pelsa_read_annotation_file <- function(path) {
     stop("pelsa_read_annotation_file: annotation file not found: ", path)
   }
 
-  raw <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE)
+  # Read ALL columns as character and coerce coords ourselves. readr's per-column
+  # type guessing is DANGEROUS for the sparse text columns: `disposition` and
+  # `primary_accession` are blank on every leading `resolved` row (the sentinels
+  # ship LAST), so readr guesses them `logical`/NA from the head and silently
+  # coerces the real values (e.g. the merged primary "Q3I5F7") to NA. Forcing
+  # character preserves them; start/end become integer via as.integer() below.
+  raw <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE,
+                         col_types = readr::cols(.default = readr::col_character()))
   required <- c("accession", "feature_type", "start", "end", "description")
   missing <- setdiff(required, colnames(raw))
   if (length(missing) > 0L) {
@@ -166,9 +183,32 @@ pelsa_read_annotation_file <- function(path) {
   # Blank cells parse to NA via readr; normalize feature_type/description to ""
   # so the sentinel test and the stored values match the canonical cache schema.
   feature_type <- ifelse(is.na(raw$feature_type), "", as.character(raw$feature_type))
-  start        <- as.integer(raw$start)
-  end          <- as.integer(raw$end)
+  # Coords are read as character (see col_types above); blank/whitespace -> NA
+  # BEFORE as.integer() so no spurious "NAs introduced by coercion" warning fires
+  # on sentinel rows (which legitimately carry no interval).
+  blank_to_na  <- function(x) { x <- trimws(as.character(x)); x[!nzchar(x)] <- NA; x }
+  start        <- as.integer(blank_to_na(raw$start))
+  end          <- as.integer(blank_to_na(raw$end))
   description  <- ifelse(is.na(raw$description), "", as.character(raw$description))
+
+  # DISPOSITION columns (optional; self-describing annotation). `disposition` is
+  # one of resolved/merged/demerged/deleted (blank -> "resolved" for legacy
+  # 6/8-col files). `primary_accession` is populated only for merged rows (the
+  # canonical primary the features live under). Reading them lets the app tell a
+  # merged/deleted/demerged accession (excluded for a REASON, still "accounted")
+  # apart from a genuine mapping failure.
+  disposition <- if ("disposition" %in% colnames(raw)) {
+    d <- tolower(trimws(ifelse(is.na(raw$disposition), "", as.character(raw$disposition))))
+    d[!nzchar(d)] <- "resolved"
+    d
+  } else {
+    rep("resolved", nrow(raw))
+  }
+  primary_accession <- if ("primary_accession" %in% colnames(raw)) {
+    ifelse(is.na(raw$primary_accession), "", as.character(raw$primary_accession))
+  } else {
+    rep("", nrow(raw))
+  }
 
   # ZERO-FEATURE SENTINEL rows: the external fetch workflow emits one row per
   # accession it RESOLVED but that carries no features -- blank feature_type +
@@ -181,7 +221,22 @@ pelsa_read_annotation_file <- function(path) {
   #   - pelsa_annotation_status_counts() buckets the accession as zero-feature,
   #     not feature-bearing.
   # Detected as: blank feature_type AND no usable interval (NA start AND end).
-  is_sentinel <- !nzchar(trimws(feature_type)) & is.na(start) & is.na(end)
+  # A merged/deleted/demerged DISPOSITION row is ALSO a sentinel: it is set to
+  # feature_class "none" and its coords are NULLED (below) so the accounting
+  # helpers bucket it by disposition, not as a failure.
+  is_sentinel <- (!nzchar(trimws(feature_type)) & is.na(start) & is.na(end)) |
+    (disposition %in% PELSA_ACCOUNTED_DISPOSITIONS)
+
+  # NULL the coords of disposition sentinels. pelsa_annotate_features() drops
+  # rows by COORD validity (NA/inverted), NOT by feature_class, so a disposition
+  # row that (wrongly) shipped real coords would otherwise survive the overlap
+  # join and register a spurious "none" hit. Nulling here enforces the silent-drop
+  # contract at the source rather than relying on the workflow always emitting
+  # blank coords. Zero-feature sentinels already have NA coords, so this is a
+  # no-op for them.
+  disp_sentinel <- disposition %in% PELSA_ACCOUNTED_DISPOSITIONS
+  start[disp_sentinel] <- NA_integer_
+  end[disp_sentinel]   <- NA_integer_
 
   coord_quality <- if ("coord_quality" %in% colnames(raw)) {
     cq <- ifelse(is.na(raw$coord_quality), "", as.character(raw$coord_quality))
@@ -201,14 +256,16 @@ pelsa_read_annotation_file <- function(path) {
   class_score[is.na(class_score)] <- 0L   # "none"/unknown -> 0 (sentinel score)
 
   data.frame(
-    accession     = accession,
-    feature_type  = feature_type,
-    start         = start,
-    end           = end,
-    description   = description,
-    feature_class = feature_class,
-    class_score   = class_score,
-    coord_quality = coord_quality,
+    accession         = accession,
+    feature_type      = feature_type,
+    start             = start,
+    end               = end,
+    description       = description,
+    feature_class     = feature_class,
+    class_score       = class_score,
+    coord_quality     = coord_quality,
+    disposition       = disposition,
+    primary_accession = primary_accession,
     stringsAsFactors = FALSE
   )
 }

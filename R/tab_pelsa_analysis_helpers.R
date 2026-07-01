@@ -2428,7 +2428,15 @@ pelsa_run_analysis_one <- function(gct,
     unmatched_by_reason   = as.list(c(table(reasons))),
     n_unannotated_accessions    = length(unannotated),
     n_annotated_with_features   = annotation_status$n_with_features,
-    n_annotated_zero_feature    = annotation_status$n_zero_feature
+    n_annotated_zero_feature    = annotation_status$n_zero_feature,
+    # Disposition buckets from a self-describing annotation (0 unless the
+    # uploaded annotation carries a `disposition` column). merged/demerged/
+    # deleted accessions are "excluded for a reason", NOT failures -- so
+    # n_failed is the true residual (0 when every accession is accounted).
+    n_annotated_merged          = annotation_status$n_merged %||% 0L,
+    n_annotated_demerged        = annotation_status$n_demerged %||% 0L,
+    n_annotated_deleted         = annotation_status$n_deleted %||% 0L,
+    n_annotation_failed         = annotation_status$n_failed %||% 0L
   )
 
   list(

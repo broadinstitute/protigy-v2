@@ -506,8 +506,13 @@ pelsa_unannotated_accessions <- function(plot_df_or_accessions, feat_df) {
 #
 # @param plot_df_or_accessions data.frame (PG.ProteinAccessions / accession) or a
 #        character vector of (possibly ;-delimited) accession strings.
-# @param feat_df per-feature table with accession + feature_class columns.
-# @return list(n_with_features=<int>, n_zero_feature=<int>, n_failed=<int>).
+# @param feat_df per-feature table with accession + feature_class columns, and an
+#        OPTIONAL `disposition` column (resolved/merged/demerged/deleted). When
+#        `disposition` is present, merged/demerged/deleted accessions are bucketed
+#        as "excluded for a reason" (n_merged/n_demerged/n_deleted) instead of
+#        n_failed, so a self-describing annotation drives n_failed to 0.
+# @return list(n_with_features, n_zero_feature, n_merged, n_demerged, n_deleted,
+#         n_failed) -- the six sum to the unique dataset-accession-token count.
 # @noRd
 pelsa_annotation_status_counts <- function(plot_df_or_accessions, feat_df) {
   stopifnot(is.data.frame(feat_df))
@@ -531,9 +536,9 @@ pelsa_annotation_status_counts <- function(plot_df_or_accessions, feat_df) {
   tokens <- trimws(unlist(strsplit(raw, ";", fixed = TRUE), use.names = FALSE))
   if (is.null(tokens)) tokens <- character(0)
   tokens <- unique(tokens[!is.na(tokens) & nzchar(tokens)])
-  if (length(tokens) == 0L) {
-    return(list(n_with_features = 0L, n_zero_feature = 0L, n_failed = 0L))
-  }
+  empty <- list(n_with_features = 0L, n_zero_feature = 0L, n_merged = 0L,
+                n_demerged = 0L, n_deleted = 0L, n_failed = 0L)
+  if (length(tokens) == 0L) return(empty)
 
   # Accessions in feat_df WITH a real feature (feature_class != "none").
   real <- feat_df[!is.na(feat_df$feature_class) &
@@ -542,15 +547,40 @@ pelsa_annotation_status_counts <- function(plot_df_or_accessions, feat_df) {
   real_acc <- real_acc[!is.na(real_acc) & nzchar(real_acc)]
   real_set <- unique(c(real_acc, .pelsa_isoform_base(real_acc)))
 
-  # All accessions present in feat_df (real OR sentinel).
+  # All accessions present in feat_df (real OR any sentinel).
   all_acc <- unique(as.character(feat_df$accession))
   all_acc <- all_acc[!is.na(all_acc) & nzchar(all_acc)]
   all_set <- unique(c(all_acc, .pelsa_isoform_base(all_acc)))
 
+  # Per-disposition accession sets (exact + isoform base), when the column exists.
+  disp_set <- function(kind) {
+    if (!"disposition" %in% colnames(feat_df)) return(character(0))
+    a <- unique(as.character(
+      feat_df$accession[!is.na(feat_df$disposition) &
+                          tolower(feat_df$disposition) == kind]))
+    a <- a[!is.na(a) & nzchar(a)]
+    unique(c(a, .pelsa_isoform_base(a)))
+  }
+  merged_set   <- disp_set("merged")
+  demerged_set <- disp_set("demerged")
+  deleted_set  <- disp_set("deleted")
+
   token_base <- .pelsa_isoform_base(tokens)
-  has_real <- tokens %in% real_set | token_base %in% real_set
-  in_cache <- tokens %in% all_set  | token_base %in% all_set
+  in_set <- function(s) tokens %in% s | token_base %in% s
+
+  has_real     <- in_set(real_set)
+  in_cache     <- in_set(all_set)
+  is_merged    <- !has_real & in_set(merged_set)
+  is_demerged  <- !has_real & !is_merged & in_set(demerged_set)
+  is_deleted   <- !has_real & !is_merged & !is_demerged & in_set(deleted_set)
+  # zero-feature = in cache, no real feature, and NOT a disposition sentinel.
+  is_zero      <- in_cache & !has_real & !is_merged & !is_demerged & !is_deleted
+  is_failed    <- !in_cache & !is_merged & !is_demerged & !is_deleted
+
   list(n_with_features = as.integer(sum(has_real)),
-       n_zero_feature  = as.integer(sum(in_cache & !has_real)),
-       n_failed        = as.integer(sum(!in_cache)))
+       n_zero_feature  = as.integer(sum(is_zero)),
+       n_merged        = as.integer(sum(is_merged)),
+       n_demerged      = as.integer(sum(is_demerged)),
+       n_deleted       = as.integer(sum(is_deleted)),
+       n_failed        = as.integer(sum(is_failed)))
 }
