@@ -1259,7 +1259,9 @@ pelsa_volcano_tip <- function(d) {
                     d$PG.Genes, d$winning_gene)
   acc_fb <- ifelse(is.na(d$winning_accession) | !nzchar(d$winning_accession),
                    d$PG.ProteinAccessions, d$winning_accession)
-  stem <- ifelse(is.na(gene_fb) | !nzchar(gene_fb), acc_fb, gene_fb)
+  name_fb <- if ("winning_protein_name" %in% colnames(d))
+    d$winning_protein_name else rep(NA_character_, nrow(d))
+  stem <- pelsa_resolve_label_stem(gene_fb, name_fb, acc_fb)
   pep_lab <- ifelse(is.na(d$pep_start), as.character(stem),
                     paste0(stem, "_aa", d$pep_start))
   lfc_chr  <- ifelse(is.na(d$logFC), "NA", sprintf("%.2f", d$logFC))
@@ -2477,7 +2479,11 @@ pelsa_pin_metadata_rows <- function(volcano_df, row, n_peptides,
   gene <- if (!is.na(r$winning_gene) && nzchar(r$winning_gene))
     r$winning_gene else as.character(r$PG.Genes)[1L]
   gene_disp <- if (is.na(gene) || !nzchar(gene)) "NA" else gene
-  label_stem <- if (gene_disp == "NA") acc_fb else gene_disp
+  name_fb <- if ("winning_protein_name" %in% colnames(r))
+    as.character(r$winning_protein_name)[1L] else NA_character_
+  # Label stem gene -> protein_name -> accession (shared resolver); the Gene row
+  # below still shows gene_disp, unaffected by the label fallback.
+  label_stem <- pelsa_resolve_label_stem(gene, name_fb, acc_fb)
   pep_label <- if (is.na(r$pep_start)) label_stem else
     paste0(label_stem, "_aa", r$pep_start)
   cov_disp <- if (length(coverage_frac) != 1L || is.na(coverage_frac))

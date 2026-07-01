@@ -3832,3 +3832,39 @@ test_that(".pelsa_best_back_map carries won_protein_name from the matched cache"
   expect_equal(back$won_protein_name, "NameA")
 })
 
+test_that("volcano tip Peptide label uses winning protein name when gene missing", {
+  d <- data.frame(
+    winning_gene         = "",
+    winning_protein_name = "NameA",
+    winning_accession    = "P1",
+    PG.Genes             = "",
+    PG.ProteinAccessions = "P1",
+    pep_start            = 10L,
+    pep_end              = 13L,
+    logFC                = -2,
+    adj.P.Val            = 0.01,
+    stringsAsFactors     = FALSE
+  )
+  tip <- Protigy:::pelsa_volcano_tip(d)
+  expect_true(grepl("Peptide: NameA_aa10", tip, fixed = TRUE))
+})
+
+test_that("pin metadata Peptide row uses winning protein name when gene missing", {
+  vdf <- data.frame(
+    winning_gene         = "",
+    winning_protein_name = "NameA",
+    winning_accession    = "P1",
+    PG.Genes             = "",
+    PG.ProteinAccessions = "P1",
+    id                   = "PEPK",
+    pep_start            = 10L,
+    pep_end              = 13L,
+    adj.P.Val            = 0.01,
+    logFC                = -2,
+    stringsAsFactors     = FALSE
+  )
+  rows <- Protigy:::pelsa_pin_metadata_rows(vdf, 1L, n_peptides = 1L)
+  pep_val <- rows$value[rows$label == "Peptide"]
+  expect_equal(pep_val, "NameA_aa10")
+})
+
