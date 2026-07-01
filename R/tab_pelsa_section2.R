@@ -210,13 +210,32 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
 
     output$failed_annotation_count <- shinydashboard::renderValueBox({
       entry <- active_entry()
+      # TRUE failure residual = accessions absent from the annotation for NO known
+      # reason. A self-describing annotation (with a `disposition` column) buckets
+      # merged/demerged/deleted accessions as "excluded for a reason", so those
+      # DROP OUT of this count. Fall back to the legacy unannotated count when the
+      # annotation carries no disposition info (n_annotation_failed absent -> the
+      # two are equal). The merged/deleted breakdown is shown as a subtitle hint.
+      qc <- if (is.null(entry)) list() else (entry$qc %||% list())
       n <- if (is.null(entry)) NA_integer_ else
-        (entry$qc$n_unannotated_accessions %||% length(entry$unannotated))
+        (qc$n_annotation_failed %||% qc$n_unannotated_accessions %||%
+           length(entry$unannotated))
+      excluded <- (qc$n_annotated_merged %||% 0L) +
+        (qc$n_annotated_demerged %||% 0L) + (qc$n_annotated_deleted %||% 0L)
+      subtitle <- if (excluded > 0L) {
+        sprintf("Proteins failed annotation (+%s excluded: merged/deleted)",
+                format(excluded, big.mark = ","))
+      } else {
+        "Proteins failed annotation"
+      }
+      # `n` is NA before analysis (entry NULL). Guard the color test against NA
+      # (`if (NA > 0L)` errors) and treat NA as "no failures yet" -> green.
+      has_failures <- isTRUE(n > 0L)
       shinydashboard::valueBox(
-        value    = format(n %||% NA_integer_, big.mark = ","),
-        subtitle = "Proteins failed annotation",
+        value    = format(n, big.mark = ","),
+        subtitle = subtitle,
         icon     = icon("circle-question"),
-        color    = "orange"
+        color    = if (has_failures) "orange" else "green"
       )
     })
 
