@@ -477,6 +477,63 @@ test_that("y_cutoff attribute = empirical raw-p at adj.P.Val == sig_cutoff", {
   expect_equal(attr(out, "y_cutoff"), -log10(0.02))
 })
 
+# --- sig_stat: nom.p.val honors the user-selected significance statistic ------
+# The Statistics tab lets the user pick stat = "adj.p.val" (default) or
+# "nom.p.val" (tab_stat_plot_helpers.R). The PELSA volcano must honor the same
+# choice so the two volcanoes agree on identical data + cutoff. A peptide that
+# FAILS the adj.P.Val filter but PASSES the nominal-p filter is the discriminator.
+
+test_that("sig_stat = nom.p.val classifies on P.Value, not adj.P.Val", {
+  # P.Value 0.01 < 0.05 (passes nominal) but adj.P.Val 0.30 > 0.05 (fails adj).
+  stat <- .make_stat_df(
+    seq = "PEPNOM", acc = "ACC1", genes = "GNOM",
+    logfc = 2.0, adjp = 0.30, pval = 0.01,
+    pep_start = 10L, pep_end = 14L, row_id = 1L
+  )
+  matched <- .make_matched("PEPNOM", "ACC1", "GNOM", 10L, 14L, row_id = 1L)
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1",
+    opts = list(sig_cutoff = 0.05, sig_stat = "nom.p.val"))
+
+  expect_true(out$Significant)
+  expect_equal(out$sig_direction, "up")
+})
+
+test_that("sig_stat = nom.p.val sets y_cutoff = -log10(cutoff)", {
+  stat <- .make_stat_df(
+    seq = "PEPNOM", acc = "ACC1", genes = "GNOM",
+    logfc = 2.0, adjp = 0.30, pval = 0.01,
+    pep_start = 10L, pep_end = 14L, row_id = 1L
+  )
+  matched <- .make_matched("PEPNOM", "ACC1", "GNOM", 10L, 14L, row_id = 1L)
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1",
+    opts = list(sig_cutoff = 0.05, sig_stat = "nom.p.val"))
+
+  expect_equal(attr(out, "y_cutoff"), -log10(0.05))
+})
+
+test_that("sig_stat defaults to adj.p.val (unchanged) when unset", {
+  # Same discriminating peptide: under the default adj path it is NOT significant.
+  stat <- .make_stat_df(
+    seq = "PEPNOM", acc = "ACC1", genes = "GNOM",
+    logfc = 2.0, adjp = 0.30, pval = 0.01,
+    pep_start = 10L, pep_end = 14L, row_id = 1L
+  )
+  matched <- .make_matched("PEPNOM", "ACC1", "GNOM", 10L, 14L, row_id = 1L)
+
+  out <- pelsa_build_volcano_df(
+    stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
+    markers = character(0), contrast = "C1",
+    opts = list(sig_cutoff = 0.05))
+
+  expect_false(out$Significant)
+})
+
 # --- best_peptide panel reuses 2G rollup -------------------------------------
 
 test_that("best_peptide panel uses 2G rollup (one dot per distinct best-peptide)", {

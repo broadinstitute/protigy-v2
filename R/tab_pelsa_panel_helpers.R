@@ -92,7 +92,8 @@
 #         sorted by pep_start; 0-row frame (same columns) when nothing matches.
 # @noRd
 pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
-                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
+                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
+                                     sig_stat = "adj.p.val") {
   empty <- data.frame(
     peptide_seq = character(0), pep_start = integer(0), pep_end = integer(0),
     logFC = numeric(0), adj.P.Val = numeric(0), sig = logical(0),
@@ -106,7 +107,11 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
 
   lfc_col  <- paste0("logFC.", contrast)
   adjp_col <- paste0("adj.P.Val.", contrast)
-  if (!all(c(lfc_col, adjp_col) %in% colnames(stat_df))) return(empty)
+  # The significance flag uses the SHARED stat choice: raw P.Value for
+  # "nom.p.val", else adj.P.Val. The reported adj.P.Val column is unchanged.
+  sig_col  <- if (identical(sig_stat, "nom.p.val"))
+    paste0("P.Value.", contrast) else adjp_col
+  if (!all(c(lfc_col, adjp_col, sig_col) %in% colnames(stat_df))) return(empty)
 
   m <- matched[as.character(matched$accession) == accession, , drop = FALSE]
   m <- m[!is.na(m$pep_start) & !is.na(m$pep_end), , drop = FALSE]
@@ -116,6 +121,7 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
   idx   <- match(as.character(m[["PEP.StrippedSequence"]]), key_s)
   logfc <- as.numeric(stat_df[[lfc_col]])[idx]
   adjp  <- as.numeric(stat_df[[adjp_col]])[idx]
+  sigp  <- as.numeric(stat_df[[sig_col]])[idx]
 
   out <- data.frame(
     peptide_seq = as.character(m[["PEP.StrippedSequence"]]),
@@ -123,7 +129,7 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
     pep_end     = as.integer(m$pep_end),
     logFC       = logfc,
     adj.P.Val   = adjp,
-    sig         = !is.na(adjp) & adjp < sig_cutoff,
+    sig         = !is.na(sigp) & sigp < sig_cutoff,
     stringsAsFactors = FALSE
   )
   out <- out[order(out$pep_start, out$pep_end), , drop = FALSE]
@@ -487,7 +493,8 @@ pelsa_woods_panel <- function(peptides, features_lanes, intervals, prot_len,
 # @noRd
 pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
                                       accession, contrast,
-                                      sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
+                                      sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
+                                      sig_stat = "adj.p.val") {
   prot_len <- max(1L, as.integer(prot_len))
   # Human-readable contrast for the subtitle, matching the volcano export
   # (pelsa_volcano_export_df): "DMSO_over_VEH" -> "DMSO vs VEH".
@@ -534,7 +541,15 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
   pk$neglogp <- pmin(-log10(pmax(pk$.adjp, .Machine$double.xmin)),
                      .PELSA_WOODS_NEGLOG_CAP)
   pk$neglogp[is.na(pk$.adjp)] <- 0
-  pk$is_sig <- !is.na(pk$.adjp) & pk$.adjp < sig_cutoff
+  # The "*" significance markers follow the SHARED stat choice. Prefer the
+  # authoritative `sig` column computed upstream by pelsa_woods_peptide_data()
+  # (sig_stat-aware); fall back to recomputing on adj.P.Val if it is absent.
+  pk$is_sig <- if ("sig" %in% colnames(pk)) {
+    isTRUE_vec <- pk$sig %in% TRUE
+    isTRUE_vec
+  } else {
+    !is.na(pk$.adjp) & pk$.adjp < sig_cutoff
+  }
 
   # ALL features, lane-packed.
   feats <- if (is.data.frame(features)) features else data.frame()
@@ -626,7 +641,9 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(
       title = title, subtitle = sprintf("Wood's plot: %s", contrast_disp),
-      caption = sprintf("*Significant peptides (adj.P < %s)", format(sig_cutoff)),
+      caption = sprintf("*Significant peptides (%s < %s)",
+                        if (identical(sig_stat, "nom.p.val")) "nom.P" else "adj.P",
+                        format(sig_cutoff)),
       x = "Residue position", y = "log2FC") +
     base_theme
   gg
@@ -698,15 +715,20 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
 # validation fails fast. Keep free of Shiny reactivity (unit-testable).
 ################################################################################
 
-# Resolve the contrast's adj.P.Val column name (adj.P.Val.<contrast>) and verify
-# it exists. Fails fast with a loud, column-naming error.
+# Resolve the contrast's significance p-column name and verify it exists. Which
+# column depends on the SHARED sig_stat choice: "nom.p.val" -> P.Value.<contrast>
+# (raw p), otherwise adj.P.Val.<contrast>. Fails fast with a loud, column-naming
+# error. (Kept named *_adjp_col for call-site stability; it now resolves either p
+# column.)
 # @noRd
-.pelsa_intensity_adjp_col <- function(stat_df, contrast) {
+.pelsa_intensity_adjp_col <- function(stat_df, contrast,
+                                      sig_stat = "adj.p.val") {
   if (length(contrast) != 1L || is.na(contrast) || !nzchar(contrast)) {
     stop("PELSA intensity: contrast must be a single non-empty string",
          call. = FALSE)
   }
-  col <- paste0("adj.P.Val.", contrast)
+  prefix <- if (identical(sig_stat, "nom.p.val")) "P.Value." else "adj.P.Val."
+  col <- paste0(prefix, contrast)
   if (!col %in% colnames(stat_df)) {
     stop("PELSA intensity: stat_df missing required stat column: ", col,
          call. = FALSE)
@@ -742,7 +764,8 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
 # @noRd
 pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
                                      contrast,
-                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
+                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
+                                     sig_stat = "adj.p.val") {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (!is.data.frame(stat_df)) {
     stop("pelsa_intensity_proteins: stat_df must be a data.frame", call. = FALSE)
@@ -759,9 +782,9 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
     stop("pelsa_intensity_proteins: matched_cache must have an 'accession' column",
          call. = FALSE)
   }
-  adjp_col <- .pelsa_intensity_adjp_col(stat_df, contrast)
+  adjp_col <- .pelsa_intensity_adjp_col(stat_df, contrast, sig_stat)
 
-  # ---- Join the peptide's adj.P.Val onto each matched row (vectorized) -----
+  # ---- Join the peptide's significance p-value onto each matched row -------
   use_row_id <- ".row_id" %in% colnames(stat_df) &&
     ".row_id" %in% colnames(matched_cache)
   if (use_row_id) {
@@ -899,7 +922,8 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
                                       condition_order, contrast,
                                       sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
                                       is_marker = FALSE,
-                                      show_all = FALSE) {
+                                      show_all = FALSE,
+                                      sig_stat = "adj.p.val") {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (length(accession) != 1L || is.na(accession) || !nzchar(accession)) {
     stop("pelsa_intensity_line_data: accession must be a single non-empty string",
@@ -930,7 +954,7 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
     stop("pelsa_intensity_line_data: condition_order must be non-empty",
          call. = FALSE)
   }
-  adjp_col <- .pelsa_intensity_adjp_col(stat_df, contrast)
+  adjp_col <- .pelsa_intensity_adjp_col(stat_df, contrast, sig_stat)
   cond <- .pelsa_intensity_condition_map(condition_map, processed_mat)
 
   # ---- Subset matched_cache to this accession (the occurrences == lines) ---

@@ -35,6 +35,28 @@
 # Pure plot-assembly / shaping logic: R/tab_pelsa_volcano_helpers.R (tested).
 ################################################################################
 
+# --- Volcano base-rebuild / overlay-reset trigger contract -------------------
+# The gold-overlay (overlay_n) tracks how many proxy-added highlight traces sit
+# on the CLIENT figure. Anything that rebuilds the ~100k-point base figure wipes
+# those traces, so overlay_n MUST be reset (to 0) and the overlay re-applied on
+# the new figure. The base rebuilds for two families of reasons:
+#   (1) display controls (color mode, contrast, label mode, top-N, WebGL flip), and
+#   (2) volcano_df_cache clears (marker-add, significance cutoff, significance stat)
+#       -> active_volcano_df() recomputes -> renderPlotly rebuilds the base.
+# These two pure helpers are the SINGLE SOURCE OF TRUTH the section3 observers
+# key off. The reset set MUST be a superset of the clear set, else a cache clear
+# rebuilds the base without resetting overlay_n and the next apply_gold_overlay()
+# deletes trace indices that no longer exist (dropping the markers trace). The
+# unit test test-pelsa-overlay-reset.R enforces that invariant so the two lists
+# cannot drift apart. @noRd
+.pelsa_volcano_cache_clear_reasons <- function() {
+  c("markers", "sig_cutoff", "sig_stat")
+}
+.pelsa_volcano_overlay_reset_reasons <- function() {
+  c("color_mode", "contrast", "label_mode", "top_n", "use_webgl",
+    .pelsa_volcano_cache_clear_reasons())
+}
+
 ################################################################################
 # Tab-level UI and Server (active-dataset view + parent-level registries)
 ################################################################################
@@ -430,6 +452,24 @@ PELSASection3_Ome_Server <- function(id,
       best_volcano_df_cache(list())
     }, ignoreInit = TRUE)
 
+    # Significance STATISTIC: also SHARED with the Statistics tab (Statistics >
+    # Summary, stat_params()[[ome]]$stat). "nom.p.val" classifies significance on
+    # the raw P.Value and draws the dashed line at -log10(cutoff); "adj.p.val"
+    # (the default) classifies on adj.P.Val. The PELSA volcano must honor the same
+    # choice so it agrees with the Statistics volcano on identical data + cutoff.
+    sig_stat_r <- reactive({
+      sp <- stat_params()
+      st <- if (is.null(sp) || is.null(sp[[ome]])) NULL else sp[[ome]]$stat
+      if (identical(st, "nom.p.val")) "nom.p.val" else "adj.p.val"
+    })
+
+    # A stat change (adj.p.val <-> nom.p.val) must also rebuild: it flips
+    # Significant / sig_direction and the y_cutoff for the SAME cutoff.
+    observeEvent(sig_stat_r(), {
+      volcano_df_cache(list())
+      best_volcano_df_cache(list())
+    }, ignoreInit = TRUE)
+
     active_volcano_df <- reactive({
       contrast <- active_contrast()
       req(contrast)
@@ -459,7 +499,8 @@ PELSASection3_Ome_Server <- function(id,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
           opts          = list(panel = "all_peptide",
-                               sig_cutoff = sig_cutoff_r()),
+                               sig_cutoff = sig_cutoff_r(),
+                               sig_stat = sig_stat_r()),
           is_self_curated = is_self_curated_r()
         ),
         error = function(e) {
@@ -520,7 +561,8 @@ PELSASection3_Ome_Server <- function(id,
           markers       = isolate(marker_accessions()),
           contrast      = contrast,
           opts          = list(panel = "best_peptide",
-                               sig_cutoff = sig_cutoff_r()),
+                               sig_cutoff = sig_cutoff_r(),
+                               sig_stat = sig_stat_r()),
           is_self_curated = is_self_curated_r()
         ),
         error = function(e) {
@@ -918,15 +960,20 @@ PELSASection3_Ome_Server <- function(id,
     # ALL extra traces on the client, so the old overlay traces are GONE - reset
     # overlay_n(0L) WITHOUT a delete (deleting the now-absent traces would
     # error / drop the markers), then re-add the current overlay set once the new
-    # figure has flushed. The base now rebuilds on color-mode / contrast AND on
-    # label-mode / Top-N (labels are baked into the build, not relayout-applied),
-    # so all four are triggers here - otherwise a label change would silently drop
-    # the gold highlight. use_webgl() is also a trigger: a client WebGL->SVG flip
-    # rebuilds the base figure (the renders depend on use_webgl()), clearing the
-    # overlay traces, so the overlay must be re-applied on the new backend too.
+    # figure has flushed. Triggers = the canonical overlay-reset reasons (see
+    # .pelsa_volcano_overlay_reset_reasons): display controls (color mode /
+    # contrast / label mode / Top-N - labels are baked into the build, not
+    # relayout-applied) and the WebGL flip (a client WebGL->SVG flip rebuilds the
+    # base), PLUS the volcano_df_cache clears (markers / sig cutoff / sig stat):
+    # each clears the cache -> active_volcano_df() recomputes -> renderPlotly
+    # rebuilds the base, wiping the overlay traces, so overlay_n MUST reset here
+    # too (otherwise the next apply_gold_overlay() deletes absent trace indices
+    # and drops the markers trace). The trigger list MUST cover every reason in
+    # .pelsa_volcano_cache_clear_reasons() - enforced by test-pelsa-overlay-reset.
     observeEvent(
       list(input$pelsa_color_mode, active_contrast(),
-           label_mode_for_contrast(), top_n_for_contrast(), use_webgl()),
+           label_mode_for_contrast(), top_n_for_contrast(), use_webgl(),
+           marker_accessions(), sig_cutoff_r(), sig_stat_r()),
       {
         session$onFlushed(function() {
           overlay_n(0L)   # the rebuild already cleared the overlay traces
@@ -1012,7 +1059,8 @@ PELSASection3_Ome_Server <- function(id,
           accession = acc, stat_df = stat_df, matched_cache = matched,
           processed_mat = pm, condition_map = cmap, condition_order = corder,
           contrast = contrast, sig_cutoff = sig_cutoff_r(), is_marker = is_mk,
-          show_all = TRUE),   # pinned panel shows ALL peptides of the protein
+          show_all = TRUE,   # pinned panel shows ALL peptides of the protein
+          sig_stat = sig_stat_r()),
         error = function(e) NULL)
     })
 
@@ -1136,7 +1184,8 @@ PELSASection3_Ome_Server <- function(id,
 
       stat_df <- pelsa_volcano_stat_df(stat_df_raw(), matched)
       pep <- pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
-                                      sig_cutoff = sig_cutoff_r())
+                                      sig_cutoff = sig_cutoff_r(),
+                                      sig_stat = sig_stat_r())
 
       # Protein length: prefer the cache coverage frame; fall back to the max
       # mapped residue so the axis still spans the peptides. cov_frac is the
@@ -1231,7 +1280,8 @@ PELSASection3_Ome_Server <- function(id,
         stat_results()[[ome]],
         if (is.null(entry)) NULL else entry$matched,
         feat_df(), isolate(marker_accessions()), active_contrast(), panel,
-        is_self_curated = isolate(is_self_curated_r()))
+        is_self_curated = isolate(is_self_curated_r()),
+        sig_stat = isolate(sig_stat_r()))
     }
 
     # Common tryCatch wrapper: log the failure (with the ome + a label) and
@@ -1266,6 +1316,7 @@ PELSASection3_Ome_Server <- function(id,
       # the SAME user-set cutoff as the in-app volcano (Statistics > Summary), so
       # the export mirrors exactly what the user sees on screen.
       sig_cutoff <- isolate(sig_cutoff_r())
+      sig_stat <- isolate(sig_stat_r())
       self_curated <- isolate(is_self_curated_r())
       choices <- contrast_choices()
       for (i in seq_along(choices)) {
@@ -1274,7 +1325,8 @@ PELSASection3_Ome_Server <- function(id,
         lab_mode <- reg[[key]] %||% (isolate(input$pelsa_label_mode) %||% "none")
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
                                           "all_peptide", sig_cutoff = sig_cutoff,
-                                          is_self_curated = self_curated)
+                                          is_self_curated = self_curated,
+                                          sig_stat = sig_stat)
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
             .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top,
@@ -1288,7 +1340,8 @@ PELSASection3_Ome_Server <- function(id,
           df_best <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
                                              "best_peptide",
                                              sig_cutoff = sig_cutoff,
-                                             is_self_curated = self_curated)
+                                             is_self_curated = self_curated,
+                                             sig_stat = sig_stat)
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
               .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top,
@@ -1317,12 +1370,13 @@ PELSASection3_Ome_Server <- function(id,
       # Use the SAME user-set cutoff as the on-screen intensity panel so the
       # exported Significant/Non-significant split matches what the user sees.
       sig_cutoff <- isolate(sig_cutoff_r())
+      sig_stat <- isolate(sig_stat_r())
       stat_df <- pelsa_export_add_any_contrast(
         pelsa_volcano_stat_df(stat_results()[[ome]], matched))
       markers <- isolate(marker_accessions())
       prot <- tryCatch(
         pelsa_intensity_proteins(stat_df, matched, markers, .PELSA_ANY_CONTRAST,
-                                 sig_cutoff),
+                                 sig_cutoff, sig_stat = sig_stat),
         error = function(e) NULL)
       if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
       d_mk <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
@@ -1338,7 +1392,7 @@ PELSASection3_Ome_Server <- function(id,
         ld <- tryCatch(
           pelsa_intensity_line_data(acc, stat_df, matched, pm, cmap, corder,
             .PELSA_ANY_CONTRAST, sig_cutoff, is_marker = is_mk,
-            show_all = TRUE),
+            show_all = TRUE, sig_stat = sig_stat),
           error = function(e) NULL)
         if (is.null(ld) || nrow(ld) == 0L) next
         gene <- pelsa_export_gene_for(matched, acc)
@@ -1360,12 +1414,13 @@ PELSASection3_Ome_Server <- function(id,
       if (nrow(matched) == 0L) return(invisible(NULL))
       # Use the SAME user-set cutoff as the on-screen Woods panel.
       sig_cutoff <- isolate(sig_cutoff_r())
+      sig_stat <- isolate(sig_stat_r())
       stat_df <- pelsa_volcano_stat_df(stat_results()[[ome]], matched)
       stat_any <- pelsa_export_add_any_contrast(stat_df)
       markers <- isolate(marker_accessions())
       prot <- tryCatch(
         pelsa_intensity_proteins(stat_any, matched, markers, .PELSA_ANY_CONTRAST,
-                                 sig_cutoff),
+                                 sig_cutoff, sig_stat = sig_stat),
         error = function(e) NULL)
       if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
       fdf <- feat_df() %||% data.frame()
@@ -1386,13 +1441,13 @@ PELSASection3_Ome_Server <- function(id,
           contrast <- unname(choices[[cj]])
           pep <- tryCatch(
             pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
-                                     sig_cutoff),
+                                     sig_cutoff, sig_stat = sig_stat),
             error = function(e) NULL)
           if (is.null(pep) || nrow(pep) == 0L) next
           plen <- pelsa_export_prot_len(cov, acc, pep)
           p <- tryCatch(
             pelsa_woods_export_ggplot(pep, feats, plen, gene, acc, contrast,
-                                      sig_cutoff),
+                                      sig_cutoff, sig_stat = sig_stat),
             error = function(e) NULL)
           if (is.null(p)) next
           base <- paste0("woods_", pelsa_safe_name(gene), "_",

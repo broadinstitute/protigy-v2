@@ -244,8 +244,11 @@
 # sig_color) to a frame already carrying logFC / adj.P.Val. Vectorized.
 #
 # @noRd
-.pelsa_attach_significance <- function(df, sig_cutoff) {
-  sig <- !is.na(df$adj.P.Val) & df$adj.P.Val < sig_cutoff
+.pelsa_attach_significance <- function(df, sig_cutoff, sig_stat = "adj.p.val") {
+  # Honor the user-selected significance statistic (shared with the Statistics
+  # tab): "nom.p.val" classifies on the raw P.Value, otherwise on adj.P.Val.
+  sig_col <- if (identical(sig_stat, "nom.p.val")) df$P.Value else df$adj.P.Val
+  sig <- !is.na(sig_col) & sig_col < sig_cutoff
   up <- sig & !is.na(df$logFC) & df$logFC > 0
   down <- sig & !is.na(df$logFC) & df$logFC < 0
   sig_direction <- rep("ns", nrow(df))
@@ -265,7 +268,12 @@
 # build_volcano_df()'s adj.p.val branch.
 #
 # @noRd
-.pelsa_volcano_y_cutoff <- function(adjp, pval, sig_cutoff) {
+.pelsa_volcano_y_cutoff <- function(adjp, pval, sig_cutoff,
+                                    sig_stat = "adj.p.val") {
+  # For "nom.p.val" the dashed line is simply -log10(cutoff) on the raw-p axis
+  # (mirrors tab_stat_plot_helpers.R). For "adj.p.val" it is the empirical raw-p
+  # of the largest P.Value among peptides passing the adj.P.Val filter.
+  if (identical(sig_stat, "nom.p.val")) return(-log10(sig_cutoff))
   passing <- which(!is.na(adjp) & adjp < sig_cutoff)
   if (length(passing) == 0L) return(Inf)
   -log10(max(pval[passing], na.rm = TRUE))
@@ -306,6 +314,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   }
 
   sig_cutoff <- opts$sig_cutoff %||% .PELSA_EXPORT_SIG_CUTOFF
+  sig_stat <- opts$sig_stat %||% "adj.p.val"
   panel <- opts$panel %||% "all_peptide"
   logfc_cap <- opts$logfc_cap
   if (!panel %in% c("all_peptide", "best_peptide")) {
@@ -332,18 +341,20 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 
   if (panel == "best_peptide") {
     return(.pelsa_build_volcano_best(stat_df, matched_cache, feat_df, markers,
-                                     contrast, stat_cols, sig_cutoff,
+                                     contrast, stat_cols, sig_cutoff, sig_stat,
                                      logfc_cap, is_self_curated))
   }
   .pelsa_build_volcano_all(stat_df, matched_cache, feat_df, markers,
-                           stat_cols, sig_cutoff, logfc_cap, is_self_curated)
+                           stat_cols, sig_cutoff, sig_stat, logfc_cap,
+                           is_self_curated)
 }
 
 # ---- all-peptide panel (one dot per source peptide, no explode) -------------
 
 # @noRd
 .pelsa_build_volcano_all <- function(stat_df, matched_cache, feat_df, markers,
-                                     stat_cols, sig_cutoff, logfc_cap,
+                                     stat_cols, sig_cutoff,
+                                     sig_stat = "adj.p.val", logfc_cap,
                                      is_self_curated = FALSE) {
   n <- nrow(stat_df)
 
@@ -447,12 +458,13 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   df[[key_col]] <- NULL
 
   # ---- Two-sided significance + display clamp ------------------------------
-  df <- .pelsa_attach_significance(df, sig_cutoff)
+  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat)
   if (!is.null(logfc_cap)) {
     df$logFC <- pmax(pmin(df$logFC, logfc_cap), -logfc_cap)
   }
 
-  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff)
+  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
+                                      sig_stat)
 
   df <- df[, .pelsa_volcano_out_cols(), drop = FALSE]
   rownames(df) <- NULL
@@ -533,6 +545,7 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
 # @noRd
 .pelsa_build_volcano_best <- function(stat_df, matched_cache, feat_df, markers,
                                       contrast, stat_cols, sig_cutoff,
+                                      sig_stat = "adj.p.val",
                                       logfc_cap, is_self_curated = FALSE) {
   # Build the exploded+stat frame the 2G rollup consumes: one row per
   # (peptide, accession), carrying the contrast's adj.P.Val / logFC under the
@@ -607,14 +620,16 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   # The 2G rollup already built the ;-joined multilabel over won accessions.
   df$label <- rolled$label
 
-  df <- .pelsa_attach_significance(df, sig_cutoff)
+  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat)
   if (!is.null(logfc_cap)) {
     df$logFC <- pmax(pmin(df$logFC, logfc_cap), -logfc_cap)
   }
 
   # y_cutoff: empirical raw-p at adj.P.Val == sig_cutoff over the best-peptide
-  # dots (the dashed line is computed on what is plotted).
-  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff)
+  # dots (the dashed line is computed on what is plotted); -log10(cutoff) when
+  # the user selected the nominal-p statistic.
+  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
+                                      sig_stat)
 
   df <- df[, .pelsa_volcano_out_cols(), drop = FALSE]
   rownames(df) <- NULL
@@ -1962,7 +1977,8 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2) {
 pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
                                     contrast, panel,
                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
-                                    is_self_curated = FALSE) {
+                                    is_self_curated = FALSE,
+                                    sig_stat = "adj.p.val") {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (is.null(contrast) ||
       !pelsa_volcano_has_contrast(stat_raw, contrast)) return(NULL)
@@ -1976,7 +1992,7 @@ pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
       matched_cache = if (nrow(matched) > 0L) matched else
         pelsa_volcano_empty_matched(),
       feat_df = fdf, markers = markers, contrast = contrast,
-      opts = list(panel = panel, sig_cutoff = sig_cutoff),
+      opts = list(panel = panel, sig_cutoff = sig_cutoff, sig_stat = sig_stat),
       is_self_curated = is_self_curated
     ),
     error = function(e) NULL
