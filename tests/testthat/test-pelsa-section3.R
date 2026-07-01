@@ -1700,6 +1700,73 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
   )
 })
 
+# feat_df notification tests -----------------------------------------------
+
+test_that("feat_df warns and returns NULL when annotation path exists but file is missing", {
+  # local_mocked_bindings cannot intercept shiny::showNotification inside a
+  # moduleServer namespace; fall back to asserting on the message() log.
+  missing_path <- tempfile(fileext = ".tsv")   # never created on disk
+  result_val <- NULL
+  expect_message(
+    shiny::testServer(
+      PELSASection3_Ome_Server,
+      args = list(
+        id = "Proteome", ome = "Proteome",
+        GCT_processed = reactive(NULL), parameters = reactive(NULL),
+        default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+        stat_results = reactive(NULL), stat_params = reactive(.mk_stat_params()),
+        pelsa_analysis = reactive(.mk_cache()),
+        pelsa_setup_state = reactive(list(
+          species      = list(Proteome = NULL),
+          marker_rows  = list(Proteome = data.frame(
+            accession = "ACC1", gene = "G1", stringsAsFactors = FALSE)),
+          self_curated     = list(Proteome = FALSE),
+          annotation_path  = list(Proteome = missing_path)
+        )),
+        poi_registry          = reactiveVal(list()),
+        top_n_registry        = reactiveVal(list()),
+        label_mode_registry   = reactiveVal(list())
+      ),
+      {
+        result_val <<- feat_df()
+      }
+    ),
+    regexp = "PELSA feat_df"
+  )
+  expect_null(result_val)
+})
+
+test_that("feat_df is silent and returns NULL for a self-curated dataset", {
+  result_val <- NULL
+  # expect_no_message verifies zero message() calls (self-curated stays silent).
+  expect_no_message(
+    shiny::testServer(
+      PELSASection3_Ome_Server,
+      args = list(
+        id = "Proteome", ome = "Proteome",
+        GCT_processed = reactive(NULL), parameters = reactive(NULL),
+        default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+        stat_results = reactive(NULL), stat_params = reactive(.mk_stat_params()),
+        pelsa_analysis = reactive(.mk_cache()),
+        pelsa_setup_state = reactive(list(
+          species      = list(Proteome = NULL),
+          marker_rows  = list(Proteome = data.frame(
+            accession = "ACC1", gene = "G1", stringsAsFactors = FALSE)),
+          self_curated     = list(Proteome = TRUE),
+          annotation_path  = list(Proteome = "irrelevant_path.tsv")
+        )),
+        poi_registry          = reactiveVal(list()),
+        top_n_registry        = reactiveVal(list()),
+        label_mode_registry   = reactiveVal(list())
+      ),
+      {
+        result_val <<- feat_df()
+      }
+    )
+  )
+  expect_null(result_val)
+})
+
 # (a) cache NULL but stats present -> section surfaces the Start-Analysis notice
 #     and does NOT error / half-render. The #1 reviewer gap.
 test_that("cache NULL + stats present: section shows Start-Analysis notice, no df", {

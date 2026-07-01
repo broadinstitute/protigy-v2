@@ -308,13 +308,30 @@ PELSASection3_Ome_Server <- function(id,
     # network. NULL when unavailable / self-curated (3A then colors "none").
     feat_df <- reactive({
       ap <- annotation_path_r()
-      if (is.null(ap) || length(ap) != 1L || is.na(ap) || !nzchar(ap) ||
-          !file.exists(ap)) {
+      # Silent NULL: self-curated or nothing uploaded (no path to fail).
+      if (is.null(ap) || length(ap) != 1L || is.na(ap) || !nzchar(ap)) {
+        return(NULL)
+      }
+      # A path WAS provided but the file is gone -> visible failure, not silent.
+      if (!file.exists(ap)) {
+        message("PELSA feat_df: annotation file missing at ", ap)
+        showNotification(
+          "Feature annotation file is missing -- peptides shown unannotated.",
+          type = "warning", duration = 8
+        )
         return(NULL)
       }
       tryCatch(
         pelsa_read_annotation_file(ap),
-        error = function(e) NULL
+        error = function(e) {
+          message("PELSA feat_df: annotation read error: ", conditionMessage(e))
+          showNotification(
+            paste0("Could not read the feature annotation file -- peptides ",
+                   "shown unannotated: ", conditionMessage(e)),
+            type = "warning", duration = 8
+          )
+          NULL
+        }
       )
     })
 
