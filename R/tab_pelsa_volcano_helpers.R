@@ -1997,6 +1997,12 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2,
 # @param is_self_curated TRUE for a self-curated species: forces accession labels
 #                  + blanks the gene, so the exported figure matches the on-screen
 #                  volcano (the export is a SEPARATE re-derive of the same df).
+# @param .stat_df  optional precomputed pelsa_volcano_stat_df(stat_raw, matched)
+#                  result, reused across a contrast/panel export loop instead of
+#                  recomputing it on every call (its output is contrast/panel-
+#                  invariant). MUST be built from the exact same stat_raw/matched
+#                  passed to this call, or the two paths silently diverge. NULL
+#                  (default) recomputes internally, matching the original behavior.
 # @return a 3A volcano df, or NULL.
 # @noRd
 pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,

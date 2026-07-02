@@ -116,6 +116,11 @@ pelsa_woods_build_index <- function(matched, stat_df) {
 # @param sig_cutoff adj.P.Val significance threshold. Defaults to the shared
 #   .PELSA_EXPORT_SIG_CUTOFF; live module callers thread the user-set
 #   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
+# @param .index    optional pelsa_woods_build_index(matched, stat_df) result,
+#   reused across a (protein x contrast) export loop instead of re-scanning
+#   `matched`/`stat_df` on every call. MUST be built from the exact same
+#   `matched`/`stat_df` passed to this call, or the two paths silently diverge.
+#   NULL (default) falls back to the original linear-scan behavior.
 # @return data.frame(peptide_seq, pep_start, pep_end, logFC, adj.P.Val, sig),
 #         sorted by pep_start; 0-row frame (same columns) when nothing matches.
 # @noRd
@@ -967,6 +972,11 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 #   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
 # @param is_marker        TRUE -> include BOTH significant + non-significant
 #   occurrences (panel-tagged); FALSE -> only significant occurrences.
+# @param .index    optional pelsa_intensity_build_index(matched_cache) result,
+#   reused across a per-protein export loop instead of re-scanning
+#   matched_cache on every call. MUST be built from the exact same
+#   matched_cache passed to this call, or the two paths silently diverge.
+#   NULL (default) falls back to the original linear-scan behavior.
 # @return tidy long data.frame, one row per (occurrence, condition-with-samples),
 #   columns: accession, peptide_seq, pep_start, pep_end, pep_occurrence_idx, aa_label,
 #   panel ("Significant"/"Non-significant"), condition (factor = condition_order),

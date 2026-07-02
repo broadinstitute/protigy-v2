@@ -3464,8 +3464,15 @@ test_that("pelsa_intensity_build_index drops NA / blank accession rows", {
 
 test_that("pelsa_intensity_line_data: .index path is identical to the scan path", {
   proc <- .mk_proc()
-  stat <- .mk_stat("pSIG", "PROT", 0.001, row_id = 1L)
-  matched <- .mk_matched("pSIG", "PROT", 100L, 1L)
+  # Two peptide rows/occurrences for "PROT" (aligned to .mk_proc()'s two rows
+  # via .row_id 1/2) plus a THIRD row for a different accession "OTHER" that
+  # must be excluded from PROT's result -- this exercises split()'s grouping
+  # across a duplicate accession, not just a single-row toy case.
+  stat <- .mk_stat(c("pA", "pB", "pOther"), c("PROT", "PROT", "OTHER"),
+                   c(0.001, 0.02, 0.5), row_id = 1:3)
+  matched <- .mk_matched(c("pA", "pB", "pOther"), c("PROT", "PROT", "OTHER"),
+                         pep_start = c(10L, 20L, 30L), row_id = 1:3,
+                         pep_occurrence_idx = c(1L, 2L, 1L))
   idx <- pelsa_intensity_build_index(matched)
   plain   <- pelsa_intensity_line_data("PROT", stat, matched, proc,
                                        condition_map = .cond_map,
@@ -3476,6 +3483,10 @@ test_that("pelsa_intensity_line_data: .index path is identical to the scan path"
                                        condition_order = .cond_order,
                                        contrast = "C1", .index = idx)
   expect_identical(plain, indexed)
+  # Guard against a vacuous pass: both paths must actually resolve BOTH PROT
+  # occurrences (not silently collapse to one row or leak the OTHER row in).
+  expect_equal(nrow(plain), 4L)  # 2 occurrences x 2 conditions (A, B)
+  expect_setequal(plain$peptide_seq, c("pA", "pB"))
 })
 
 test_that("pelsa_intensity_line_data: .index absent-accession still errors", {
