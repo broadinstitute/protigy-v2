@@ -428,6 +428,26 @@ test_that("splot marker labels use protein-name fallback when gene missing", {
   expect_equal(labs, c("NameA_aa10", "NameB_aa20"))
 })
 
+test_that("S-plot centers its title and subtitle over the whole figure", {
+  prep <- list(
+    background = data.frame(rank = 1:5, y = c(5, 4, 3, 2, 1),
+                            stringsAsFactors = FALSE),
+    marker_pts = data.frame(rank = integer(0), y = numeric(0),
+                            stringsAsFactors = FALSE),
+    trypsin_pts = data.frame(rank = integer(0), y = numeric(0),
+                             stringsAsFactors = FALSE),
+    marker_labels = data.frame(rank = integer(0), y = numeric(0),
+                               label = character(0), stringsAsFactors = FALSE),
+    trypsin_labels = data.frame(rank = integer(0), y = numeric(0),
+                                label = character(0), stringsAsFactors = FALSE),
+    y_title = "log2(intensity)", show_trypsin = FALSE)
+  g <- pelsa_splot_build_ggplot(prep, title = "Intensity rank (S-plot)",
+                                subtitle = "sample_1")
+  expect_equal(g$theme$plot.title.position, "plot")
+  expect_equal(g$theme$plot.title$hjust, 0.5)
+  expect_equal(g$theme$plot.subtitle$hjust, 0.5)
+})
+
 test_that("S-plot repel labels dodge in both directions", {
   prep <- list(
     background = data.frame(rank = 1:50, y = rnorm(50)),

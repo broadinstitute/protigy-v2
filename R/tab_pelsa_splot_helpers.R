@@ -393,8 +393,10 @@ pelsa_splot_build_ggplot <- function(prep,
                   title = title, subtitle = subtitle) +
     ggplot2::theme_bw() +
     ggplot2::theme(
-      plot.title       = ggplot2::element_text(face = "bold"),   # bold plot title
-      axis.title       = ggplot2::element_text(face = "bold"),   # bold axis titles
+      plot.title.position = "plot",                              # center over whole plot
+      plot.title    = ggplot2::element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(hjust = 0.5),
+      axis.title    = ggplot2::element_text(face = "bold"),      # bold axis titles
       panel.grid.major = ggplot2::element_blank(),               # no grid lines
       panel.grid.minor = ggplot2::element_blank(),
       legend.position  = "right",                                # legend on right
