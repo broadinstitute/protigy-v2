@@ -741,7 +741,7 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
                                        value_fmt = function(v) sprintf("%.1f", v),
                                        fill = "#59a14f", subtitle = NULL,
                                        blank_msg = "Not enough values for a density.",
-                                       x_hi = NULL) {
+                                       x_hi = NULL, x_scale = NULL) {
   vals <- vals[is.finite(vals)]
   if (length(vals) < 2L) return(pelsa_blank_plot(blank_msg))
   m  <- mean(vals)
@@ -766,6 +766,7 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) {
     p <- p + coord_cartesian(xlim = c(0, x_hi))
   }
+  if (!is.null(x_scale)) p <- p + x_scale
   p
 }
 
@@ -785,7 +786,8 @@ pelsa_per_condition_density_plot <- function(df, value_col,
                                              x_label, title, subtitle = NULL,
                                              value_fmt = function(v) sprintf("%.1f", v),
                                              min_n = 2L,
-                                             blank_msg = "No per-condition data to display.") {
+                                             blank_msg = "No per-condition data to display.",
+                                             x_scale = NULL) {
   if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L ||
       !all(c("condition", value_col) %in% names(df))) {
     return(pelsa_blank_plot(blank_msg))
@@ -837,7 +839,7 @@ pelsa_per_condition_density_plot <- function(df, value_col,
             value_fmt(medians$value[i]), medians$n[i])
   }, character(1))
 
-  ggplot(d, aes(x = .data$value, color = .data$condition,
+  p <- ggplot(d, aes(x = .data$value, color = .data$condition,
                 fill = .data$condition)) +
     geom_density(alpha = 0.15) +
     geom_vline(data = medians,
@@ -854,6 +856,8 @@ pelsa_per_condition_density_plot <- function(df, value_col,
     protigy_plot_theme() +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
+  if (!is.null(x_scale)) p <- p + x_scale
+  p
 }
 
 # 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
@@ -864,10 +868,11 @@ pelsa_coverage_distribution_plot <- function(coverage) {
     sprintf("Experiment-wide | %d clamped (over-length)", over_n) else
       "Experiment-wide"
   pelsa_overall_density_plot(
-    vals, x_label = "Sequence coverage (fraction)",
+    vals, x_label = "Sequence coverage (%)",
     title = "Per-protein sequence coverage", fill = "#4e79a7",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v), subtitle = subtitle,
-    blank_msg = "Not enough coverage values for a density.")
+    blank_msg = "Not enough coverage values for a density.",
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
 }
 
 # 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
@@ -876,11 +881,12 @@ pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
   pelsa_per_condition_density_plot(
     coverage_by_condition, value_col = "coverage",
     condition_order = condition_order,
-    x_label = "Sequence coverage (fraction)",
+    x_label = "Sequence coverage (%)",
     title = "Per-protein sequence coverage by condition",
     subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v),
-    blank_msg = "No per-condition coverage - a condition column is required.")
+    blank_msg = "No per-condition coverage - a condition column is required.",
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
 }
 
 # 6A: peptide-length DENSITY (experiment-wide mode). @noRd

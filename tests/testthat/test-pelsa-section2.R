@@ -193,3 +193,40 @@ test_that("per-condition density builders carry a 'Per-condition' subtitle", {
   g_len <- pelsa_length_by_condition_plot(lbc, condition_order = c("A", "B"))
   expect_equal(g_len$labels$subtitle, "Per-condition")
 })
+
+test_that("coverage density plots use a percent x-axis title (both modes)", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5),
+                    stringsAsFactors = FALSE)
+  g_over <- pelsa_coverage_distribution_plot(cov)
+  expect_equal(g_over$labels$x, "Sequence coverage (%)")
+
+  cbc <- data.frame(condition = rep(c("A", "B"), each = 5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5,
+                                 0.15, 0.25, 0.35, 0.45, 0.55),
+                    stringsAsFactors = FALSE)
+  g_cond <- pelsa_coverage_by_condition_plot(cbc, condition_order = c("A", "B"))
+  expect_equal(g_cond$labels$x, "Sequence coverage (%)")
+})
+
+test_that("coverage percent tick labels convert a fraction break to whole percent", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5),
+                    stringsAsFactors = FALSE)
+  g <- pelsa_coverage_distribution_plot(cov)
+  # The x scale's label function maps fraction breaks -> percent numbers.
+  xsc <- g$scales$get_scales("x")
+  expect_false(is.null(xsc))
+  expect_equal(xsc$labels(c(0, 0.25, 0.5)), c(0, 25, 50))
+})
+
+test_that("length density keeps its raw (non-percent) x axis", {
+  pm <- data.frame(peptide_seq = paste0("PEP", 1:5),
+                   peptide_length = c(8, 9, 10, 11, 12),
+                   missed_cleavages = rep(0L, 5),
+                   stringsAsFactors = FALSE)
+  g <- pelsa_length_density_plot(pm)
+  expect_equal(g$labels$x, "Peptide length (residues)")
+})
