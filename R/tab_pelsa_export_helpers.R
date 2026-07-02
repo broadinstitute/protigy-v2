@@ -3,8 +3,8 @@
 #
 # The global exporter (tab_export.R) hands each module a directory
 # (<ome>/<tab_name>/) and calls its export functions with that path. PELSA's
-# three section servers are merged under a single "pelsa_exports" tab in
-# app_server(), so the handed dir is <ome>/pelsa_exports/. Each PELSA export
+# three section servers are merged under a single "PELSA_exports" tab in
+# app_server(), so the handed dir is <ome>/PELSA_exports/. Each PELSA export
 # function then carves its own stage subfolder inside it via
 # pelsa_export_stage_dir() - the generic loop in tab_export.R is never touched.
 #
