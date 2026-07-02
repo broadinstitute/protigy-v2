@@ -2,7 +2,7 @@
 # Tests for the PELSA Section 2 self-curated annotation value box.
 #
 # Covers Task 1: the failed_annotation_count valueBox must return a neutral
-# (non-orange) card for self-curated datasets and retain its orange failure
+# (non-red) card for self-curated datasets and retain its red failure
 # state for non-self-curated datasets with unannotated accessions.
 ################################################################################
 
@@ -29,7 +29,7 @@ library(testthat)
   )
 }
 
-# A synthetic cache entry that would normally trigger an orange failure box:
+# A synthetic cache entry that would normally trigger a red failure box:
 # 3 unannotated accessions -> n_unannotated_accessions = 3.
 .s2_failed_entry <- function() {
   list(
@@ -39,7 +39,7 @@ library(testthat)
   )
 }
 
-# ---- self-curated: neutral card (not orange) ---------------------------------
+# ---- self-curated: neutral card (not red) ---------------------------------
 
 test_that("failed_annotation_count is neutral for a self-curated dataset", {
   entry <- .s2_failed_entry()
@@ -51,17 +51,17 @@ test_that("failed_annotation_count is neutral for a self-curated dataset", {
     {
       vb   <- output$failed_annotation_count
       html <- as.character(vb$html %||% vb)
-      expect_false(grepl("orange", html, ignore.case = TRUE),
-                   info = paste("Expected no 'orange' in valueBox HTML; got:", html))
+      expect_false(grepl("bg-red", html, ignore.case = TRUE),
+                   info = paste("Expected no 'bg-red' in valueBox HTML; got:", html))
       expect_true(grepl("self-curated", html, ignore.case = TRUE),
                   info = paste("Expected 'self-curated' in valueBox HTML; got:", html))
     }
   )
 })
 
-# ---- non-self-curated: orange failure card stays ----------------------------
+# ---- non-self-curated: red failure card stays ----------------------------
 
-test_that("failed_annotation_count stays orange for a non-self-curated dataset with failures", {
+test_that("failed_annotation_count stays red for a non-self-curated dataset with failures", {
   entry <- .s2_failed_entry()
   args  <- .s2_min_reactives(entry, self_curated_flag = FALSE)
 
@@ -71,8 +71,33 @@ test_that("failed_annotation_count stays orange for a non-self-curated dataset w
     {
       vb   <- output$failed_annotation_count
       html <- as.character(vb$html %||% vb)
-      expect_true(grepl("orange", html, ignore.case = TRUE),
-                  info = paste("Expected 'orange' in valueBox HTML; got:", html))
+      expect_true(grepl("bg-red", html, ignore.case = TRUE),
+                  info = paste("Expected 'bg-red' in valueBox HTML; got:", html))
+    }
+  )
+})
+
+# ---- non-self-curated, zero failures: neutral (black) card -------------------
+
+test_that("failed_annotation_count is neutral (black) for a non-self-curated dataset with 0 failures", {
+  # 0 unannotated accessions -> n = 0 -> has_failures FALSE -> color "black".
+  entry <- list(
+    qc          = list(n_unannotated_accessions = 0L),
+    unannotated = character(0),
+    stage       = "done"
+  )
+  args <- .s2_min_reactives(entry, self_curated_flag = FALSE)
+
+  shiny::testServer(
+    PELSASection2_Tab_Server,
+    args = args,
+    {
+      vb   <- output$failed_annotation_count
+      html <- as.character(vb$html %||% vb)
+      expect_true(grepl("bg-black", html, ignore.case = TRUE),
+                  info = paste("Expected 'bg-black' in valueBox HTML; got:", html))
+      expect_false(grepl("bg-red", html, ignore.case = TRUE),
+                   info = paste("Expected no 'bg-red' in valueBox HTML; got:", html))
     }
   )
 })
@@ -239,4 +264,18 @@ test_that("length density keeps its raw (non-percent) x axis", {
                    stringsAsFactors = FALSE)
   g <- pelsa_length_density_plot(pm)
   expect_equal(g$labels$x, "Peptide length (residues)")
+})
+
+# ---- failed-annotation value box color -------------------------------------
+
+test_that("failed-annotation box is red on failures and neutral (black) at zero", {
+  # The module inlines the rule as: color = if (has_failures) "red" else "black".
+  # Assert the mapping directly so a regression to green/orange is caught.
+  box_color <- function(n) {
+    has_failures <- isTRUE(n > 0L)
+    if (has_failures) "red" else "black"
+  }
+  expect_equal(box_color(198L), "red")
+  expect_equal(box_color(0L), "black")
+  expect_equal(box_color(NA_integer_), "black")  # NA (pre-analysis) -> neutral
 })

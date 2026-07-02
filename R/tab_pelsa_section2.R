@@ -242,13 +242,13 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         "Proteins failed annotation"
       }
       # `n` is NA before analysis (entry NULL). Guard the color test against NA
-      # (`if (NA > 0L)` errors) and treat NA as "no failures yet" -> green.
+      # (`if (NA > 0L)` errors) and treat NA as "no failures yet" -> neutral.
       has_failures <- isTRUE(n > 0L)
       shinydashboard::valueBox(
         value    = format(n, big.mark = ","),
         subtitle = subtitle,
         icon     = icon("circle-question"),
-        color    = if (has_failures) "orange" else "green"
+        color    = if (has_failures) "red" else "black"
       )
     })
 
