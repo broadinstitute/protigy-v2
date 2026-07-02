@@ -63,3 +63,21 @@ test_that("intensity export subtitle shows singular peptide when coverage is NA"
   p <- pelsa_intensity_export_ggplot(ld, "GENE", "P12345", log_base = 2)
   expect_equal(p$labels$subtitle, "1 peptide")
 })
+
+test_that("volcano export legend text is small (8pt) with a tight key", {
+  # Reuse the existing fixture from the subtitle tests above.
+  df <- data.frame(
+    logFC                = c(-1, 0, 1),
+    logP                 = c(1, 0.2, 1.5),
+    sig_direction        = c("down", "ns", "up"),
+    feature_class_primary = c("none", "none", "none"),
+    is_marker            = c(FALSE, FALSE, FALSE),
+    label                = c("", "", ""),
+    stringsAsFactors     = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  g <- .pelsa_export_ggplot(df, full_df = df, color_mode = "significance",
+                            label_mode = "none")
+  expect_lte(g$theme$legend.text$size, 8)
+  expect_lte(as.numeric(g$theme$legend.key.size), 9)
+})
