@@ -954,10 +954,15 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   # Absolute count + percent of all identified peptides, stacked above each bar.
   df$bar_label <- sprintf("%s\n%.1f%%", prettyNum(df$count, big.mark = ","),
                           df$percent)
+  # Lift the label a fixed fraction of the tallest bar ABOVE each bar top. Baked
+  # into the data (label_y) rather than nudge_y, which ggplotly drops. vjust = 0
+  # then anchors the label bottom at label_y, leaving a clear gap over the bar.
+  head_room <- 0.04 * max(df$count, na.rm = TRUE)
+  df$label_y <- df$count + head_room
   ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
-    geom_text(aes(label = .data$bar_label), vjust = 0, size = 3,
-              fontface = "bold") +
+    geom_text(aes(y = .data$label_y, label = .data$bar_label),
+              vjust = 0, size = 3, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.15))) +
     labs(x = "Missed cleavages", y = "# of peptides",
@@ -1055,9 +1060,13 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No per-sample depth data."))
   }
+  # Lift each count label a fixed fraction of the tallest bar ABOVE the bar top,
+  # baked into the data (ggplotly drops nudge_y). vjust = 0 anchors the label
+  # bottom at label_y.
+  df$label_y <- df$n + 0.04 * max(df$n, na.rm = TRUE)
   ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
-    geom_text(aes(label = prettyNum(.data$n, big.mark = ",")),
+    geom_text(aes(y = .data$label_y, label = prettyNum(.data$n, big.mark = ",")),
               vjust = 0, size = 3, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.12))) +

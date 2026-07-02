@@ -128,8 +128,10 @@ test_that("depth bar draws a count label per sample and sizes x-axis text to 11"
 
 # ---- Task 10: bar label positioning (vjust=0 + expanded y-axis headroom) ------
 
-test_that("in-app bar labels are bottom-anchored (vjust=0) so they sit on top of the bar", {
-  # missed-cleavage: peptide_metrics with a missed-cleavage column
+test_that("in-app bar labels sit ABOVE the bar (vjust=0 + baked label_y headroom)", {
+  # ggplotly drops nudge_y, so the headroom is baked into the text layer's y.
+  # Assert on the BUILT layer data (layer_data) -- the raw layer$data slot is a
+  # waiver here (aes-only geom_text), which would make a direct comparison vacuous.
   pm <- data.frame(
     peptide_seq = paste0("PEP", 1:6),
     peptide_length = c(8, 9, 10, 11, 12, 13),
@@ -140,13 +142,21 @@ test_that("in-app bar labels are bottom-anchored (vjust=0) so they sit on top of
   txt_mc <- Filter(function(l) inherits(l$geom, "GeomText"), g_mc$layers)
   expect_length(txt_mc, 1L)
   expect_equal(txt_mc[[1]]$aes_params$vjust, 0)
+  # geom_text is the 2nd layer (geom_col is 1st). Built text y > built col y.
+  col_y_mc  <- ggplot2::layer_data(g_mc, 1)$y   # bar tops
+  text_y_mc <- ggplot2::layer_data(g_mc, 2)$y   # baked label_y
+  expect_equal(length(text_y_mc), length(col_y_mc))
+  expect_true(all(text_y_mc > col_y_mc))
 
-  # depth: named integer vector of per-sample peptide counts
   nq <- c(S1 = 1200L, S2 = 1500L, S3 = 900L)
   g_d <- pelsa_depth_bar_plot(nq)
   txt_d <- Filter(function(l) inherits(l$geom, "GeomText"), g_d$layers)
   expect_length(txt_d, 1L)
   expect_equal(txt_d[[1]]$aes_params$vjust, 0)
+  col_y_d  <- ggplot2::layer_data(g_d, 1)$y
+  text_y_d <- ggplot2::layer_data(g_d, 2)$y
+  expect_equal(length(text_y_d), length(col_y_d))
+  expect_true(all(text_y_d > col_y_d))
 })
 
 test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
