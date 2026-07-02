@@ -109,6 +109,33 @@ test_that("export df: adj.p.val (default) leaves it non-significant", {
   expect_false(out$Significant)
 })
 
+# --- pelsa_volcano_export_df .stat_df hoist parity ---------------------------
+
+test_that("pelsa_volcano_export_df: .stat_df path equals the internal recompute", {
+  stat <- data.frame(
+    PEP.StrippedSequence = c("PEPA", "PEPB"),
+    logFC.C1 = c(-1.5, 2.0),
+    adj.P.Val.C1 = c(0.001, 0.20),
+    P.Value.C1 = c(0.0005, 0.15),
+    stringsAsFactors = FALSE)
+  matched <- data.frame(
+    PEP.StrippedSequence = c("PEPA", "PEPB"),
+    accession = c("ACC1", "ACC1"),
+    pep_start = c(10L, 50L), pep_end = c(20L, 60L),
+    pep_occurrence_idx = 1L, stringsAsFactors = FALSE)
+  fdf <- data.frame(accession = character(0), start = integer(0),
+                    end = integer(0), feature_class = character(0),
+                    stringsAsFactors = FALSE)
+
+  plain   <- pelsa_volcano_export_df(stat, matched, fdf, markers = character(0),
+                                     contrast = "C1", panel = "all_peptide")
+  precomp <- pelsa_volcano_stat_df(stat, matched)
+  indexed <- pelsa_volcano_export_df(stat, matched, fdf, markers = character(0),
+                                     contrast = "C1", panel = "all_peptide",
+                                     .stat_df = precomp)
+  expect_identical(plain, indexed)
+})
+
 # --- pelsa_woods_export_ggplot: caption + star reflect the chosen stat --------
 # The peptides frame is derived END-TO-END from pelsa_woods_peptide_data() with
 # the SAME sig_stat, so the star count genuinely depends on the stat choice (not

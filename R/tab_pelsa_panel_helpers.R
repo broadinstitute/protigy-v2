@@ -69,6 +69,34 @@
                  style = "list-style:none; padding-left:0; margin:0;", items)
 }
 
+# ---- Helper 0: per-accession export index (perf) -----------------------------
+
+# Build a reusable per-accession index of `matched` so the export loop can look
+# up one protein's rows in O(1) instead of re-scanning the whole frame on every
+# (protein x contrast) iteration. `stat_key` is precomputed once (a pure function
+# of stat_df, so identical for every call within one export). NA / blank
+# accessions are dropped here (mirroring the `!is.na & nzchar` guard the other
+# feat/annotation consumers use), so this index never depends on an upstream
+# invariant to stay equivalent to the linear-scan path. @noRd
+pelsa_woods_build_index <- function(matched, stat_df) {
+  by_acc <- list()
+  if (is.data.frame(matched) && nrow(matched) > 0L &&
+      "accession" %in% colnames(matched)) {
+    acc <- as.character(matched[["accession"]])
+    valid <- !is.na(acc) & nzchar(acc)
+    if (any(valid)) {
+      by_acc <- split(matched[valid, , drop = FALSE], acc[valid])
+    }
+  }
+  stat_key <- if (is.data.frame(stat_df) &&
+                  "PEP.StrippedSequence" %in% colnames(stat_df)) {
+    as.character(stat_df[["PEP.StrippedSequence"]])
+  } else {
+    character(0)
+  }
+  list(by_acc = by_acc, stat_key = stat_key)
+}
+
 # ---- Helper 1: per-peptide Woods data ----------------------------------------
 
 # Build the per-peptide Woods frame for ONE protein (accession).
@@ -88,12 +116,18 @@
 # @param sig_cutoff adj.P.Val significance threshold. Defaults to the shared
 #   .PELSA_EXPORT_SIG_CUTOFF; live module callers thread the user-set
 #   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
+# @param .index    optional pelsa_woods_build_index(matched, stat_df) result,
+#   reused across a (protein x contrast) export loop instead of re-scanning
+#   `matched`/`stat_df` on every call. MUST be built from the exact same
+#   `matched`/`stat_df` passed to this call, or the two paths silently diverge.
+#   NULL (default) falls back to the original linear-scan behavior.
 # @return data.frame(peptide_seq, pep_start, pep_end, logFC, adj.P.Val, sig),
 #         sorted by pep_start; 0-row frame (same columns) when nothing matches.
 # @noRd
 pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
                                      sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
-                                     sig_stat = "adj.p.val") {
+                                     sig_stat = "adj.p.val",
+                                     .index = NULL) {
   empty <- data.frame(
     peptide_seq = character(0), pep_start = integer(0), pep_end = integer(0),
     logFC = numeric(0), adj.P.Val = numeric(0), P.Value = numeric(0),
@@ -114,11 +148,16 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
   sig_col  <- if (identical(sig_stat, "nom.p.val")) pval_col else adjp_col
   if (!all(c(lfc_col, adjp_col, sig_col) %in% colnames(stat_df))) return(empty)
 
-  m <- matched[as.character(matched$accession) == accession, , drop = FALSE]
+  m <- if (!is.null(.index)) {
+    .index$by_acc[[accession]] %||% matched[0L, , drop = FALSE]
+  } else {
+    matched[as.character(matched$accession) == accession, , drop = FALSE]
+  }
   m <- m[!is.na(m$pep_start) & !is.na(m$pep_end), , drop = FALSE]
   if (nrow(m) == 0L) return(empty)
 
-  key_s <- as.character(stat_df[["PEP.StrippedSequence"]])
+  key_s <- if (!is.null(.index)) .index$stat_key else
+    as.character(stat_df[["PEP.StrippedSequence"]])
   idx   <- match(as.character(m[["PEP.StrippedSequence"]]), key_s)
   logfc <- as.numeric(stat_df[[lfc_col]])[idx]
   adjp  <- as.numeric(stat_df[[adjp_col]])[idx]
@@ -933,18 +972,42 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 #   isolate(sig_cutoff_r()) (Statistics > Summary), matching the volcano.
 # @param is_marker        TRUE -> include BOTH significant + non-significant
 #   occurrences (panel-tagged); FALSE -> only significant occurrences.
+# @param .index    optional pelsa_intensity_build_index(matched_cache) result,
+#   reused across a per-protein export loop instead of re-scanning
+#   matched_cache on every call. MUST be built from the exact same
+#   matched_cache passed to this call, or the two paths silently diverge.
+#   NULL (default) falls back to the original linear-scan behavior.
 # @return tidy long data.frame, one row per (occurrence, condition-with-samples),
 #   columns: accession, peptide_seq, pep_start, pep_end, pep_occurrence_idx, aa_label,
 #   panel ("Significant"/"Non-significant"), condition (factor = condition_order),
 #   mean_log2, n_rep_nonNA.
 # @noRd
+# Per-accession index of matched_cache for the intensity export loop: look up one
+# protein's occurrences in O(1) instead of re-scanning matched_cache on every
+# protein iteration. NA / blank accessions are dropped here (mirroring the other
+# accession consumers), so the indexed path is equivalent to the linear scan
+# without relying on an upstream non-NA invariant. @noRd
+pelsa_intensity_build_index <- function(matched_cache) {
+  by_acc <- list()
+  if (is.data.frame(matched_cache) && nrow(matched_cache) > 0L &&
+      "accession" %in% colnames(matched_cache)) {
+    acc <- as.character(matched_cache[["accession"]])
+    valid <- !is.na(acc) & nzchar(acc)
+    if (any(valid)) {
+      by_acc <- split(matched_cache[valid, , drop = FALSE], acc[valid])
+    }
+  }
+  list(by_acc = by_acc)
+}
+
 pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
                                       processed_mat, condition_map,
                                       condition_order, contrast,
                                       sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
                                       is_marker = FALSE,
                                       show_all = FALSE,
-                                      sig_stat = "adj.p.val") {
+                                      sig_stat = "adj.p.val",
+                                      .index = NULL) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (length(accession) != 1L || is.na(accession) || !nzchar(accession)) {
     stop("pelsa_intensity_line_data: accession must be a single non-empty string",
@@ -979,13 +1042,21 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
   cond <- .pelsa_intensity_condition_map(condition_map, processed_mat)
 
   # ---- Subset matched_cache to this accession (the occurrences == lines) ---
-  sel <- as.character(matched_cache[["accession"]]) == accession
-  sel[is.na(sel)] <- FALSE
-  if (!any(sel)) {
-    stop("pelsa_intensity_line_data: accession '", accession,
-         "' not found in matched_cache", call. = FALSE)
+  if (!is.null(.index)) {
+    m <- .index$by_acc[[accession]]
+    if (is.null(m) || nrow(m) == 0L) {
+      stop("pelsa_intensity_line_data: accession '", accession,
+           "' not found in matched_cache", call. = FALSE)
+    }
+  } else {
+    sel <- as.character(matched_cache[["accession"]]) == accession
+    sel[is.na(sel)] <- FALSE
+    if (!any(sel)) {
+      stop("pelsa_intensity_line_data: accession '", accession,
+           "' not found in matched_cache", call. = FALSE)
+    }
+    m <- matched_cache[sel, , drop = FALSE]
   }
-  m <- matched_cache[sel, , drop = FALSE]
 
   # ---- Per-occurrence significance (from stat_df by peptide key) -----------
   use_row_id <- ".row_id" %in% colnames(stat_df) &&

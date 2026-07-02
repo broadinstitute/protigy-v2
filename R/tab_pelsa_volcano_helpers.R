@@ -1998,20 +1998,33 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2,
 # @param is_self_curated TRUE for a self-curated species: forces accession labels
 #                  + blanks the gene, so the exported figure matches the on-screen
 #                  volcano (the export is a SEPARATE re-derive of the same df).
+# @param .stat_df  optional precomputed pelsa_volcano_stat_df(stat_raw, matched)
+#                  result, reused across a contrast/panel export loop instead of
+#                  recomputing it on every call (its output is contrast/panel-
+#                  invariant). MUST be built from the exact same stat_raw/matched
+#                  passed to this call, or the two paths silently diverge. NULL
+#                  (default) recomputes internally, matching the original behavior.
 # @return a 3A volcano df, or NULL.
 # @noRd
 pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
                                     contrast, panel,
                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
                                     is_self_curated = FALSE,
-                                    sig_stat = "adj.p.val") {
+                                    sig_stat = "adj.p.val",
+                                    .stat_df = NULL) {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (is.null(contrast) ||
       !pelsa_volcano_has_contrast(stat_raw, contrast)) return(NULL)
   matched <- if (is.data.frame(matched)) matched else data.frame()
   fdf <- feat_df %||% data.frame(accession = character(0), start = integer(0),
                                  end = integer(0), feature_class = character(0))
-  stat_df <- pelsa_volcano_stat_df(stat_raw, matched)
+  # `.stat_df` (when supplied by the export loop) is the SAME
+  # pelsa_volcano_stat_df(stat_raw, matched) result, precomputed once and reused
+  # across contrasts/panels. When NULL we recompute here -- this fallback path
+  # must stay in sync with export_volcano's pre-loop guard (see tab_pelsa_section3.R):
+  # both rely on safe_export's outer tryCatch as the real safety net for a
+  # malformed stat_raw.
+  stat_df <- .stat_df %||% pelsa_volcano_stat_df(stat_raw, matched)
   tryCatch(
     pelsa_build_volcano_df(
       stat_df = stat_df,
