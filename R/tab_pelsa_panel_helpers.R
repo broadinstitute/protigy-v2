@@ -972,13 +972,32 @@ pelsa_intensity_proteins <- function(stat_df, matched_cache, markers,
 #   panel ("Significant"/"Non-significant"), condition (factor = condition_order),
 #   mean_log2, n_rep_nonNA.
 # @noRd
+# Per-accession index of matched_cache for the intensity export loop: look up one
+# protein's occurrences in O(1) instead of re-scanning matched_cache on every
+# protein iteration. NA / blank accessions are dropped here (mirroring the other
+# accession consumers), so the indexed path is equivalent to the linear scan
+# without relying on an upstream non-NA invariant. @noRd
+pelsa_intensity_build_index <- function(matched_cache) {
+  by_acc <- list()
+  if (is.data.frame(matched_cache) && nrow(matched_cache) > 0L &&
+      "accession" %in% colnames(matched_cache)) {
+    acc <- as.character(matched_cache[["accession"]])
+    valid <- !is.na(acc) & nzchar(acc)
+    if (any(valid)) {
+      by_acc <- split(matched_cache[valid, , drop = FALSE], acc[valid])
+    }
+  }
+  list(by_acc = by_acc)
+}
+
 pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
                                       processed_mat, condition_map,
                                       condition_order, contrast,
                                       sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
                                       is_marker = FALSE,
                                       show_all = FALSE,
-                                      sig_stat = "adj.p.val") {
+                                      sig_stat = "adj.p.val",
+                                      .index = NULL) {
   # ---- Boundary validation (fail fast) ------------------------------------
   if (length(accession) != 1L || is.na(accession) || !nzchar(accession)) {
     stop("pelsa_intensity_line_data: accession must be a single non-empty string",
@@ -1013,13 +1032,21 @@ pelsa_intensity_line_data <- function(accession, stat_df, matched_cache,
   cond <- .pelsa_intensity_condition_map(condition_map, processed_mat)
 
   # ---- Subset matched_cache to this accession (the occurrences == lines) ---
-  sel <- as.character(matched_cache[["accession"]]) == accession
-  sel[is.na(sel)] <- FALSE
-  if (!any(sel)) {
-    stop("pelsa_intensity_line_data: accession '", accession,
-         "' not found in matched_cache", call. = FALSE)
+  if (!is.null(.index)) {
+    m <- .index$by_acc[[accession]]
+    if (is.null(m) || nrow(m) == 0L) {
+      stop("pelsa_intensity_line_data: accession '", accession,
+           "' not found in matched_cache", call. = FALSE)
+    }
+  } else {
+    sel <- as.character(matched_cache[["accession"]]) == accession
+    sel[is.na(sel)] <- FALSE
+    if (!any(sel)) {
+      stop("pelsa_intensity_line_data: accession '", accession,
+           "' not found in matched_cache", call. = FALSE)
+    }
+    m <- matched_cache[sel, , drop = FALSE]
   }
-  m <- matched_cache[sel, , drop = FALSE]
 
   # ---- Per-occurrence significance (from stat_df by peptide key) -----------
   use_row_id <- ".row_id" %in% colnames(stat_df) &&

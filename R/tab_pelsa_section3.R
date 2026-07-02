@@ -1427,12 +1427,13 @@ PELSASection3_Ome_Server <- function(id,
         }
         NA_real_
       }
+      intensity_idx <- pelsa_intensity_build_index(matched)
       for (i in seq_len(nrow(prot))) {
         acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
         ld <- tryCatch(
           pelsa_intensity_line_data(acc, stat_df, matched, pm, cmap, corder,
             .PELSA_ANY_CONTRAST, sig_cutoff, is_marker = is_mk,
-            show_all = TRUE, sig_stat = sig_stat),
+            show_all = TRUE, sig_stat = sig_stat, .index = intensity_idx),
           error = function(e) NULL)
         if (is.null(ld) || nrow(ld) == 0L) next
         gene <- pelsa_export_gene_for(matched, acc)
@@ -1466,6 +1467,14 @@ PELSASection3_Ome_Server <- function(id,
         error = function(e) NULL)
       if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
       fdf <- feat_df() %||% data.frame()
+      fdf_by_acc <- if (is.data.frame(fdf) && nrow(fdf) > 0L &&
+                        "accession" %in% colnames(fdf)) {
+        facc <- as.character(fdf$accession)
+        fvalid <- !is.na(facc) & nzchar(facc)
+        if (any(fvalid)) split(fdf[fvalid, , drop = FALSE], facc[fvalid]) else list()
+      } else {
+        list()
+      }
       cov <- entry$coverage %||% data.frame()
       choices <- contrast_choices()
       woods_idx <- pelsa_woods_build_index(matched, stat_df)
@@ -1475,9 +1484,7 @@ PELSASection3_Ome_Server <- function(id,
                                      .PELSA_SUB_WOODS, .PELSA_GRP_SIGNIF)
       for (i in seq_len(nrow(prot))) {
         acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
-        feats <- if (is.data.frame(fdf) && "accession" %in% colnames(fdf))
-          fdf[as.character(fdf$accession) == acc, , drop = FALSE] else
-          fdf[0, , drop = FALSE]
+        feats <- fdf_by_acc[[acc]] %||% fdf[0, , drop = FALSE]
         gene <- pelsa_export_gene_for(matched, acc)
         target <- if (is_mk) d_mk else d_sg
         for (cj in seq_along(choices)) {

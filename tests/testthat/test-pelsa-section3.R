@@ -3443,6 +3443,54 @@ test_that("missing accession in matched_cache errors", {
   )
 })
 
+# ---- pelsa_intensity_build_index + .index parity ----------------------------
+
+test_that("pelsa_intensity_build_index groups matched_cache by non-blank accession", {
+  matched <- .mk_matched(seq = c("pA", "pB", "pC"),
+                         accession = c("PROT", "PROT", "OTHER"),
+                         pep_start = c(10L, 20L, 30L), row_id = 1:3)
+  idx <- pelsa_intensity_build_index(matched)
+  expect_setequal(names(idx$by_acc), c("PROT", "OTHER"))
+  expect_equal(nrow(idx$by_acc[["PROT"]]), 2L)
+})
+
+test_that("pelsa_intensity_build_index drops NA / blank accession rows", {
+  matched <- .mk_matched(seq = c("pA", "pB", "pC"),
+                         accession = c("PROT", NA_character_, ""),
+                         pep_start = c(10L, 20L, 30L), row_id = 1:3)
+  idx <- pelsa_intensity_build_index(matched)
+  expect_setequal(names(idx$by_acc), "PROT")
+})
+
+test_that("pelsa_intensity_line_data: .index path is identical to the scan path", {
+  proc <- .mk_proc()
+  stat <- .mk_stat("pSIG", "PROT", 0.001, row_id = 1L)
+  matched <- .mk_matched("pSIG", "PROT", 100L, 1L)
+  idx <- pelsa_intensity_build_index(matched)
+  plain   <- pelsa_intensity_line_data("PROT", stat, matched, proc,
+                                       condition_map = .cond_map,
+                                       condition_order = .cond_order,
+                                       contrast = "C1")
+  indexed <- pelsa_intensity_line_data("PROT", stat, matched, proc,
+                                       condition_map = .cond_map,
+                                       condition_order = .cond_order,
+                                       contrast = "C1", .index = idx)
+  expect_identical(plain, indexed)
+})
+
+test_that("pelsa_intensity_line_data: .index absent-accession still errors", {
+  proc <- .mk_proc()
+  stat <- .mk_stat("pSIG", "PROT", 0.001, row_id = 1L)
+  matched <- .mk_matched("pSIG", "PROT", 100L, 1L)
+  idx <- pelsa_intensity_build_index(matched)
+  expect_error(
+    pelsa_intensity_line_data("ABSENT", stat, matched, proc,
+                              condition_map = .cond_map,
+                              condition_order = .cond_order,
+                              contrast = "C1", .index = idx),
+    regexp = "accession|ABSENT|not found")
+})
+
 test_that("non-numeric processed_mat errors", {
   stat <- .mk_stat("pSIG", "PROT", 0.001, row_id = 1L)
   matched <- .mk_matched("pSIG", "PROT", 100L, 1L)
