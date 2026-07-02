@@ -752,10 +752,23 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   ys <- pelsa_dodge_offsets(2L, y_top = y_top * 0.95, y_range = y_top)
   df <- data.frame(x = vals)
 
+  # White halo behind the mean/median labels so they stay readable over the
+  # density fill (matches the per-condition + CV panels). Build a 2-row frame in
+  # the (x, y, label) shape pelsa_halo_text_layers expects; y_top drives its
+  # offset scale. hjust = -0.05 in the halo mirrors the colored labels below so
+  # the ring sits centered on the same glyphs.
+  halo_df <- data.frame(
+    x = c(m, md),
+    y = c(ys[1], ys[2]),
+    label = c(paste0("mean = ", value_fmt(m)),
+              paste0("median = ", value_fmt(md))),
+    stringsAsFactors = FALSE
+  )
   p <- ggplot(df, aes(x = .data$x)) +
     geom_density(fill = fill, alpha = 0.4, color = fill) +
     geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
     geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
+    pelsa_halo_text_layers(halo_df, x_hi = max(vals), peak = y_top, size = 3.2) +
     annotate("text", x = m,  y = ys[1], label = paste0("mean = ", value_fmt(m)),
              color = "#e15759", hjust = -0.05, size = 3.2, fontface = "bold") +
     annotate("text", x = md, y = ys[2],
@@ -1034,13 +1047,21 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
 # offset by a small fraction of the x/y extents. The offsets are baked into the
 # DATA (new x/y columns) rather than applied with nudge_x/nudge_y: ggplotly
 # silently drops position_nudge, collapsing the halo onto one point, whereas
-# pre-offset coordinates survive the round-trip. Four cardinal offsets keep the
-# plotly payload light. Returns ONE geom_text layer over the expanded frame.
+# pre-offset coordinates survive the round-trip. Eight offsets (cardinal +
+# diagonal). Returns ONE geom_text layer over the expanded frame.
 # @noRd
 pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
-  dx <- (if (is.finite(x_hi) && x_hi > 0) x_hi else 1) * 0.006
-  dy <- (if (is.finite(peak) && peak > 0) peak else 1) * 0.012
-  offs <- data.frame(ox = c(-1, 1, 0, 0), oy = c(0, 0, -1, 1))
+  # Tight, symmetric ring: small fraction of the axis extents, eight directions
+  # (cardinal + diagonal) so the white copies form a halo around the glyphs
+  # rather than a one-sided shadow. Diagonal copies use 1/sqrt(2) so all eight
+  # sit on a circle of roughly equal radius.
+  dx <- (if (is.finite(x_hi) && x_hi > 0) x_hi else 1) * 0.0025
+  dy <- (if (is.finite(peak) && peak > 0) peak else 1) * 0.006
+  d <- 1 / sqrt(2)
+  offs <- data.frame(
+    ox = c(-1, 1,  0, 0, -d,  d, -d, d),
+    oy = c( 0, 0, -1, 1, -d, -d,  d, d)
+  )
   halo <- do.call(rbind, lapply(seq_len(nrow(offs)), function(i) {
     h <- medians
     h$x <- medians$x + offs$ox[i] * dx

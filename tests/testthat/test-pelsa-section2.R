@@ -104,11 +104,13 @@ test_that("failed_annotation_count is neutral (black) for a non-self-curated dat
 
 # ---- Task 7: bold density-plot annotations -----------------------------------
 
-test_that("overall density mean/median labels are bold", {
+test_that("overall density mean/median labels are bold (halo layer excluded)", {
   vals <- rnorm(200, 20, 5)
   p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
   text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
-  expect_length(text_layers, 2L)
+  # 1 white halo + 2 colored labels.
+  expect_length(text_layers, 3L)
+  # The two NON-white (colored) labels must be bold; the halo copies are bold too.
   faces <- vapply(text_layers, function(l) l$aes_params$fontface %||% "", character(1))
   expect_true(all(faces == "bold"))
 })
@@ -278,4 +280,34 @@ test_that("failed-annotation box is red on failures and neutral (black) at zero"
   expect_equal(box_color(198L), "red")
   expect_equal(box_color(0L), "black")
   expect_equal(box_color(NA_integer_), "black")  # NA (pre-analysis) -> neutral
+})
+
+# ---- white text halo (tight, symmetric, applied to overall density too) ------
+
+test_that("pelsa_halo_text_layers draws 8 tight white copies per label", {
+  medians <- data.frame(x = c(10, 20), y = c(0.5, 0.4),
+                        label = c("A median = 10", "B median = 20"),
+                        stringsAsFactors = FALSE)
+  layer <- pelsa_halo_text_layers(medians, x_hi = 100, peak = 1)
+  expect_true(inherits(layer$geom, "GeomText"))
+  # 8 directions x 2 labels = 16 white halo rows.
+  expect_equal(nrow(layer$data), 16L)
+  expect_equal(layer$aes_params$colour %||% layer$aes_params$color, "white")
+  # Offsets are a SMALL fraction of the extents: max x offset < 0.5% of x_hi.
+  expect_true(max(abs(layer$data$x - rep(medians$x, 8))) < 0.005 * 100)
+})
+
+test_that("overall density plot carries a white halo behind mean/median labels", {
+  vals <- rnorm(300, 20, 5)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  # 1 halo layer + 2 colored annotate() labels = 3 GeomText layers.
+  expect_length(text_layers, 3L)
+  halo <- Filter(function(l) {
+    col <- l$aes_params$colour %||% l$aes_params$color %||% ""
+    identical(col, "white")
+  }, text_layers)
+  expect_length(halo, 1L)
+  # Halo covers both labels, 8 copies each = 16 rows.
+  expect_equal(nrow(halo[[1]]$data), 16L)
 })
