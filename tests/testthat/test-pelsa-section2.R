@@ -186,6 +186,34 @@ test_that("in-app bar labels sit ABOVE the bar (vjust=0 + baked label_y headroom
   expect_true(all(text_y_d > col_y_d))
 })
 
+# ---- Task 2: density plot x-axis always includes 0 ------
+
+test_that("peptide-length density plot always includes 0 on the x-axis, even when all values are far from 0", {
+  pm <- data.frame(
+    peptide_seq = paste0("PEP", 1:20),
+    peptide_length = seq(30, 68, by = 2),  # min 30, far from 0
+    missed_cleavages = rep(0L, 20),
+    stringsAsFactors = FALSE
+  )
+  g <- pelsa_length_density_plot(pm)
+  built <- ggplot2::ggplot_build(g)
+  x_range <- built$layout$panel_params[[1]]$x.range
+  expect_true(x_range[1] <= 0)
+})
+
+test_that("sequence-coverage density plot always includes 0 on the x-axis, even when all values are far from 0", {
+  cov <- data.frame(
+    accession = paste0("P", 1:20),
+    coverage = seq(0.5, 0.95, length.out = 20),  # min 0.5, far from 0
+    protein_length = rep(100L, 20),
+    stringsAsFactors = FALSE
+  )
+  g <- pelsa_coverage_distribution_plot(cov)
+  built <- ggplot2::ggplot_build(g)
+  x_range <- built$layout$panel_params[[1]]$x.range
+  expect_true(x_range[1] <= 0)
+})
+
 test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
   df <- data.frame(
     condition = rep(c("A", "B"), each = 5),

@@ -776,9 +776,14 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
              color = "#4e79a7", hjust = -0.05, size = 3.2, fontface = "bold") +
     labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
     protigy_plot_theme()
-  if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) {
-    p <- p + coord_cartesian(xlim = c(0, x_hi))
-  }
+  # Always clamp the left edge to 0 (vals here are always non-negative counts,
+  # lengths, or fractions), mirroring pelsa_per_condition_density_plot's x_lo.
+  # Without this, a floating density curve whose mass sits away from 0 can
+  # silently drop 0 off the rendered x-axis. NA for the upper bound means
+  # "use the data's natural extent," preserving the unclamped-right-edge
+  # behavior for callers (length/coverage) that don't pass x_hi.
+  right_bound <- if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) x_hi else NA
+  p <- p + coord_cartesian(xlim = c(0, right_bound))
   if (!is.null(x_scale)) p <- p + x_scale
   p
 }
