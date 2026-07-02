@@ -125,3 +125,26 @@ test_that("depth bar draws a count label per sample and sizes x-axis text to 11"
   expect_length(text_layers, 1)
   expect_equal(p$theme$axis.text.x$size, 11)
 })
+
+# ---- Task 10: bar label positioning (vjust=0 + expanded y-axis headroom) ------
+
+test_that("in-app bar labels are bottom-anchored (vjust=0) so they sit on top of the bar", {
+  # missed-cleavage: peptide_metrics with a missed-cleavage column
+  pm <- data.frame(
+    peptide_seq = paste0("PEP", 1:6),
+    peptide_length = c(8, 9, 10, 11, 12, 13),
+    missed_cleavages = c(0, 0, 1, 1, 2, 0),
+    stringsAsFactors = FALSE
+  )
+  g_mc <- pelsa_missed_cleavage_plot(pm)
+  txt_mc <- Filter(function(l) inherits(l$geom, "GeomText"), g_mc$layers)
+  expect_length(txt_mc, 1L)
+  expect_equal(txt_mc[[1]]$aes_params$vjust, 0)
+
+  # depth: named integer vector of per-sample peptide counts
+  nq <- c(S1 = 1200L, S2 = 1500L, S3 = 900L)
+  g_d <- pelsa_depth_bar_plot(nq)
+  txt_d <- Filter(function(l) inherits(l$geom, "GeomText"), g_d$layers)
+  expect_length(txt_d, 1L)
+  expect_equal(txt_d[[1]]$aes_params$vjust, 0)
+})

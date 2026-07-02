@@ -946,10 +946,10 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
                           df$percent)
   ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
-    geom_text(aes(label = .data$bar_label), vjust = -0.3, size = 3,
+    geom_text(aes(label = .data$bar_label), vjust = 0, size = 3,
               fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
-                       expand = expansion(mult = c(0, 0.12))) +
+                       expand = expansion(mult = c(0, 0.15))) +
     labs(x = "Missed cleavages", y = "# of peptides",
          title = "Missed-cleavage distribution") +
     protigy_plot_theme()
@@ -1048,7 +1048,7 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
   ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
     geom_text(aes(label = prettyNum(.data$n, big.mark = ",")),
-              vjust = -0.3, size = 3, fontface = "bold") +
+              vjust = 0, size = 3, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.12))) +
     labs(x = "Sample", y = "Peptides quantified",
