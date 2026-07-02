@@ -954,7 +954,7 @@ pelsa_cv_overall_plot <- function(cv) {
 }
 
 # 6A: missed-cleavage bar (0,1,2,...). @noRd
-pelsa_missed_cleavage_plot <- function(peptide_metrics) {
+pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
   df <- pelsa_missed_cleavage_data(peptide_metrics)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No missed-cleavage data."))
@@ -973,10 +973,12 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics) {
   # Absolute count + percent of all identified peptides, stacked above each bar.
   df$bar_label <- sprintf("%s\n%.1f%%", prettyNum(df$count, big.mark = ","),
                           df$percent)
-  # Lift the label a fixed fraction of the tallest bar ABOVE each bar top. Baked
-  # into the data (label_y) rather than nudge_y, which ggplotly drops. vjust = 0
-  # then anchors the label bottom at label_y, leaving a clear gap over the bar.
-  head_room <- 0.04 * max(df$count, na.rm = TRUE)
+  # Lift the label `head_frac` of the tallest bar ABOVE each bar top (in-app
+  # default 0.06 is larger than the depth plot's 0.04 so the 2-line count+percent
+  # label clears the bar with comparable breathing room; the export path passes a
+  # smaller value). Baked into label_y (ggplotly drops nudge_y); vjust = 0 anchors
+  # the label bottom at label_y.
+  head_room <- head_frac * max(df$count, na.rm = TRUE)
   df$label_y <- df$count + head_room
   ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
@@ -1082,15 +1084,15 @@ pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
 
 # 6C: per-sample depth bar, ordered by sample_order (alphabetical fallback).
 # @noRd
-pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL) {
+pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL, head_frac = 0.04) {
   df <- pelsa_depth_bar_data(n_quantified, sample_order)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No per-sample depth data."))
   }
-  # Lift each count label a fixed fraction of the tallest bar ABOVE the bar top,
-  # baked into the data (ggplotly drops nudge_y). vjust = 0 anchors the label
-  # bottom at label_y.
-  df$label_y <- df$n + 0.04 * max(df$n, na.rm = TRUE)
+  # Lift each count label `head_frac` of the tallest bar ABOVE the bar top
+  # (in-app default 0.04; the export path passes a smaller value). Baked into
+  # label_y (ggplotly drops nudge_y); vjust = 0 anchors the label bottom.
+  df$label_y <- df$n + head_frac * max(df$n, na.rm = TRUE)
   ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
     geom_text(aes(y = .data$label_y, label = prettyNum(.data$n, big.mark = ",")),
@@ -1241,7 +1243,7 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
     if (is.data.frame(pm) && nrow(pm) > 0L) {
       save_fig(pelsa_length_density_plot(pm),
                "peptide_length_density_experiment_wide")
-      save_fig(pelsa_missed_cleavage_plot(pm), "missed_cleavage_bar")
+      save_fig(pelsa_missed_cleavage_plot(pm, head_frac = 0.03), "missed_cleavage_bar")
     }
     if (is.data.frame(lbc) && nrow(lbc) > 0L)
       save_fig(pelsa_length_by_condition_plot(lbc, condition_order),
@@ -1249,7 +1251,7 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
     if (is.data.frame(cvd) && nrow(cvd) > 0L)
       save_fig(pelsa_cv_kde_plot(cvd, condition_order), "cv_kde")
     if (length(nq) > 0L)
-      save_fig(pelsa_depth_bar_plot(nq, sample_order), "n_peptides_per_sample")
+      save_fig(pelsa_depth_bar_plot(nq, sample_order, head_frac = 0.02), "n_peptides_per_sample")
 
     if (!is.null(gct)) {
       tryCatch(

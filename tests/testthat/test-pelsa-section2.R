@@ -186,6 +186,39 @@ test_that("in-app bar labels sit ABOVE the bar (vjust=0 + baked label_y headroom
   expect_true(all(text_y_d > col_y_d))
 })
 
+test_that("bar-label head_frac controls the gap: defaults are in-app, smaller = export", {
+  pm <- data.frame(
+    peptide_seq = paste0("PEP", 1:6),
+    peptide_length = c(8, 9, 10, 11, 12, 13),
+    missed_cleavages = c(0, 0, 1, 1, 2, 0),
+    stringsAsFactors = FALSE
+  )
+  # Default (in-app) missed-cleavage gap vs a halved export gap.
+  g_app <- pelsa_missed_cleavage_plot(pm)                    # head_frac = 0.06
+  g_exp <- pelsa_missed_cleavage_plot(pm, head_frac = 0.03)  # export
+  gap_app <- ggplot2::layer_data(g_app, 2)$y - ggplot2::layer_data(g_app, 1)$y
+  gap_exp <- ggplot2::layer_data(g_exp, 2)$y - ggplot2::layer_data(g_exp, 1)$y
+  expect_true(all(gap_app > 0))
+  expect_true(all(gap_exp > 0))                 # export still clears the bar (no clash)
+  expect_true(all(gap_exp < gap_app))           # export gap is smaller
+  # 0.03 is half of 0.06 -> export gap ~= half the in-app gap (allow float slack).
+  expect_equal(mean(gap_exp) / mean(gap_app), 0.5, tolerance = 1e-6)
+
+  # Depth: default 0.04 (in-app), 0.02 export -> half.
+  nq <- c(S1 = 1200L, S2 = 1500L, S3 = 900L)
+  d_app <- pelsa_depth_bar_plot(nq)                          # head_frac = 0.04
+  d_exp <- pelsa_depth_bar_plot(nq, head_frac = 0.02)        # export
+  dgap_app <- ggplot2::layer_data(d_app, 2)$y - ggplot2::layer_data(d_app, 1)$y
+  dgap_exp <- ggplot2::layer_data(d_exp, 2)$y - ggplot2::layer_data(d_exp, 1)$y
+  expect_true(all(dgap_exp > 0))
+  expect_true(all(dgap_exp < dgap_app))
+  expect_equal(mean(dgap_exp) / mean(dgap_app), 0.5, tolerance = 1e-6)
+
+  # Positional back-compat: sample_order still the 2nd positional arg.
+  d_pos <- pelsa_depth_bar_plot(nq, c("S3", "S1", "S2"))
+  expect_s3_class(d_pos, "ggplot")
+})
+
 # ---- Task 2: density plot x-axis always includes 0 ------
 
 test_that("peptide-length density plot always includes 0 on the x-axis, even when all values are far from 0", {
