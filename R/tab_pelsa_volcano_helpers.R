@@ -1968,12 +1968,13 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2,
     ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = c(0.3, 0.7))) +
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = sprintf("%s (%s)", gene, accession),
-                  subtitle = sub_txt, x = "Condition", y = y_lab) +
+                  subtitle = sub_txt, x = NULL, y = y_lab) +
     protigy_plot_theme(gridlines = TRUE) +
     ggplot2::theme(
       plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5,
                                             color = "grey25"),
-      axis.text.x = ggplot2::element_text(angle = 30, hjust = 1),
+      axis.text.x = ggplot2::element_text(angle = 30, hjust = 1,
+                                          colour = "black", face = "bold"),
       strip.text  = ggplot2::element_text(face = "bold"),
       strip.background = ggplot2::element_rect(fill = "grey92", color = NA),
       panel.spacing = ggplot2::unit(1.4, "lines"),

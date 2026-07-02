@@ -64,6 +64,24 @@ test_that("intensity export subtitle shows singular peptide when coverage is NA"
   expect_equal(p$labels$subtitle, "1 peptide")
 })
 
+test_that("intensity export drops the x-axis title and bolds+blackens x text", {
+  ld <- data.frame(
+    condition = factor(rep(c("C1", "C2"), each = 2), levels = c("C1", "C2")),
+    mean_log2 = c(10, 11, 9, 12),
+    peptide_seq = rep(c("PEPA", "PEPB"), times = 2),
+    pep_occurrence_idx = rep(1L, 4),
+    panel = rep("Significant", 4),
+    aa_label = rep(c("PEPA_aa1", "PEPB_aa2"), times = 2),
+    pep_start = rep(c(10L, 20L), times = 2),
+    pep_end = rep(c(15L, 25L), times = 2),
+    stringsAsFactors = FALSE
+  )
+  g <- pelsa_intensity_export_ggplot(ld, gene = "GENE", accession = "P00001")
+  expect_null(g$labels$x)
+  expect_equal(g$theme$axis.text.x$colour, "black")
+  expect_equal(g$theme$axis.text.x$face, "bold")
+})
+
 test_that("volcano export legend text is small (8pt) with a tight key", {
   # Reuse the existing fixture from the subtitle tests above.
   df <- data.frame(
