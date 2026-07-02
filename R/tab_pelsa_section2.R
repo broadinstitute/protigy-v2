@@ -782,7 +782,7 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
 # @noRd
 pelsa_per_condition_density_plot <- function(df, value_col,
                                              condition_order = NULL,
-                                             x_label, title,
+                                             x_label, title, subtitle = NULL,
                                              value_fmt = function(v) sprintf("%.1f", v),
                                              min_n = 2L,
                                              blank_msg = "No per-condition data to display.") {
@@ -850,7 +850,7 @@ pelsa_per_condition_density_plot <- function(df, value_col,
               hjust = -0.05, size = 3, show.legend = FALSE, fontface = "bold") +
     coord_cartesian(xlim = c(x_lo, x_hi)) +
     labs(x = x_label, y = "Density", color = "Condition", fill = "Condition",
-         title = title) +
+         title = title, subtitle = subtitle) +
     protigy_plot_theme() +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))

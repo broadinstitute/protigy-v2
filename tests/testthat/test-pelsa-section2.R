@@ -148,3 +148,17 @@ test_that("in-app bar labels are bottom-anchored (vjust=0) so they sit on top of
   expect_length(txt_d, 1L)
   expect_equal(txt_d[[1]]$aes_params$vjust, 0)
 })
+
+test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
+  df <- data.frame(
+    condition = rep(c("A", "B"), each = 5),
+    peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+    stringsAsFactors = FALSE
+  )
+  g <- pelsa_per_condition_density_plot(
+    df, value_col = "peptide_length",
+    x_label = "Peptide length (residues)",
+    title = "Peptide-length distribution by condition",
+    subtitle = "Per-condition")
+  expect_equal(g$labels$subtitle, "Per-condition")
+})
