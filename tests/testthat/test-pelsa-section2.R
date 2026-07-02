@@ -162,3 +162,34 @@ test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
     subtitle = "Per-condition")
   expect_equal(g$labels$subtitle, "Per-condition")
 })
+
+test_that("experiment-wide density builders carry an 'Experiment-wide' subtitle", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5),
+                    stringsAsFactors = FALSE)
+  g_cov <- pelsa_coverage_distribution_plot(cov)
+  expect_true(grepl("^Experiment-wide", g_cov$labels$subtitle))
+
+  pm <- data.frame(peptide_seq = paste0("PEP", 1:5),
+                   peptide_length = c(8, 9, 10, 11, 12),
+                   missed_cleavages = rep(0L, 5),
+                   stringsAsFactors = FALSE)
+  g_len <- pelsa_length_density_plot(pm)
+  expect_equal(g_len$labels$subtitle, "Experiment-wide")
+})
+
+test_that("per-condition density builders carry a 'Per-condition' subtitle", {
+  cbc <- data.frame(condition = rep(c("A", "B"), each = 5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5,
+                                 0.15, 0.25, 0.35, 0.45, 0.55),
+                    stringsAsFactors = FALSE)
+  g_cov <- pelsa_coverage_by_condition_plot(cbc, condition_order = c("A", "B"))
+  expect_equal(g_cov$labels$subtitle, "Per-condition")
+
+  lbc <- data.frame(condition = rep(c("A", "B"), each = 5),
+                    peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+                    stringsAsFactors = FALSE)
+  g_len <- pelsa_length_by_condition_plot(lbc, condition_order = c("A", "B"))
+  expect_equal(g_len$labels$subtitle, "Per-condition")
+})

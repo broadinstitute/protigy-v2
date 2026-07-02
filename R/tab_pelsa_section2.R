@@ -861,7 +861,8 @@ pelsa_coverage_distribution_plot <- function(coverage) {
   vals <- pelsa_coverage_values(coverage)
   over_n <- pelsa_over_length_count(coverage)
   subtitle <- if (over_n > 0L)
-    sprintf("%d clamped (over-length)", over_n) else NULL
+    sprintf("Experiment-wide | %d clamped (over-length)", over_n) else
+      "Experiment-wide"
   pelsa_overall_density_plot(
     vals, x_label = "Sequence coverage (fraction)",
     title = "Per-protein sequence coverage", fill = "#4e79a7",
@@ -877,6 +878,7 @@ pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
     condition_order = condition_order,
     x_label = "Sequence coverage (fraction)",
     title = "Per-protein sequence coverage by condition",
+    subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v),
     blank_msg = "No per-condition coverage - a condition column is required.")
 }
@@ -888,6 +890,7 @@ pelsa_length_density_plot <- function(peptide_metrics) {
     vals, x_label = "Peptide length (residues)",
     title = "Peptide-length distribution", fill = "#59a14f",
     value_fmt = function(v) sprintf("%.1f", v),
+    subtitle = "Experiment-wide",
     blank_msg = "Not enough peptides for a length density.")
 }
 
@@ -899,6 +902,7 @@ pelsa_length_by_condition_plot <- function(length_by_condition,
     condition_order = condition_order,
     x_label = "Peptide length (residues)",
     title = "Peptide-length distribution by condition",
+    subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f", v),
     blank_msg = "No per-condition lengths - a condition column is required.")
 }
@@ -1184,12 +1188,22 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
       pelsa_save_figure(p, out, base, width = w, height = h),
       error = function(e) NULL)
 
+    cbc <- entry$coverage_by_condition %||% data.frame()
+    lbc <- entry$length_by_condition %||% data.frame()
     if (is.data.frame(cov) && nrow(cov) > 0L)
-      save_fig(pelsa_coverage_distribution_plot(cov), "coverage_distribution")
+      save_fig(pelsa_coverage_distribution_plot(cov),
+               "coverage_distribution_experiment_wide")
+    if (is.data.frame(cbc) && nrow(cbc) > 0L)
+      save_fig(pelsa_coverage_by_condition_plot(cbc, condition_order),
+               "coverage_distribution_per_condition")
     if (is.data.frame(pm) && nrow(pm) > 0L) {
-      save_fig(pelsa_length_density_plot(pm), "peptide_length_density")
+      save_fig(pelsa_length_density_plot(pm),
+               "peptide_length_density_experiment_wide")
       save_fig(pelsa_missed_cleavage_plot(pm), "missed_cleavage_bar")
     }
+    if (is.data.frame(lbc) && nrow(lbc) > 0L)
+      save_fig(pelsa_length_by_condition_plot(lbc, condition_order),
+               "peptide_length_density_per_condition")
     if (is.data.frame(cvd) && nrow(cvd) > 0L)
       save_fig(pelsa_cv_kde_plot(cvd, condition_order), "cv_kde")
     if (length(nq) > 0L)
