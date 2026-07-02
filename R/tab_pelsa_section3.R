@@ -1338,6 +1338,16 @@ PELSASection3_Ome_Server <- function(id,
       sig_stat <- isolate(sig_stat_r())
       self_curated <- isolate(is_self_curated_r())
       choices <- contrast_choices()
+      # Precompute the contrast-invariant stat frame ONCE (its inputs sr/matched
+      # are fixed for this export). Guarded so a malformed/empty sr falls back to
+      # the per-call path inside pelsa_volcano_export_df (which safe_export's
+      # outer tryCatch still protects) rather than throwing before the loop.
+      stat_df_once <- if (is.data.frame(sr) && nrow(sr) > 0L) {
+        tryCatch(pelsa_volcano_stat_df(sr, matched %||% data.frame()),
+                 error = function(e) NULL)
+      } else {
+        NULL
+      }
       for (i in seq_along(choices)) {
         contrast <- unname(choices[[i]])
         key <- pelsa_volcano_contrast_key(ome, contrast)
@@ -1345,7 +1355,8 @@ PELSASection3_Ome_Server <- function(id,
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
                                           "all_peptide", sig_cutoff = sig_cutoff,
                                           is_self_curated = self_curated,
-                                          sig_stat = sig_stat)
+                                          sig_stat = sig_stat,
+                                          .stat_df = stat_df_once)
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
             .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top,
@@ -1360,7 +1371,8 @@ PELSASection3_Ome_Server <- function(id,
                                              "best_peptide",
                                              sig_cutoff = sig_cutoff,
                                              is_self_curated = self_curated,
-                                             sig_stat = sig_stat)
+                                             sig_stat = sig_stat,
+                                             .stat_df = stat_df_once)
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
               .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top,

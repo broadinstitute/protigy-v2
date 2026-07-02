@@ -2003,14 +2003,21 @@ pelsa_volcano_export_df <- function(stat_raw, matched, feat_df, markers,
                                     contrast, panel,
                                     sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
                                     is_self_curated = FALSE,
-                                    sig_stat = "adj.p.val") {
+                                    sig_stat = "adj.p.val",
+                                    .stat_df = NULL) {
   if (!is.data.frame(stat_raw) || nrow(stat_raw) == 0L) return(NULL)
   if (is.null(contrast) ||
       !pelsa_volcano_has_contrast(stat_raw, contrast)) return(NULL)
   matched <- if (is.data.frame(matched)) matched else data.frame()
   fdf <- feat_df %||% data.frame(accession = character(0), start = integer(0),
                                  end = integer(0), feature_class = character(0))
-  stat_df <- pelsa_volcano_stat_df(stat_raw, matched)
+  # `.stat_df` (when supplied by the export loop) is the SAME
+  # pelsa_volcano_stat_df(stat_raw, matched) result, precomputed once and reused
+  # across contrasts/panels. When NULL we recompute here -- this fallback path
+  # must stay in sync with export_volcano's pre-loop guard (see tab_pelsa_section3.R):
+  # both rely on safe_export's outer tryCatch as the real safety net for a
+  # malformed stat_raw.
+  stat_df <- .stat_df %||% pelsa_volcano_stat_df(stat_raw, matched)
   tryCatch(
     pelsa_build_volcano_df(
       stat_df = stat_df,
