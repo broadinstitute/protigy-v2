@@ -2742,6 +2742,42 @@ test_that("woods_peptide_data drops NA-span peptides + empty when no match", {
   expect_equal(nrow(pelsa_woods_peptide_data("Z", m, s, "AvB")), 0L)
 })
 
+# ---- pelsa_woods_build_index + .index parity --------------------------------
+
+test_that("pelsa_woods_build_index groups matched rows by non-blank accession", {
+  idx <- pelsa_woods_build_index(.woods_matched(), .woods_stat())
+  expect_setequal(names(idx$by_acc), c("A", "B"))
+  expect_equal(nrow(idx$by_acc[["A"]]), 3L)
+  expect_equal(nrow(idx$by_acc[["B"]]), 1L)
+  expect_identical(idx$stat_key, c("PEPA", "PEPB", "PEPC"))
+})
+
+test_that("pelsa_woods_build_index drops NA / blank accession rows", {
+  m <- data.frame(
+    PEP.StrippedSequence = c("PEPA", "PEPX", "PEPY"),
+    accession = c("A", NA_character_, ""),
+    pep_start = c(10L, 1L, 2L), pep_end = c(20L, 5L, 6L),
+    pep_occurrence_idx = 1L, stringsAsFactors = FALSE)
+  idx <- pelsa_woods_build_index(m, .woods_stat())
+  expect_setequal(names(idx$by_acc), "A")   # NA + "" groups dropped
+})
+
+test_that("pelsa_woods_peptide_data: .index path is identical to the scan path", {
+  m <- .woods_matched(); s <- .woods_stat()
+  idx <- pelsa_woods_build_index(m, s)
+  plain   <- pelsa_woods_peptide_data("A", m, s, "AvB", sig_cutoff = 0.05)
+  indexed <- pelsa_woods_peptide_data("A", m, s, "AvB", sig_cutoff = 0.05,
+                                      .index = idx)
+  expect_identical(plain, indexed)
+})
+
+test_that("pelsa_woods_peptide_data: .index absent-accession returns 0-row (no error)", {
+  m <- .woods_matched(); s <- .woods_stat()
+  idx <- pelsa_woods_build_index(m, s)
+  out <- pelsa_woods_peptide_data("Z", m, s, "AvB", .index = idx)
+  expect_equal(nrow(out), 0L)
+})
+
 # ---- pelsa_coverage_intervals (IRanges union) --------------------------------
 
 test_that("coverage_intervals merges overlapping + adjacent, sorts, drops bad", {

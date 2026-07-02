@@ -69,6 +69,34 @@
                  style = "list-style:none; padding-left:0; margin:0;", items)
 }
 
+# ---- Helper 0: per-accession export index (perf) -----------------------------
+
+# Build a reusable per-accession index of `matched` so the export loop can look
+# up one protein's rows in O(1) instead of re-scanning the whole frame on every
+# (protein x contrast) iteration. `stat_key` is precomputed once (a pure function
+# of stat_df, so identical for every call within one export). NA / blank
+# accessions are dropped here (mirroring the `!is.na & nzchar` guard the other
+# feat/annotation consumers use), so this index never depends on an upstream
+# invariant to stay equivalent to the linear-scan path. @noRd
+pelsa_woods_build_index <- function(matched, stat_df) {
+  by_acc <- list()
+  if (is.data.frame(matched) && nrow(matched) > 0L &&
+      "accession" %in% colnames(matched)) {
+    acc <- as.character(matched[["accession"]])
+    valid <- !is.na(acc) & nzchar(acc)
+    if (any(valid)) {
+      by_acc <- split(matched[valid, , drop = FALSE], acc[valid])
+    }
+  }
+  stat_key <- if (is.data.frame(stat_df) &&
+                  "PEP.StrippedSequence" %in% colnames(stat_df)) {
+    as.character(stat_df[["PEP.StrippedSequence"]])
+  } else {
+    character(0)
+  }
+  list(by_acc = by_acc, stat_key = stat_key)
+}
+
 # ---- Helper 1: per-peptide Woods data ----------------------------------------
 
 # Build the per-peptide Woods frame for ONE protein (accession).
@@ -93,7 +121,8 @@
 # @noRd
 pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
                                      sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF,
-                                     sig_stat = "adj.p.val") {
+                                     sig_stat = "adj.p.val",
+                                     .index = NULL) {
   empty <- data.frame(
     peptide_seq = character(0), pep_start = integer(0), pep_end = integer(0),
     logFC = numeric(0), adj.P.Val = numeric(0), P.Value = numeric(0),
@@ -114,11 +143,16 @@ pelsa_woods_peptide_data <- function(accession, matched, stat_df, contrast,
   sig_col  <- if (identical(sig_stat, "nom.p.val")) pval_col else adjp_col
   if (!all(c(lfc_col, adjp_col, sig_col) %in% colnames(stat_df))) return(empty)
 
-  m <- matched[as.character(matched$accession) == accession, , drop = FALSE]
+  m <- if (!is.null(.index)) {
+    .index$by_acc[[accession]] %||% matched[0L, , drop = FALSE]
+  } else {
+    matched[as.character(matched$accession) == accession, , drop = FALSE]
+  }
   m <- m[!is.na(m$pep_start) & !is.na(m$pep_end), , drop = FALSE]
   if (nrow(m) == 0L) return(empty)
 
-  key_s <- as.character(stat_df[["PEP.StrippedSequence"]])
+  key_s <- if (!is.null(.index)) .index$stat_key else
+    as.character(stat_df[["PEP.StrippedSequence"]])
   idx   <- match(as.character(m[["PEP.StrippedSequence"]]), key_s)
   logfc <- as.numeric(stat_df[[lfc_col]])[idx]
   adjp  <- as.numeric(stat_df[[adjp_col]])[idx]

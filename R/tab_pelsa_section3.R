@@ -1456,6 +1456,7 @@ PELSASection3_Ome_Server <- function(id,
       fdf <- feat_df() %||% data.frame()
       cov <- entry$coverage %||% data.frame()
       choices <- contrast_choices()
+      woods_idx <- pelsa_woods_build_index(matched, stat_df)
       d_mk <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
                                      .PELSA_SUB_WOODS, .PELSA_GRP_MARKER)
       d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
@@ -1471,7 +1472,8 @@ PELSASection3_Ome_Server <- function(id,
           contrast <- unname(choices[[cj]])
           pep <- tryCatch(
             pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
-                                     sig_cutoff, sig_stat = sig_stat),
+                                     sig_cutoff, sig_stat = sig_stat,
+                                     .index = woods_idx),
             error = function(e) NULL)
           if (is.null(pep) || nrow(pep) == 0L) next
           plen <- pelsa_export_prot_len(cov, acc, pep)
