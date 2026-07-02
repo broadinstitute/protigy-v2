@@ -730,13 +730,14 @@ pelsa_blank_plot <- function(message) {
 #                  .." labels (e.g. coverage formats as a percentage).
 # @noRd
 #
-# @param x_hi      optional numeric upper x-limit. When non-NULL and finite,
-#                  the density is clamped to [0, x_hi] via coord_cartesian so a
-#                  long right tail of outliers doesn't blow out the scale (and
-#                  keeps this experiment-wide mode aligned with the per-condition
-#                  KDE, which clamps at the 99th percentile). NULL (the default)
-#                  preserves the un-clamped full-range behavior the coverage and
-#                  peptide-length callers rely on.
+# @param x_hi      optional numeric upper x-limit. The left edge is always
+#                  clamped to 0 via coord_cartesian. When non-NULL and finite,
+#                  the right edge is also clamped to x_hi so a long right tail
+#                  of outliers doesn't blow out the scale (and keeps this
+#                  experiment-wide mode aligned with the per-condition KDE,
+#                  which clamps at the 99th percentile). NULL (the default)
+#                  leaves the right edge un-clamped (auto), which the coverage
+#                  and peptide-length callers rely on.
 pelsa_overall_density_plot <- function(vals, x_label, title,
                                        value_fmt = function(v) sprintf("%.1f", v),
                                        fill = "#59a14f", subtitle = NULL,
