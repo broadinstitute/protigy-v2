@@ -375,8 +375,8 @@ pelsa_splot_build_ggplot <- function(prep,
     g + ggrepel::geom_label_repel(
       data = df,
       ggplot2::aes(x = .data$rank, y = .data$y, label = .data$label),
-      color = color, fill = "white", size = 2, label.padding = 0.2,
-      box.padding = 0.1, direction = "both", force = 50,
+      color = color, fill = "white", size = 3, fontface = "bold",
+      label.padding = 0.2, box.padding = 0.1, direction = "both", force = 50,
       min.segment.length = 0, max.overlaps = .SPLOT_MAX_OVERLAPS,
       seed = 42L, show.legend = FALSE)
   }
@@ -393,19 +393,21 @@ pelsa_splot_build_ggplot <- function(prep,
                   title = title, subtitle = subtitle) +
     ggplot2::theme_bw() +
     ggplot2::theme(
-      plot.title.position = "plot",                              # center over whole plot
-      plot.title    = ggplot2::element_text(face = "bold", hjust = 0.5),
-      plot.subtitle = ggplot2::element_text(hjust = 0.5),
-      axis.title    = ggplot2::element_text(face = "bold"),      # bold axis titles
+      plot.title    = ggplot2::element_text(size = 11, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 11, hjust = 0.5),
+      axis.title    = ggplot2::element_text(size = 11, face = "bold"),
+      axis.text     = ggplot2::element_text(size = 7, colour = "black"),
       panel.grid.major = ggplot2::element_blank(),               # no grid lines
       panel.grid.minor = ggplot2::element_blank(),
       legend.position  = "right",                                # legend on right
       # --- Compact legend: pull it in tight to the panel + shrink internals ---
       legend.box.spacing = ggplot2::unit(4, "pt"),   # gap panel <-> legend
-      legend.margin      = ggplot2::margin(0, 0, 0, 0),
+      legend.margin      = ggplot2::margin(4, 6, 4, 6),
       legend.key.size    = ggplot2::unit(12, "pt"),  # swatch box size
       legend.spacing.y   = ggplot2::unit(2, "pt"),   # gap between entries
-      legend.text        = ggplot2::element_text(margin = ggplot2::margin(l = 2)))
+      legend.text        = ggplot2::element_text(margin = ggplot2::margin(l = 2)),
+      legend.background  = ggplot2::element_rect(color = "black", fill = NA,
+                                                 linewidth = 0.3))
 }
 
 # Write one intensity-rank PNG per sample for ONE dataset into the
@@ -427,7 +429,7 @@ pelsa_splot_export_for <- function(dir_name, gct, matched, marker_accs,
     g <- pelsa_splot_build_ggplot(prep, subtitle = s)
     tryCatch(
       pelsa_save_figure(g, out, paste0("intensity_rank_", pelsa_safe_name(s)),
-                        width = 8, height = 5),
+                        width = 5.6, height = 3.5),
       error = function(e) warning(sprintf(
         "pelsa_splot_export_for: failed to write sample '%s': %s",
         s, conditionMessage(e)), call. = FALSE))
