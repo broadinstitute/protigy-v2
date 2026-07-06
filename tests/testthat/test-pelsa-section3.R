@@ -3314,6 +3314,16 @@ test_that("widen_point_features: non-data.frame input errors clearly", {
                "data.frame")
 })
 
+test_that("widen_point_features: invalid prot_len errors clearly instead of propagating NA", {
+  f <- data.frame(start = 1L, end = 1L)
+  expect_error(pelsa_widen_point_features(f, prot_len = NA),
+               "prot_len must be a single finite number")
+  expect_error(pelsa_widen_point_features(f, prot_len = Inf),
+               "prot_len must be a single finite number")
+  expect_error(pelsa_widen_point_features(f, prot_len = c(10L, 20L)),
+               "prot_len must be a single finite number")
+})
+
 # ---- pelsa_feature_lanes (IRanges disjointBins) ------------------------------
 
 test_that("feature_lanes packs overlapping features into distinct lanes", {

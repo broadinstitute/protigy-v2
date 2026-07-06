@@ -263,6 +263,11 @@ pelsa_widen_point_features <- function(features, prot_len) {
     stop("pelsa_widen_point_features: features must be a data.frame",
          call. = FALSE)
   }
+  if (length(prot_len) != 1L ||
+      !is.finite(suppressWarnings(as.numeric(prot_len)))) {
+    stop("pelsa_widen_point_features: prot_len must be a single finite number",
+         call. = FALSE)
+  }
   plen <- max(1L, as.integer(prot_len))
   n <- nrow(features)
   if (n == 0L) {
