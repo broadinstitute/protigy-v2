@@ -551,3 +551,44 @@ test_that("pelsa_depth_bar_plot default (export=FALSE) keeps 'Sample' x title, s
   gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
   expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
 })
+
+# ---- export wiring: pelsa_section2_exports_for --------------------------------
+
+test_that("pelsa_section2_exports_for's QC bundle calls builders with export=TRUE and 5.6x3.5in canvas", {
+  entry <- list(
+    coverage = data.frame(accession = paste0("P", 1:5),
+                          coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                          protein_length = rep(100L, 5), stringsAsFactors = FALSE),
+    peptide_metrics = data.frame(peptide_seq = paste0("PEP", 1:5),
+                                 peptide_length = c(8, 9, 10, 11, 12),
+                                 missed_cleavages = rep(0L, 5), stringsAsFactors = FALSE),
+    cv = data.frame(cv_pct = numeric(0), cv_status = character(0), condition = character(0)),
+    n_quantified = c(S1 = 10L),
+    coverage_by_condition = data.frame(condition = character(0), coverage = numeric(0)),
+    length_by_condition = data.frame(condition = character(0), peptide_length = numeric(0))
+  )
+  captured <- list()
+  testthat::local_mocked_bindings(
+    pelsa_save_figure = function(plot, dir_name, basename, width, height, ...) {
+      captured[[basename]] <<- list(width = width, height = height,
+                                    title_size = plot$theme$plot.title$size,
+                                    axis_colour = plot$theme$axis.text$colour)
+      invisible(NULL)
+    },
+    .package = "Protigy"
+  )
+  tmp <- file.path(tempdir(), paste0("qcexport_", as.integer(runif(1, 1, 1e6))))
+  dir.create(tmp, recursive = TRUE, showWarnings = FALSE)
+  bundle <- pelsa_section2_exports_for(entry, ome = "ds1")
+  bundle$qc(tmp)
+  unlink(tmp, recursive = TRUE)
+
+  expect_true(length(captured) >= 1L)
+  for (nm in names(captured)) {
+    dims <- captured[[nm]]
+    expect_equal(dims$width, 5.6, info = paste("width for", nm))
+    expect_equal(dims$height, 3.5, info = paste("height for", nm))
+    expect_equal(dims$title_size, 12, info = paste("export title size for", nm))
+    expect_equal(dims$axis_colour, "black", info = paste("export axis colour for", nm))
+  }
+})
