@@ -62,17 +62,16 @@
 .PELSA_VOLCANO_BG_SIZE      <- 1.1
 .PELSA_VOLCANO_BG_ALPHA     <- 0.8
 
-# Default per-contrast label mode and top-N. Default is "none" - a clean plot
-# out of the box; the user opts into labels via the sidebar radio.
-.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- "none"
-.PELSA_VOLCANO_DEFAULT_TOP_N      <- 3L
+# Default per-contrast label mode: an empty vector - no labels out of the box;
+# the user opts into labels via the sidebar checkbox group. label_mode is now
+# a CHARACTER VECTOR (zero or more selected checkboxes), not a single value.
+.PELSA_VOLCANO_DEFAULT_LABEL_MODE <- character(0)
 
 # The gold used to highlight a selected/pinned peptide (legend entry, Woods
 # cross-highlight). Distinct from the magenta marker fill.
 .PELSA_VOLCANO_GOLD <- .PELSA_GOLD
 
-.PELSA_VOLCANO_LABEL_MODES <- c("none", "all_markers", "all_significant",
-                                "best_per_marker", "top_n")
+.PELSA_VOLCANO_LABEL_MODES <- c("all_markers", "all_significant")
 
 # Significance-direction -> human legend label (fixed display order).
 .PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",

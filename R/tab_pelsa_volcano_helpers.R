@@ -1077,86 +1077,46 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # ---- label-mode row selection -----------------------------------------------
 
 # Select which rows of a volcano frame get an on-plot text label, for a given
-# label mode. Labels are FIXED to the 3A `label` column (the ;-joined
+# set of label modes. Labels are FIXED to the 3A `label` column (the ;-joined
 # <gene>_aa<pos>); only WHICH rows are labeled varies.
 #
-# Modes:
-#   "none"            no labels (integer(0)).
+# Modes (a CHARACTER VECTOR - zero or more of the two below; the checkbox
+# group in the PELSA sidebar allows selecting either, both, or neither):
 #   "all_markers"     every marker-protein peptide (is_marker == TRUE).
 #   "all_significant" every significant peptide (Significant == TRUE).
-#   "best_per_marker" one peptide per marker PROTEIN (winning_accession): the
-#                     smallest adj.P.Val within each marker protein.
-#   "top_n"           the N peptides with the smallest adj.P.Val per PROTEIN
-#                     (winning_accession), across ALL proteins (default N=3).
 #
-# Returns the 1-based row indices to label (sorted, unique). Ties in adj.P.Val
-# break by row order (stable). NA adj.P.Val sorts last.
+# Returns the UNION of matching rows across every mode in the vector, as
+# 1-based row indices (sorted, unique). An empty/NULL `mode` returns
+# integer(0) (no labels).
 #
-# @param volcano_df a 3A frame (label, is_marker, Significant, adj.P.Val,
-#                   winning_accession).
-# @param mode       one of the five modes above.
-# @param n_top      N for "top_n" (default 3, coerced to >= 1).
+# @param volcano_df a 3A frame (label, is_marker, Significant).
+# @param mode       a character vector; each element one of the two modes
+#                   above. NULL or character(0) means no labels.
 # @return integer vector of row indices to label.
 # @noRd
-pelsa_volcano_label_rows <- function(volcano_df, mode = "top_n", n_top = 3L) {
+pelsa_volcano_label_rows <- function(volcano_df, mode = character(0)) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
   }
-  mode <- mode %||% "top_n"
-  if (length(mode) != 1L || is.na(mode) ||
-      !mode %in% .PELSA_VOLCANO_LABEL_MODES) {
+  mode <- mode %||% character(0)
+  mode <- as.character(mode)
+  if (length(mode) == 0L) return(integer(0))
+  if (anyNA(mode) || !all(mode %in% .PELSA_VOLCANO_LABEL_MODES)) {
     stop("pelsa_volcano_label_rows: mode must be one of ",
          paste(sprintf("'%s'", .PELSA_VOLCANO_LABEL_MODES), collapse = ", "))
   }
   n <- nrow(volcano_df)
-  if (n == 0L || mode == "none") return(integer(0))
+  if (n == 0L) return(integer(0))
 
   is_m <- volcano_df$is_marker %||% rep(FALSE, n)
   is_m[is.na(is_m)] <- FALSE
+  sig <- volcano_df$Significant %||% rep(FALSE, n)
+  sig[is.na(sig)] <- FALSE
 
-  if (mode == "all_markers") {
-    return(which(is_m))
-  }
-
-  if (mode == "all_significant") {
-    sig <- volcano_df$Significant %||% rep(FALSE, n)
-    sig[is.na(sig)] <- FALSE
-    return(which(sig))
-  }
-
-  adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
-  acc  <- as.character(volcano_df$winning_accession %||% rep(NA_character_, n))
-
-  if (mode == "best_per_marker") {
-    marker_idx <- which(is_m)
-    if (length(marker_idx) == 0L) return(integer(0))
-    # Group marker rows by protein, keep the smallest-adjp row per protein.
-    return(.pelsa_top_per_group(marker_idx, acc[marker_idx],
-                                adjp[marker_idx], n_top = 1L))
-  }
-
-  # mode == "top_n": top-N smallest adj.P.Val per protein across all rows.
-  n_top <- max(1L, as.integer(n_top)[1L])
-  if (is.na(n_top)) n_top <- .PELSA_VOLCANO_DEFAULT_TOP_N
-  .pelsa_top_per_group(seq_len(n), acc, adjp, n_top = n_top)
-}
-
-# Keep the n_top rows with the smallest `value` within each group of `key`.
-# `idx` are the original row indices these (key, value) entries correspond to.
-# Stable: ties / NA values resolve by original index order; NA values sort last.
-#
-# @return sorted unique original indices kept.
-# @noRd
-.pelsa_top_per_group <- function(idx, key, value, n_top) {
-  if (length(idx) == 0L) return(integer(0))
-  # Stable order by (value asc, idx asc); NA value last.
-  ord <- order(value, idx, na.last = TRUE)
-  idx_o <- idx[ord]
-  key_o <- key[ord]
-  # Within each group (in this sorted order), rank position.
-  rank_in_grp <- stats::ave(seq_along(key_o), key_o, FUN = seq_along)
-  kept <- idx_o[rank_in_grp <= n_top]
-  sort(unique(kept))
+  idx <- integer(0)
+  if ("all_markers" %in% mode)     idx <- c(idx, which(is_m))
+  if ("all_significant" %in% mode) idx <- c(idx, which(sig))
+  sort(unique(idx))
 }
 
 # ---- "showing N of M" honesty note ------------------------------------------

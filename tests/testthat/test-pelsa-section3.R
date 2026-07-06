@@ -1136,34 +1136,20 @@ test_that("label-mode: all_markers labels every marker row", {
   expect_equal(pelsa_volcano_label_rows(df, "all_markers"), c(1L, 3L))
 })
 
-test_that("label-mode: best_per_marker keeps smallest adj.P.Val per marker protein", {
+test_that("label-mode: empty mode vector labels nothing", {
   df <- data.frame(
-    is_marker = c(TRUE, TRUE, TRUE, FALSE),
-    adj.P.Val = c(0.30, 0.01, 0.40, 0.001),  # P1: rows 1,3 -> keep row1(0.30)?no row with smaller
-    winning_accession = c("P1", "P1", "P2", "P3"),
-    label = c("a", "b", "c", "d"),
-    stringsAsFactors = FALSE
+    is_marker         = c(TRUE, FALSE, TRUE),
+    Significant       = c(TRUE, FALSE, TRUE),
+    adj.P.Val         = c(0.01, 0.5, 0.02),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
   )
-  # P1 best = row 2 (0.01); P2 best = row 3 (0.40). Non-marker row4 excluded.
-  expect_equal(pelsa_volcano_label_rows(df, "best_per_marker"), c(2L, 3L))
+  expect_equal(pelsa_volcano_label_rows(df, character(0)), integer(0))
+  expect_equal(pelsa_volcano_label_rows(df, NULL), integer(0))
 })
 
-test_that("label-mode: top_n keeps N smallest adj.P.Val per protein", {
-  df <- data.frame(
-    is_marker = rep(FALSE, 6),
-    adj.P.Val = c(0.5, 0.1, 0.2, 0.9, 0.05, 0.3),
-    winning_accession = c("P1", "P1", "P1", "P1", "P2", "P2"),
-    label = letters[1:6],
-    stringsAsFactors = FALSE
-  )
-  # P1 top-3 smallest: rows 2(0.1),3(0.2),1(0.5). P2: rows 5(0.05),6(0.3).
-  expect_equal(pelsa_volcano_label_rows(df, "top_n", n_top = 3L),
-               c(1L, 2L, 3L, 5L, 6L))
-  # N=1 per protein: P1 row2, P2 row5.
-  expect_equal(pelsa_volcano_label_rows(df, "top_n", n_top = 1L), c(2L, 5L))
-})
-
-test_that("label-mode: none labels nothing; all_significant labels sig rows", {
+test_that("label-mode: all_significant labels sig rows only", {
   df <- data.frame(
     is_marker         = c(TRUE, FALSE, FALSE, TRUE),
     Significant       = c(TRUE, FALSE, TRUE, NA),
@@ -1172,17 +1158,37 @@ test_that("label-mode: none labels nothing; all_significant labels sig rows", {
     label             = c("a", "b", "c", "d"),
     stringsAsFactors  = FALSE
   )
-  expect_equal(pelsa_volcano_label_rows(df, "none"), integer(0))
   # all_significant: rows where Significant == TRUE (NA -> FALSE).
   expect_equal(pelsa_volcano_label_rows(df, "all_significant"), c(1L, 3L))
 })
 
-test_that("label-mode: unknown mode errors; default is none", {
+test_that("label-mode: combining all_markers + all_significant unions the rows", {
+  df <- data.frame(
+    is_marker         = c(TRUE, FALSE, FALSE, FALSE),
+    Significant       = c(FALSE, TRUE, FALSE, FALSE),
+    adj.P.Val         = c(0.9, 0.01, 0.5, 0.5),
+    winning_accession = c("P1", "P2", "P3", "P4"),
+    label             = c("a", "b", "c", "d"),
+    stringsAsFactors  = FALSE
+  )
+  # all_markers -> row 1; all_significant -> row 2; union -> both, sorted+unique.
+  expect_equal(
+    pelsa_volcano_label_rows(df, c("all_markers", "all_significant")),
+    c(1L, 2L)
+  )
+  # Order of the mode vector must not matter.
+  expect_equal(
+    pelsa_volcano_label_rows(df, c("all_significant", "all_markers")),
+    c(1L, 2L)
+  )
+})
+
+test_that("label-mode: unknown mode errors; default is empty", {
   df <- data.frame(is_marker = TRUE, Significant = TRUE, adj.P.Val = 0.01,
                    winning_accession = "P1", label = "a",
                    stringsAsFactors = FALSE)
   expect_error(pelsa_volcano_label_rows(df, "bogus"), "must be one of")
-  expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, "none")
+  expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, character(0))
 })
 
 test_that("volcano build adds boxed annotations (white bg, point-colored border)", {
@@ -1911,6 +1917,43 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
     label_mode_registry = reactiveVal(list())
   )
 }
+
+test_that("PELSA volcano always renders SVG (scatter), never scattergl, regardless of use_webgl", {
+  # Root cause (2026-07-05 investigation): scattergl's client-side WebGL
+  # renderer can silently mis-paint per-point marker.color arrays on some
+  # GPU/driver clients (colors wrong even though the R-built figure JSON is
+  # provably correct -- verified by direct reproduction). The hasWebGL() probe
+  # in R/app_ui.R only detects whether a WebGL context can be CREATED, not
+  # whether it renders per-point colors correctly, so buggy clients still get
+  # routed to scattergl. Force SVG for the PELSA volcano unconditionally so
+  # significance/feature coloring is reliable, even when the caller passes
+  # use_webgl = reactive(TRUE) (simulating a client whose probe reported
+  # WebGL-capable).
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      top_n_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      use_webgl = reactive(TRUE)
+    ),
+    {
+      session$setInputs(pelsa_color_mode = "significance",
+                        pelsa_label_mode = "top_n", pelsa_top_n = 3)
+      json <- output$pelsa_volcano_plot
+      expect_true(is.character(json) && nzchar(json))
+      expect_true(grepl('"type":"scatter"', json, fixed = TRUE))
+      expect_false(grepl('"type":"scattergl"', json, fixed = TRUE))
+    }
+  )
+})
 
 test_that("7D: best-panel df built ONLY when the checkbox is ON", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
