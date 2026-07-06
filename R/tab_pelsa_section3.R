@@ -1442,6 +1442,21 @@ PELSASection3_Ome_Server <- function(id,
       } else {
         NULL
       }
+      # ---- PASS 1: build every contrast's df_all/df_best WITHOUT rendering,
+      # tracking the union logFC/logP extent (+ the significance-cutoff line,
+      # which must stay visible) so every volcano PNG in this ome shares one
+      # fixed x/y range -- makes any two exported figures directly comparable.
+      built <- list()
+      x_lo <- Inf; x_hi <- -Inf; y_lo <- Inf; y_hi <- -Inf
+      track_range <- function(df) {
+        if (is.null(df) || nrow(df) == 0L) return(invisible(NULL))
+        x_lo <<- min(x_lo, min(df$logFC, na.rm = TRUE))
+        x_hi <<- max(x_hi, max(df$logFC, na.rm = TRUE))
+        y_lo <<- min(y_lo, min(df$logP, na.rm = TRUE))
+        y_hi <<- max(y_hi, max(df$logP, na.rm = TRUE))
+        y_cut <- attr(df, "y_cutoff")
+        if (!is.null(y_cut) && is.finite(y_cut)) y_hi <<- max(y_hi, y_cut)
+      }
       for (i in seq_along(choices)) {
         contrast <- unname(choices[[i]])
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
@@ -1449,35 +1464,58 @@ PELSASection3_Ome_Server <- function(id,
                                           is_self_curated = self_curated,
                                           sig_stat = sig_stat,
                                           .stat_df = stat_df_once)
+        track_range(df_all)
+        df_best <- if (want_best) {
+          pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
+                                  "best_peptide", sig_cutoff = sig_cutoff,
+                                  is_self_curated = self_curated,
+                                  sig_stat = sig_stat, .stat_df = stat_df_once)
+        } else {
+          NULL
+        }
+        track_range(df_best)
+        built[[i]] <- list(contrast = contrast, df_all = df_all,
+                           df_best = df_best)
+      }
+      # No finite data across every contrast -- nothing to render; bail cleanly
+      # rather than pass Inf/-Inf into coord_cartesian.
+      shared_xlim <- if (is.finite(x_lo) && is.finite(x_hi)) c(x_lo, x_hi) else NULL
+      shared_ylim <- if (is.finite(y_lo) && is.finite(y_hi)) c(y_lo, y_hi) else NULL
+
+      # ---- PASS 2: render + save each contrast's figures with the shared range.
+      for (i in seq_along(built)) {
+        contrast <- built[[i]]$contrast
+        df_all <- built[[i]]$df_all
+        df_best <- built[[i]]$df_best
         if (!is.null(df_all) && nrow(df_all) > 0L) {
+          p <- .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode,
+                                    n_top_significant = n_top_sig,
+                                    n_top_markers = n_top_mk,
+                                    contrast = contrast,
+                                    volcano_label = "All-peptide volcano",
+                                    sig_cutoff = sig_cutoff)
+          if (!is.null(shared_xlim)) {
+            p <- p + ggplot2::coord_cartesian(xlim = shared_xlim,
+                                              ylim = shared_ylim)
+          }
           pelsa_save_figure(
-            .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode,
-                                 n_top_significant = n_top_sig,
-                                 n_top_markers = n_top_mk,
-                                 contrast = contrast,
-                                 volcano_label = "All-peptide volcano",
-                                 sig_cutoff = sig_cutoff),
-            out, paste0("all_peptide_volcano_", pelsa_safe_name(contrast)),
+            p, out, paste0("all_peptide_volcano_", pelsa_safe_name(contrast)),
             width = 6, height = 4.5)
         }
-        if (want_best) {
-          df_best <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
-                                             "best_peptide",
-                                             sig_cutoff = sig_cutoff,
-                                             is_self_curated = self_curated,
-                                             sig_stat = sig_stat,
-                                             .stat_df = stat_df_once)
-          if (!is.null(df_best) && nrow(df_best) > 0L) {
-            pelsa_save_figure(
-              .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode,
-                                   n_top_significant = n_top_sig,
-                                   n_top_markers = n_top_mk,
-                                   contrast = contrast,
-                                   volcano_label = "Best-peptide volcano",
-                                   sig_cutoff = sig_cutoff),
-              out, paste0("best_peptide_volcano_", pelsa_safe_name(contrast)),
-              width = 6, height = 4.5)
+        if (want_best && !is.null(df_best) && nrow(df_best) > 0L) {
+          p <- .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode,
+                                    n_top_significant = n_top_sig,
+                                    n_top_markers = n_top_mk,
+                                    contrast = contrast,
+                                    volcano_label = "Best-peptide volcano",
+                                    sig_cutoff = sig_cutoff)
+          if (!is.null(shared_xlim)) {
+            p <- p + ggplot2::coord_cartesian(xlim = shared_xlim,
+                                              ylim = shared_ylim)
           }
+          pelsa_save_figure(
+            p, out, paste0("best_peptide_volcano_", pelsa_safe_name(contrast)),
+            width = 6, height = 4.5)
         }
       }
       invisible(out)
