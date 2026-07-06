@@ -987,8 +987,12 @@ pelsa_cv_overall_plot <- function(cv) {
     x_hi = x_hi)
 }
 
-# 6A: missed-cleavage bar (0,1,2,...). @noRd
-pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
+# 6A: missed-cleavage bar (0,1,2,...). export=TRUE applies static-figure
+# styling (title size 12, no "plot"-position override, black size-8 axis
+# text) plus a wider x-axis title and a larger bar-label font, matching the
+# export pattern used by the other section-2 QC plots. @noRd
+pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06,
+                                       export = FALSE) {
   df <- pelsa_missed_cleavage_data(peptide_metrics)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No missed-cleavage data."))
@@ -1004,8 +1008,10 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
     df$missed, prettyNum(df$count, big.mark = ","), df$percent
   )
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
-  # Absolute count + percent of all identified peptides, stacked above each bar.
-  df$bar_label <- sprintf("%s\n%.1f%%", prettyNum(df$count, big.mark = ","),
+  # Absolute count + parenthesized percent of all identified peptides, stacked
+  # above each bar. Parenthesization applies in BOTH modes -- it is a
+  # label-content clarity fix, not export-specific styling.
+  df$bar_label <- sprintf("%s\n(%.1f%%)", prettyNum(df$count, big.mark = ","),
                           df$percent)
   # Lift the label `head_frac` of the tallest bar ABOVE each bar top (in-app
   # default 0.06 is larger than the depth plot's 0.04 so the 2-line count+percent
@@ -1014,15 +1020,24 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
   # the label bottom at label_y.
   head_room <- head_frac * max(df$count, na.rm = TRUE)
   df$label_y <- df$count + head_room
-  ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
+  x_title <- if (export) "# of missed cleavages" else "Missed cleavages"
+  label_size <- if (export) 4 else 3
+  p <- ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
     geom_text(aes(y = .data$label_y, label = .data$bar_label),
-              vjust = 0, size = 3, fontface = "bold") +
+              vjust = 0, size = label_size, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.15))) +
-    labs(x = "Missed cleavages", y = "# of peptides",
+    labs(x = x_title, y = "# of peptides",
          title = "Missed-cleavage distribution") +
     protigy_plot_theme()
+  if (export) {
+    p$theme$plot.title.position <- NULL
+    p <- p + ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 # 6B: per-condition CV KDE. One density curve per ELIGIBLE condition (>= 20

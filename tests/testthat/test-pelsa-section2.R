@@ -492,3 +492,37 @@ test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling", {
   expect_equal(p$theme$plot.title$size, 14)
   expect_equal(p$theme$plot.title.position, "plot")
 })
+
+# ---- export styling: pelsa_missed_cleavage_plot -------------------------------
+
+test_that("pelsa_missed_cleavage_plot parenthesizes the percentage in the bar label (both modes)", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p_screen <- pelsa_missed_cleavage_plot(pm)
+  p_export <- pelsa_missed_cleavage_plot(pm, export = TRUE)
+  built_screen <- ggplot2::ggplot_build(p_screen)
+  built_export <- ggplot2::ggplot_build(p_export)
+  gt_screen <- which(vapply(p_screen$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  gt_export <- which(vapply(p_export$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_screen$data[[gt_screen]]$label)))
+  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_export$data[[gt_export]]$label)))
+})
+
+test_that("pelsa_missed_cleavage_plot export=TRUE changes x-axis title and label size", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p <- pelsa_missed_cleavage_plot(pm, export = TRUE)
+  expect_equal(p$labels$x, "# of missed cleavages")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 4)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+})
+
+test_that("pelsa_missed_cleavage_plot default (export=FALSE) keeps 'Missed cleavages' x title and size-3 label", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p <- pelsa_missed_cleavage_plot(pm)
+  expect_equal(p$labels$x, "Missed cleavages")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
+})
