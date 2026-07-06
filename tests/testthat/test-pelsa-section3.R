@@ -4725,3 +4725,54 @@ test_that("feat_df falls back to live file when cache entry lacks feat_raw", {
   expect_true("Q_LIVE" %in% result_val$accession)
 })
 
+# ---- pelsa_feature_track_ggplot: widened single-AA rendering ---------------
+
+test_that("feature_track_ggplot draws widened span for a single-AA feature", {
+  fl <- pelsa_feature_lanes(
+    data.frame(start = 214L, end = 214L, feature_class = "active_or_binding_site",
+              feature_type = "Active site", stringsAsFactors = FALSE),
+    prot_len = 500L)
+  gg <- pelsa_feature_track_ggplot(fl, 500L)
+  b <- suppressWarnings(ggplot2::ggplot_build(gg))
+  rect_layer <- b$data[[1]]
+  expect_equal(rect_layer$xmin, 211)
+  expect_equal(rect_layer$xmax, 217)
+})
+
+test_that("feature_track_ggplot tooltip keeps true coords + widened note", {
+  fl <- pelsa_feature_lanes(
+    data.frame(start = 214L, end = 214L, feature_class = "active_or_binding_site",
+              feature_type = "Active site", stringsAsFactors = FALSE),
+    prot_len = 500L)
+  gg <- pelsa_feature_track_ggplot(fl, 500L)
+  b <- suppressWarnings(ggplot2::ggplot_build(gg))
+  tip <- b$data[[1]]$text
+  expect_true(grepl("214-214", tip, fixed = TRUE))
+  expect_true(grepl("widened", tip, ignore.case = TRUE))
+  expect_true(grepl("211-217", tip, fixed = TRUE))
+})
+
+test_that("feature_track_ggplot tooltip has no widened note for multi-AA features", {
+  fl <- pelsa_feature_lanes(
+    data.frame(start = 10L, end = 30L, feature_class = "catalytic_domain",
+              feature_type = "Domain", stringsAsFactors = FALSE),
+    prot_len = 500L)
+  gg <- pelsa_feature_track_ggplot(fl, 500L)
+  b <- suppressWarnings(ggplot2::ggplot_build(gg))
+  tip <- b$data[[1]]$text
+  expect_true(grepl("10-30", tip, fixed = TRUE))
+  expect_false(grepl("widened", tip, ignore.case = TRUE))
+})
+
+test_that("feature_track_ggplot: fixture lacking display_start/display_end still renders", {
+  # Guards against a caller that built a `features_lanes`-shaped frame by hand
+  # (e.g. an older test fixture) without going through pelsa_feature_lanes().
+  fl <- data.frame(start = 10L, end = 30L, feature_class = "catalytic_domain",
+                   feature_type = "Domain", lane = 1L, stringsAsFactors = FALSE)
+  gg <- pelsa_feature_track_ggplot(fl, 500L)
+  expect_s3_class(gg, "ggplot")
+  b <- suppressWarnings(ggplot2::ggplot_build(gg))
+  expect_equal(b$data[[1]]$xmin, 10)
+  expect_equal(b$data[[1]]$xmax, 30)
+})
+

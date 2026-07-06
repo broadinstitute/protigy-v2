@@ -461,6 +461,14 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
     )
   }
   f <- features_lanes
+  # DISPLAY span: prefer the widened display_start/display_end (produced by
+  # pelsa_feature_lanes()); fall back to the true start/end for any caller
+  # that supplies a features_lanes-shaped frame without going through that
+  # widener (e.g. a hand-built fixture).
+  disp_s <- if (!is.null(f$display_start)) f$display_start else f$start
+  disp_e <- if (!is.null(f$display_end)) f$display_end else f$end
+  was_widened <- if (!is.null(f$was_widened)) f$was_widened else
+    rep(FALSE, nrow(f))
   # Tooltip NAME = the real UniProt feature_type (e.g. "Active site", "Domain",
   # "Transmembrane") - NOT the 9-bucket feature_class (which read as a generic
   # "region_or_motif" etc). For generic types ("Region", "Site"), append the
@@ -473,14 +481,23 @@ pelsa_feature_track_ggplot <- function(features_lanes, prot_len,
                         tolower(desc) != tolower(ftype),
                       paste0(ftype, ": ", desc), ftype)
   ov <- if (".overlap_peps" %in% colnames(f)) f$.overlap_peps else "none"
-  f$.tip <- sprintf("%s\n%d-%d\nOverlapping peptides: %s",
-                    name_line, f$start, f$end, ov)
+  # The TRUE start-end is always the primary coordinate in the tooltip; a
+  # single-AA feature (start == end) additionally notes the widened DISPLAY
+  # span it was drawn at, so the user isn't misled into thinking 211-217 is
+  # the real annotation.
+  widen_note <- ifelse(was_widened,
+                       sprintf(" (shown widened %d-%d for visibility)",
+                               disp_s, disp_e), "")
+  f$.tip <- sprintf("%s\n%d-%d%s\nOverlapping peptides: %s",
+                    name_line, f$start, f$end, widen_note, ov)
+  f$.disp_start <- disp_s
+  f$.disp_end   <- disp_e
   # No per-plot fill legend: the sidebar carries a complete static UniProt feature
   # color key (every class, present or not), so a second dynamic legend here is
   # redundant and crowds the track.
   ggplot2::ggplot(f) +
     ggplot2::geom_rect(
-      ggplot2::aes(xmin = .data$start, xmax = .data$end,
+      ggplot2::aes(xmin = .data$.disp_start, xmax = .data$.disp_end,
                    ymin = .data$lane - 0.4, ymax = .data$lane + 0.4,
                    fill = .data$feature_class, text = .data$.tip)) +
     ggplot2::scale_fill_manual(values = palette, drop = TRUE, name = NULL,
