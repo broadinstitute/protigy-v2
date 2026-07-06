@@ -372,3 +372,54 @@ test_that("overall density plot carries a white halo behind mean/median labels",
   # Halo covers both labels, 8 copies each = 16 rows.
   expect_equal(nrow(halo[[1]]$data), 16L)
 })
+
+# ---- export styling: pelsa_overall_density_plot ------------------------------
+
+test_that("pelsa_overall_density_plot default (export=FALSE) keeps current on-screen styling", {
+  vals <- c(10, 20, 30, 40, 50)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
+  expect_equal(p$theme$plot.title$size, 14)
+  # theme_bw()'s own axis.text carries the grey "#4D4D4DFF" (not black) in this
+  # ggplot2 version -- export=FALSE must leave that inherited default alone.
+  expect_equal(p$theme$axis.text$colour, "#4D4D4DFF")
+  expect_equal(p$theme$plot.title.position, "plot")
+})
+
+test_that("pelsa_overall_density_plot export=TRUE applies export styling", {
+  vals <- c(10, 20, 30, 40, 50)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t", export = TRUE)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_equal(p$theme$plot.subtitle$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  sizes <- vapply(text_layers, function(l) l$aes_params$size %||% NA_real_, numeric(1))
+  expect_true(all(sizes[!is.na(sizes)] == 4.2))
+})
+
+test_that("pelsa_coverage_distribution_plot export=TRUE fixes x-axis range to (0, 1)", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
+  p <- pelsa_coverage_distribution_plot(cov, export = TRUE)
+  built <- ggplot2::ggplot_build(p)
+  x_range <- built$layout$panel_params[[1]]$x.range
+  # coord_cartesian(xlim=c(0,1)) with default ggplot expansion still reports
+  # panel_params x.range slightly beyond (0,1) by the expansion factor -- assert
+  # the UNDERLYING requested limits via the coord object rather than the
+  # expanded render range.
+  expect_equal(p$coordinates$limits$x, c(0, 1))
+})
+
+test_that("pelsa_coverage_distribution_plot default (export=FALSE) does not fix x-axis range", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
+  p <- pelsa_coverage_distribution_plot(cov)
+  # pelsa_overall_density_plot's own coord_cartesian(xlim=c(0, right_bound))
+  # always clamps the left edge to 0 with an unclamped (NA) right edge when no
+  # x_hi is supplied -- export=FALSE must leave that pre-existing clamp as-is,
+  # not add the export-only fixed (0, 1) range.
+  expect_equal(p$coordinates$limits$x, c(0, NA))
+})

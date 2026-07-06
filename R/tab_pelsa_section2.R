@@ -742,9 +742,10 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
                                        value_fmt = function(v) sprintf("%.1f", v),
                                        fill = "#59a14f", subtitle = NULL,
                                        blank_msg = "Not enough values for a density.",
-                                       x_hi = NULL, x_scale = NULL) {
+                                       x_hi = NULL, x_scale = NULL, export = FALSE) {
   vals <- vals[is.finite(vals)]
   if (length(vals) < 2L) return(pelsa_blank_plot(blank_msg))
+  ann_size <- if (export) 4.2 else 3.2
   m  <- mean(vals)
   md <- stats::median(vals)
   y_top <- tryCatch(max(stats::density(vals)$y, na.rm = TRUE),
@@ -769,14 +770,12 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
     geom_density(fill = fill, alpha = 0.4, color = fill) +
     geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
     geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
-    pelsa_halo_text_layers(halo_df, x_hi = max(vals), peak = y_top, size = 3.2) +
+    pelsa_halo_text_layers(halo_df, x_hi = max(vals), peak = y_top, size = ann_size) +
     annotate("text", x = m,  y = ys[1], label = paste0("mean = ", value_fmt(m)),
-             color = "#e15759", hjust = -0.05, size = 3.2, fontface = "bold") +
+             color = "#e15759", hjust = -0.05, size = ann_size, fontface = "bold") +
     annotate("text", x = md, y = ys[2],
              label = paste0("median = ", value_fmt(md)),
-             color = "#4e79a7", hjust = -0.05, size = 3.2, fontface = "bold") +
-    labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
-    protigy_plot_theme()
+             color = "#4e79a7", hjust = -0.05, size = ann_size, fontface = "bold")
   # Always clamp the left edge to 0 (vals here are always non-negative counts,
   # lengths, or fractions), mirroring pelsa_per_condition_density_plot's x_lo.
   # Without this, a floating density curve whose mass sits away from 0 can
@@ -784,6 +783,18 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   # "use the data's natural extent," preserving the unclamped-right-edge
   # behavior for callers (length/coverage) that don't pass x_hi.
   right_bound <- if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) x_hi else NA
+  base_theme <- protigy_plot_theme()
+  if (export) {
+    base_theme$plot.title.position <- NULL
+  }
+  p <- p + labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
+    base_theme
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
   p <- p + coord_cartesian(xlim = c(0, right_bound))
   if (!is.null(x_scale)) p <- p + x_scale
   p
@@ -880,18 +891,24 @@ pelsa_per_condition_density_plot <- function(df, value_col,
 }
 
 # 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
-pelsa_coverage_distribution_plot <- function(coverage) {
+pelsa_coverage_distribution_plot <- function(coverage, export = FALSE) {
   vals <- pelsa_coverage_values(coverage)
   over_n <- pelsa_over_length_count(coverage)
   subtitle <- if (over_n > 0L)
     sprintf("Experiment-wide | %d clamped (over-length)", over_n) else
       "Experiment-wide"
-  pelsa_overall_density_plot(
+  p <- pelsa_overall_density_plot(
     vals, x_label = "Sequence coverage (%)",
     title = "Per-protein sequence coverage", fill = "#4e79a7",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v), subtitle = subtitle,
     blank_msg = "Not enough coverage values for a density.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
+    export = export)
+  # Overrides pelsa_overall_density_plot's own internal coord_cartesian (last
+  # coord wins) to fix the axis at (0, 1) for export; suppress the informational
+  # "Coordinate system already present" message this intentional override emits.
+  if (export) p <- suppressMessages(p + ggplot2::coord_cartesian(xlim = c(0, 1)))
+  p
 }
 
 # 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
@@ -909,14 +926,15 @@ pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
 }
 
 # 6A: peptide-length DENSITY (experiment-wide mode). @noRd
-pelsa_length_density_plot <- function(peptide_metrics) {
+pelsa_length_density_plot <- function(peptide_metrics, export = FALSE) {
   vals <- pelsa_length_values(peptide_metrics)
   pelsa_overall_density_plot(
     vals, x_label = "Peptide length (residues)",
     title = "Peptide-length distribution", fill = "#59a14f",
     value_fmt = function(v) sprintf("%.1f", v),
     subtitle = "Experiment-wide",
-    blank_msg = "Not enough peptides for a length density.")
+    blank_msg = "Not enough peptides for a length density.",
+    export = export)
 }
 
 # 6A: peptide-length DENSITY (per-condition mode). @noRd
