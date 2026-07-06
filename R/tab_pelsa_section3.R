@@ -9,19 +9,22 @@
 # Layers (this pass, 7A-7C):
 #   7A  stat-source gate - grey out until a stat analysis is run for the active
 #       dataset (mirrors tab_stat_plot.R's validate(need(stat_results(), ...))).
-#   7B  per-contrast registries (poi/top_n/label_mode), reused VERBATIM from
+#   7B  a per-contrast POI registry (marker accessions), reused VERBATIM from
 #       tab_stat_plot.R, seeded with the Setup marker accessions; lazy contrast
 #       loading - only the ACTIVE contrast's heavy volcano df is held, the prior
-#       contrast's df is freed on switch (registries persist user settings).
+#       contrast's df is freed on switch (the registry persists user settings).
+#       Label mode is a SEPARATE, per-OME (not per-contrast) registry: one
+#       selection applies to every contrast of the active dataset.
 #   7C  the WebGL volcano: 3A pelsa_build_volcano_df() (cached per contrast) ->
 #       ggplot -> ggplotly + plotly::toWebGL, with a single color toggle
 #       (two-sided significance vs UniProt feature class), a magenta marker
-#       overlay always on top, label modes (all markers / best per marker /
-#       top-N=3), the empirical y-cutoff threshold line, and a metadata hover
-#       tooltip. The FULL df is rendered (every point) - toWebGL handles 100k+
-#       points on the GPU, so NO background downsampling is applied (per user
-#       decision: draw all points). The 3B pelsa_thin_background() helper remains
-#       in the package but is intentionally NOT wired into the volcano render.
+#       overlay always on top, label modes (all marker peptides / all
+#       significant peptides, either/both/neither), the empirical y-cutoff
+#       threshold line, and a metadata hover tooltip. The FULL df is rendered
+#       (every point) - toWebGL handles 100k+ points on the GPU, so NO
+#       background downsampling is applied (per user decision: draw all
+#       points). The 3B pelsa_thin_background() helper remains in the package
+#       but is intentionally NOT wired into the volcano render.
 #
 # Pass 2 (built): 7D best-peptide second panel (lazy, panel="best_peptide");
 # 7E a single selection() (a left-click or a Find-accession) drives the volcano
@@ -40,7 +43,7 @@
 # on the CLIENT figure. Anything that rebuilds the ~100k-point base figure wipes
 # those traces, so overlay_n MUST be reset (to 0) and the overlay re-applied on
 # the new figure. The base rebuilds for two families of reasons:
-#   (1) display controls (color mode, contrast, label mode, top-N, WebGL flip), and
+#   (1) display controls (color mode, contrast, label mode, WebGL flip), and
 #   (2) volcano_df_cache clears (marker-add, significance cutoff, significance stat)
 #       -> active_volcano_df() recomputes -> renderPlotly rebuilds the base.
 # These two pure helpers are the SINGLE SOURCE OF TRUTH the section3 observers
@@ -53,7 +56,7 @@
   c("markers", "sig_cutoff", "sig_stat")
 }
 .pelsa_volcano_overlay_reset_reasons <- function() {
-  c("color_mode", "contrast", "label_mode", "top_n", "use_webgl",
+  c("color_mode", "contrast", "label_mode", "use_webgl",
     .pelsa_volcano_cache_clear_reasons())
 }
 
@@ -138,8 +141,7 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     # marker list + per-contrast settings survive contrast switches while the
     # heavy plot for the inactive contrast is freed.
     poi_registry        <- reactiveVal(list())  # <key> -> character() marker/POI accessions
-    top_n_registry      <- reactiveVal(list())  # <key> -> integer top-N
-    label_mode_registry <- reactiveVal(list())  # <key> -> character() label mode
+    label_mode_registry <- reactiveVal(list())  # ome -> character() label mode
 
     # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. Each
     # PELSASection3_Ome_Server() registers many live observers (volcano/Woods
@@ -165,7 +167,6 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           pelsa_analysis            = analysis_r,
           pelsa_setup_state         = setup_state_r,
           poi_registry              = poi_registry,
-          top_n_registry            = top_n_registry,
           label_mode_registry       = label_mode_registry,
           marker_add_request        = marker_add_request,
           use_webgl                 = use_webgl
@@ -208,7 +209,6 @@ PELSASection3_Ome_Server <- function(id,
                                      pelsa_analysis = reactive(NULL),
                                      pelsa_setup_state = reactive(NULL),
                                      poi_registry = NULL,
-                                     top_n_registry = NULL,
                                      label_mode_registry = NULL,
                                      marker_add_request = NULL,
                                      use_webgl = reactive(TRUE)) {
@@ -403,52 +403,34 @@ PELSASection3_Ome_Server <- function(id,
       }
     }, ignoreNULL = TRUE)
 
-    # Per-contrast label mode (default "top_n"); persisted across switches.
-    label_mode_for_contrast <- reactive({
-      key <- current_contrast_key()
-      req(key)
+    # Label mode is PER-OME, not per-contrast: selecting a mode applies to
+    # EVERY contrast of the active dataset by default (there is no per-
+    # contrast override). Default character(0) - no labels. A CHARACTER
+    # VECTOR: zero or more of "all_markers" / "all_significant" (the
+    # checkbox-group selection). Keyed by `ome` alone in label_mode_registry
+    # (still threaded in from PELSASection3_Tab_Server so every Ome_Server
+    # instance has its own slot, matching the shape of poi_registry).
+    label_mode_for_ome <- reactive({
       reg <- if (is.null(label_mode_registry)) list() else label_mode_registry()
-      reg[[key]] %||% .PELSA_VOLCANO_DEFAULT_LABEL_MODE
+      reg[[ome]] %||% .PELSA_VOLCANO_DEFAULT_LABEL_MODE
     })
-    set_label_mode <- function(mode) {
-      key <- isolate(current_contrast_key())
-      if (is.null(key) || is.null(label_mode_registry)) return()
+    set_label_mode <- function(modes) {
+      if (is.null(label_mode_registry)) return()
       reg <- label_mode_registry()
-      reg[[key]] <- as.character(mode)[1L]
+      reg[[ome]] <- as.character(modes %||% character(0))
       label_mode_registry(reg)
     }
 
-    # Per-contrast top-N (default 3); persisted across switches.
-    top_n_for_contrast <- reactive({
-      key <- current_contrast_key()
-      req(key)
-      reg <- if (is.null(top_n_registry)) list() else top_n_registry()
-      reg[[key]] %||% .PELSA_VOLCANO_DEFAULT_TOP_N
-    })
-    set_top_n <- function(n) {
-      key <- isolate(current_contrast_key())
-      if (is.null(key) || is.null(top_n_registry)) return()
-      reg <- top_n_registry()
-      reg[[key]] <- max(1L, as.integer(n)[1L])
-      top_n_registry(reg)
-    }
-
-    # Persist label-mode / top-N edits into the shared registries.
+    # Persist label-mode edits into the shared per-ome registry slot. Because
+    # the slot is keyed by `ome` (not `"<ome>::<contrast>"`), this single write
+    # is immediately visible to every contrast's render call (they all read
+    # label_mode_for_ome()) - no separate "apply to all contrasts" action is
+    # needed; changing the checkboxes IS applying to every contrast.
+    # ignoreNULL = FALSE: an all-unchecked checkboxGroupInput reports NULL,
+    # not character(0), and that NULL must still clear the stored selection.
     observeEvent(input$pelsa_label_mode, {
       set_label_mode(input$pelsa_label_mode)
-    }, ignoreInit = TRUE)
-    observeEvent(input$pelsa_top_n, {
-      req(is.numeric(input$pelsa_top_n), !is.na(input$pelsa_top_n))
-      set_top_n(input$pelsa_top_n)
-    }, ignoreInit = TRUE)
-
-    # Restore stored label-mode / top-N into the UI when the contrast changes.
-    observeEvent(current_contrast_key(), {
-      updateRadioButtons(session, "pelsa_label_mode",
-                         selected = isolate(label_mode_for_contrast()))
-      updateNumericInput(session, "pelsa_top_n",
-                         value = isolate(top_n_for_contrast()))
-    }, ignoreNULL = TRUE, ignoreInit = FALSE)
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     ## --- LAZY per-active-contrast volcano df cache --------------------------
     # Holds ONLY the active contrast's heavy 3A df, keyed by contrast suffix.
@@ -900,11 +882,11 @@ PELSASection3_Ome_Server <- function(id,
     # silently fails there, so we do NOT use that).
     #
     # LABELS - baked into the build (same proven path as the best panel + the
-    # static export). The render depends on label_mode_for_contrast() /
-    # top_n_for_contrast(), so a Label-peptides / Top-N change rebuilds the cloud
-    # WITH the labels. (A relayout-proxy fast-path was tried to avoid this rebuild
-    # but did not deliver annotations reliably on the WebGL plot; baking is the
-    # robust path.) Pan / zoom / selection / find do NOT change the label mode, so
+    # static export). The render depends on label_mode_for_ome(), so a
+    # Label-peptides change rebuilds the cloud WITH the labels. (A
+    # relayout-proxy fast-path was tried to avoid this rebuild but did not
+    # deliver annotations reliably on the WebGL plot; baking is the robust
+    # path.) Pan / zoom / selection / find do NOT change the label mode, so
     # they still never rebuild - the gold highlight stays a proxy overlay.
     output$pelsa_volcano_plot <- plotly::renderPlotly({
       df <- plot_df()
@@ -912,8 +894,7 @@ PELSASection3_Ome_Server <- function(id,
       pelsa_volcano_build_plot(
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
-        label_mode = label_mode_for_contrast(),
-        n_top = top_n_for_contrast(),
+        label_mode = label_mode_for_ome(),
         source_id = ns("pelsa_volcano"),
         selection = NULL, find_mask = NULL,
         register_click = TRUE,
@@ -994,7 +975,7 @@ PELSASection3_Ome_Server <- function(id,
     # error / drop the markers), then re-add the current overlay set once the new
     # figure has flushed. Triggers = the canonical overlay-reset reasons (see
     # .pelsa_volcano_overlay_reset_reasons): display controls (color mode /
-    # contrast / label mode / Top-N - labels are baked into the build, not
+    # contrast / label mode - labels are baked into the build, not
     # relayout-applied) and the WebGL flip (a client WebGL->SVG flip rebuilds the
     # base), PLUS the volcano_df_cache clears (markers / sig cutoff / sig stat):
     # each clears the cache -> active_volcano_df() recomputes -> renderPlotly
@@ -1004,7 +985,7 @@ PELSASection3_Ome_Server <- function(id,
     # .pelsa_volcano_cache_clear_reasons() - enforced by test-pelsa-overlay-reset.
     observeEvent(
       list(input$pelsa_color_mode, active_contrast(),
-           label_mode_for_contrast(), top_n_for_contrast(), use_webgl(),
+           label_mode_for_ome(), use_webgl(),
            marker_accessions(), sig_cutoff_r(), sig_stat_r()),
       {
         session$onFlushed(function() {
@@ -1032,8 +1013,7 @@ PELSASection3_Ome_Server <- function(id,
         df             = df,
         full_df        = df,
         color_mode     = input$pelsa_color_mode %||% "significance",
-        label_mode     = label_mode_for_contrast(),
-        n_top          = top_n_for_contrast(),
+        label_mode     = label_mode_for_ome(),
         source_id      = ns("pelsa_volcano_best"),
         register_click = FALSE,
         use_webgl      = use_webgl()
@@ -1318,7 +1298,7 @@ PELSASection3_Ome_Server <- function(id,
       })
 
     # ---- 03_volcano/01_volcano : one volcano per contrast (all + best) -------
-    # Coloring follows input$pelsa_color_mode; labels follow the per-contrast
+    # Coloring follows input$pelsa_color_mode; labels follow the ome-level
     # label mode (baked into the static ggplot); markers magenta; NO gold.
     export_volcano <- safe_export("volcano figures", function(dir_name) {
       out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
@@ -1329,9 +1309,11 @@ PELSASection3_Ome_Server <- function(id,
       fdf <- feat_df()
       markers <- isolate(marker_accessions())
       color_mode <- isolate(input$pelsa_color_mode) %||% "significance"
-      n_top <- as.integer(isolate(input$pelsa_top_n) %||% 3L)
-      reg <- if (is.null(label_mode_registry)) list() else
-        isolate(label_mode_registry())
+      # Label mode is ome-scoped: read the ONE stored selection for this ome
+      # once, reused for every contrast in the loop below (previously this was
+      # a per-contrast registry lookup inside the loop, back when label mode
+      # varied by contrast).
+      lab_mode <- isolate(label_mode_for_ome())
       want_best <- isTRUE(isolate(best_show()))
       # Single significance threshold for the whole export: drives the df build
       # (Significant / sig_direction / dashed y_cutoff) AND the annotation text,
@@ -1354,8 +1336,6 @@ PELSASection3_Ome_Server <- function(id,
       }
       for (i in seq_along(choices)) {
         contrast <- unname(choices[[i]])
-        key <- pelsa_volcano_contrast_key(ome, contrast)
-        lab_mode <- reg[[key]] %||% (isolate(input$pelsa_label_mode) %||% "none")
         df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
                                           "all_peptide", sig_cutoff = sig_cutoff,
                                           is_self_curated = self_curated,
@@ -1363,7 +1343,7 @@ PELSASection3_Ome_Server <- function(id,
                                           .stat_df = stat_df_once)
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
-            .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode, n_top,
+            .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode,
                                  contrast = contrast,
                                  volcano_label = "All-peptide volcano",
                                  sig_cutoff = sig_cutoff),
@@ -1379,7 +1359,7 @@ PELSASection3_Ome_Server <- function(id,
                                              .stat_df = stat_df_once)
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
-              .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode, n_top,
+              .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode,
                                    contrast = contrast,
                                    volcano_label = "Best-peptide volcano",
                                    sig_cutoff = sig_cutoff),
