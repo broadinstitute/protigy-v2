@@ -1831,7 +1831,9 @@ test_that("gate: NULL stat_results shows the notice and renders no plot", {
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      label_mode_registry = reactiveVal(list())
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list())
     ),
     {
       # stat_df_raw carries a validate(); accessing it errors with the message.
@@ -1853,7 +1855,9 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      label_mode_registry = reactiveVal(list())
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list())
     ),
     {
       # Contrast choices populate (named label -> suffix).
@@ -1924,7 +1928,9 @@ test_that("feat_df warns and returns NULL when annotation path exists but file i
           annotation_path  = list(Proteome = missing_path)
         )),
         poi_registry          = reactiveVal(list()),
-        label_mode_registry   = reactiveVal(list())
+        label_mode_registry   = reactiveVal(list()),
+        n_top_significant_registry = reactiveVal(list()),
+        n_top_markers_registry = reactiveVal(list())
       ),
       {
         result_val <<- feat_df()
@@ -1955,7 +1961,9 @@ test_that("feat_df is silent and returns NULL for a self-curated dataset", {
           annotation_path  = list(Proteome = "irrelevant_path.tsv")
         )),
         poi_registry          = reactiveVal(list()),
-        label_mode_registry   = reactiveVal(list())
+        label_mode_registry   = reactiveVal(list()),
+        n_top_significant_registry = reactiveVal(list()),
+        n_top_markers_registry = reactiveVal(list())
       ),
       {
         result_val <<- feat_df()
@@ -1979,7 +1987,9 @@ test_that("cache NULL + stats present: section shows Start-Analysis notice, no d
       pelsa_analysis = reactive(NULL),                 # cache MISSING
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      label_mode_registry = reactiveVal(list())
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list())
     ),
     {
       # cache_entry is NULL; the section-level gate renders the Setup notice.
@@ -2071,7 +2081,9 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),  # species = NULL
       poi_registry = reactiveVal(list()),
-      label_mode_registry = reactiveVal(list())
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list())
     ),
     {
       expect_null(feat_df())                       # species NULL -> NULL feat
@@ -2103,7 +2115,9 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
     pelsa_analysis = reactive(.mk_cache_full()),
     pelsa_setup_state = reactive(.mk_setup_state_full()),
     poi_registry = reactiveVal(list()),
-    label_mode_registry = reactiveVal(list())
+    label_mode_registry = reactiveVal(list()),
+    n_top_significant_registry = reactiveVal(list()),
+    n_top_markers_registry = reactiveVal(list())
   )
 }
 
@@ -2130,6 +2144,8 @@ test_that("PELSA volcano always renders SVG (scatter), never scattergl, regardle
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(TRUE)
     ),
     {
@@ -2156,6 +2172,8 @@ test_that("changing label mode on one contrast applies to every contrast of the 
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(FALSE)
     ),
     {
@@ -2189,6 +2207,149 @@ test_that("changing label mode on one contrast applies to every contrast of the 
         expect_true(grepl(l, json, fixed = TRUE),
                     info = paste("expected label", l, "in rendered JSON"))
       }
+    }
+  )
+})
+
+test_that("top_n_significant and all_significant are mutually exclusive (independent of the marker pair)", {
+  # NOTE on assertion target (deviation from the Task 6 brief's draft test):
+  # the mutual-exclusion observer (R/tab_pelsa_section3.R ~L479) enforces
+  # exclusivity ONLY via updateCheckboxGroupInput() (a client-bound message)
+  # plus shinyjs::runjs() (disables the other checkbox in the DOM). In a real
+  # browser, that update round-trips back to the server as a NEW
+  # input$pelsa_label_mode value, which would then flow into
+  # label_mode_registry via set_label_mode(). shiny::testServer has no live
+  # client, so that round-trip never happens: input$pelsa_label_mode -- and
+  # therefore label_mode_for_ome(), which is written directly off the raw
+  # input$ value -- stays at whatever was passed to setInputs(), UNFILTERED,
+  # even after session$flushReact(). This was confirmed with a diagnostic
+  # script printing input$pelsa_label_mode and label_mode_for_ome() after each
+  # setInputs() call (both remained the raw, unfiltered union). So
+  # label_mode_for_ome() is NOT actually a reliable assertion target here --
+  # asserting against it would make the test pass or fail independent of
+  # whether the mutual-exclusion logic is correct. The genuinely observable,
+  # deterministic contract is the `selected=` argument the code passes to
+  # updateCheckboxGroupInput(); we mock that binding (shiny is a full
+  # `@import`, so the mock must target the importing package's namespace)
+  # and assert against the captured value instead.
+  captured <- list()
+  testthat::local_mocked_bindings(
+    updateCheckboxGroupInput = function(session, inputId, selected = NULL, ...) {
+      captured[[length(captured) + 1]] <<- selected
+    },
+    .package = "Protigy"
+  )
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      # Checking "all_significant" then "top_n_significant": the mutual-
+      # exclusion observer must issue an update dropping "all_significant".
+      session$setInputs(pelsa_label_mode = c("all_significant"))
+      session$setInputs(pelsa_label_mode = c("all_significant", "top_n_significant"))
+      expect_identical(captured[[length(captured)]], "top_n_significant")
+
+      # Marker pair is unaffected by the significant-pair state: selecting
+      # "all_markers" alongside "top_n_significant" must NOT trigger an
+      # update that drops "top_n_significant" (no significant-pair conflict).
+      captured <<- list()
+      session$setInputs(pelsa_label_mode = c("top_n_significant", "all_markers"))
+      for (sel in captured) {
+        expect_true("top_n_significant" %in% sel)
+      }
+
+      # Checking "top_n_markers" now must drop "all_markers" (marker pair
+      # only) via the same updateCheckboxGroupInput mechanism.
+      captured <<- list()
+      session$setInputs(
+        pelsa_label_mode = c("top_n_significant", "all_markers", "top_n_markers"))
+      last_sel <- captured[[length(captured)]]
+      expect_true("top_n_markers" %in% last_sel)
+      expect_false("all_markers" %in% last_sel)
+    }
+  )
+})
+
+test_that("top-N values are per-ome: set while viewing one contrast, applied when viewing another", {
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      choices <- contrast_choices()
+      expect_true(length(choices) >= 2L)
+      contrast_a <- unname(choices[[1L]])
+      contrast_b <- unname(choices[[2L]])
+
+      # Default N is 5 before any input.
+      expect_identical(n_top_significant_for_ome(), 5L)
+      expect_identical(n_top_markers_for_ome(), 5L)
+
+      session$setInputs(pelsa_volcano_contrast = contrast_a,
+                        pelsa_n_top_significant = 8,
+                        pelsa_n_top_markers = 2)
+      expect_identical(n_top_significant_for_ome(), 8L)
+      expect_identical(n_top_markers_for_ome(), 2L)
+
+      # Switch to a different contrast (same ome) - values still apply.
+      session$setInputs(pelsa_volcano_contrast = contrast_b)
+      expect_identical(n_top_significant_for_ome(), 8L)
+      expect_identical(n_top_markers_for_ome(), 2L)
+    }
+  )
+})
+
+test_that("invalid N input (blank/zero/negative) coerces to a valid integer >= 1", {
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      session$setInputs(pelsa_n_top_significant = 0)
+      expect_identical(n_top_significant_for_ome(), 1L)
+
+      session$setInputs(pelsa_n_top_significant = -3)
+      expect_identical(n_top_significant_for_ome(), 1L)
+
+      session$setInputs(pelsa_n_top_significant = NA)
+      expect_identical(n_top_significant_for_ome(), 1L)
     }
   )
 })
@@ -4374,7 +4535,9 @@ test_that("feat_df prefers the cached feat_raw over the live annotation file", {
           annotation_path  = list(Proteome = missing_path)
         )),
         poi_registry          = reactiveVal(list()),
-        label_mode_registry   = reactiveVal(list())
+        label_mode_registry   = reactiveVal(list()),
+        n_top_significant_registry = reactiveVal(list()),
+        n_top_markers_registry = reactiveVal(list())
       ),
       {
         result_val <<- feat_df()
@@ -4428,7 +4591,9 @@ test_that("feat_df falls back to live file when cache entry lacks feat_raw", {
         annotation_path  = list(Proteome = tmp)
       )),
       poi_registry          = reactiveVal(list()),
-      label_mode_registry   = reactiveVal(list())
+      label_mode_registry   = reactiveVal(list()),
+      n_top_significant_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list())
     ),
     {
       result_val <<- feat_df()
