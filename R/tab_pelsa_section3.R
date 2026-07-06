@@ -217,6 +217,18 @@ PELSASection3_Ome_Server <- function(id,
 
     ns <- session$ns
 
+    # The PELSA volcano always renders SVG (scatter), regardless of the
+    # injected use_webgl reactive (client WebGL-capability probe). scattergl's
+    # WebGL renderer can silently mis-paint per-point marker.color arrays on
+    # some GPU/driver clients -- the color/coloring bug this masks is not a
+    # "renders blank" failure (which the probe catches) but a "renders wrong
+    # colors while reporting WebGL-capable" failure, which is undetectable
+    # from the client probe. The R-built figure JSON is proven correct in
+    # both scattergl and scatter modes (verified by direct reproduction), so
+    # forcing SVG trades away WebGL's GPU rendering speed (unneeded at PELSA's
+    # realistic point counts) for reliable significance/feature coloring.
+    use_webgl <- reactive(FALSE)
+
     ## ------------------------------------------------------------------------
     ## 7A - STAT-SOURCE GATE
     ## ------------------------------------------------------------------------
@@ -779,21 +791,13 @@ PELSASection3_Ome_Server <- function(id,
         },
         hr(),
         strong("Label peptides:"),
-        radioButtons(
+        checkboxGroupInput(
           ns("pelsa_label_mode"), label = NULL,
-          choices = c("None"                          = "none",
-                      "All marker peptides"           = "all_markers",
-                      "All significant peptides"      = "all_significant",
-                      "Best peptide per marker"       = "best_per_marker",
-                      "Top-N per protein"             = "top_n"),
-          selected = isolate(label_mode_for_contrast())
+          choices = c("All marker peptides"      = "all_markers",
+                      "All significant peptides" = "all_significant"),
+          selected = isolate(label_mode_for_ome())
         ),
-        conditionalPanel(
-          condition = sprintf("input['%s'] == 'top_n'", ns("pelsa_label_mode")),
-          numericInput(ns("pelsa_top_n"), "N (smallest adj.P.Val):",
-                       value = isolate(top_n_for_contrast()),
-                       min = 1, step = 1, width = "140px")
-        ),
+        helpText("Applies to every contrast for this dataset."),
         hr(),
         # 7D best-peptide second panel toggle (lazy: the best-peptide df is built
         # only while this is ON; freed when toggled off).
