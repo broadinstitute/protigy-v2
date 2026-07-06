@@ -1296,33 +1296,35 @@ test_that("label_annotation_list: empty/NULL -> list(); each spec well-formed", 
                   c("#1f4e9c", "darkred"))
 })
 
-test_that("current_annotations: mode drives the spec count (none -> empty)", {
+test_that("current_annotations: mode drives the spec count (empty -> empty)", {
   df <- .mk_label_df()
 
-  # "none" yields no labels -> an empty list (an empty relayout clears all).
+  # An empty/NULL mode yields no labels -> an empty list (an empty relayout
+  # clears all annotations client-side).
   expect_identical(
-    pelsa_volcano_current_annotations(df, "none", 3L, "significance"), list())
+    pelsa_volcano_current_annotations(df, character(0), "significance"), list())
+  expect_identical(
+    pelsa_volcano_current_annotations(df, NULL, "significance"), list())
 
   # "all_significant" labels both significant rows.
-  a_sig <- pelsa_volcano_current_annotations(df, "all_significant", 3L,
+  a_sig <- pelsa_volcano_current_annotations(df, "all_significant",
                                              "significance")
   expect_equal(length(a_sig), 2L)
 
-  # "top_n" with n_top = 1 keeps one label per protein -> both proteins, both
-  # rows kept here (one row each).
-  a_top <- pelsa_volcano_current_annotations(df, "top_n", 1L, "significance")
-  expect_equal(length(a_top), 2L)
-  expect_true(all(vapply(a_top, function(a) "text" %in% names(a), logical(1))))
+  # "all_markers" labels both marker rows (both rows are markers in the fixture).
+  a_mark <- pelsa_volcano_current_annotations(df, "all_markers", "significance")
+  expect_equal(length(a_mark), 2L)
+  expect_true(all(vapply(a_mark, function(a) "text" %in% names(a), logical(1))))
 
   # An empty df -> empty list (no error).
   expect_identical(
-    pelsa_volcano_current_annotations(df[0, ], "top_n", 3L, "significance"),
+    pelsa_volcano_current_annotations(df[0, ], "all_significant", "significance"),
     list())
 })
 
 test_that("current_annotations: feature color-mode drives the border color", {
   df <- .mk_label_df()
-  anns <- pelsa_volcano_current_annotations(df, "all_significant", 3L, "feature")
+  anns <- pelsa_volcano_current_annotations(df, "all_significant", "feature")
   expect_equal(length(anns), 2L)
   # feature mode -> feature_color border (#d3d3d3 here for both rows).
   expect_true(all(vapply(anns, function(a) a$bordercolor, "") == "#d3d3d3"))

@@ -1619,23 +1619,23 @@ pelsa_volcano_label_annotation_list <- function(lab_df, color_mode,
 }
 
 # Compute the current volcano annotation LIST from the active df + label
-# settings (the module relayout fast-path uses this). Resolves the labeled rows
-# for `label_mode`/`n_top`, filters to rows with a non-empty `label`, then
-# delegates to pelsa_volcano_label_annotation_list. Returns an EMPTY list() when
-# the mode yields no labels (e.g. "none") - so an empty relayout clears ALL
-# annotations on the client (the "remove stale labels" path). PURE + testable.
+# settings (the module relayout fast-path uses this). Resolves the labeled
+# rows for `label_mode`, filters to rows with a non-empty `label`, then
+# delegates to pelsa_volcano_label_annotation_list. Returns an EMPTY list()
+# when the mode yields no labels (e.g. an empty/NULL vector) - so an empty
+# relayout clears ALL annotations on the client (the "remove stale labels"
+# path). PURE + testable.
 #
 # @param df         the active volcano df.
-# @param label_mode a pelsa_volcano_label_rows() mode.
-# @param n_top      N for the top_n label mode.
+# @param label_mode a character vector of pelsa_volcano_label_rows() modes
+#                   (possibly empty/NULL).
 # @param color_mode "significance" | "feature" (drives the border color).
 # @return a list of plotly annotation specs (empty list() for no labels).
 # @noRd
-pelsa_volcano_current_annotations <- function(df, label_mode, n_top,
-                                              color_mode) {
+pelsa_volcano_current_annotations <- function(df, label_mode, color_mode) {
   if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L) return(list())
   lab_idx <- tryCatch(
-    pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
+    pelsa_volcano_label_rows(df, mode = label_mode),
     error = function(e) integer(0))
   if (length(lab_idx) == 0L) return(list())
   lab_df <- df[lab_idx, , drop = FALSE]
