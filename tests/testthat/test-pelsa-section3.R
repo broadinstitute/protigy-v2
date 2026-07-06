@@ -1242,6 +1242,98 @@ test_that("label-mode: top_n_significant default N is 5", {
   )
 })
 
+test_that("label-mode: top_n_markers takes N smallest adj.P.Val per logFC-sign bucket, markers only", {
+  df <- data.frame(
+    is_marker         = c(TRUE, TRUE, TRUE, TRUE, FALSE),
+    logFC             = c(2.0, 1.5, -1.0, -0.5, -3.0),
+    adj.P.Val         = c(0.3, 0.1, 0.05, 0.2, 0.001),
+    winning_accession = c("P1", "P2", "P3", "P4", "P5"),
+    label             = letters[1:5],
+    stringsAsFactors  = FALSE
+  )
+  # Marker rows only: 1,2 (logFC>0 -> up), 3,4 (logFC<0 -> down). Row 5 is
+  # NOT a marker (is_marker FALSE) and must be excluded even though it has
+  # the smallest adj.P.Val of all 5 rows.
+  # up bucket (rows 1,2): N=1 -> smallest adj.P.Val -> row2(0.1).
+  # down bucket (rows 3,4): N=1 -> smallest adj.P.Val -> row3(0.05).
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
+    c(2L, 3L)
+  )
+})
+
+test_that("label-mode: top_n_markers ranks ALL markers regardless of significance", {
+  df <- data.frame(
+    is_marker         = c(TRUE, TRUE),
+    Significant       = c(FALSE, FALSE),
+    sig_direction     = c("ns", "ns"),
+    logFC             = c(1.0, 2.0),
+    adj.P.Val         = c(0.5, 0.9),
+    winning_accession = c("P1", "P2"),
+    label             = c("a", "b"),
+    stringsAsFactors  = FALSE
+  )
+  # Neither row is significant, but top_n_markers ranks ALL markers anyway.
+  # Both rows are logFC > 0 ("up" bucket); N=1 keeps only the smaller adj.P.Val.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
+    1L
+  )
+})
+
+test_that("label-mode: top_n_markers labels fewer than N when a bucket is small", {
+  df <- data.frame(
+    is_marker         = c(TRUE, TRUE, TRUE),
+    logFC             = c(1.0, -1.0, -2.0),
+    adj.P.Val         = c(0.1, 0.2, 0.3),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  # up bucket has only 1 row -> kept even though N=5.
+  # down bucket has 2 rows, N=5 -> both kept.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 5L),
+    c(1L, 2L, 3L)
+  )
+})
+
+test_that("label-mode: top_n_markers default N is 5", {
+  df <- data.frame(
+    is_marker         = rep(TRUE, 6),
+    logFC             = rep(1.0, 6),
+    adj.P.Val         = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06),
+    winning_accession = paste0("P", 1:6),
+    label             = letters[1:6],
+    stringsAsFactors  = FALSE
+  )
+  # No n_top_markers arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers"),
+    c(1L, 2L, 3L, 4L, 5L)
+  )
+})
+
+test_that("label-mode: top_n_significant + top_n_markers combine via union", {
+  df <- data.frame(
+    is_marker         = c(TRUE, FALSE, FALSE),
+    sig_direction     = c("ns", "up", "down"),
+    logFC             = c(5.0, 1.0, -1.0),
+    adj.P.Val         = c(0.9, 0.01, 0.02),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  # top_n_markers (N=1): row 1 is the only marker -> kept regardless of adj.P.Val.
+  # top_n_significant (N=1): row2 ("up", smallest in that bucket), row3 ("down").
+  # Union of both modes -> all three rows.
+  expect_equal(
+    pelsa_volcano_label_rows(df, c("top_n_markers", "top_n_significant"),
+                             n_top_significant = 1L, n_top_markers = 1L),
+    c(1L, 2L, 3L)
+  )
+})
+
 test_that("volcano build adds boxed annotations (white bg, point-colored border)", {
   df <- data.frame(
     id = c("p1", "p2"), logFC = c(-2, 2), logP = c(3, 4),
