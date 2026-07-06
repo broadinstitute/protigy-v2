@@ -37,6 +37,11 @@
 
 .PELSA_WOODS_NEGLOG_CAP <- 5  # clamp -log10(adj.P) so tiny p-values don't flatten
 
+# Single-residue ("point") UniProt features (start == end, e.g. a modified
+# residue) are widened by this many aa on each side for DISPLAY ONLY, so they
+# render as a visible span instead of a near-invisible zero-width rect/segment.
+.PELSA_WOODS_POINT_PAD <- 3L
+
 # Human-readable labels for the PELSA_FEATURE_COLORS class keys (the feature-track
 # legend). Keyed by the palette names so a complete reference can be rendered. @noRd
 .PELSA_FEATURE_LABELS <- c(
@@ -233,6 +238,56 @@ pelsa_feature_lanes <- function(features) {
   f$lane <- as.integer(IRanges::disjointBins(ir))
   rownames(f) <- NULL
   f
+}
+
+# ---- Helper 3b: single-AA ("point") feature widening for DISPLAY -------------
+
+# Add `display_start`/`display_end` (+ `was_widened`) to a features frame: for
+# rows where start == end (a single-residue annotation, e.g. a modified
+# residue at 214-214), widen by .PELSA_WOODS_POINT_PAD aa on each side,
+# clamped to [1, prot_len], so the feature renders as a visible span instead
+# of a zero-width rect. Multi-residue rows (start != end) pass through with
+# display_start/display_end == start/end. NA-coord rows pass through with NA
+# display_* and was_widened FALSE (nothing to widen). The TRUE start/end
+# columns are never modified -- overlap joins (pelsa_woods_overlap_annotations,
+# pelsa_feature_overlap_peptides) and any other consumer of `features` must
+# keep reading `start`/`end`, not the display_* columns.
+#
+# @param features data.frame with at least `start`, `end`.
+# @param prot_len  protein length (clamp ceiling); coerced to a single integer.
+# @return `features` with `display_start`, `display_end` (integer) and
+#   `was_widened` (logical) appended.
+# @noRd
+pelsa_widen_point_features <- function(features, prot_len) {
+  if (!is.data.frame(features)) {
+    stop("pelsa_widen_point_features: features must be a data.frame",
+         call. = FALSE)
+  }
+  plen <- max(1L, as.integer(prot_len))
+  n <- nrow(features)
+  if (n == 0L) {
+    features$display_start <- integer(0)
+    features$display_end   <- integer(0)
+    features$was_widened   <- logical(0)
+    return(features)
+  }
+  s <- suppressWarnings(as.integer(features$start))
+  e <- suppressWarnings(as.integer(features$end))
+  is_point <- !is.na(s) & !is.na(e) & s == e
+
+  disp_s <- s
+  disp_e <- e
+  if (any(is_point)) {
+    lo <- pmax(1L, s[is_point] - .PELSA_WOODS_POINT_PAD)
+    hi <- pmin(plen, e[is_point] + .PELSA_WOODS_POINT_PAD)
+    disp_s[is_point] <- lo
+    disp_e[is_point] <- hi
+  }
+
+  features$display_start <- disp_s
+  features$display_end   <- disp_e
+  features$was_widened   <- is_point
+  features
 }
 
 # ---- Helper 4: peptide <-> feature overlap annotations (data.table) ----------

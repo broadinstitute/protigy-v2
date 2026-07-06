@@ -2271,6 +2271,28 @@ test_that("top_n_significant and all_significant are mutually exclusive (indepen
         expect_true("top_n_significant" %in% sel)
       }
 
+      # Strengthen the above: with this specific combination, the observer's
+      # significant-pair branch and marker-pair branch BOTH fire (each is an
+      # unconditional if/else-if/else, and here "top_n_significant" satisfies
+      # the significant-pair's `if`, while "all_markers" satisfies the
+      # marker-pair's `else if`) -- always in that fixed order, each emitting
+      # exactly one updateCheckboxGroupInput() call. A cross-pair coupling bug
+      # (e.g. the marker-pair branch wrongly dropping "top_n_significant", or
+      # the significant-pair branch wrongly dropping "all_markers") would slip
+      # past a check that only looks at "top_n_significant" membership, since
+      # "all_markers" surviving is never verified. Assert on EACH call
+      # individually, tied to the branch that produced it: the significant-
+      # pair call (uses setdiff(modes, "all_significant"), so it must keep
+      # both "top_n_significant" AND "all_markers" intact -- "all_significant"
+      # was never selected, so nothing should be dropped at all here); the
+      # marker-pair call (uses setdiff(modes, "top_n_markers"), so it too must
+      # keep both untouched, since "top_n_markers" was never selected).
+      expect_length(captured, 2L)
+      significant_pair_call <- captured[[1]]
+      marker_pair_call <- captured[[2]]
+      expect_setequal(significant_pair_call, c("top_n_significant", "all_markers"))
+      expect_setequal(marker_pair_call, c("top_n_significant", "all_markers"))
+
       # Checking "top_n_markers" now must drop "all_markers" (marker pair
       # only) via the same updateCheckboxGroupInput mechanism.
       captured <<- list()
@@ -3236,6 +3258,60 @@ test_that("coverage_intervals merges overlapping + adjacent, sorts, drops bad", 
   # empty + NA + inverted dropped
   expect_equal(nrow(pelsa_coverage_intervals(integer(0), integer(0))), 0L)
   expect_equal(nrow(pelsa_coverage_intervals(c(NA, 9L), c(5L, 3L))), 0L)
+})
+
+# ---- pelsa_widen_point_features (single-AA region widening) -----------------
+
+test_that("widen_point_features: single-AA feature widens by +-3, multi-AA untouched", {
+  f <- data.frame(start = c(214L, 10L), end = c(214L, 30L),
+                  feature_class = c("active_or_binding_site", "catalytic_domain"),
+                  stringsAsFactors = FALSE)
+  out <- pelsa_widen_point_features(f, prot_len = 500L)
+  expect_equal(out$display_start, c(211L, 10L))
+  expect_equal(out$display_end,   c(217L, 30L))
+  expect_equal(out$was_widened,   c(TRUE, FALSE))
+  # true coords untouched
+  expect_equal(out$start, c(214L, 10L))
+  expect_equal(out$end,   c(214L, 30L))
+})
+
+test_that("widen_point_features: clamps at the N-terminus and C-terminus", {
+  f <- data.frame(start = c(2L, 499L), end = c(2L, 499L))
+  out <- pelsa_widen_point_features(f, prot_len = 500L)
+  # position 2 widens to -1..5, clamped to 1..5 (NOT shifted to keep width 7)
+  expect_equal(out$display_start, c(1L, 496L))
+  expect_equal(out$display_end,   c(5L, 500L))
+})
+
+test_that("widen_point_features: prot_len == 1 clamps to a single point", {
+  f <- data.frame(start = 1L, end = 1L)
+  out <- pelsa_widen_point_features(f, prot_len = 1L)
+  expect_equal(out$display_start, 1L)
+  expect_equal(out$display_end, 1L)
+  expect_true(out$was_widened)
+})
+
+test_that("widen_point_features: empty / NA-coord rows pass through unchanged", {
+  empty <- data.frame(start = integer(0), end = integer(0))
+  out <- pelsa_widen_point_features(empty, prot_len = 100L)
+  expect_equal(nrow(out), 0L)
+  expect_true(all(c("display_start", "display_end", "was_widened") %in%
+                  colnames(out)))
+
+  bad <- data.frame(start = c(NA, 5L), end = c(NA, 5L))
+  out2 <- pelsa_widen_point_features(bad, prot_len = 100L)
+  # NA-coord row: display_* stay NA, was_widened FALSE (nothing to widen)
+  expect_true(is.na(out2$display_start[1]))
+  expect_true(is.na(out2$display_end[1]))
+  expect_false(out2$was_widened[1])
+  # valid single-AA row still widens
+  expect_equal(out2$display_start[2], 2L)
+  expect_equal(out2$display_end[2], 8L)
+})
+
+test_that("widen_point_features: non-data.frame input errors clearly", {
+  expect_error(pelsa_widen_point_features(list(start = 1, end = 1), prot_len = 10L),
+               "data.frame")
 })
 
 # ---- pelsa_feature_lanes (IRanges disjointBins) ------------------------------
