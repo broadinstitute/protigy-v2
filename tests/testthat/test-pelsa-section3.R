@@ -3348,6 +3348,41 @@ test_that("feature_lanes: empty / all-invalid -> 0-row with lane column", {
   expect_true("lane" %in% colnames(out))
 })
 
+# ---- pelsa_feature_lanes: prot_len threading + widened lane-packing ---------
+
+test_that("feature_lanes: prot_len threads into widened display_start/display_end", {
+  f <- data.frame(start = 214L, end = 214L, feature_class = "active_or_binding_site",
+                  stringsAsFactors = FALSE)
+  out <- pelsa_feature_lanes(f, prot_len = 500L)
+  expect_equal(out$display_start, 211L)
+  expect_equal(out$display_end, 217L)
+  expect_true(out$was_widened)
+  expect_equal(out$lane, 1L)
+})
+
+test_that("feature_lanes: widened point features that now overlap get separate lanes", {
+  # Two point features at 100 and 103: true spans don't overlap (100-100,
+  # 103-103), but widened (+-3) they become 97-103 and 100-106 -- overlapping.
+  f <- data.frame(start = c(100L, 103L), end = c(100L, 103L),
+                  feature_class = c("active_or_binding_site", "active_or_binding_site"),
+                  stringsAsFactors = FALSE)
+  out <- pelsa_feature_lanes(f, prot_len = 500L)
+  expect_false(out$lane[1] == out$lane[2])
+})
+
+test_that("feature_lanes: default prot_len (no clamp) preserves old no-prot_len behavior", {
+  f <- data.frame(start = c(1L, 5L, 40L), end = c(30L, 12L, 60L),
+                  feature_class = c("catalytic_domain", "active_or_binding_site",
+                                    "region_or_motif"),
+                  stringsAsFactors = FALSE)
+  out <- pelsa_feature_lanes(f)   # no prot_len passed
+  expect_true("lane" %in% colnames(out))
+  expect_false(out$lane[1] == out$lane[2])
+  expect_equal(out$lane[3], 1L)
+  expect_equal(out$display_start, out$start)  # none are single-AA -> untouched
+  expect_equal(out$display_end, out$end)
+})
+
 # ---- pelsa_woods_overlap_annotations (data.table foverlaps) ------------------
 
 test_that("overlap_annotations lists DISTINCT feature names (no coords) per peptide", {

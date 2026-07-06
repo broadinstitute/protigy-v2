@@ -1332,7 +1332,7 @@ PELSASection3_Ome_Server <- function(id,
       } else {
         fdf[0, , drop = FALSE]
       }
-      lanes <- pelsa_feature_lanes(feats)
+      lanes <- pelsa_feature_lanes(feats, prot_len = plen)
 
       # Woods tooltip: append the overlapping annotation regions per peptide.
       if (nrow(pep) > 0L) {

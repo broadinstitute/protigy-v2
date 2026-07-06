@@ -215,26 +215,47 @@ pelsa_coverage_intervals <- function(starts, ends) {
 
 # Assign each UniProt feature to a non-overlapping LANE (row) for stacked
 # rendering, via IRanges::disjointBins (greedy min-lane packing). Features with
-# NA/inverted spans are dropped. Returns the input rows (kept ones) with an
-# added integer `lane` (1-based).
+# NA/inverted spans are dropped. Single-AA ("point") features are widened via
+# pelsa_widen_point_features() before lane-packing, so lanes are computed over
+# the WIDENED display coordinates (display_start/display_end), not the true
+# start/end -- two point features that only overlap after widening still land
+# in separate lanes. Returns the input rows (kept ones) with added integer
+# `lane` (1-based), `display_start`, `display_end`, `was_widened`.
 #
 # @param features data.frame with at least `start`, `end` (+ feature_class etc.).
-# @return features (valid rows) + `lane`; a 0-row copy when nothing is valid.
+# @param prot_len protein length used to clamp widened point features at the
+#   C-terminus; Inf (default) disables clamping for callers with no known
+#   protein length, matching pre-widening behavior.
+# @return features (valid rows) + `lane`/`display_start`/`display_end`/
+#   `was_widened`; a 0-row copy when nothing is valid.
 # @noRd
-pelsa_feature_lanes <- function(features) {
+pelsa_feature_lanes <- function(features, prot_len = Inf) {
   if (!is.data.frame(features) || nrow(features) == 0L ||
       !all(c("start", "end") %in% colnames(features))) {
     out <- if (is.data.frame(features)) features[0L, , drop = FALSE] else
       data.frame(start = integer(0), end = integer(0))
     out$lane <- integer(0)
+    out$display_start <- integer(0)
+    out$display_end   <- integer(0)
+    out$was_widened    <- logical(0)
     return(out)
   }
   s <- suppressWarnings(as.integer(features$start))
   e <- suppressWarnings(as.integer(features$end))
   ok <- !is.na(s) & !is.na(e) & e >= s
   f <- features[ok, , drop = FALSE]
-  if (nrow(f) == 0L) { f$lane <- integer(0); return(f) }
-  ir <- IRanges::IRanges(start = s[ok], end = e[ok])
+  if (nrow(f) == 0L) {
+    f$lane <- integer(0)
+    f$display_start <- integer(0)
+    f$display_end   <- integer(0)
+    f$was_widened    <- logical(0)
+    return(f)
+  }
+  # prot_len = Inf (default) -> pmin(..., Inf) is a no-op ceiling, matching
+  # the pre-widening behavior for any caller that hasn't passed a real length.
+  clamp_len <- if (is.finite(prot_len)) as.integer(prot_len) else .Machine$integer.max
+  f <- pelsa_widen_point_features(f, prot_len = clamp_len)
+  ir <- IRanges::IRanges(start = f$display_start, end = f$display_end)
   f$lane <- as.integer(IRanges::disjointBins(ir))
   rownames(f) <- NULL
   f
