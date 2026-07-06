@@ -56,8 +56,8 @@
   c("markers", "sig_cutoff", "sig_stat")
 }
 .pelsa_volcano_overlay_reset_reasons <- function() {
-  c("color_mode", "contrast", "label_mode", "use_webgl",
-    .pelsa_volcano_cache_clear_reasons())
+  c("color_mode", "contrast", "label_mode", "n_top_significant",
+    "n_top_markers", "use_webgl", .pelsa_volcano_cache_clear_reasons())
 }
 
 ################################################################################
@@ -141,7 +141,9 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     # marker list + per-contrast settings survive contrast switches while the
     # heavy plot for the inactive contrast is freed.
     poi_registry        <- reactiveVal(list())  # <key> -> character() marker/POI accessions
-    label_mode_registry <- reactiveVal(list())  # ome -> character() label mode
+    label_mode_registry        <- reactiveVal(list())  # ome -> character() label mode
+    n_top_significant_registry <- reactiveVal(list())  # ome -> integer N (top_n_significant)
+    n_top_markers_registry     <- reactiveVal(list())  # ome -> integer N (top_n_markers)
 
     # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. Each
     # PELSASection3_Ome_Server() registers many live observers (volcano/Woods
@@ -168,6 +170,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           pelsa_setup_state         = setup_state_r,
           poi_registry              = poi_registry,
           label_mode_registry       = label_mode_registry,
+          n_top_significant_registry = n_top_significant_registry,
+          n_top_markers_registry    = n_top_markers_registry,
           marker_add_request        = marker_add_request,
           use_webgl                 = use_webgl
         )
@@ -210,6 +214,8 @@ PELSASection3_Ome_Server <- function(id,
                                      pelsa_setup_state = reactive(NULL),
                                      poi_registry = NULL,
                                      label_mode_registry = NULL,
+                                     n_top_significant_registry = NULL,
+                                     n_top_markers_registry = NULL,
                                      marker_add_request = NULL,
                                      use_webgl = reactive(TRUE)) {
 
@@ -430,6 +436,39 @@ PELSASection3_Ome_Server <- function(id,
     # not character(0), and that NULL must still clear the stored selection.
     observeEvent(input$pelsa_label_mode, {
       set_label_mode(input$pelsa_label_mode)
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
+    # Per-ome N for "top_n_significant" (default 5); same ome-only scope as
+    # label_mode_registry - applies to every contrast automatically.
+    n_top_significant_for_ome <- reactive({
+      reg <- if (is.null(n_top_significant_registry)) list() else n_top_significant_registry()
+      reg[[ome]] %||% 5L
+    })
+    set_n_top_significant <- function(n) {
+      if (is.null(n_top_significant_registry)) return()
+      reg <- n_top_significant_registry()
+      val <- suppressWarnings(as.integer(n)[1L])
+      reg[[ome]] <- if (is.na(val)) 1L else max(1L, val)
+      n_top_significant_registry(reg)
+    }
+    observeEvent(input$pelsa_n_top_significant, {
+      set_n_top_significant(input$pelsa_n_top_significant)
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
+    # Per-ome N for "top_n_markers" (default 5); same ome-only scope.
+    n_top_markers_for_ome <- reactive({
+      reg <- if (is.null(n_top_markers_registry)) list() else n_top_markers_registry()
+      reg[[ome]] %||% 5L
+    })
+    set_n_top_markers <- function(n) {
+      if (is.null(n_top_markers_registry)) return()
+      reg <- n_top_markers_registry()
+      val <- suppressWarnings(as.integer(n)[1L])
+      reg[[ome]] <- if (is.na(val)) 1L else max(1L, val)
+      n_top_markers_registry(reg)
+    }
+    observeEvent(input$pelsa_n_top_markers, {
+      set_n_top_markers(input$pelsa_n_top_markers)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
     # Mutual exclusion, two INDEPENDENT pairs (significant pair does not
@@ -957,6 +996,8 @@ PELSASection3_Ome_Server <- function(id,
         df = df, full_df = df,
         color_mode = input$pelsa_color_mode %||% "significance",
         label_mode = label_mode_for_ome(),
+        n_top_significant = n_top_significant_for_ome(),
+        n_top_markers = n_top_markers_for_ome(),
         source_id = ns("pelsa_volcano"),
         selection = NULL, find_mask = NULL,
         register_click = TRUE,
@@ -1047,7 +1088,8 @@ PELSASection3_Ome_Server <- function(id,
     # .pelsa_volcano_cache_clear_reasons() - enforced by test-pelsa-overlay-reset.
     observeEvent(
       list(input$pelsa_color_mode, active_contrast(),
-           label_mode_for_ome(), use_webgl(),
+           label_mode_for_ome(), n_top_significant_for_ome(),
+           n_top_markers_for_ome(), use_webgl(),
            marker_accessions(), sig_cutoff_r(), sig_stat_r()),
       {
         session$onFlushed(function() {
@@ -1076,6 +1118,8 @@ PELSASection3_Ome_Server <- function(id,
         full_df        = df,
         color_mode     = input$pelsa_color_mode %||% "significance",
         label_mode     = label_mode_for_ome(),
+        n_top_significant = n_top_significant_for_ome(),
+        n_top_markers      = n_top_markers_for_ome(),
         source_id      = ns("pelsa_volcano_best"),
         register_click = FALSE,
         use_webgl      = use_webgl()
@@ -1376,6 +1420,8 @@ PELSASection3_Ome_Server <- function(id,
       # a per-contrast registry lookup inside the loop, back when label mode
       # varied by contrast).
       lab_mode <- isolate(label_mode_for_ome())
+      n_top_sig <- isolate(n_top_significant_for_ome())
+      n_top_mk  <- isolate(n_top_markers_for_ome())
       want_best <- isTRUE(isolate(best_show()))
       # Single significance threshold for the whole export: drives the df build
       # (Significant / sig_direction / dashed y_cutoff) AND the annotation text,
@@ -1406,6 +1452,8 @@ PELSASection3_Ome_Server <- function(id,
         if (!is.null(df_all) && nrow(df_all) > 0L) {
           pelsa_save_figure(
             .pelsa_export_ggplot(df_all, df_all, color_mode, lab_mode,
+                                 n_top_significant = n_top_sig,
+                                 n_top_markers = n_top_mk,
                                  contrast = contrast,
                                  volcano_label = "All-peptide volcano",
                                  sig_cutoff = sig_cutoff),
@@ -1422,6 +1470,8 @@ PELSASection3_Ome_Server <- function(id,
           if (!is.null(df_best) && nrow(df_best) > 0L) {
             pelsa_save_figure(
               .pelsa_export_ggplot(df_best, df_best, color_mode, lab_mode,
+                                   n_top_significant = n_top_sig,
+                                   n_top_markers = n_top_mk,
                                    contrast = contrast,
                                    volcano_label = "Best-peptide volcano",
                                    sig_cutoff = sig_cutoff),
