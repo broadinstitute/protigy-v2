@@ -1205,7 +1205,7 @@ test_that("volcano build adds boxed annotations (white bg, point-colored border)
   )
   attr(df, "y_cutoff") <- 1.0
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
-         label_mode = "all_markers", n_top = 3L,
+         label_mode = "all_markers",
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   ann <- b$x$layout$annotations
@@ -1245,7 +1245,7 @@ test_that("volcano label overlap-suppressor drops piled-up labels", {
   )
   attr(df, "y_cutoff") <- 1.0
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
-         label_mode = "all_markers", n_top = 3L,
+         label_mode = "all_markers",
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   expect_equal(length(b$x$layout$annotations), 1L)   # piled-up -> 1 kept

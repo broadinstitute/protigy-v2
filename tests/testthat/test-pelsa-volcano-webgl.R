@@ -30,23 +30,23 @@ built_trace_types <- function(p) {
 }
 
 test_that("build_plot defaults to scattergl (WebGL) trace types", {
-  p <- pelsa_volcano_build_plot(make_webgl_vdf(), n_top = 0L)
+  p <- pelsa_volcano_build_plot(make_webgl_vdf())
   types <- built_trace_types(p)
   expect_true(length(types) >= 2L)
   expect_true(all(types == "scattergl"))
 })
 
 test_that("build_plot with use_webgl=FALSE emits SVG scatter trace types", {
-  p <- pelsa_volcano_build_plot(make_webgl_vdf(), n_top = 0L, use_webgl = FALSE)
+  p <- pelsa_volcano_build_plot(make_webgl_vdf(), use_webgl = FALSE)
   types <- built_trace_types(p)
   expect_true(length(types) >= 2L)
   expect_true(all(types == "scatter"))
 })
 
 test_that("use_webgl does not change trace count or meta tags", {
-  pg <- plotly::plotly_build(pelsa_volcano_build_plot(make_webgl_vdf(), n_top = 0L))
+  pg <- plotly::plotly_build(pelsa_volcano_build_plot(make_webgl_vdf()))
   ps <- plotly::plotly_build(
-    pelsa_volcano_build_plot(make_webgl_vdf(), n_top = 0L, use_webgl = FALSE))
+    pelsa_volcano_build_plot(make_webgl_vdf(), use_webgl = FALSE))
   expect_equal(length(pg$x$data), length(ps$x$data))
   expect_identical(pg$x$data[[1L]]$meta, "pelsa_bg")
   expect_identical(ps$x$data[[1L]]$meta, "pelsa_bg")

@@ -95,7 +95,7 @@ test_that("volcano export legend text is small (8pt) with a tight key", {
   )
   attr(df, "y_cutoff") <- 1.0
   g <- .pelsa_export_ggplot(df, full_df = df, color_mode = "significance",
-                            label_mode = "none")
+                            label_mode = character(0))
   expect_lte(g$theme$legend.text$size, 8)
   expect_lte(as.numeric(g$theme$legend.key.size), 9)
 })

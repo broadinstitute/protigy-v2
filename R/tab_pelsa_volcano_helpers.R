@@ -1338,8 +1338,8 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 # @param full_df     the same frame, used for the y_cutoff attr + label-row
 #   selection over all rows. Defaults to df.
 # @param color_mode  "significance" | "feature".
-# @param label_mode  a pelsa_volcano_label_rows() mode.
-# @param n_top       N for top_n label mode.
+# @param label_mode  a character vector of pelsa_volcano_label_rows() modes
+#   (possibly empty).
 # @param source_id   the plotly source id (ns("pelsa_volcano") /
 #   ns("pelsa_volcano_best")).
 # @param selection   NULL, or a list(origin, accession, peptide_seq) - the
@@ -1351,7 +1351,7 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 # @noRd
 pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
-                                     label_mode = "top_n", n_top = 3L,
+                                     label_mode = character(0),
                                      source_id = "pelsa_volcano",
                                      selection = NULL, find_mask = NULL,
                                      register_click = FALSE,
@@ -1481,7 +1481,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # the build (white opaque-ish bg + a border colored to the labeled point), so
   # they survive toWebGL and read as clear callouts. See add_annotations below.
   lab_idx <- tryCatch(
-    pelsa_volcano_label_rows(full_df, mode = label_mode, n_top = n_top),
+    pelsa_volcano_label_rows(full_df, mode = label_mode),
     error = function(e) integer(0)
   )
   lab_df <- NULL
@@ -2085,7 +2085,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 #                       was built with (single source of truth, no drift).
 # @noRd
 .pelsa_export_ggplot <- function(df, full_df, color_mode = "significance",
-                                 label_mode = "none", n_top = 3L,
+                                 label_mode = character(0),
                                  contrast = NULL, volcano_label = NULL,
                                  sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   color_mode <- color_mode %||% "significance"
@@ -2124,9 +2124,9 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   # Bake peptide labels per the in-app label mode (the on-screen labels are
   # plotly annotations; the static export draws them as repelled boxed labels:
   # white box, black outline + text, black segment; force=20 to spread them).
-  if (!identical(label_mode, "none") && "label" %in% colnames(df)) {
+  if (length(label_mode) > 0L && "label" %in% colnames(df)) {
     idx <- tryCatch(
-      pelsa_volcano_label_rows(df, mode = label_mode, n_top = n_top),
+      pelsa_volcano_label_rows(df, mode = label_mode),
       error = function(e) integer(0))
     if (length(idx) > 0L) {
       lab <- df[idx, , drop = FALSE]
