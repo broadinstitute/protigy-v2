@@ -25,7 +25,10 @@
 #   pelsa_woods_peptide_data(accession, matched, stat_df, contrast, sig_cutoff)
 #       -> per-peptide df: peptide_seq, pep_start, pep_end, logFC, adj.P.Val, sig
 #   pelsa_coverage_intervals(starts, ends)        -> merged covered [start,end] df
-#   pelsa_feature_lanes(features)                 -> features + integer `lane`
+#   pelsa_widen_point_features(features, prot_len) -> features + display_start/
+#       display_end/was_widened (single-AA features widened +-N for display)
+#   pelsa_feature_lanes(features, prot_len=Inf)   -> features + lane/display_start/
+#       display_end/was_widened (lane-packed on the widened span)
 #   pelsa_woods_overlap_annotations(starts, ends, features) -> chr per peptide
 #   pelsa_coverage_track_ggplot / pelsa_feature_track_ggplot /
 #   pelsa_woods_track_ggplot / pelsa_woods_panel  -> the plots
