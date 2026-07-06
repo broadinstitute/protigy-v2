@@ -1142,7 +1142,8 @@ pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
 
 # 6C: per-sample depth bar, ordered by sample_order (alphabetical fallback).
 # @noRd
-pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL, head_frac = 0.04) {
+pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL,
+                                 head_frac = 0.04, export = FALSE) {
   df <- pelsa_depth_bar_data(n_quantified, sample_order)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No per-sample depth data."))
@@ -1151,16 +1152,27 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL, head_frac = 
   # (in-app default 0.04; the export path passes a smaller value). Baked into
   # label_y (ggplotly drops nudge_y); vjust = 0 anchors the label bottom.
   df$label_y <- df$n + head_frac * max(df$n, na.rm = TRUE)
-  ggplot(df, aes(x = .data$sample, y = .data$n)) +
+  x_title <- if (export) NULL else "Sample"
+  label_size <- if (export) 4 else 3
+  x_text_size <- if (export) 9 else 11
+  p <- ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
     geom_text(aes(y = .data$label_y, label = prettyNum(.data$n, big.mark = ",")),
-              vjust = 0, size = 3, fontface = "bold") +
+              vjust = 0, size = label_size, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.12))) +
-    labs(x = "Sample", y = "Peptides quantified",
+    labs(x = x_title, y = "Peptides quantified",
          title = "Peptides quantified per sample") +
     protigy_plot_theme() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 11))
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
+                                     colour = if (export) "black" else NULL))
+  if (export) {
+    p$theme$plot.title.position <- NULL
+    p <- p + ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 ################################################################################

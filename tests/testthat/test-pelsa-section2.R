@@ -526,3 +526,28 @@ test_that("pelsa_missed_cleavage_plot default (export=FALSE) keeps 'Missed cleav
   gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
   expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
 })
+
+# ---- export styling: pelsa_depth_bar_plot -------------------------------------
+
+test_that("pelsa_depth_bar_plot export=TRUE removes x-axis title and enlarges x-axis text", {
+  nq <- c(S1 = 100L, S2 = 250L, S3 = 175L)
+  p <- pelsa_depth_bar_plot(nq, export = TRUE)
+  expect_null(p$labels$x)
+  expect_equal(p$theme$axis.text.x$size, 9)
+  expect_equal(p$theme$axis.text.x$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)  # y-axis (general rule) unaffected
+  expect_equal(p$theme$axis.text$colour, "black")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 4)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+})
+
+test_that("pelsa_depth_bar_plot default (export=FALSE) keeps 'Sample' x title, size 11 x-text, size 3 label", {
+  nq <- c(S1 = 100L, S2 = 250L, S3 = 175L)
+  p <- pelsa_depth_bar_plot(nq)
+  expect_equal(p$labels$x, "Sample")
+  expect_equal(p$theme$axis.text.x$size, 11)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
+})
