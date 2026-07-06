@@ -432,6 +432,52 @@ PELSASection3_Ome_Server <- function(id,
       set_label_mode(input$pelsa_label_mode)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
+    # Mutual exclusion, two INDEPENDENT pairs (significant pair does not
+    # affect the marker pair): checking "top_n_significant" unchecks+disables
+    # "all_significant" and vice versa; checking "top_n_markers"
+    # unchecks+disables "all_markers" and vice versa. Mirrors the pattern in
+    # R/tab_stat_plot.R:315-350 (a different subsystem's volcano, same idiom).
+    observeEvent(input$pelsa_label_mode, {
+      grp_id <- ns("pelsa_label_mode")
+      modes <- input$pelsa_label_mode %||% character(0)
+
+      if ("top_n_significant" %in% modes) {
+        updateCheckboxGroupInput(session, "pelsa_label_mode",
+          selected = setdiff(modes, "all_significant"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"all_significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id))
+      } else if ("all_significant" %in% modes) {
+        updateCheckboxGroupInput(session, "pelsa_label_mode",
+          selected = setdiff(modes, "top_n_significant"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"top_n_significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id))
+      } else {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"all_significant\"], #%s input[value=\"top_n_significant\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id))
+      }
+
+      if ("top_n_markers" %in% modes) {
+        updateCheckboxGroupInput(session, "pelsa_label_mode",
+          selected = setdiff(modes, "all_markers"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"all_markers\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id))
+      } else if ("all_markers" %in% modes) {
+        updateCheckboxGroupInput(session, "pelsa_label_mode",
+          selected = setdiff(modes, "top_n_markers"))
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"top_n_markers\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
+          grp_id))
+      } else {
+        shinyjs::runjs(sprintf(
+          "$('#%s input[value=\"all_markers\"], #%s input[value=\"top_n_markers\"]').prop('disabled', false).closest('label').css('opacity', 1);",
+          grp_id, grp_id))
+      }
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
     ## --- LAZY per-active-contrast volcano df cache --------------------------
     # Holds ONLY the active contrast's heavy 3A df, keyed by contrast suffix.
     # On contrast switch the prior contrast's df is FREED (the list is replaced
@@ -775,9 +821,25 @@ PELSASection3_Ome_Server <- function(id,
         strong("Label peptides:"),
         checkboxGroupInput(
           ns("pelsa_label_mode"), label = NULL,
-          choices = c("All marker peptides"      = "all_markers",
-                      "All significant peptides" = "all_significant"),
+          choices = c("All marker peptides"        = "all_markers",
+                      "All significant peptides"   = "all_significant",
+                      "Top N significant peptides" = "top_n_significant",
+                      "Top N marker peptides"       = "top_n_markers"),
           selected = isolate(label_mode_for_ome())
+        ),
+        conditionalPanel(
+          condition = sprintf(
+            "input['%s'].indexOf('top_n_significant') > -1", ns("pelsa_label_mode")),
+          numericInput(ns("pelsa_n_top_significant"), "N (significant, per up/down):",
+                       value = isolate(n_top_significant_for_ome()),
+                       min = 1, step = 1, width = "220px")
+        ),
+        conditionalPanel(
+          condition = sprintf(
+            "input['%s'].indexOf('top_n_markers') > -1", ns("pelsa_label_mode")),
+          numericInput(ns("pelsa_n_top_markers"), "N (markers, per up/down):",
+                       value = isolate(n_top_markers_for_ome()),
+                       min = 1, step = 1, width = "220px")
         ),
         helpText("Applies to every contrast for this dataset."),
         hr(),
