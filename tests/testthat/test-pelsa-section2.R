@@ -423,3 +423,46 @@ test_that("pelsa_coverage_distribution_plot default (export=FALSE) does not fix 
   # not add the export-only fixed (0, 1) range.
   expect_equal(p$coordinates$limits$x, c(0, NA))
 })
+
+# ---- export styling: pelsa_per_condition_density_plot -------------------------
+
+test_that("pelsa_per_condition_density_plot default (export=FALSE) keeps current label text and size", {
+  df <- data.frame(condition = rep(c("A", "B"), each = 5),
+                   peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+                   stringsAsFactors = FALSE)
+  p <- pelsa_per_condition_density_plot(
+    df, value_col = "peptide_length", x_label = "Peptide length (residues)",
+    title = "t")
+  # Verified real layer order: geom_density, geom_vline, pelsa_halo_text_layers'
+  # (white) geom_text, then the colored geom_text -- 4 layers total, GeomText at
+  # indices 3 and 4, so gt_idx[2] is the colored label layer.
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  expect_equal(unname(gt_idx), c(3L, 4L))
+  built <- ggplot2::ggplot_build(p)
+  labels <- unique(built$data[[gt_idx[2]]]$label)
+  expect_true(any(grepl("^A median = ", labels)))
+  colored_layer <- p$layers[[gt_idx[2]]]
+  expect_equal(colored_layer$aes_params$size, 3)
+})
+
+test_that("pelsa_per_condition_density_plot export=TRUE drops condition-name prefix from label and keeps size 3", {
+  df <- data.frame(condition = rep(c("A", "B"), each = 5),
+                   peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+                   stringsAsFactors = FALSE)
+  p <- pelsa_per_condition_density_plot(
+    df, value_col = "peptide_length", x_label = "Peptide length (residues)",
+    title = "t", export = TRUE)
+  built <- ggplot2::ggplot_build(p)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  labels <- unique(built$data[[gt_idx[2]]]$label)
+  expect_true(any(grepl("^median = ", labels)))
+  expect_false(any(grepl("^A median = |^B median = ", labels)))
+  colored_layer <- p$layers[[gt_idx[2]]]
+  expect_equal(colored_layer$aes_params$size, 3)  # UNCHANGED -- crowding exception
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+})

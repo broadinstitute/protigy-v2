@@ -817,7 +817,7 @@ pelsa_per_condition_density_plot <- function(df, value_col,
                                              value_fmt = function(v) sprintf("%.1f", v),
                                              min_n = 2L,
                                              blank_msg = "No per-condition data to display.",
-                                             x_scale = NULL) {
+                                             x_scale = NULL, export = FALSE) {
   if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L ||
       !all(c("condition", value_col) %in% names(df))) {
     return(pelsa_blank_plot(blank_msg))
@@ -865,10 +865,16 @@ pelsa_per_condition_density_plot <- function(df, value_col,
   # authoritative median). Mirrors the CV-KDE labels.
   medians$n <- as.integer(counts[as.character(medians$condition)])
   medians$label <- vapply(seq_len(nrow(medians)), function(i) {
-    sprintf("%s median = %s (n=%d)", medians$condition[i],
-            value_fmt(medians$value[i]), medians$n[i])
+    if (export) {
+      sprintf("median = %s", value_fmt(medians$value[i]))
+    } else {
+      sprintf("%s median = %s (n=%d)", medians$condition[i],
+              value_fmt(medians$value[i]), medians$n[i])
+    }
   }, character(1))
 
+  base_theme <- protigy_plot_theme()
+  if (export) base_theme$plot.title.position <- NULL
   p <- ggplot(d, aes(x = .data$value, color = .data$condition,
                 fill = .data$condition)) +
     geom_density(alpha = 0.15) +
@@ -883,9 +889,15 @@ pelsa_per_condition_density_plot <- function(df, value_col,
     coord_cartesian(xlim = c(x_lo, x_hi)) +
     labs(x = x_label, y = "Density", color = "Condition", fill = "Condition",
          title = title, subtitle = subtitle) +
-    protigy_plot_theme() +
+    base_theme +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
   if (!is.null(x_scale)) p <- p + x_scale
   p
 }
@@ -913,7 +925,8 @@ pelsa_coverage_distribution_plot <- function(coverage, export = FALSE) {
 
 # 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
 pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
-                                             condition_order = NULL) {
+                                             condition_order = NULL,
+                                             export = FALSE) {
   pelsa_per_condition_density_plot(
     coverage_by_condition, value_col = "coverage",
     condition_order = condition_order,
@@ -922,7 +935,8 @@ pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
     subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v),
     blank_msg = "No per-condition coverage - a condition column is required.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
+    export = export)
 }
 
 # 6A: peptide-length DENSITY (experiment-wide mode). @noRd
@@ -939,7 +953,8 @@ pelsa_length_density_plot <- function(peptide_metrics, export = FALSE) {
 
 # 6A: peptide-length DENSITY (per-condition mode). @noRd
 pelsa_length_by_condition_plot <- function(length_by_condition,
-                                           condition_order = NULL) {
+                                           condition_order = NULL,
+                                           export = FALSE) {
   pelsa_per_condition_density_plot(
     length_by_condition, value_col = "peptide_length",
     condition_order = condition_order,
@@ -947,7 +962,8 @@ pelsa_length_by_condition_plot <- function(length_by_condition,
     title = "Peptide-length distribution by condition",
     subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f", v),
-    blank_msg = "No per-condition lengths - a condition column is required.")
+    blank_msg = "No per-condition lengths - a condition column is required.",
+    export = export)
 }
 
 # 6B: experiment-wide CV DENSITY (pooled across conditions). Unlike the
