@@ -1191,6 +1191,57 @@ test_that("label-mode: unknown mode errors; default is empty", {
   expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, character(0))
 })
 
+test_that("label-mode: top_n_significant takes N smallest adj.P.Val per direction", {
+  df <- data.frame(
+    is_marker         = rep(FALSE, 6),
+    sig_direction     = c("up", "up", "up", "down", "down", "ns"),
+    adj.P.Val         = c(0.5, 0.1, 0.2, 0.05, 0.3, 0.9),
+    winning_accession = c("P1", "P2", "P3", "P4", "P5", "P6"),
+    label             = letters[1:6],
+    stringsAsFactors  = FALSE
+  )
+  # up bucket (rows 1,2,3): smallest 2 by adj.P.Val -> row2(0.1), row3(0.2).
+  # down bucket (rows 4,5): smallest 2 -> both (only 2 available).
+  # row 6 ("ns") is excluded from both buckets.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_significant", n_top_significant = 2L),
+    c(2L, 3L, 4L, 5L)
+  )
+})
+
+test_that("label-mode: top_n_significant labels fewer than N when a bucket is small", {
+  df <- data.frame(
+    is_marker         = rep(FALSE, 3),
+    sig_direction     = c("up", "down", "down"),
+    adj.P.Val         = c(0.01, 0.2, 0.3),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  # up bucket has only 1 row -> that row is kept even though N=5.
+  # down bucket has 2 rows, N=5 -> both kept.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_significant", n_top_significant = 5L),
+    c(1L, 2L, 3L)
+  )
+})
+
+test_that("label-mode: top_n_significant default N is 5", {
+  df <- data.frame(
+    is_marker         = rep(FALSE, 6),
+    sig_direction     = c("up", "up", "up", "up", "up", "up"),
+    adj.P.Val         = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06),
+    winning_accession = paste0("P", 1:6),
+    label             = letters[1:6],
+    stringsAsFactors  = FALSE
+  )
+  # No n_top_significant arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_significant"),
+    c(1L, 2L, 3L, 4L, 5L)
+  )
+})
+
 test_that("volcano build adds boxed annotations (white bg, point-colored border)", {
   df <- data.frame(
     id = c("p1", "p2"), logFC = c(-2, 2), logP = c(3, 4),

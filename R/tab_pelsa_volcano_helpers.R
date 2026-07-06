@@ -1080,21 +1080,37 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # set of label modes. Labels are FIXED to the 3A `label` column (the ;-joined
 # <gene>_aa<pos>); only WHICH rows are labeled varies.
 #
-# Modes (a CHARACTER VECTOR - zero or more of the two below; the checkbox
-# group in the PELSA sidebar allows selecting either, both, or neither):
-#   "all_markers"     every marker-protein peptide (is_marker == TRUE).
-#   "all_significant" every significant peptide (Significant == TRUE).
+# Modes (a CHARACTER VECTOR - zero or more of the four below; the checkbox
+# group in the PELSA sidebar allows selecting any combination):
+#   "all_markers"        every marker-protein peptide (is_marker == TRUE).
+#   "all_significant"    every significant peptide (Significant == TRUE).
+#   "top_n_significant"  the n_top_significant smallest adj.P.Val peptides in
+#                        EACH of the "up"/"down" sig_direction buckets (union
+#                        of both buckets; "ns" rows are never included).
+#   "top_n_markers"      the n_top_markers smallest adj.P.Val MARKER peptides
+#                        (is_marker == TRUE) in EACH logFC-sign bucket
+#                        (logFC >= 0 -> "up", logFC < 0 -> "down"; union of
+#                        both buckets). Ranks ALL marker peptides regardless
+#                        of significance.
 #
 # Returns the UNION of matching rows across every mode in the vector, as
 # 1-based row indices (sorted, unique). An empty/NULL `mode` returns
-# integer(0) (no labels).
+# integer(0) (no labels). If a top-N bucket has fewer than N eligible rows,
+# all of them are kept (no padding, no error).
 #
-# @param volcano_df a 3A frame (label, is_marker, Significant).
-# @param mode       a character vector; each element one of the two modes
-#                   above. NULL or character(0) means no labels.
+# @param volcano_df        a 3A frame (label, is_marker, Significant,
+#                          sig_direction, adj.P.Val, logFC).
+# @param mode               a character vector; each element one of the four
+#                           modes above. NULL or character(0) means no labels.
+# @param n_top_significant  N per direction for "top_n_significant" (default
+#                           5, coerced to >= 1).
+# @param n_top_markers      N per direction for "top_n_markers" (default 5,
+#                           coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
-pelsa_volcano_label_rows <- function(volcano_df, mode = character(0)) {
+pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
+                                     n_top_significant = 5L,
+                                     n_top_markers = 5L) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
   }
@@ -1116,7 +1132,50 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0)) {
   idx <- integer(0)
   if ("all_markers" %in% mode)     idx <- c(idx, which(is_m))
   if ("all_significant" %in% mode) idx <- c(idx, which(sig))
+
+  if ("top_n_significant" %in% mode) {
+    sig_dir <- volcano_df$sig_direction %||% rep(NA_character_, n)
+    adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+    idx <- c(idx, .pelsa_top_n_by_direction(seq_len(n), sig_dir, adjp,
+                                            n_top_significant))
+  }
+
+  if ("top_n_markers" %in% mode) {
+    marker_idx <- which(is_m)
+    if (length(marker_idx) > 0L) {
+      logfc <- as.numeric(volcano_df$logFC %||% rep(NA_real_, n))
+      adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+      m_dir <- ifelse(!is.na(logfc[marker_idx]) & logfc[marker_idx] < 0,
+                      "down", "up")
+      idx <- c(idx, .pelsa_top_n_by_direction(marker_idx, m_dir,
+                                              adjp[marker_idx], n_top_markers))
+    }
+  }
+
   sort(unique(idx))
+}
+
+# Keep the n_top rows with the smallest `value` within each of the "up"/"down"
+# buckets of `direction` (any other direction value, e.g. "ns", is excluded
+# from both buckets). `idx` are the original row indices these
+# (direction, value) entries correspond to. Stable: ties / NA values resolve
+# by original index order; NA values sort last. If a bucket has fewer than
+# n_top eligible rows, all of them are kept (no padding, no error).
+#
+# @return sorted unique original indices kept (union of both buckets).
+# @noRd
+.pelsa_top_n_by_direction <- function(idx, direction, value, n_top) {
+  n_top <- max(1L, as.integer(n_top)[1L])
+  if (is.na(n_top)) n_top <- 5L
+  keep_bucket <- function(want) {
+    bucket <- which(direction == want)
+    if (length(bucket) == 0L) return(integer(0))
+    bucket_idx <- idx[bucket]
+    bucket_val <- value[bucket]
+    ord <- order(bucket_val, bucket_idx, na.last = TRUE)
+    head(bucket_idx[ord], n_top)
+  }
+  sort(unique(c(keep_bucket("up"), keep_bucket("down"))))
 }
 
 # ---- "showing N of M" honesty note ------------------------------------------

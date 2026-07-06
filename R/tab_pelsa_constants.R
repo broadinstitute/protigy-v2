@@ -71,7 +71,8 @@
 # cross-highlight). Distinct from the magenta marker fill.
 .PELSA_VOLCANO_GOLD <- .PELSA_GOLD
 
-.PELSA_VOLCANO_LABEL_MODES <- c("all_markers", "all_significant")
+.PELSA_VOLCANO_LABEL_MODES <- c("all_markers", "all_significant",
+                                "top_n_significant", "top_n_markers")
 
 # Significance-direction -> human legend label (fixed display order).
 .PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",
