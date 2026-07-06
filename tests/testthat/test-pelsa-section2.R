@@ -466,3 +466,29 @@ test_that("pelsa_per_condition_density_plot export=TRUE drops condition-name pre
   expect_equal(p$theme$axis.text$colour, "black")
   expect_equal(p$theme$axis.text$size, 8)
 })
+
+# ---- export styling: pelsa_cv_kde_plot ---------------------------------------
+
+test_that("pelsa_cv_kde_plot export=TRUE applies export styling, keeps label size 3 and text unchanged", {
+  cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
+                   cv_status = rep("ok", 60),
+                   condition = rep(c("A", "B"), 30))
+  p <- pelsa_cv_kde_plot(cv, export = TRUE)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  colored_layer <- p$layers[[gt_idx[length(gt_idx)]]]
+  expect_equal(colored_layer$aes_params$size, 3)  # UNCHANGED -- crowding exception
+})
+
+test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling", {
+  cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
+                   cv_status = rep("ok", 60),
+                   condition = rep(c("A", "B"), 30))
+  p <- pelsa_cv_kde_plot(cv)
+  expect_equal(p$theme$plot.title$size, 14)
+  expect_equal(p$theme$plot.title.position, "plot")
+})

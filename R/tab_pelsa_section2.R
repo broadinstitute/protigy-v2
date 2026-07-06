@@ -1028,7 +1028,7 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
 # 6B: per-condition CV KDE. One density curve per ELIGIBLE condition (>= 20
 # finite "ok" CVs), a vertical dashed median line per condition (labels dodged),
 # x-limit at the 99th percentile of cv_pct. @noRd
-pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
+pelsa_cv_kde_plot <- function(cv, condition_order = NULL, export = FALSE) {
   if (is.null(cv) || !is.data.frame(cv) || nrow(cv) == 0L) {
     return(pelsa_blank_plot("No CV data - a raw GCT + condition column are required."))
   }
@@ -1062,7 +1062,9 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
   medians$label <- sprintf("%s median = %.1f%% (n=%d)", medians$condition,
                            medians$cv_pct, medians$n)
 
-  ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
+  base_theme <- protigy_plot_theme()
+  if (export) base_theme$plot.title.position <- NULL
+  p <- ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
                  fill = .data$condition)) +
     geom_density(alpha = 0.15) +
     geom_vline(data = medians,
@@ -1078,9 +1080,16 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
     coord_cartesian(xlim = c(0, x_hi)) +
     labs(x = "CV (%)", y = "Density", color = "Condition", fill = "Condition",
          title = "Per-condition CV distribution") +
-    protigy_plot_theme() +
+    base_theme +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 # White-halo outline for the per-condition median labels. ggplot has no native
