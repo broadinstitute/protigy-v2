@@ -1637,7 +1637,6 @@ test_that("gate: NULL stat_results shows the notice and renders no plot", {
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      top_n_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list())
     ),
     {
@@ -1660,7 +1659,6 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      top_n_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list())
     ),
     {
@@ -1670,7 +1668,7 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
 
       # Default active contrast = first; df builds; cache holds ONLY it.
       session$setInputs(pelsa_color_mode = "significance",
-                        pelsa_label_mode = "top_n", pelsa_top_n = 3)
+                        pelsa_label_mode = "all_markers")
       expect_equal(active_contrast(), "A_over_B")
       df1 <- active_volcano_df()
       expect_true(is.data.frame(df1) && nrow(df1) == 3L)
@@ -1732,7 +1730,6 @@ test_that("feat_df warns and returns NULL when annotation path exists but file i
           annotation_path  = list(Proteome = missing_path)
         )),
         poi_registry          = reactiveVal(list()),
-        top_n_registry        = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list())
       ),
       {
@@ -1764,7 +1761,6 @@ test_that("feat_df is silent and returns NULL for a self-curated dataset", {
           annotation_path  = list(Proteome = "irrelevant_path.tsv")
         )),
         poi_registry          = reactiveVal(list()),
-        top_n_registry        = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list())
       ),
       {
@@ -1789,7 +1785,6 @@ test_that("cache NULL + stats present: section shows Start-Analysis notice, no d
       pelsa_analysis = reactive(NULL),                 # cache MISSING
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      top_n_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list())
     ),
     {
@@ -1882,13 +1877,12 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),  # species = NULL
       poi_registry = reactiveVal(list()),
-      top_n_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list())
     ),
     {
       expect_null(feat_df())                       # species NULL -> NULL feat
       session$setInputs(pelsa_color_mode = "feature",
-                        pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                        pelsa_label_mode = "all_markers",
                         pelsa_volcano_contrast = "A_over_B")
       df <- active_volcano_df()
       # No features supplied -> every peptide is class "none".
@@ -1915,7 +1909,6 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
     pelsa_analysis = reactive(.mk_cache_full()),
     pelsa_setup_state = reactive(.mk_setup_state_full()),
     poi_registry = reactiveVal(list()),
-    top_n_registry = reactiveVal(list()),
     label_mode_registry = reactiveVal(list())
   )
 }
@@ -1942,13 +1935,12 @@ test_that("PELSA volcano always renders SVG (scatter), never scattergl, regardle
       pelsa_analysis = reactive(.mk_cache()),
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
-      top_n_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
       use_webgl = reactive(TRUE)
     ),
     {
       session$setInputs(pelsa_color_mode = "significance",
-                        pelsa_label_mode = "top_n", pelsa_top_n = 3)
+                        pelsa_label_mode = "all_markers")
       json <- output$pelsa_volcano_plot
       expect_true(is.character(json) && nzchar(json))
       expect_true(grepl('"type":"scatter"', json, fixed = TRUE))
@@ -1957,10 +1949,60 @@ test_that("PELSA volcano always renders SVG (scatter), never scattergl, regardle
   )
 })
 
+test_that("changing label mode on one contrast applies to every contrast of the same ome", {
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      choices <- contrast_choices()
+      expect_true(length(choices) >= 2L)  # fixture must define >=2 contrasts
+      contrast_a <- unname(choices[[1L]])
+      contrast_b <- unname(choices[[2L]])
+
+      # Set the label mode while viewing contrast A.
+      session$setInputs(pelsa_color_mode = "significance",
+                        pelsa_volcano_contrast = contrast_a,
+                        pelsa_label_mode = c("all_markers", "all_significant"))
+      expect_identical(sort(label_mode_for_ome()),
+                       sort(c("all_markers", "all_significant")))
+
+      # Switch to contrast B (same ome) WITHOUT touching the checkboxes -
+      # the stored selection must already apply here too.
+      session$setInputs(pelsa_volcano_contrast = contrast_b)
+      expect_identical(sort(label_mode_for_ome()),
+                       sort(c("all_markers", "all_significant")))
+
+      # The rendered plot for contrast B reflects the union of both modes.
+      df <- active_volcano_df()
+      expected <- pelsa_volcano_label_rows(
+        df, mode = c("all_markers", "all_significant"))
+      json <- output$pelsa_volcano_plot
+      expect_true(is.character(json) && nzchar(json))
+      labs <- df$label[expected]
+      labs <- labs[!is.na(labs) & nzchar(labs)]
+      for (l in unique(labs)) {
+        expect_true(grepl(l, json, fixed = TRUE),
+                    info = paste("expected label", l, "in rendered JSON"))
+      }
+    }
+  )
+})
+
 test_that("7D: best-panel df built ONLY when the checkbox is ON", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B",
                       pelsa_show_best_panel = FALSE)
     # OFF: best cache stays empty (the reactive short-circuits on best_show()).
@@ -1981,7 +2023,7 @@ test_that("7D: best-panel df built ONLY when the checkbox is ON", {
 test_that("7E: a simulated pin populates metadata + computes 3C line data", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B")
     force(active_volcano_df())
 
@@ -2029,7 +2071,7 @@ test_that("PERF: a pin does NOT rebuild the main volcano (build_plot not re-call
 
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B")
     force(active_volcano_df())
     # Render the main volcano once (registers the reactive).
@@ -2054,7 +2096,7 @@ test_that("PERF: a pin does NOT rebuild the main volcano (build_plot not re-call
 test_that("7E: switching contrast CLEARS a stale selection", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B")
     force(active_volcano_df())
     selection(list(origin = "click", peptide_seq = "PEPA", accession = "ACC1",
@@ -2073,7 +2115,7 @@ test_that("7E: switching contrast CLEARS a stale selection", {
 test_that("7F: exports list has volcano/intensity/woods fns; volcano writes figures", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B",
                       pelsa_show_best_panel = FALSE)
     force(active_volcano_df())
@@ -2104,7 +2146,7 @@ test_that("M5: changing markers clears the volcano cache so the active view rebu
   args$pelsa_setup_state <- ss
   shiny::testServer(PELSASection3_Ome_Server, args = args, {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B",
                       pelsa_show_best_panel = FALSE)
     df1 <- active_volcano_df()
@@ -2145,7 +2187,7 @@ test_that("M5: changing markers clears the best-peptide cache so the best panel 
   args$pelsa_setup_state <- ss
   shiny::testServer(PELSASection3_Ome_Server, args = args, {
     session$setInputs(pelsa_color_mode = "significance",
-                      pelsa_label_mode = "top_n", pelsa_top_n = 3,
+                      pelsa_label_mode = "all_markers",
                       pelsa_volcano_contrast = "A_over_B",
                       pelsa_show_best_panel = TRUE)  # best panel ON
     bdf1 <- best_volcano_df()
@@ -4138,7 +4180,6 @@ test_that("feat_df prefers the cached feat_raw over the live annotation file", {
           annotation_path  = list(Proteome = missing_path)
         )),
         poi_registry          = reactiveVal(list()),
-        top_n_registry        = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list())
       ),
       {
@@ -4193,7 +4234,6 @@ test_that("feat_df falls back to live file when cache entry lacks feat_raw", {
         annotation_path  = list(Proteome = tmp)
       )),
       poi_registry          = reactiveVal(list()),
-      top_n_registry        = reactiveVal(list()),
       label_mode_registry   = reactiveVal(list())
     ),
     {

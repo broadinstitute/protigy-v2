@@ -430,7 +430,7 @@ PELSASection3_Ome_Server <- function(id,
     # not character(0), and that NULL must still clear the stored selection.
     observeEvent(input$pelsa_label_mode, {
       set_label_mode(input$pelsa_label_mode)
-    }, ignoreNULL = FALSE, ignoreInit = TRUE)
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
     ## --- LAZY per-active-contrast volcano df cache --------------------------
     # Holds ONLY the active contrast's heavy 3A df, keyed by contrast suffix.
