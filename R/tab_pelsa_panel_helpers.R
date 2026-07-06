@@ -713,6 +713,7 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
   feats <- if (is.data.frame(features)) features else data.frame()
   has_feats <- nrow(feats) > 0L &&
     all(c("start", "end", "feature_class") %in% colnames(feats))
+  any_widened <- FALSE
   if (has_feats) {
     feats <- feats[, c("start", "end", "feature_class")]
     feats$start <- as.integer(feats$start)
@@ -722,9 +723,11 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
   }
   has_feats <- is.data.frame(feats) && nrow(feats) > 0L
   if (has_feats) {
+    feats <- pelsa_widen_point_features(feats, prot_len = prot_len)
+    any_widened <- any(feats$was_widened)
     feats$feature_class <- factor(as.character(feats$feature_class),
                                   levels = names(PELSA_FEATURE_COLORS))
-    feats$lane <- .pelsa_pack_lanes(feats$start, feats$end)
+    feats$lane <- .pelsa_pack_lanes(feats$display_start, feats$display_end)
     n_lane <- max(1L, suppressWarnings(max(feats$lane, na.rm = TRUE)))
   } else {
     n_lane <- 1L
@@ -769,8 +772,9 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
   if (has_feats) {
     gg <- gg + ggplot2::geom_rect(
       data = feats,
-      ggplot2::aes(xmin = .data$start, xmax = .data$end, ymin = .data$ymin,
-                   ymax = .data$ymax, fill = .data$feature_class))
+      ggplot2::aes(xmin = .data$display_start, xmax = .data$display_end,
+                   ymin = .data$ymin, ymax = .data$ymax,
+                   fill = .data$feature_class))
   }
   gg <- gg +
     ggplot2::geom_segment(
@@ -800,8 +804,12 @@ pelsa_woods_export_ggplot <- function(peptides, features, prot_len, gene,
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(
       title = title, subtitle = sprintf("Wood's plot: %s", contrast_disp),
-      caption = sprintf("*Significant peptides (%s < %s)",
-                        p_label, format(sig_cutoff)),
+      caption = paste0(
+        sprintf("*Significant peptides (%s < %s)", p_label, format(sig_cutoff)),
+        if (any_widened)
+          sprintf("; single-residue features widened +-%d aa for visibility",
+                  .PELSA_WOODS_POINT_PAD)
+        else ""),
       x = "Residue position", y = "log2FC") +
     base_theme
   gg

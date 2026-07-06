@@ -4776,3 +4776,59 @@ test_that("feature_track_ggplot: fixture lacking display_start/display_end still
   expect_equal(b$data[[1]]$xmax, 30)
 })
 
+# ---- pelsa_woods_export_ggplot: widened single-AA feature band --------------
+
+test_that("woods_export_ggplot draws the widened span for a single-AA feature", {
+  pep <- data.frame(
+    peptide_seq = "PEPTIDEK", pep_start = 200L, pep_end = 230L,
+    logFC = 1.2, adj.P.Val = 0.01, P.Value = 0.001, sig = TRUE,
+    stringsAsFactors = FALSE)
+  feats <- data.frame(start = 214L, end = 214L, feature_class = "active_or_binding_site",
+                      stringsAsFactors = FALSE)
+  gg <- pelsa_woods_export_ggplot(pep, feats, prot_len = 500L, gene = "GENE1",
+                                  accession = "P12345", contrast = "A_over_B")
+  b <- suppressWarnings(ggplot2::ggplot_build(gg))
+  # the feature geom_rect layer is the 3rd added rect layer (dummy legend rect,
+  # frame border rect, then the real feature rect) -- identify it by having a
+  # non-degenerate x-range matching the widened span.
+  feat_layer <- Filter(function(d) "xmin" %in% colnames(d) && any(d$xmin != d$xmax),
+                       b$data)
+  expect_true(length(feat_layer) >= 1L)
+  widened <- feat_layer[[length(feat_layer)]]
+  expect_equal(widened$xmin, 211)
+  expect_equal(widened$xmax, 217)
+})
+
+test_that("woods_export_ggplot caption notes widened features when present", {
+  pep <- data.frame(
+    peptide_seq = "PEPTIDEK", pep_start = 200L, pep_end = 230L,
+    logFC = 1.2, adj.P.Val = 0.01, P.Value = 0.001, sig = TRUE,
+    stringsAsFactors = FALSE)
+  feats_point <- data.frame(start = 214L, end = 214L,
+                            feature_class = "active_or_binding_site",
+                            stringsAsFactors = FALSE)
+  gg_point <- pelsa_woods_export_ggplot(pep, feats_point, prot_len = 500L,
+                                        gene = "GENE1", accession = "P12345",
+                                        contrast = "A_over_B")
+  expect_true(grepl("widened", gg_point$labels$caption, ignore.case = TRUE))
+
+  feats_wide <- data.frame(start = 10L, end = 30L, feature_class = "catalytic_domain",
+                           stringsAsFactors = FALSE)
+  gg_wide <- pelsa_woods_export_ggplot(pep, feats_wide, prot_len = 500L,
+                                       gene = "GENE1", accession = "P12345",
+                                       contrast = "A_over_B")
+  expect_false(grepl("widened", gg_wide$labels$caption, ignore.case = TRUE))
+})
+
+test_that("woods_export_ggplot: no features -> builds fine, no widened note", {
+  pep <- data.frame(
+    peptide_seq = "PEPTIDEK", pep_start = 200L, pep_end = 230L,
+    logFC = 1.2, adj.P.Val = 0.01, P.Value = 0.001, sig = TRUE,
+    stringsAsFactors = FALSE)
+  gg <- pelsa_woods_export_ggplot(pep, data.frame(), prot_len = 500L,
+                                  gene = "GENE1", accession = "P12345",
+                                  contrast = "A_over_B")
+  expect_s3_class(gg, "ggplot")
+  expect_false(grepl("widened", gg$labels$caption, ignore.case = TRUE))
+})
+
