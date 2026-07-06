@@ -1334,6 +1334,57 @@ test_that("label-mode: top_n_significant + top_n_markers combine via union", {
   )
 })
 
+test_that("build_plot bakes top_n_significant labels using the passed N", {
+  df <- data.frame(
+    id = c("p1", "p2", "p3"), logFC = c(2, -2, 5), logP = c(3, 4, 0.5),
+    adj.P.Val = c(0.01, 0.02, 0.9), P.Value = c(0.001, 0.002, 0.8),
+    Significant = c(TRUE, TRUE, FALSE),
+    sig_direction = c("up", "down", "ns"),
+    sig_color = c("darkred", "#1f4e9c", "gray"),
+    feature_class_primary = "none", feature_color = "#d3d3d3",
+    winning_accession = c("A", "B", "C"), winning_gene = c("g1", "g2", "g3"),
+    label = c("g1_aa10", "g2_aa20", "g3_aa30"), is_marker = c(FALSE, FALSE, FALSE),
+    PG.ProteinAccessions = c("A", "B", "C"), PG.Genes = c("g1", "g2", "g3"),
+    pep_start = c(10L, 20L, 30L), pep_end = c(18L, 28L, 38L),
+    stringsAsFactors = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
+         label_mode = "top_n_significant", n_top_significant = 1L,
+         source_id = "x")
+  b <- suppressWarnings(plotly::plotly_build(p))
+  ann <- b$x$layout$annotations
+  # up bucket keeps p1, down bucket keeps p2; p3 ("ns") is excluded.
+  expect_equal(length(ann), 2L)
+  borders <- vapply(ann, function(a) a$bordercolor, "")
+  expect_setequal(borders, c("darkred", "#1f4e9c"))
+})
+
+test_that(".pelsa_export_ggplot bakes top_n_markers labels using the passed N", {
+  df <- data.frame(
+    logFC = c(2, 1.5, -2, -1.5), logP = c(3, 2, 3, 2),
+    sig_direction = c("up", "up", "down", "down"),
+    feature_class_primary = "none",
+    is_marker = c(TRUE, TRUE, TRUE, TRUE),
+    adj.P.Val = c(0.2, 0.01, 0.3, 0.02),
+    label = c("a", "b", "c", "d"),
+    stringsAsFactors = FALSE
+  )
+  attr(df, "y_cutoff") <- 1.0
+  g <- .pelsa_export_ggplot(df, full_df = df, color_mode = "significance",
+                            label_mode = "top_n_markers", n_top_markers = 1L)
+  # geom_label_repel layer's data should contain exactly 2 labeled rows
+  # (row 2 = smallest adj.P.Val in the up/logFC>0 bucket, row 4 = smallest in
+  # the down/logFC<0 bucket).
+  label_layer <- Filter(function(l) inherits(l$geom, "GeomLabel") ||
+                                     inherits(l$geom, "GeomText") ||
+                                     inherits(l$geom, "GeomLabelRepel"), g$layers)
+  expect_true(length(label_layer) >= 1L)
+  lab_data <- label_layer[[length(label_layer)]]$data
+  expect_equal(nrow(lab_data), 2L)
+  expect_setequal(lab_data$label, c("b", "d"))
+})
+
 test_that("volcano build adds boxed annotations (white bg, point-colored border)", {
   df <- data.frame(
     id = c("p1", "p2"), logFC = c(-2, 2), logP = c(3, 4),
