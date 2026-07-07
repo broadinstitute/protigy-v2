@@ -137,7 +137,7 @@ pelsa_intensity_line_ggplot <- function(ld, pinned_label = NULL) {
   }
   gg +
     ggplot2::labs(x = NULL, y = "mean log2 intensity", color = NULL) +
-    protigy_plot_theme(gridlines = TRUE) +
+    pelsa_plot_theme(gridlines = TRUE) +
     ggplot2::theme(
       # Legend removed: the floating hover tooltip identifies each peptide line.
       legend.position = "none",
@@ -298,7 +298,7 @@ pelsa_intensity_export_ggplot <- function(ld, gene, accession, log_base = 2,
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = sprintf("%s (%s)", gene, accession),
                   subtitle = sub_txt, x = NULL, y = y_lab) +
-    protigy_plot_theme(gridlines = TRUE) +
+    pelsa_plot_theme(gridlines = TRUE) +
     ggplot2::theme(
       plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5,
                                             color = "grey25"),

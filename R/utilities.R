@@ -166,47 +166,6 @@ get_pdf_params <- function(plot_type = "default") {
   get_plot_export_dimensions(plot_type)
 }
 
-#' Shared Protigy plot theme (typography contract)
-#'
-#' A single ggplot2 theme applied by every QC plot and the PELSA export plots so
-#' titles, axes, and legends look identical across the app. Built on
-#' \code{theme_bw()}. Add to any ggplot with \code{+ protigy_plot_theme()}.
-#'
-#' Legend key-glyph size (the annotation dots / outlined swatches) is NOT a theme
-#' property; shrink it per-plot with
-#' \code{guides(colour = guide_legend(override.aes = list(size = 2)))}.
-#'
-#' @param gridlines logical; \code{FALSE} (default) removes major + minor grid
-#'   lines. \code{TRUE} keeps them (used by the PELSA intensity-line plots).
-#' @param base_size numeric base text size (default 12).
-#' @return a ggplot2 theme object.
-#' @export
-protigy_plot_theme <- function(gridlines = FALSE, base_size = 12) {
-  th <- ggplot2::theme_bw(base_size = base_size) +
-    ggplot2::theme(
-      plot.title.position = "plot",
-      plot.title    = ggplot2::element_text(size = 14, face = "bold",
-                                             hjust = 0.5),
-      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
-      axis.title    = ggplot2::element_text(size = 12, face = "bold"),
-      axis.text     = ggplot2::element_text(size = 10),
-      legend.title  = ggplot2::element_text(size = 12, face = "bold"),
-      legend.text   = ggplot2::element_text(size = 11,
-                                            margin = ggplot2::margin(l = 2)),
-      legend.key.size    = ggplot2::unit(12, "pt"),
-      legend.spacing.y   = ggplot2::unit(2, "pt"),
-      legend.box.spacing = ggplot2::unit(4, "pt"),
-      legend.margin      = ggplot2::margin(0, 0, 0, 0)
-    )
-  if (!gridlines) {
-    th <- th + ggplot2::theme(
-      panel.grid.major = ggplot2::element_blank(),
-      panel.grid.minor = ggplot2::element_blank()
-    )
-  }
-  th
-}
-
 # Helper function to determine if an annotation column contains discrete data
 # This is used across multiple modules for filtering annotations
 is.discrete <- function(annot_col, nfactor_cutoff = 20) {

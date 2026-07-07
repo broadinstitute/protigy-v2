@@ -59,7 +59,7 @@ pelsa_condition_bar_plot <- function(bar_df, y_label, title, fill,
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.18))) +
     labs(x = NULL, y = y_label, title = title) +
-    protigy_plot_theme() +
+    pelsa_plot_theme() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
                                      colour = if (export) "black" else NULL))
   if (export) {
@@ -133,7 +133,7 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   # "use the data's natural extent," preserving the unclamped-right-edge
   # behavior for callers (length/coverage) that don't pass x_hi.
   right_bound <- if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) x_hi else NA
-  base_theme <- protigy_plot_theme()
+  base_theme <- pelsa_plot_theme()
   if (export) {
     base_theme$plot.title.position <- NULL
   }
@@ -223,7 +223,7 @@ pelsa_per_condition_density_plot <- function(df, value_col,
     }
   }, character(1))
 
-  base_theme <- protigy_plot_theme()
+  base_theme <- pelsa_plot_theme()
   if (export) base_theme$plot.title.position <- NULL
   p <- ggplot(d, aes(x = .data$value, color = .data$condition,
                 fill = .data$condition)) +
@@ -381,7 +381,7 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL, export = FALSE) {
   medians$label <- sprintf("%s median = %.1f%% (n=%d)", medians$condition,
                            medians$cv_pct, medians$n)
 
-  base_theme <- protigy_plot_theme()
+  base_theme <- pelsa_plot_theme()
   if (export) base_theme$plot.title.position <- NULL
   p <- ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
                  fill = .data$condition)) +
@@ -467,7 +467,7 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL,
                        expand = expansion(mult = c(0, 0.12))) +
     labs(x = x_title, y = "Peptides quantified",
          title = "Number of quantified peptides") +
-    protigy_plot_theme() +
+    pelsa_plot_theme() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
                                      colour = if (export) "black" else NULL))
   if (export) {
