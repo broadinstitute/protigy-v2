@@ -546,6 +546,137 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_identical(one$qc$n_unannotated_accessions, length(one$unannotated))
 })
 
+# ---- pelsa_missed_cleavage_rate_by_sample -----------------------------------
+
+test_that("pelsa_missed_cleavage_rate_by_sample computes a rate per sample", {
+  proc_mat <- matrix(
+    c(10, 20, NA, 5,     # S1: peptide1 quantified, peptide2 quantified,
+      #                    peptide3 NA (not quantified), peptide4 quantified
+      0, 30, 40, NA),     # S2: peptide1 zero (not quantified), peptide2/3
+      #                    quantified, peptide4 NA
+    nrow = 4, ncol = 2, dimnames = list(NULL, c("S1", "S2"))
+  )
+  peptide_metrics <- data.frame(
+    PEP.StrippedSequence = c("A", "B", "C", "D"),
+    missed_cleavages = c(0L, 1L, 2L, 0L),
+    peptide_length = c(8L, 9L, 10L, 11L),
+    stringsAsFactors = FALSE
+  )
+  out <- pelsa_missed_cleavage_rate_by_sample(proc_mat, peptide_metrics)
+  expect_setequal(colnames(out), c("sample", "rate", "n_quantified"))
+  expect_equal(nrow(out), 2L)
+  s1 <- out[out$sample == "S1", ]
+  # S1 quantified: peptide1(mc=0), peptide2(mc=1), peptide4(mc=0) -> 3 quant,
+  # 1 with mc>=1 -> rate = 1/3
+  expect_equal(s1$n_quantified, 3L)
+  expect_equal(s1$rate, 1 / 3)
+  s2 <- out[out$sample == "S2", ]
+  # S2 quantified: peptide2(mc=1), peptide3(mc=2) -> 2 quant, both mc>=1
+  expect_equal(s2$n_quantified, 2L)
+  expect_equal(s2$rate, 1.0)
+})
+
+test_that("pelsa_missed_cleavage_rate_by_sample yields NA rate for a sample with zero quantified peptides", {
+  proc_mat <- matrix(c(0, NA), nrow = 2, ncol = 1, dimnames = list(NULL, "S1"))
+  peptide_metrics <- data.frame(
+    PEP.StrippedSequence = c("A", "B"),
+    missed_cleavages = c(0L, 1L),
+    peptide_length = c(8L, 9L),
+    stringsAsFactors = FALSE
+  )
+  out <- pelsa_missed_cleavage_rate_by_sample(proc_mat, peptide_metrics)
+  expect_equal(out$n_quantified, 0L)
+  expect_true(is.na(out$rate))
+})
+
+test_that("pelsa_missed_cleavage_rate_by_sample returns an empty frame for a 0-column matrix", {
+  proc_mat <- matrix(numeric(0), nrow = 0, ncol = 0)
+  peptide_metrics <- data.frame(
+    PEP.StrippedSequence = character(0), missed_cleavages = integer(0),
+    peptide_length = integer(0), stringsAsFactors = FALSE
+  )
+  out <- pelsa_missed_cleavage_rate_by_sample(proc_mat, peptide_metrics)
+  expect_equal(nrow(out), 0L)
+  expect_setequal(colnames(out), c("sample", "rate", "n_quantified"))
+})
+
+# ---- pelsa_length_by_sample --------------------------------------------------
+
+test_that("pelsa_length_by_sample computes mean peptide length per sample", {
+  proc_mat <- matrix(
+    c(10, 20, NA,
+      0, 30, 40),
+    nrow = 3, ncol = 2, dimnames = list(NULL, c("S1", "S2"))
+  )
+  peptide_metrics <- data.frame(
+    PEP.StrippedSequence = c("A", "B", "C"),
+    missed_cleavages = c(0L, 0L, 0L),
+    peptide_length = c(8L, 12L, 20L),
+    stringsAsFactors = FALSE
+  )
+  out <- pelsa_length_by_sample(proc_mat, peptide_metrics)
+  s1 <- out[out$sample == "S1", ]
+  # S1 quantified: peptide1 (len 8), peptide2 (len 12) -> mean 10
+  expect_equal(s1$n_quantified, 2L)
+  expect_equal(s1$mean_length, 10)
+  s2 <- out[out$sample == "S2", ]
+  # S2 quantified: peptide2 (len 12), peptide3 (len 20) -> mean 16
+  expect_equal(s2$n_quantified, 2L)
+  expect_equal(s2$mean_length, 16)
+})
+
+test_that("pelsa_length_by_sample yields NA mean_length for zero quantified peptides", {
+  proc_mat <- matrix(c(0, NA), nrow = 2, ncol = 1, dimnames = list(NULL, "S1"))
+  peptide_metrics <- data.frame(
+    PEP.StrippedSequence = c("A", "B"), missed_cleavages = c(0L, 0L),
+    peptide_length = c(8L, 9L), stringsAsFactors = FALSE
+  )
+  out <- pelsa_length_by_sample(proc_mat, peptide_metrics)
+  expect_equal(out$n_quantified, 0L)
+  expect_true(is.na(out$mean_length))
+})
+
+# ---- pelsa_coverage_by_sample -------------------------------------------------
+
+test_that("pelsa_coverage_by_sample averages per-protein coverage across proteins seen in that sample", {
+  # Two proteins, protein length 10 each. matched has .row_id linking back to
+  # the peptide-frame row (== proc_mat row index).
+  matched <- data.frame(
+    .row_id = c(1L, 2L, 3L),
+    accession = c("P1", "P1", "P2"),
+    pep_start = c(1L, 6L, 1L),
+    pep_end   = c(5L, 10L, 4L),
+    stringsAsFactors = FALSE
+  )
+  fasta_map <- list(P1 = strrep("A", 10L), P2 = strrep("A", 10L))
+  # S1 quantifies peptide rows 1 and 2 (both P1 spans) -> P1 covered 1-10 = 100%.
+  # S2 quantifies peptide row 3 only (P2 span 1-4) -> P2 covered 4/10 = 40%.
+  proc_mat <- matrix(
+    c(10, 20, NA,
+      NA, NA, 30),
+    nrow = 3, ncol = 2, dimnames = list(NULL, c("S1", "S2"))
+  )
+  out <- pelsa_coverage_by_sample(proc_mat, matched, fasta_map)
+  s1 <- out[out$sample == "S1", ]
+  expect_equal(s1$n_proteins, 1L)
+  expect_equal(s1$coverage, 1.0)
+  s2 <- out[out$sample == "S2", ]
+  expect_equal(s2$n_proteins, 1L)
+  expect_equal(s2$coverage, 0.4)
+})
+
+test_that("pelsa_coverage_by_sample yields NA coverage for a sample with zero matched proteins", {
+  matched <- data.frame(
+    .row_id = 1L, accession = "P1", pep_start = 1L, pep_end = 5L,
+    stringsAsFactors = FALSE
+  )
+  fasta_map <- list(P1 = strrep("A", 10L))
+  proc_mat <- matrix(c(NA, 0), nrow = 2, ncol = 1, dimnames = list(NULL, "S1"))
+  out <- pelsa_coverage_by_sample(proc_mat, matched, fasta_map)
+  expect_equal(out$n_proteins, 0L)
+  expect_true(is.na(out$coverage))
+})
+
 test_that("pelsa_run_analysis_one caches the raw feature table as feat_raw", {
   syn     <- pelsa_make_synthetic(seed = 1, n_extra_peptides = 10)
   gct     <- .mk_gct(syn)

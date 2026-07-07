@@ -1164,6 +1164,65 @@ pelsa_peptide_length <- function(seq) {
   as.integer(nchar(as.character(seq)))
 }
 
+# Per-sample missed-cleavage rate: for each sample, the fraction of peptides
+# quantified (finite & non-zero) in that sample with >= 1 missed cleavage.
+#
+# @param proc_mat        peptides x samples numeric matrix (colnames = samples).
+# @param peptide_metrics the cache peptide_metrics frame, row-aligned to
+#                        proc_mat (same row order/count).
+# @return data.frame(sample, rate, n_quantified), one row per proc_mat column
+#         in column order. rate is NA when n_quantified == 0 for that sample.
+#         Empty frame (0 rows, documented columns) when proc_mat has 0 columns.
+# @noRd
+pelsa_missed_cleavage_rate_by_sample <- function(proc_mat, peptide_metrics) {
+  empty <- data.frame(sample = character(0), rate = numeric(0),
+                      n_quantified = integer(0), stringsAsFactors = FALSE)
+  if (is.data.frame(proc_mat)) proc_mat <- as.matrix(proc_mat)
+  if (!is.matrix(proc_mat) || ncol(proc_mat) == 0L) return(empty)
+
+  has_mc <- as.integer(suppressWarnings(
+    as.integer(peptide_metrics$missed_cleavages))) >= 1L
+  mask <- pelsa_quantified_mask(proc_mat)
+
+  samples <- colnames(proc_mat)
+  n_quant <- as.integer(colSums(mask))
+  n_with_mc <- as.integer(colSums(mask & has_mc))
+  rate <- ifelse(n_quant == 0L, NA_real_, n_with_mc / n_quant)
+
+  data.frame(sample = samples, rate = rate, n_quantified = n_quant,
+            stringsAsFactors = FALSE)
+}
+
+# Per-sample mean peptide length: for each sample, the mean residue length of
+# peptides quantified (finite & non-zero) in that sample.
+#
+# @param proc_mat        peptides x samples numeric matrix (colnames = samples).
+# @param peptide_metrics the cache peptide_metrics frame, row-aligned to
+#                        proc_mat.
+# @return data.frame(sample, mean_length, n_quantified). mean_length is NA
+#         when n_quantified == 0. Empty frame when proc_mat has 0 columns.
+# @noRd
+pelsa_length_by_sample <- function(proc_mat, peptide_metrics) {
+  empty <- data.frame(sample = character(0), mean_length = numeric(0),
+                      n_quantified = integer(0), stringsAsFactors = FALSE)
+  if (is.data.frame(proc_mat)) proc_mat <- as.matrix(proc_mat)
+  if (!is.matrix(proc_mat) || ncol(proc_mat) == 0L) return(empty)
+
+  lens <- suppressWarnings(as.numeric(peptide_metrics$peptide_length))
+  mask <- pelsa_quantified_mask(proc_mat)
+
+  samples <- colnames(proc_mat)
+  n_quant <- as.integer(colSums(mask))
+  mean_length <- vapply(seq_len(ncol(mask)), function(j) {
+    v <- lens[mask[, j]]
+    v <- v[is.finite(v)]
+    if (length(v) == 0L) NA_real_ else mean(v)
+  }, numeric(1))
+
+  data.frame(sample = samples, mean_length = mean_length,
+            n_quantified = n_quant, stringsAsFactors = FALSE)
+}
+
 # Resolve the label STEM (the text before "_aa<pos>") for a set of peptide
 # mappings. Fallback order: gene -> protein_name -> accession. A stem is
 # "missing" when it is NA or blank/whitespace after trimming (readr renders a
@@ -2209,6 +2268,65 @@ pelsa_coverage_by_condition <- function(membership, matched, fasta_map,
   })
   parts <- parts[!vapply(parts, is.null, logical(1))]
   if (length(parts) == 0L) return(empty)
+  do.call(rbind, parts)
+}
+
+# Per-sample sequence coverage: for each sample, the MEAN per-protein coverage
+# fraction across all proteins with >= 1 peptide quantified (finite &
+# non-zero) in that sample. Mean-of-ratios (not a pooled ratio-of-sums):
+# each protein observed in the sample contributes one coverage value
+# (computed from ONLY that sample's quantified peptide spans), and those
+# values are averaged.
+#
+# @param proc_mat  peptides x samples numeric matrix (colnames = samples).
+# @param matched   the cache `matched` data.frame (accession/pep_start/
+#                  pep_end/.row_id), row_id 1-based into the peptide frame
+#                  (== proc_mat row index space).
+# @param fasta_map named list accession -> sequence.
+# @return data.frame(sample, coverage, n_proteins). coverage is NA when
+#         n_proteins == 0 for that sample. Empty frame when proc_mat has 0
+#         columns.
+# @noRd
+pelsa_coverage_by_sample <- function(proc_mat, matched, fasta_map,
+                                     acc_col = "accession",
+                                     start_col = "pep_start",
+                                     end_col = "pep_end",
+                                     row_id_col = ".row_id") {
+  empty <- data.frame(sample = character(0), coverage = numeric(0),
+                      n_proteins = integer(0), stringsAsFactors = FALSE)
+  if (is.data.frame(proc_mat)) proc_mat <- as.matrix(proc_mat)
+  if (!is.matrix(proc_mat) || ncol(proc_mat) == 0L) return(empty)
+  samples <- colnames(proc_mat)
+
+  if (!is.data.frame(matched) || nrow(matched) == 0L ||
+      !(row_id_col %in% names(matched))) {
+    return(data.frame(sample = samples, coverage = rep(NA_real_, length(samples)),
+                      n_proteins = rep(0L, length(samples)),
+                      stringsAsFactors = FALSE))
+  }
+  m_rid <- suppressWarnings(as.integer(matched[[row_id_col]]))
+  mask <- pelsa_quantified_mask(proc_mat)
+
+  parts <- lapply(samples, function(s) {
+    rid <- which(mask[, s])
+    sub <- matched[m_rid %in% rid, , drop = FALSE]
+    if (nrow(sub) == 0L) {
+      return(data.frame(sample = s, coverage = NA_real_, n_proteins = 0L,
+                        stringsAsFactors = FALSE))
+    }
+    cov <- suppressWarnings(
+      pelsa_sequence_coverage(sub, fasta_map, acc_col = acc_col,
+                              start_col = start_col, end_col = end_col))
+    v <- suppressWarnings(as.numeric(cov$coverage))
+    v <- v[is.finite(v)]
+    if (length(v) == 0L) {
+      data.frame(sample = s, coverage = NA_real_, n_proteins = 0L,
+                stringsAsFactors = FALSE)
+    } else {
+      data.frame(sample = s, coverage = mean(v), n_proteins = length(v),
+                stringsAsFactors = FALSE)
+    }
+  })
   do.call(rbind, parts)
 }
 
