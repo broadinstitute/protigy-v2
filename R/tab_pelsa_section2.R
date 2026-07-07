@@ -716,9 +716,8 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
 # A blank placeholder plot carrying a centered message (used when a panel cannot
 # be drawn, e.g. zero FASTA matches). @noRd
 pelsa_blank_plot <- function(message) {
-  df <- data.frame(x = 0, y = 0, label = message)
   ggplot() +
-    geom_text(data = df, aes(x = x, y = y, label = label), size = 4) +
+    annotate("text", x = 0, y = 0, label = message, size = 4) +
     theme_void()
 }
 

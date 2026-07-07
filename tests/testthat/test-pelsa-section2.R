@@ -144,9 +144,11 @@ test_that("pelsa_condition_bar_plot returns a blank plot for 0-row input", {
   p <- pelsa_condition_bar_plot(bar_df, y_label = "Rate (%)", title = "Test",
                                 fill = "#f28e2b",
                                 blank_msg = "No eligible conditions.")
-  built <- ggplot2::ggplot_build(p)
-  expect_true(any(grepl("No eligible conditions", built$plot$layers[[1]]$data$label,
-                       fixed = TRUE)))
+  # annotate("text", ...) stores its label as a layer aes_param, not in data.
+  ann_text <- unlist(lapply(p$layers, function(l) {
+    if (inherits(l$geom, "GeomText")) l$aes_params$label else NULL
+  }))
+  expect_true(any(grepl("No eligible conditions", ann_text, fixed = TRUE)))
 })
 
 test_that("pelsa_condition_bar_plot drops the x-axis title", {
