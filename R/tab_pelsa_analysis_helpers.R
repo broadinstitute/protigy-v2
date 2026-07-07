@@ -311,9 +311,14 @@ pelsa_read_fasta <- function(path, mode = c("uniprot", "self_curated")) {
     # any pipe in the header. Trailing fields (description) are ignored.
     keys <- first_tok
   } else {
-    # UniProt: sp|P12345|... or tr|A0A...|... -> take the middle pipe field; else
-    # the token.
-    pipe_acc <- sub("^[^|]*\\|([^|]*)\\|.*$", "\\1", first_tok)
+    # UniProt: sp|P12345|... or tr|A0A...|... -> take the 2nd pipe field (works
+    # for both the standard 3-field header and a malformed single-pipe header,
+    # e.g. "foo|Q99999", where there is no 3rd field to anchor on); else the
+    # token itself when there is no pipe at all.
+    pipe_fields <- strsplit(first_tok, "\\|", fixed = FALSE)
+    pipe_acc <- vapply(pipe_fields, function(f) {
+      if (length(f) >= 2L) f[[2L]] else NA_character_
+    }, character(1))
     has_pipes <- grepl("\\|", first_tok)
     keys <- ifelse(has_pipes, pipe_acc, first_tok)
   }
@@ -380,7 +385,10 @@ pelsa_read_fasta_accessions <- function(path, mode = c("uniprot",
   keys <- if (identical(mode, "self_curated")) {
     first_tok
   } else {
-    pipe_acc <- sub("^[^|]*\\|([^|]*)\\|.*$", "\\1", first_tok)
+    pipe_fields <- strsplit(first_tok, "\\|", fixed = FALSE)
+    pipe_acc <- vapply(pipe_fields, function(f) {
+      if (length(f) >= 2L) f[[2L]] else NA_character_
+    }, character(1))
     ifelse(grepl("\\|", first_tok), pipe_acc, first_tok)
   }
   keys <- keys[!is.na(keys) & nzchar(keys)]
