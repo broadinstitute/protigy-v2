@@ -65,6 +65,24 @@ pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
                                      missing_accessions,
                                      fasta_name = NULL, annotation_name = NULL) {
   written <- character(0)
+  # Reserve "missing_accessions.txt" up front and track every destination
+  # basename used so far, so a colliding upload name (matching that reserved
+  # name, or matching the OTHER uploaded file's name) gets a de-duplicating
+  # suffix instead of silently overwriting an already-copied input file.
+  used_names <- "missing_accessions.txt"
+  dedupe_name <- function(safe_base) {
+    if (!(safe_base %in% used_names)) return(safe_base)
+    ext <- sub("^.*(\\.[^.]*)$", "\\1", safe_base)
+    has_ext <- nzchar(ext) && ext != safe_base
+    stem <- if (has_ext) substr(safe_base, 1, nchar(safe_base) - nchar(ext)) else safe_base
+    suffix <- if (has_ext) ext else ""
+    i <- 1L
+    repeat {
+      candidate <- paste0(stem, "_", i, suffix)
+      if (!(candidate %in% used_names)) return(candidate)
+      i <- i + 1L
+    }
+  }
   copy_one <- function(path, name) {
     if (is.null(path) || !nzchar(path %||% "") || !file.exists(path)) return(NULL)
     # basename() the upload name so a crafted filename (e.g. "../../evil") cannot
@@ -82,6 +100,8 @@ pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
     safe_base <- basename(gsub("\\\\", "/", raw_name))
     safe_base <- pelsa_safe_name(safe_base)
     if (safe_base %in% c("..", ".")) safe_base <- "unknown"
+    safe_base <- dedupe_name(safe_base)
+    used_names <<- c(used_names, safe_base)
     dest <- file.path(dir_name, safe_base)
     file.copy(path, dest, overwrite = TRUE)
     dest
