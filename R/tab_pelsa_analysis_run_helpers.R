@@ -894,18 +894,62 @@ pelsa_run_analysis_one <- function(gct,
          call. = FALSE)
   }
 
-  # --- peptide frame + matrices --------------------------------------------
   peptides <- pelsa_dataset_peptide_frame(gct)
 
-  # --- 2A explode -> 2B FASTA-map -------------------------------------------
   .step("Mapping peptide positions")
+  mapping <- .pelsa_map_and_annotate(peptides, fasta_map, feat_df)
+
+  cond <- .pelsa_run_one_resolve_condition(gct, gct_original, condition_col)
+
+  .step("Computing CV")
+  cv <- .pelsa_compute_cv(gct, gct_original, peptides, cond, log_base,
+                          min_nonNA)
+
+  .step("Building coverage and depth")
+  depth <- .pelsa_build_depth_and_coverage(gct, peptides, mapping$matched,
+                                           fasta_map)
+
+  per_condition <- .pelsa_build_per_condition_metrics(
+    depth$proc_mat, cond, depth$peptide_metrics, mapping$matched, fasta_map)
+
+  qc <- .pelsa_build_qc_counts(peptides, mapping, depth)
+
+  per_sample <- .pelsa_build_per_sample_metrics(
+    depth$proc_mat, depth$peptide_metrics, mapping$matched, fasta_map, cond)
+
+  list(
+    matched             = mapping$matched,
+    unmatched           = mapping$unmatched,
+    cv                  = cv,
+    n_quantified        = depth$n_quantified,
+    depth_summary       = depth$depth_summary,
+    coverage            = depth$coverage,
+    coverage_by_condition = per_condition$coverage_by_condition,
+    n_peptides_by_condition = per_condition$n_peptides_by_condition,
+    peptide_metrics     = depth$peptide_metrics,
+    length_by_condition = per_condition$length_by_condition,
+    annotation_features = mapping$annotation_features,
+    feat_raw            = feat_df,
+    unannotated         = mapping$unannotated,
+    qc                  = qc,
+    missed_cleavage_rate_by_sample = per_sample$missed_cleavage_rate_by_sample,
+    length_by_sample    = per_sample$length_by_sample,
+    coverage_by_sample  = per_sample$coverage_by_sample,
+    condition_map       = per_sample$condition_map
+  )
+}
+
+# --- 2A explode -> 2B FASTA-map -> 2I feature annotation (cache-as-is) ------
+# Maps peptides onto FASTA positions and annotates the matched cache with
+# feature classes. Returns matched/unmatched frames plus the 3-column
+# annotation cache (see pelsa_run_analysis_one's Cache contract).
+# @noRd
+.pelsa_map_and_annotate <- function(peptides, fasta_map, feat_df) {
   exploded <- pelsa_explode_accessions(peptides)
   mapped   <- pelsa_map_peptide_positions(exploded, fasta_map)
   matched   <- mapped$matched
   unmatched <- mapped$unmatched
 
-  # --- 2I feature annotation (cache-as-is) ----------------------------------
-  .step("Annotating features")
   # Annotate the MATCHED cache (peptide x accession w/ pep_start/pep_end). The
   # annotated frame is `matched` PLUS exactly 3 feature columns
   # (feature_class_primary, winning_accession, winning_gene), row-aligned to
@@ -918,18 +962,27 @@ pelsa_run_analysis_one <- function(gct,
   unannotated <- pelsa_unannotated_accessions(matched, feat_df)
   annotation_status <- pelsa_annotation_status_counts(matched, feat_df)
 
-  # --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ---
-  # GCTs_original is LOG-transformed (Protigy stores the post-log matrix), so we
-  # delinearize by this dataset's declared log base BEFORE CV.
-  # CV is NOT invariant under log; the notebook delinearizes first. "None"/NA
-  # means the matrix is already linear -> pelsa_delinearize passes it through.
-  # CANONICAL condition annotation, shared by the CV panel (2D) AND the
-  # per-condition membership (Summary toggle) so both describe the SAME
-  # sample -> condition mapping. Prefer the ORIGINAL GCT's cdesc (CV's source of
-  # truth); fall back to the processed GCT's cdesc for the data.frame seam or
-  # when the original lacks the column. Each consumer intersects this map with
-  # its own matrix's columns, so a sample filtered out of one matrix simply
-  # drops from that panel without desyncing the condition labels.
+  list(
+    exploded = exploded,
+    matched = matched,
+    unmatched = unmatched,
+    annotation_features = annotation_features,
+    unannotated = unannotated,
+    annotation_status = annotation_status
+  )
+}
+
+# Resolves the CANONICAL sample -> condition annotation, shared by the CV
+# panel (2D) AND the per-condition membership (Summary toggle) so both
+# describe the SAME sample -> condition mapping. Prefer the ORIGINAL GCT's
+# cdesc (CV's source of truth); fall back to the processed GCT's cdesc for the
+# data.frame seam or when the original lacks the column. Each consumer
+# intersects this map with its own matrix's columns, so a sample filtered out
+# of one matrix simply drops from that panel without desyncing the condition
+# labels.
+# @return list(cdesc_cond, condition_col, has_cond_col).
+# @noRd
+.pelsa_run_one_resolve_condition <- function(gct, gct_original, condition_col) {
   cdesc_cond <- if (!is.null(gct_original) && methods::is(gct_original, "GCT")) {
     methods::slot(gct_original, "cdesc")
   } else {
@@ -948,28 +1001,46 @@ pelsa_run_analysis_one <- function(gct,
   has_cond_col <- cc_ok && is.data.frame(cdesc_cond) &&
     condition_col %in% names(cdesc_cond)
 
-  .step("Computing CV")
-  cv <- NULL
-  if (!is.null(gct_original)) {
-    # M8/M9: restrict the CV source to the PROCESSED set BY id, so CV describes
-    # exactly the analyzed peptides AND samples (processing may drop/reorder rows
-    # and filter samples). cdesc_cond above remains valid -- it is keyed by sample
-    # name and the cmap below intersects it with the aligned matrix's columns.
-    gct_original <- pelsa_align_original_to_processed(gct_original, gct)
-    log_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
-    raw_mat <- pelsa_delinearize(log_mat, log_base)
-    if (has_cond_col) {
-      cmap <- pelsa_condition_map_for(cdesc_cond, colnames(raw_mat),
-                                      condition_col)
-      if (length(cmap) > 0L) {
-        sub <- raw_mat[, names(cmap), drop = FALSE]
-        cv <- pelsa_within_condition_cv(sub, cmap, min_nonNA = min_nonNA)
-      }
-    }
-  }
+  list(cdesc_cond = cdesc_cond, condition_col = condition_col,
+       has_cond_col = has_cond_col)
+}
 
-  # --- 2E peptides-per-sample depth on the PROCESSED matrix ------------------
-  .step("Building coverage and depth")
+# --- 2D within-condition CV on the DELINEARIZED (raw linear) intensities ----
+# GCTs_original is LOG-transformed (Protigy stores the post-log matrix), so we
+# delinearize by this dataset's declared log base BEFORE CV. CV is NOT
+# invariant under log; the notebook delinearizes first. "None"/NA means the
+# matrix is already linear -> pelsa_delinearize passes it through.
+# @param cond the list returned by .pelsa_run_one_resolve_condition.
+# @noRd
+.pelsa_compute_cv <- function(gct, gct_original, peptides, cond, log_base,
+                              min_nonNA) {
+  if (is.null(gct_original)) {
+    return(NULL)
+  }
+  # M8/M9: restrict the CV source to the PROCESSED set BY id, so CV describes
+  # exactly the analyzed peptides AND samples (processing may drop/reorder rows
+  # and filter samples). cond$cdesc_cond remains valid -- it is keyed by sample
+  # name and the cmap below intersects it with the aligned matrix's columns.
+  gct_original <- pelsa_align_original_to_processed(gct_original, gct)
+  log_mat <- pelsa_dataset_matrix(gct_original, colnames(peptides))
+  raw_mat <- pelsa_delinearize(log_mat, log_base)
+  if (!cond$has_cond_col) {
+    return(NULL)
+  }
+  cmap <- pelsa_condition_map_for(cond$cdesc_cond, colnames(raw_mat),
+                                  cond$condition_col)
+  if (length(cmap) == 0L) {
+    return(NULL)
+  }
+  sub <- raw_mat[, names(cmap), drop = FALSE]
+  pelsa_within_condition_cv(sub, cmap, min_nonNA = min_nonNA)
+}
+
+# --- 2E peptides-per-sample depth + 2F sequence coverage + 2C missed
+# cleavage/peptide length over the peptide universe, all on the PROCESSED
+# matrix. @noRd
+.pelsa_build_depth_and_coverage <- function(gct, peptides, matched,
+                                            fasta_map) {
   proc_mat <- pelsa_dataset_matrix(gct, colnames(peptides))
   n_quantified <- pelsa_peptides_per_sample(proc_mat)
   depth_summary <- pelsa_depth_summary(n_quantified,
@@ -983,10 +1054,8 @@ pelsa_run_analysis_one <- function(gct,
     sum(rowSums(!pelsa_quantified_mask(proc_mat)) == 0L)
   }
 
-  # --- 2F sequence coverage from the matched cache + fasta ------------------
   coverage <- pelsa_sequence_coverage(matched, fasta_map)
 
-  # --- 2C missed cleavage + peptide length over the peptide universe --------
   seqs <- if ("PEP.StrippedSequence" %in% colnames(peptides)) {
     as.character(peptides[["PEP.StrippedSequence"]])
   } else {
@@ -1000,12 +1069,26 @@ pelsa_run_analysis_one <- function(gct,
     check.names          = FALSE
   )
 
-  # --- per-condition length / coverage (Summary toggle) ---------------------
-  # Membership over the PROCESSED matrix, keyed by the CANONICAL condition map
-  # (cdesc_cond, shared with the CV panel) so the per-condition Summary panels
-  # and the CV panel agree on which samples belong to each condition. A peptide
-  # belongs to a condition when quantified in >= 1 of its samples. Empty frames
-  # when there is no usable condition column.
+  list(
+    proc_mat = proc_mat,
+    n_quantified = n_quantified,
+    depth_summary = depth_summary,
+    n_fully_quantified = n_fully_quantified,
+    coverage = coverage,
+    peptide_metrics = peptide_metrics
+  )
+}
+
+# --- per-condition length / coverage (Summary toggle) -----------------------
+# Membership over the PROCESSED matrix, keyed by the CANONICAL condition map
+# (cond$cdesc_cond, shared with the CV panel) so the per-condition Summary
+# panels and the CV panel agree on which samples belong to each condition. A
+# peptide belongs to a condition when quantified in >= 1 of its samples.
+# Empty frames when there is no usable condition column.
+# @noRd
+.pelsa_build_per_condition_metrics <- function(proc_mat, cond,
+                                               peptide_metrics, matched,
+                                               fasta_map) {
   length_by_condition <- data.frame(condition = character(0),
                                     peptide_length = numeric(0),
                                     stringsAsFactors = FALSE)
@@ -1018,9 +1101,9 @@ pelsa_run_analysis_one <- function(gct,
   # per-sample summary. NAMED integer vector (condition -> count); empty when no
   # usable condition column.
   n_peptides_by_condition <- integer(0)
-  if (has_cond_col) {
-    cmap_proc <- pelsa_condition_map_for(cdesc_cond, colnames(proc_mat),
-                                         condition_col)
+  if (cond$has_cond_col) {
+    cmap_proc <- pelsa_condition_map_for(cond$cdesc_cond, colnames(proc_mat),
+                                         cond$condition_col)
     if (length(cmap_proc) > 0L) {
       membership <- pelsa_condition_membership(proc_mat, cmap_proc)
       length_by_condition <- pelsa_length_by_condition(membership,
@@ -1035,20 +1118,30 @@ pelsa_run_analysis_one <- function(gct,
     }
   }
 
-  # --- mapping / annotation QC counts ---------------------------------------
-  reasons <- if ("reason" %in% colnames(unmatched)) {
-    as.character(unmatched$reason)
+  list(length_by_condition = length_by_condition,
+       coverage_by_condition = coverage_by_condition,
+       n_peptides_by_condition = n_peptides_by_condition)
+}
+
+# --- mapping / annotation QC counts -----------------------------------------
+# @param mapping the list returned by .pelsa_map_and_annotate.
+# @param depth   the list returned by .pelsa_build_depth_and_coverage.
+# @noRd
+.pelsa_build_qc_counts <- function(peptides, mapping, depth) {
+  reasons <- if ("reason" %in% colnames(mapping$unmatched)) {
+    as.character(mapping$unmatched$reason)
   } else {
     character(0)
   }
-  qc <- list(
+  annotation_status <- mapping$annotation_status
+  list(
     n_peptides            = nrow(peptides),
-    n_fully_quantified    = n_fully_quantified,
-    n_exploded            = nrow(exploded),
-    n_matched_rows        = nrow(matched),
-    n_unmatched_rows      = nrow(unmatched),
+    n_fully_quantified    = depth$n_fully_quantified,
+    n_exploded            = nrow(mapping$exploded),
+    n_matched_rows        = nrow(mapping$matched),
+    n_unmatched_rows      = nrow(mapping$unmatched),
     unmatched_by_reason   = as.list(c(table(reasons))),
-    n_unannotated_accessions    = length(unannotated),
+    n_unannotated_accessions    = length(mapping$unannotated),
     n_annotated_with_features   = annotation_status$n_with_features,
     n_annotated_zero_feature    = annotation_status$n_zero_feature,
     # Disposition buckets from a self-describing annotation (0 unless the
@@ -1060,42 +1153,33 @@ pelsa_run_analysis_one <- function(gct,
     n_annotated_deleted         = annotation_status$n_deleted %||% 0L,
     n_annotation_failed         = annotation_status$n_failed %||% 0L
   )
+}
 
-  # --- per-sample QC metrics (missed-cleavage rate, length, coverage) -------
-  # Built from the same proc_mat / matched / peptide_metrics already
-  # assembled above. condition_map mirrors cmap_proc's construction (or an
-  # empty named character vector when there is no usable condition column),
-  # so the Summary dashboard reads a ready-made sample -> condition map
-  # instead of recomputing it at render time.
+# --- per-sample QC metrics (missed-cleavage rate, length, coverage) ---------
+# Built from the same proc_mat / matched / peptide_metrics already assembled
+# by the caller. condition_map mirrors cmap_proc's construction (or an empty
+# named character vector when there is no usable condition column), so the
+# Summary dashboard reads a ready-made sample -> condition map instead of
+# recomputing it at render time.
+# @noRd
+.pelsa_build_per_sample_metrics <- function(proc_mat, peptide_metrics,
+                                            matched, fasta_map, cond) {
   missed_cleavage_rate_by_sample <- pelsa_missed_cleavage_rate_by_sample(
     proc_mat, peptide_metrics)
   length_by_sample <- pelsa_length_by_sample(proc_mat, peptide_metrics)
   coverage_by_sample <- pelsa_coverage_by_sample(proc_mat, matched, fasta_map)
-  condition_map <- if (has_cond_col) {
-    pelsa_condition_map_for(cdesc_cond, colnames(proc_mat), condition_col)
+  condition_map <- if (cond$has_cond_col) {
+    pelsa_condition_map_for(cond$cdesc_cond, colnames(proc_mat),
+                            cond$condition_col)
   } else {
     stats::setNames(character(0), character(0))
   }
 
   list(
-    matched             = matched,
-    unmatched           = unmatched,
-    cv                  = cv,
-    n_quantified        = n_quantified,
-    depth_summary       = depth_summary,
-    coverage            = coverage,
-    coverage_by_condition = coverage_by_condition,
-    n_peptides_by_condition = n_peptides_by_condition,
-    peptide_metrics     = peptide_metrics,
-    length_by_condition = length_by_condition,
-    annotation_features = annotation_features,
-    feat_raw            = feat_df,
-    unannotated         = unannotated,
-    qc                  = qc,
     missed_cleavage_rate_by_sample = missed_cleavage_rate_by_sample,
-    length_by_sample    = length_by_sample,
-    coverage_by_sample  = coverage_by_sample,
-    condition_map       = condition_map
+    length_by_sample = length_by_sample,
+    coverage_by_sample = coverage_by_sample,
+    condition_map = condition_map
   )
 }
 
