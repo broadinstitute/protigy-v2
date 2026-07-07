@@ -219,10 +219,27 @@ pelsa_read_annotation_file <- function(path) {
   feature_type <- ifelse(is.na(raw$feature_type), "", as.character(raw$feature_type))
   # Coords are read as character (see col_types above); blank/whitespace -> NA
   # BEFORE as.integer() so no spurious "NAs introduced by coercion" warning fires
-  # on sentinel rows (which legitimately carry no interval).
+  # on sentinel rows (which legitimately carry no interval). A non-blank cell that
+  # is NOT a valid integer (e.g. "N/A", "12?") is a genuine malformed coordinate,
+  # not a sentinel -- flag it explicitly (with the offending accession/value)
+  # rather than letting it fall through to as.integer()'s generic, row-less
+  # "NAs introduced by coercion" warning.
   blank_to_na  <- function(x) { x <- trimws(as.character(x)); x[!nzchar(x)] <- NA; x }
-  start        <- as.integer(blank_to_na(raw$start))
-  end          <- as.integer(blank_to_na(raw$end))
+  int_re <- "^[+-]?[0-9]+$"
+  warn_malformed_coord <- function(x, col_name) {
+    malformed <- !is.na(x) & !grepl(int_re, x)
+    if (any(malformed)) {
+      bad_acc <- unique(accession[malformed])
+      warning("pelsa_read_annotation_file: ", sum(malformed), " malformed '",
+              col_name, "' coordinate value(s) (not blank, not a valid integer) ",
+              "for accession(s): ", paste(bad_acc, collapse = ", "),
+              "; treated as missing.", call. = FALSE)
+    }
+    x[malformed] <- NA
+    x
+  }
+  start        <- as.integer(warn_malformed_coord(blank_to_na(raw$start), "start"))
+  end          <- as.integer(warn_malformed_coord(blank_to_na(raw$end), "end"))
   description  <- ifelse(is.na(raw$description), "", as.character(raw$description))
 
   # DISPOSITION columns (optional; self-describing annotation). `disposition` is
