@@ -379,6 +379,7 @@ pelsa_read_fasta_accessions <- function(path, mode = c("uniprot",
     stop("pelsa_read_fasta_accessions: FASTA file not found: ", path)
   }
   lines <- readLines(path, warn = FALSE)
+  lines <- trimws(lines)
   headers <- sub("^>", "", lines[startsWith(lines, ">")])
   if (length(headers) == 0L) return(character(0))
 
