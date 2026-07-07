@@ -398,6 +398,16 @@ pelsa_volcano_label_annotation_list <- function(lab_df, color_mode,
   # within min_dist of an already-placed one. Mirrors add_volcano_labels.
   adjp <- as.numeric(lab_df$adj.P.Val %||% rep(NA_real_, nrow(lab_df)))
   ord  <- order(adjp, na.last = TRUE)
+
+  # Bound the O(n^2) greedy placement below: unbounded label-selection modes
+  # ("all_markers"/"all_significant") can hand this tens of thousands of rows
+  # on a large peptide upload, which would pin the Shiny process (see
+  # .PELSA_VOLCANO_MAX_LABEL_CANDIDATES). Truncate to the most-significant
+  # candidates (by the same adj.P.Val order used for placement) BEFORE the
+  # loop, so cost is capped regardless of how many rows lab_df/ord started with.
+  max_candidates <- .PELSA_VOLCANO_MAX_LABEL_CANDIDATES
+  if (length(ord) > max_candidates) ord <- ord[seq_len(max_candidates)]
+
   border_all <- pelsa_volcano_color_column(lab_df, color_mode)
 
   placed <- list(); keep <- integer(0)

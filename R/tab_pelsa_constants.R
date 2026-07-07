@@ -74,6 +74,17 @@
 .PELSA_VOLCANO_LABEL_MODES <- c("all_markers", "all_significant",
                                 "top_n_adjp", "top_n_markers")
 
+# Hard cap on the number of candidate rows the greedy label-placement loop
+# (pelsa_volcano_label_annotation_list) will consider. That loop is O(n^2)
+# (an inner distance scan against every already-placed label per candidate),
+# and unbounded label-selection modes ("all_markers"/"all_significant") can
+# hand it tens of thousands of peptide rows on a large uploaded dataset --
+# without a cap this pins the single-threaded Shiny process. Candidates are
+# pre-ranked by adj.P.Val (ties by P.Value) before truncating, so the most
+# significant rows are always kept; on-plot labels are a display aid, not a
+# completeness guarantee, so silently dropping the long tail is safe.
+.PELSA_VOLCANO_MAX_LABEL_CANDIDATES <- 500L
+
 # Significance-direction -> human legend label (fixed display order).
 .PELSA_EXPORT_SIG_LABELS <- c(down = "Downregulated",
                               ns   = "Non-significant",
