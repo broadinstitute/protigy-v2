@@ -225,9 +225,13 @@ pelsa_read_annotation_file <- function(path) {
   # rather than letting it fall through to as.integer()'s generic, row-less
   # "NAs introduced by coercion" warning.
   blank_to_na  <- function(x) { x <- trimws(as.character(x)); x[!nzchar(x)] <- NA; x }
-  int_re <- "^[+-]?[0-9]+$"
+  # Positive-integer only: protein residue positions are 1-based, so "0" or a
+  # leading "-" is a malformed coordinate, not a legitimate value. This also
+  # rejects fractional coordinates (e.g. "45.7") up front, since the regex has
+  # no "." in its character class.
+  int_re <- "^[0-9]+$"
   warn_malformed_coord <- function(x, col_name) {
-    malformed <- !is.na(x) & !grepl(int_re, x)
+    malformed <- !is.na(x) & (!grepl(int_re, x) | x == "0")
     if (any(malformed)) {
       bad_acc <- unique(accession[malformed])
       warning("pelsa_read_annotation_file: ", sum(malformed), " malformed '",
