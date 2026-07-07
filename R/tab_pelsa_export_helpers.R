@@ -70,7 +70,13 @@ pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
     # basename() the upload name so a crafted filename (e.g. "../../evil") cannot
     # steer file.copy outside dir_name (path traversal). The browser normally
     # sends a bare basename, but never trust it -- strip any directory component.
-    dest <- file.path(dir_name, basename(name %||% basename(path)))
+    # basename() alone is not enough: basename("..") == ".." (and "." == "."),
+    # which still resolves to dir_name's parent/self via file.copy. pelsa_safe_name()
+    # keeps "." in its allowed charset, so it will NOT sanitize a pure-dot name --
+    # reject "." / ".." explicitly instead of relying on it here.
+    safe_base <- basename(name %||% basename(path))
+    if (safe_base %in% c("..", ".")) safe_base <- "unknown"
+    dest <- file.path(dir_name, safe_base)
     file.copy(path, dest, overwrite = TRUE)
     dest
   }
