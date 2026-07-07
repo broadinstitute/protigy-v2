@@ -1087,12 +1087,17 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 #   "top_n_adjp"         the n_top_adjp smallest adj.P.Val peptides in EACH
 #                        logFC-sign bucket (logFC >= 0 -> "up", logFC < 0 ->
 #                        "down"; union of both buckets). Ranks ALL peptides
-#                        regardless of significance.
+#                        regardless of significance. Ties in adj.P.Val (common
+#                        at high test counts, where BH-adjustment collapses
+#                        many raw p-values to a shared plateau) are broken by
+#                        the smallest raw P.Value, or by the largest |logFC|
+#                        when P.Value is unavailable.
 #   "top_n_markers"      the n_top_markers smallest adj.P.Val MARKER peptides
 #                        (is_marker == TRUE) in EACH logFC-sign bucket
 #                        (logFC >= 0 -> "up", logFC < 0 -> "down"; union of
 #                        both buckets). Ranks ALL marker peptides regardless
-#                        of significance.
+#                        of significance. Same adj.P.Val tiebreak as
+#                        "top_n_adjp" (raw P.Value, then |logFC|).
 #
 # Returns the UNION of matching rows across every mode in the vector, as
 # 1-based row indices (sorted, unique). An empty/NULL `mode` returns
@@ -1136,21 +1141,32 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
 
   if ("top_n_adjp" %in% mode) {
     logfc <- as.numeric(volcano_df$logFC %||% rep(NA_real_, n))
-    adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+    adjp  <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+    # Tiebreak for the massive plateaus BH-adjustment routinely produces at
+    # this many tests: prefer the raw (pre-correction) P.Value -- smaller is
+    # more significant -- when available. When P.Value is absent (should not
+    # happen in practice; the shared frame-builders always set it, but this
+    # guards any future/edge-case caller), fall back to the largest |logFC|
+    # (negated so ascending order() still picks it first).
+    rawp <- volcano_df$P.Value
+    tb   <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
     direction <- ifelse(!is.na(logfc) & logfc < 0, "down", "up")
     idx <- c(idx, .pelsa_top_n_by_direction(seq_len(n), direction, adjp,
-                                            n_top_adjp))
+                                            n_top_adjp, tiebreak_value = tb))
   }
 
   if ("top_n_markers" %in% mode) {
     marker_idx <- which(is_m)
     if (length(marker_idx) > 0L) {
       logfc <- as.numeric(volcano_df$logFC %||% rep(NA_real_, n))
-      adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+      adjp  <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
+      rawp  <- volcano_df$P.Value
+      tb    <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
       m_dir <- ifelse(!is.na(logfc[marker_idx]) & logfc[marker_idx] < 0,
                       "down", "up")
       idx <- c(idx, .pelsa_top_n_by_direction(marker_idx, m_dir,
-                                              adjp[marker_idx], n_top_markers))
+                                              adjp[marker_idx], n_top_markers,
+                                              tiebreak_value = tb[marker_idx]))
     }
   }
 
@@ -1164,9 +1180,15 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
 # by original index order; NA values sort last. If a bucket has fewer than
 # n_top eligible rows, all of them are kept (no padding, no error).
 #
+# @param tiebreak_value optional secondary sort key (same length as `idx`/
+#   `direction`/`value`), used ascending to break ties in `value` before
+#   falling back to original index order. Pass a NEGATED value if "largest
+#   wins" is desired (e.g. -abs(logFC)). When NULL (default), behavior is
+#   IDENTICAL to before this parameter existed (ties broken by index only).
 # @return sorted unique original indices kept (union of both buckets).
 # @noRd
-.pelsa_top_n_by_direction <- function(idx, direction, value, n_top) {
+.pelsa_top_n_by_direction <- function(idx, direction, value, n_top,
+                                      tiebreak_value = NULL) {
   n_top <- max(1L, as.integer(n_top)[1L])
   if (is.na(n_top)) n_top <- 5L
   keep_bucket <- function(want) {
@@ -1174,7 +1196,11 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
     if (length(bucket) == 0L) return(integer(0))
     bucket_idx <- idx[bucket]
     bucket_val <- value[bucket]
-    ord <- order(bucket_val, bucket_idx, na.last = TRUE)
+    ord <- if (!is.null(tiebreak_value)) {
+      order(bucket_val, tiebreak_value[bucket], bucket_idx, na.last = TRUE)
+    } else {
+      order(bucket_val, bucket_idx, na.last = TRUE)
+    }
     head(bucket_idx[ord], n_top)
   }
   sort(unique(c(keep_bucket("up"), keep_bucket("down"))))
