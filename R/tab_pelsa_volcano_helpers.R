@@ -1084,9 +1084,10 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # group in the PELSA sidebar allows selecting any combination):
 #   "all_markers"        every marker-protein peptide (is_marker == TRUE).
 #   "all_significant"    every significant peptide (Significant == TRUE).
-#   "top_n_significant"  the n_top_significant smallest adj.P.Val peptides in
-#                        EACH of the "up"/"down" sig_direction buckets (union
-#                        of both buckets; "ns" rows are never included).
+#   "top_n_adjp"         the n_top_adjp smallest adj.P.Val peptides in EACH
+#                        logFC-sign bucket (logFC >= 0 -> "up", logFC < 0 ->
+#                        "down"; union of both buckets). Ranks ALL peptides
+#                        regardless of significance.
 #   "top_n_markers"      the n_top_markers smallest adj.P.Val MARKER peptides
 #                        (is_marker == TRUE) in EACH logFC-sign bucket
 #                        (logFC >= 0 -> "up", logFC < 0 -> "down"; union of
@@ -1102,14 +1103,14 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 #                          sig_direction, adj.P.Val, logFC).
 # @param mode               a character vector; each element one of the four
 #                           modes above. NULL or character(0) means no labels.
-# @param n_top_significant  N per direction for "top_n_significant" (default
+# @param n_top_adjp         N per direction for "top_n_adjp" (default
 #                           5, coerced to >= 1).
 # @param n_top_markers      N per direction for "top_n_markers" (default 5,
 #                           coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
 pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
-                                     n_top_significant = 5L,
+                                     n_top_adjp = 5L,
                                      n_top_markers = 5L) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
@@ -1133,11 +1134,12 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
   if ("all_markers" %in% mode)     idx <- c(idx, which(is_m))
   if ("all_significant" %in% mode) idx <- c(idx, which(sig))
 
-  if ("top_n_significant" %in% mode) {
-    sig_dir <- volcano_df$sig_direction %||% rep(NA_character_, n)
+  if ("top_n_adjp" %in% mode) {
+    logfc <- as.numeric(volcano_df$logFC %||% rep(NA_real_, n))
     adjp <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
-    idx <- c(idx, .pelsa_top_n_by_direction(seq_len(n), sig_dir, adjp,
-                                            n_top_significant))
+    direction <- ifelse(!is.na(logfc) & logfc < 0, "down", "up")
+    idx <- c(idx, .pelsa_top_n_by_direction(seq_len(n), direction, adjp,
+                                            n_top_adjp))
   }
 
   if ("top_n_markers" %in% mode) {
@@ -1399,7 +1401,7 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 # @param color_mode  "significance" | "feature".
 # @param label_mode  a character vector of pelsa_volcano_label_rows() modes
 #   (possibly empty).
-# @param n_top_significant  N per up/down bucket for the "top_n_significant"
+# @param n_top_adjp         N per up/down bucket for the "top_n_adjp"
 #   mode (default 5).
 # @param n_top_markers      N per up/down bucket for the "top_n_markers" mode
 #   (default 5).
@@ -1415,7 +1417,7 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
                                      label_mode = character(0),
-                                     n_top_significant = 5L,
+                                     n_top_adjp = 5L,
                                      n_top_markers = 5L,
                                      source_id = "pelsa_volcano",
                                      selection = NULL, find_mask = NULL,
@@ -1547,7 +1549,7 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   # they survive toWebGL and read as clear callouts. See add_annotations below.
   lab_idx <- tryCatch(
     pelsa_volcano_label_rows(full_df, mode = label_mode,
-                             n_top_significant = n_top_significant,
+                             n_top_adjp = n_top_adjp,
                              n_top_markers = n_top_markers),
     error = function(e) integer(0)
   )
@@ -1683,32 +1685,6 @@ pelsa_volcano_label_annotation_list <- function(lab_df, color_mode,
       captureevents = FALSE
     )
   })
-}
-
-# Compute the current volcano annotation LIST from the active df + label
-# settings (the module relayout fast-path uses this). Resolves the labeled
-# rows for `label_mode`, filters to rows with a non-empty `label`, then
-# delegates to pelsa_volcano_label_annotation_list. Returns an EMPTY list()
-# when the mode yields no labels (e.g. an empty/NULL vector) - so an empty
-# relayout clears ALL annotations on the client (the "remove stale labels"
-# path). PURE + testable.
-#
-# @param df         the active volcano df.
-# @param label_mode a character vector of pelsa_volcano_label_rows() modes
-#                   (possibly empty/NULL).
-# @param color_mode "significance" | "feature" (drives the border color).
-# @return a list of plotly annotation specs (empty list() for no labels).
-# @noRd
-pelsa_volcano_current_annotations <- function(df, label_mode, color_mode) {
-  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L) return(list())
-  lab_idx <- tryCatch(
-    pelsa_volcano_label_rows(df, mode = label_mode),
-    error = function(e) integer(0))
-  if (length(lab_idx) == 0L) return(list())
-  lab_df <- df[lab_idx, , drop = FALSE]
-  lab_df <- lab_df[!is.na(lab_df$label) & nzchar(lab_df$label), , drop = FALSE]
-  if (nrow(lab_df) == 0L) return(list())
-  pelsa_volcano_label_annotation_list(lab_df, color_mode, full_df = df)
 }
 
 # ---- 7F: the static export ggplot + the empty matched-cache frame -----------
@@ -2159,7 +2135,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 # @noRd
 .pelsa_export_ggplot <- function(df, full_df, color_mode = "significance",
                                  label_mode = character(0),
-                                 n_top_significant = 5L,
+                                 n_top_adjp = 5L,
                                  n_top_markers = 5L,
                                  contrast = NULL, volcano_label = NULL,
                                  sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
@@ -2204,7 +2180,7 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   if (length(label_mode) > 0L && "label" %in% colnames(df)) {
     idx <- tryCatch(
       pelsa_volcano_label_rows(df, mode = label_mode,
-                               n_top_significant = n_top_significant,
+                               n_top_adjp = n_top_adjp,
                                n_top_markers = n_top_markers),
       error = function(e) integer(0))
     if (length(idx) > 0L) {

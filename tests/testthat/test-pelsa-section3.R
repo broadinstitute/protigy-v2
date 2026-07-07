@@ -1338,28 +1338,29 @@ test_that("label-mode: unknown mode errors; default is empty", {
   expect_identical(.PELSA_VOLCANO_DEFAULT_LABEL_MODE, character(0))
 })
 
-test_that("label-mode: top_n_significant takes N smallest adj.P.Val per direction", {
+test_that("label-mode: top_n_adjp takes N smallest adj.P.Val per logFC-sign direction", {
   df <- data.frame(
     is_marker         = rep(FALSE, 6),
-    sig_direction     = c("up", "up", "up", "down", "down", "ns"),
+    logFC             = c(1.0, 1.0, 1.0, -1.0, -1.0, 1.0),
     adj.P.Val         = c(0.5, 0.1, 0.2, 0.05, 0.3, 0.9),
     winning_accession = c("P1", "P2", "P3", "P4", "P5", "P6"),
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
-  # up bucket (rows 1,2,3): smallest 2 by adj.P.Val -> row2(0.1), row3(0.2).
+  # up bucket (rows 1,2,3,6): smallest 2 by adj.P.Val -> row2(0.1), row3(0.2).
   # down bucket (rows 4,5): smallest 2 -> both (only 2 available).
-  # row 6 ("ns") is excluded from both buckets.
+  # row 6 (non-significant is irrelevant here) still ranked in the up bucket,
+  # but loses on adj.P.Val (0.9 is the largest).
   expect_equal(
-    pelsa_volcano_label_rows(df, "top_n_significant", n_top_significant = 2L),
+    pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 2L),
     c(2L, 3L, 4L, 5L)
   )
 })
 
-test_that("label-mode: top_n_significant labels fewer than N when a bucket is small", {
+test_that("label-mode: top_n_adjp labels fewer than N when a bucket is small", {
   df <- data.frame(
     is_marker         = rep(FALSE, 3),
-    sig_direction     = c("up", "down", "down"),
+    logFC             = c(1.0, -1.0, -1.0),
     adj.P.Val         = c(0.01, 0.2, 0.3),
     winning_accession = c("P1", "P2", "P3"),
     label             = c("a", "b", "c"),
@@ -1368,24 +1369,40 @@ test_that("label-mode: top_n_significant labels fewer than N when a bucket is sm
   # up bucket has only 1 row -> that row is kept even though N=5.
   # down bucket has 2 rows, N=5 -> both kept.
   expect_equal(
-    pelsa_volcano_label_rows(df, "top_n_significant", n_top_significant = 5L),
+    pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 5L),
     c(1L, 2L, 3L)
   )
 })
 
-test_that("label-mode: top_n_significant default N is 5", {
+test_that("label-mode: top_n_adjp default N is 5", {
   df <- data.frame(
     is_marker         = rep(FALSE, 6),
-    sig_direction     = c("up", "up", "up", "up", "up", "up"),
+    logFC             = rep(1.0, 6),
     adj.P.Val         = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06),
     winning_accession = paste0("P", 1:6),
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
-  # No n_top_significant arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
+  # No n_top_adjp arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
   expect_equal(
-    pelsa_volcano_label_rows(df, "top_n_significant"),
+    pelsa_volcano_label_rows(df, "top_n_adjp"),
     c(1L, 2L, 3L, 4L, 5L)
+  )
+})
+
+test_that("label-mode: top_n_adjp includes a non-significant winner (no gate)", {
+  df <- data.frame(
+    is_marker    = rep(FALSE, 2),
+    Significant  = c(FALSE, TRUE),
+    logFC        = c(1.0, 1.0),          # both "up"
+    adj.P.Val    = c(0.01, 0.5),         # row 1 (non-sig!) has smaller adj.P.Val
+    label        = c("a", "b"),
+    stringsAsFactors = FALSE
+  )
+  # Row 1 is non-significant but wins the up-bucket on adj.P.Val alone.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 1L),
+    1L
   )
 })
 
@@ -1461,27 +1478,30 @@ test_that("label-mode: top_n_markers default N is 5", {
   )
 })
 
-test_that("label-mode: top_n_significant + top_n_markers combine via union", {
+test_that("label-mode: top_n_adjp + top_n_markers combine via union", {
   df <- data.frame(
     is_marker         = c(TRUE, FALSE, FALSE),
-    sig_direction     = c("ns", "up", "down"),
     logFC             = c(5.0, 1.0, -1.0),
     adj.P.Val         = c(0.9, 0.01, 0.02),
     winning_accession = c("P1", "P2", "P3"),
     label             = c("a", "b", "c"),
     stringsAsFactors  = FALSE
   )
+  # top_n_adjp ranks ALL rows by logFC-sign bucket (no marker restriction):
+  # up bucket (rows 1,2, both logFC > 0): N=1 -> row2 (adj.P.Val 0.01 beats
+  # row 1's 0.9), so row1 does NOT come from this mode despite its huge logFC.
+  # down bucket (row 3 only): kept.
   # top_n_markers (N=1): row 1 is the only marker -> kept regardless of adj.P.Val.
-  # top_n_significant (N=1): row2 ("up", smallest in that bucket), row3 ("down").
-  # Union of both modes -> all three rows.
+  # Union of both modes -> all three rows, but row 1 is contributed only by
+  # top_n_markers, not top_n_adjp.
   expect_equal(
-    pelsa_volcano_label_rows(df, c("top_n_markers", "top_n_significant"),
-                             n_top_significant = 1L, n_top_markers = 1L),
+    pelsa_volcano_label_rows(df, c("top_n_markers", "top_n_adjp"),
+                             n_top_adjp = 1L, n_top_markers = 1L),
     c(1L, 2L, 3L)
   )
 })
 
-test_that("build_plot bakes top_n_significant labels using the passed N", {
+test_that("build_plot bakes top_n_adjp labels using the passed N", {
   df <- data.frame(
     id = c("p1", "p2", "p3"), logFC = c(2, -2, 5), logP = c(3, 4, 0.5),
     adj.P.Val = c(0.01, 0.02, 0.9), P.Value = c(0.001, 0.002, 0.8),
@@ -1497,11 +1517,13 @@ test_that("build_plot bakes top_n_significant labels using the passed N", {
   )
   attr(df, "y_cutoff") <- 1.0
   p <- pelsa_volcano_build_plot(df, full_df = df, color_mode = "significance",
-         label_mode = "top_n_significant", n_top_significant = 1L,
+         label_mode = "top_n_adjp", n_top_adjp = 1L,
          source_id = "x")
   b <- suppressWarnings(plotly::plotly_build(p))
   ann <- b$x$layout$annotations
-  # up bucket keeps p1, down bucket keeps p2; p3 ("ns") is excluded.
+  # up bucket (p1 logFC=2, p3 logFC=5): p1 wins on smallest adj.P.Val (0.01);
+  # p3 is excluded by ranking, not significance, despite being non-significant.
+  # down bucket (p2 only): kept.
   expect_equal(length(ann), 2L)
   borders <- vapply(ann, function(a) a$bordercolor, "")
   expect_setequal(borders, c("darkred", "#1f4e9c"))
@@ -1635,40 +1657,6 @@ test_that("label_annotation_list: empty/NULL -> list(); each spec well-formed", 
   }
   expect_setequal(vapply(anns, function(a) a$bordercolor, ""),
                   c("#1f4e9c", "darkred"))
-})
-
-test_that("current_annotations: mode drives the spec count (empty -> empty)", {
-  df <- .mk_label_df()
-
-  # An empty/NULL mode yields no labels -> an empty list (an empty relayout
-  # clears all annotations client-side).
-  expect_identical(
-    pelsa_volcano_current_annotations(df, character(0), "significance"), list())
-  expect_identical(
-    pelsa_volcano_current_annotations(df, NULL, "significance"), list())
-
-  # "all_significant" labels both significant rows.
-  a_sig <- pelsa_volcano_current_annotations(df, "all_significant",
-                                             "significance")
-  expect_equal(length(a_sig), 2L)
-
-  # "all_markers" labels both marker rows (both rows are markers in the fixture).
-  a_mark <- pelsa_volcano_current_annotations(df, "all_markers", "significance")
-  expect_equal(length(a_mark), 2L)
-  expect_true(all(vapply(a_mark, function(a) "text" %in% names(a), logical(1))))
-
-  # An empty df -> empty list (no error).
-  expect_identical(
-    pelsa_volcano_current_annotations(df[0, ], "all_significant", "significance"),
-    list())
-})
-
-test_that("current_annotations: feature color-mode drives the border color", {
-  df <- .mk_label_df()
-  anns <- pelsa_volcano_current_annotations(df, "all_significant", "feature")
-  expect_equal(length(anns), 2L)
-  # feature mode -> feature_color border (#d3d3d3 here for both rows).
-  expect_true(all(vapply(anns, function(a) a$bordercolor, "") == "#d3d3d3"))
 })
 
 # ---------------------------------------------------------------------------
@@ -1979,7 +1967,7 @@ test_that("gate: NULL stat_results shows the notice and renders no plot", {
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list())
     ),
     {
@@ -2003,7 +1991,7 @@ test_that("good inputs: choices populate, df builds, switch frees prior, color t
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list())
     ),
     {
@@ -2076,7 +2064,7 @@ test_that("feat_df warns and returns NULL when annotation path exists but file i
         )),
         poi_registry          = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list()),
-        n_top_significant_registry = reactiveVal(list()),
+        n_top_adjp_registry = reactiveVal(list()),
         n_top_markers_registry = reactiveVal(list())
       ),
       {
@@ -2109,7 +2097,7 @@ test_that("feat_df is silent and returns NULL for a self-curated dataset", {
         )),
         poi_registry          = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list()),
-        n_top_significant_registry = reactiveVal(list()),
+        n_top_adjp_registry = reactiveVal(list()),
         n_top_markers_registry = reactiveVal(list())
       ),
       {
@@ -2135,7 +2123,7 @@ test_that("cache NULL + stats present: section shows Start-Analysis notice, no d
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list())
     ),
     {
@@ -2229,7 +2217,7 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
       pelsa_setup_state = reactive(.mk_setup_state()),  # species = NULL
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list())
     ),
     {
@@ -2263,7 +2251,7 @@ test_that("feat_df NULL: feature color-mode resolves to the 'none' color", {
     pelsa_setup_state = reactive(.mk_setup_state_full()),
     poi_registry = reactiveVal(list()),
     label_mode_registry = reactiveVal(list()),
-    n_top_significant_registry = reactiveVal(list()),
+    n_top_adjp_registry = reactiveVal(list()),
     n_top_markers_registry = reactiveVal(list())
   )
 }
@@ -2291,7 +2279,7 @@ test_that("PELSA volcano always renders SVG (scatter), never scattergl, regardle
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(TRUE)
     ),
@@ -2319,7 +2307,7 @@ test_that("changing label mode on one contrast applies to every contrast of the 
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(FALSE)
     ),
@@ -2358,7 +2346,7 @@ test_that("changing label mode on one contrast applies to every contrast of the 
   )
 })
 
-test_that("top_n_significant and all_significant are mutually exclusive (independent of the marker pair)", {
+test_that("top_n_adjp and all_significant are mutually exclusive (independent of the marker pair)", {
   # NOTE on assertion target (deviation from the Task 6 brief's draft test):
   # the mutual-exclusion observer (R/tab_pelsa_section3.R ~L479) enforces
   # exclusivity ONLY via updateCheckboxGroupInput() (a client-bound message)
@@ -2398,53 +2386,53 @@ test_that("top_n_significant and all_significant are mutually exclusive (indepen
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(FALSE)
     ),
     {
-      # Checking "all_significant" then "top_n_significant": the mutual-
+      # Checking "all_significant" then "top_n_adjp": the mutual-
       # exclusion observer must issue an update dropping "all_significant".
       session$setInputs(pelsa_label_mode = c("all_significant"))
-      session$setInputs(pelsa_label_mode = c("all_significant", "top_n_significant"))
-      expect_identical(captured[[length(captured)]], "top_n_significant")
+      session$setInputs(pelsa_label_mode = c("all_significant", "top_n_adjp"))
+      expect_identical(captured[[length(captured)]], "top_n_adjp")
 
       # Marker pair is unaffected by the significant-pair state: selecting
-      # "all_markers" alongside "top_n_significant" must NOT trigger an
-      # update that drops "top_n_significant" (no significant-pair conflict).
+      # "all_markers" alongside "top_n_adjp" must NOT trigger an
+      # update that drops "top_n_adjp" (no significant-pair conflict).
       captured <<- list()
-      session$setInputs(pelsa_label_mode = c("top_n_significant", "all_markers"))
+      session$setInputs(pelsa_label_mode = c("top_n_adjp", "all_markers"))
       for (sel in captured) {
-        expect_true("top_n_significant" %in% sel)
+        expect_true("top_n_adjp" %in% sel)
       }
 
       # Strengthen the above: with this specific combination, the observer's
       # significant-pair branch and marker-pair branch BOTH fire (each is an
-      # unconditional if/else-if/else, and here "top_n_significant" satisfies
+      # unconditional if/else-if/else, and here "top_n_adjp" satisfies
       # the significant-pair's `if`, while "all_markers" satisfies the
       # marker-pair's `else if`) -- always in that fixed order, each emitting
       # exactly one updateCheckboxGroupInput() call. A cross-pair coupling bug
-      # (e.g. the marker-pair branch wrongly dropping "top_n_significant", or
+      # (e.g. the marker-pair branch wrongly dropping "top_n_adjp", or
       # the significant-pair branch wrongly dropping "all_markers") would slip
-      # past a check that only looks at "top_n_significant" membership, since
+      # past a check that only looks at "top_n_adjp" membership, since
       # "all_markers" surviving is never verified. Assert on EACH call
       # individually, tied to the branch that produced it: the significant-
       # pair call (uses setdiff(modes, "all_significant"), so it must keep
-      # both "top_n_significant" AND "all_markers" intact -- "all_significant"
+      # both "top_n_adjp" AND "all_markers" intact -- "all_significant"
       # was never selected, so nothing should be dropped at all here); the
       # marker-pair call (uses setdiff(modes, "top_n_markers"), so it too must
       # keep both untouched, since "top_n_markers" was never selected).
       expect_length(captured, 2L)
       significant_pair_call <- captured[[1]]
       marker_pair_call <- captured[[2]]
-      expect_setequal(significant_pair_call, c("top_n_significant", "all_markers"))
-      expect_setequal(marker_pair_call, c("top_n_significant", "all_markers"))
+      expect_setequal(significant_pair_call, c("top_n_adjp", "all_markers"))
+      expect_setequal(marker_pair_call, c("top_n_adjp", "all_markers"))
 
       # Checking "top_n_markers" now must drop "all_markers" (marker pair
       # only) via the same updateCheckboxGroupInput mechanism.
       captured <<- list()
       session$setInputs(
-        pelsa_label_mode = c("top_n_significant", "all_markers", "top_n_markers"))
+        pelsa_label_mode = c("top_n_adjp", "all_markers", "top_n_markers"))
       last_sel <- captured[[length(captured)]]
       expect_true("top_n_markers" %in% last_sel)
       expect_false("all_markers" %in% last_sel)
@@ -2465,7 +2453,7 @@ test_that("top-N values are per-ome: set while viewing one contrast, applied whe
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(FALSE)
     ),
@@ -2476,18 +2464,18 @@ test_that("top-N values are per-ome: set while viewing one contrast, applied whe
       contrast_b <- unname(choices[[2L]])
 
       # Default N is 5 before any input.
-      expect_identical(n_top_significant_for_ome(), 5L)
+      expect_identical(n_top_adjp_for_ome(), 5L)
       expect_identical(n_top_markers_for_ome(), 5L)
 
       session$setInputs(pelsa_volcano_contrast = contrast_a,
-                        pelsa_n_top_significant = 8,
+                        pelsa_n_top_adjp = 8,
                         pelsa_n_top_markers = 2)
-      expect_identical(n_top_significant_for_ome(), 8L)
+      expect_identical(n_top_adjp_for_ome(), 8L)
       expect_identical(n_top_markers_for_ome(), 2L)
 
       # Switch to a different contrast (same ome) - values still apply.
       session$setInputs(pelsa_volcano_contrast = contrast_b)
-      expect_identical(n_top_significant_for_ome(), 8L)
+      expect_identical(n_top_adjp_for_ome(), 8L)
       expect_identical(n_top_markers_for_ome(), 2L)
     }
   )
@@ -2506,19 +2494,19 @@ test_that("invalid N input (blank/zero/negative) coerces to a valid integer >= 1
       pelsa_setup_state = reactive(.mk_setup_state()),
       poi_registry = reactiveVal(list()),
       label_mode_registry = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list()),
       use_webgl = reactive(FALSE)
     ),
     {
-      session$setInputs(pelsa_n_top_significant = 0)
-      expect_identical(n_top_significant_for_ome(), 1L)
+      session$setInputs(pelsa_n_top_adjp = 0)
+      expect_identical(n_top_adjp_for_ome(), 1L)
 
-      session$setInputs(pelsa_n_top_significant = -3)
-      expect_identical(n_top_significant_for_ome(), 1L)
+      session$setInputs(pelsa_n_top_adjp = -3)
+      expect_identical(n_top_adjp_for_ome(), 1L)
 
-      session$setInputs(pelsa_n_top_significant = NA)
-      expect_identical(n_top_significant_for_ome(), 1L)
+      session$setInputs(pelsa_n_top_adjp = NA)
+      expect_identical(n_top_adjp_for_ome(), 1L)
     }
   )
 })
@@ -4804,7 +4792,7 @@ test_that("feat_df prefers the cached feat_raw over the live annotation file", {
         )),
         poi_registry          = reactiveVal(list()),
         label_mode_registry   = reactiveVal(list()),
-        n_top_significant_registry = reactiveVal(list()),
+        n_top_adjp_registry = reactiveVal(list()),
         n_top_markers_registry = reactiveVal(list())
       ),
       {
@@ -4860,7 +4848,7 @@ test_that("feat_df falls back to live file when cache entry lacks feat_raw", {
       )),
       poi_registry          = reactiveVal(list()),
       label_mode_registry   = reactiveVal(list()),
-      n_top_significant_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
       n_top_markers_registry = reactiveVal(list())
     ),
     {

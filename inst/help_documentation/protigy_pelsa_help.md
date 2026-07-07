@@ -122,9 +122,11 @@ completed PELSA run for the ome.
   resets.
 - **Color points by** — *Significance* (default) or *UniProt feature class* (hidden for
   self-curated datasets).
-- **Label peptides** — *None* (default), *All marker peptides*, *All significant peptides*,
-  *Best peptide per marker*, or *Top-N per protein* (with a count input). Labels render as
-  `<gene>_aa<position>`.
+- **Label peptides** — choose any combination of: *All marker peptides*, *All significant
+  peptides*, *Top N most significant peptides* (the N smallest adjusted p-values per
+  up/down direction, regardless of significance), or *Top N marker peptides* (the N
+  smallest adjusted p-values per up/down direction, restricted to marker proteins). None
+  selected by default. Labels render as `<gene>_aa<position>`.
 - **Show best peptide per protein** — adds a second volcano with one point per protein's
   most significant peptide.
 
