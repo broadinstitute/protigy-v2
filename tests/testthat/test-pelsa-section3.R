@@ -1040,6 +1040,68 @@ test_that(".pelsa_export_ggplot: zero significant + zero markers still show all 
   expect_true("Marker" %in% fill_breaks)
 })
 
+# Extracts the point-glyph colors ggplot2 actually drew for one legend key
+# gTree (the "key-<row>-<col>-bg" grobs inside a guide's gtable). A legend TEXT
+# label can be present (per get_breaks()) while its colored dot glyph is
+# silently skipped by ggplot2 >= 3.5's guide_legend(), which by default only
+# draws a key's glyph for a layer when that break's value is present in the
+# LAYER's data (not just the scale's declared breaks/limits) -- see NEWS.md:
+# "By default, guide_legend() now only draws a key glyph for a layer when the
+# value is in the layer's data." This is exactly the "text present, dot
+# missing" bug report, which .export_ggplot_color_breaks() (scale breaks)
+# cannot detect since it never looks at the layer's data. Every OTHER layer
+# sharing the guide box also contributes a (possibly invisible/NA) point to
+# each key gTree, so this returns the set of non-NA colors actually drawn
+# rather than a raw grob count.
+.legend_key_point_colors <- function(key_gtree) {
+  cols <- character(0)
+  for (child in key_gtree$children) {
+    if (inherits(child, "points") && !is.null(child$gp$col) &&
+        !is.na(child$gp$col) && !identical(child$gp$col, "#00000000")) {
+      cols <- c(cols, child$gp$col)
+    }
+  }
+  cols
+}
+
+# Locates a named guide's key gTrees (in break order) inside the built plot's
+# right-side legend gtable.
+.legend_guide_keys <- function(g, aesthetic) {
+  gt <- ggplot2::ggplotGrob(g)
+  idx <- which(gt$layout$name == "guide-box-right")
+  guide_box <- gt$grobs[[idx]]
+  is_target <- vapply(guide_box$grobs, function(guide) {
+    !is.null(guide$layout) && any(grepl("^key-.*-bg$", guide$layout$name))
+  }, logical(1))
+  candidates <- guide_box$grobs[is_target]
+  target <- candidates[[if (identical(aesthetic, "colour")) 1L else length(candidates)]]
+  key_rows <- grepl("^key-.*-bg$", target$layout$name)
+  target$grobs[key_rows]
+}
+
+test_that(".pelsa_export_ggplot: zero significant rows still draw colored legend dots", {
+  # Root-cause regression for the reported bug: Downregulated/Upregulated text
+  # appeared in the legend with NO colored swatch when every row was
+  # non-significant. get_breaks()-based assertions above stay green even when
+  # this is broken, so this renders the gtable and inspects the actual point
+  # colors drawn inside each key instead.
+  df <- .make_export_df_all_ns_no_markers()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+
+  # normalize both sides through col2rgb so named colors ("darkred") and hex
+  # ("#1f4e9c") compare equal to grid's rendered "#RRGGBBAA" grob color.
+  as_rgb <- function(col) unname(grDevices::col2rgb(col, alpha = TRUE))
+
+  keys <- .legend_guide_keys(g, "colour")
+  expect_equal(length(keys), 2L)
+  down_cols <- .legend_key_point_colors(keys[[1]])
+  up_cols   <- .legend_key_point_colors(keys[[2]])
+  expect_true(any(apply(as_rgb(down_cols), 2, identical,
+                        as.vector(as_rgb(.PELSA_SIG_COLOR_DOWN)))))
+  expect_true(any(apply(as_rgb(up_cols), 2, identical,
+                        as.vector(as_rgb(.PELSA_SIG_COLOR_UP)))))
+})
+
 test_that(".pelsa_export_ggplot: marker layer always present (even with 0 marker rows)", {
   # Root-cause regression: previously the marker geom_point layer was only
   # added `if (nrow(mk) > 0L)`, so a view with zero markers had no fill

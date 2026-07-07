@@ -2148,12 +2148,16 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   # The background layer is added even when bg is empty (0 rows -> an empty
   # layer) so the color aesthetic + its scale always exist and the direction
   # legend keys always render, regardless of how many background peptides are
-  # in this view (mirrors the marker-layer handling below).
+  # in this view (mirrors the marker-layer handling below). show.legend must be
+  # forced per-aesthetic: ggplot2 >= 3.5's guide_legend() only draws a key's
+  # colored glyph when that break's value is present in the LAYER's data, so a
+  # view with e.g. zero "up"/"down" rows (all non-significant) would otherwise
+  # show the "Downregulated"/"Upregulated" legend TEXT with no visible dot.
   bg$legend_cat <- spec$category
   gg <- ggplot2::ggplot() + ggplot2::geom_point(
     data = bg, ggplot2::aes(x = .data$logFC, y = .data$logP,
                             color = .data$legend_cat),
-    alpha = .PELSA_VOLCANO_BG_ALPHA, size = 1)
+    alpha = .PELSA_VOLCANO_BG_ALPHA, size = 1, show.legend = c(colour = TRUE))
   y_cut <- attr(full_df, "y_cutoff")
   if (!is.null(y_cut) && is.finite(y_cut)) {
     gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
@@ -2171,9 +2175,11 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   # The marker layer is added even when mk is empty (0 rows -> an empty layer)
   # so the fill aesthetic + its scale always exist and the "Marker" legend key
   # always renders, regardless of how many marker peptides are in this view.
+  # show.legend forced for the same reason as the background layer above.
   gg <- gg + ggplot2::geom_point(
     data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP, fill = "Marker"),
-    shape = 21, size = 1, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
+    shape = 21, size = 1, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE,
+    show.legend = c(fill = TRUE))
   # Bake peptide labels per the in-app label mode (the on-screen labels are
   # plotly annotations; the static export draws them as repelled boxed labels:
   # white box, black outline + text, black segment; force=20 to spread them).
