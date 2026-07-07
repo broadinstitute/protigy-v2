@@ -1074,7 +1074,16 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
             if (isTRUE(snapshot$self_curated[[ds]])) {
               pelsa_empty_feature_frame()
             } else {
-              pelsa_read_annotation_file(snapshot$annotation_path[[ds]])
+              # Surface any reader warning (e.g. malformed coordinate coercion),
+              # then muffle so it does not abort the progress block.
+              withCallingHandlers(
+                pelsa_read_annotation_file(snapshot$annotation_path[[ds]]),
+                warning = function(w) {
+                  showNotification(conditionMessage(w), type = "warning",
+                                   duration = NULL)
+                  invokeRestart("muffleWarning")
+                }
+              )
             }
           }
 
