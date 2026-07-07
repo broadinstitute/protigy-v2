@@ -57,7 +57,7 @@ pelsa_condition_bar_plot <- function(bar_df, y_label, title, fill,
     geom_text(aes(y = .data$label_y, label = .data$bar_label),
               vjust = 0, size = label_size, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
-                       expand = expansion(mult = c(0, 0.18))) +
+                       expand = expansion(mult = c(0, 0.30))) +
     labs(x = NULL, y = y_label, title = title) +
     pelsa_plot_theme() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
