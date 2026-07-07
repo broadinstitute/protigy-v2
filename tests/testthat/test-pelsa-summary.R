@@ -123,6 +123,78 @@ test_that("sample_order entries absent from n_quantified are ignored", {
   expect_identical(ord, c("b", "a"))
 })
 
+# ---- pelsa_bar_error_data / pelsa_bar_error_data_overall --------------------
+
+test_that("pelsa_bar_error_data aggregates mean/sd/n per condition, ordered", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "A_R3", "B_R1", "B_R2"),
+    rate = c(0.1, 0.2, 0.3, 0.5, 0.7),
+    stringsAsFactors = FALSE
+  )
+  cmap <- c(A_R1 = "A", A_R2 = "A", A_R3 = "A", B_R1 = "B", B_R2 = "B")
+  out <- pelsa_bar_error_data(per_sample, "rate", cmap,
+                              condition_order = c("B", "A"))
+  expect_identical(out$data$condition, c("B", "A"))
+  expect_equal(out$data$mean[out$data$condition == "A"], 0.2)
+  expect_equal(out$data$sd[out$data$condition == "A"], stats::sd(c(0.1, 0.2, 0.3)))
+  expect_equal(out$data$n[out$data$condition == "A"], 3L)
+  expect_equal(out$data$mean[out$data$condition == "B"], 0.6)
+  expect_equal(out$data$n[out$data$condition == "B"], 2L)
+  expect_equal(nrow(out$skipped), 0L)
+})
+
+test_that("pelsa_bar_error_data drops conditions below min_replicates and reports them skipped", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "C_R1"),
+    rate = c(0.1, 0.2, 0.9),
+    stringsAsFactors = FALSE
+  )
+  cmap <- c(A_R1 = "A", A_R2 = "A", C_R1 = "C")
+  out <- pelsa_bar_error_data(per_sample, "rate", cmap, min_replicates = 2L)
+  expect_identical(out$data$condition, "A")
+  expect_setequal(out$skipped$condition, "C")
+  expect_equal(out$skipped$n[out$skipped$condition == "C"], 1L)
+})
+
+test_that("pelsa_bar_error_data drops non-finite per-sample values before counting replicates", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "A_R3"),
+    rate = c(0.1, NA, 0.3),
+    stringsAsFactors = FALSE
+  )
+  cmap <- c(A_R1 = "A", A_R2 = "A", A_R3 = "A")
+  out <- pelsa_bar_error_data(per_sample, "rate", cmap, min_replicates = 2L)
+  expect_equal(out$data$n[out$data$condition == "A"], 2L)
+  expect_equal(out$data$mean[out$data$condition == "A"], 0.2)
+})
+
+test_that("pelsa_bar_error_data returns empty data/skipped for empty input", {
+  out <- pelsa_bar_error_data(data.frame(sample = character(0),
+                                        rate = numeric(0)),
+                              "rate", character(0))
+  expect_equal(nrow(out$data), 0L)
+  expect_equal(nrow(out$skipped), 0L)
+})
+
+test_that("pelsa_bar_error_data_overall pools every sample into one row", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+    rate = c(0.1, 0.2, 0.5, 0.7),
+    stringsAsFactors = FALSE
+  )
+  out <- pelsa_bar_error_data_overall(per_sample, "rate")
+  expect_equal(nrow(out), 1L)
+  expect_identical(out$condition, "Experiment-wide")
+  expect_equal(out$mean, mean(c(0.1, 0.2, 0.5, 0.7)))
+  expect_equal(out$n, 4L)
+})
+
+test_that("pelsa_bar_error_data_overall returns 0 rows when fewer than min_replicates finite values", {
+  per_sample <- data.frame(sample = "A_R1", rate = 0.5, stringsAsFactors = FALSE)
+  out <- pelsa_bar_error_data_overall(per_sample, "rate", min_replicates = 2L)
+  expect_equal(nrow(out), 0L)
+})
+
 test_that("depth bar data is an ordered factor matching the bar order", {
   nq <- c(s2 = 8L, s1 = 4L)
   df <- pelsa_depth_bar_data(nq, sample_order = c("s1", "s2"))

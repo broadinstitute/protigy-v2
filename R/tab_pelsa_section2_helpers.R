@@ -109,6 +109,123 @@ pelsa_cv_kde_eligibility <- function(cv, condition_order = NULL, min_n = 20L) {
   )
 }
 
+# ---- per-sample -> per-condition / pooled bar+error-bar aggregation ----------
+
+# Shared aggregator: mean/sd/n of `value_col` within each group in `groups`,
+# dropping groups with fewer than `min_replicates` finite values. Pure,
+# internal (both pelsa_bar_error_data and pelsa_bar_error_data_overall call
+# this so per-condition and pooled modes cannot diverge in their math).
+#
+# @param values         numeric vector.
+# @param groups         character vector, same length as `values` (the group
+#                       label for each value; e.g. condition, or a constant
+#                       "Experiment-wide" for the pooled mode).
+# @param min_replicates minimum finite values for a group to be kept.
+# @return list(kept = data.frame(condition, mean, sd, n) unordered,
+#         skipped = data.frame(condition, n)).
+# @noRd
+.pelsa_bar_error_aggregate <- function(values, groups, min_replicates) {
+  ok <- is.finite(values) & !is.na(groups) & nzchar(groups)
+  values <- values[ok]
+  groups <- groups[ok]
+  empty_kept <- data.frame(condition = character(0), mean = numeric(0),
+                           sd = numeric(0), n = integer(0),
+                           stringsAsFactors = FALSE)
+  empty_skipped <- data.frame(condition = character(0), n = integer(0),
+                              stringsAsFactors = FALSE)
+  if (length(values) == 0L) {
+    return(list(kept = empty_kept, skipped = empty_skipped))
+  }
+  counts <- table(groups)
+  all_groups <- names(counts)
+  kept_groups <- all_groups[as.integer(counts) >= min_replicates]
+  skipped_groups <- setdiff(all_groups, kept_groups)
+
+  kept <- if (length(kept_groups) == 0L) {
+    empty_kept
+  } else {
+    do.call(rbind, lapply(kept_groups, function(g) {
+      v <- values[groups == g]
+      data.frame(condition = g, mean = mean(v),
+                sd = if (length(v) >= 2L) stats::sd(v) else NA_real_,
+                n = length(v), stringsAsFactors = FALSE)
+    }))
+  }
+  skipped <- if (length(skipped_groups) == 0L) {
+    empty_skipped
+  } else {
+    data.frame(condition = skipped_groups,
+              n = as.integer(counts[skipped_groups]),
+              stringsAsFactors = FALSE)
+  }
+  list(kept = kept, skipped = skipped)
+}
+
+# Per-condition bar+error-bar data from a per-sample statistic table.
+#
+# @param per_sample_df  data.frame with a `sample` column + `value_col`.
+# @param value_col      name of the numeric per-sample statistic column.
+# @param condition_map  NAMED character vector, sample -> condition.
+# @param condition_order character - requested display order (present-only
+#                       conditions first, then any remaining in natural
+#                       order), or NULL for natural order.
+# @param min_replicates minimum finite per-sample values for a condition to
+#                       get a bar (default 2).
+# @return list(data = data.frame(condition, mean, sd, n) condition-ordered,
+#         skipped = data.frame(condition, n)).
+# @noRd
+pelsa_bar_error_data <- function(per_sample_df, value_col, condition_map,
+                                 condition_order = NULL, min_replicates = 2L) {
+  empty <- list(
+    data = data.frame(condition = character(0), mean = numeric(0),
+                      sd = numeric(0), n = integer(0), stringsAsFactors = FALSE),
+    skipped = data.frame(condition = character(0), n = integer(0),
+                         stringsAsFactors = FALSE)
+  )
+  if (is.null(per_sample_df) || !is.data.frame(per_sample_df) ||
+      nrow(per_sample_df) == 0L ||
+      !all(c("sample", value_col) %in% names(per_sample_df))) {
+    return(empty)
+  }
+  cmap <- condition_map %||% character(0)
+  groups <- unname(cmap[as.character(per_sample_df$sample)])
+  values <- suppressWarnings(as.numeric(per_sample_df[[value_col]]))
+  agg <- .pelsa_bar_error_aggregate(values, groups, min_replicates)
+
+  req <- as.character(condition_order %||% character(0))
+  req <- req[!is.na(req) & nzchar(req)]
+  present <- agg$kept$condition
+  ordered <- c(intersect(req, present), setdiff(present, req))
+  agg$kept <- agg$kept[match(ordered, agg$kept$condition), , drop = FALSE]
+  rownames(agg$kept) <- NULL
+
+  list(data = agg$kept, skipped = agg$skipped)
+}
+
+# Pooled (experiment-wide) bar+error-bar data from a per-sample statistic
+# table: every sample is one replicate of a single "Experiment-wide" group.
+#
+# @param per_sample_df  data.frame with a `sample` column + `value_col`.
+# @param value_col      name of the numeric per-sample statistic column.
+# @param min_replicates minimum finite per-sample values across the WHOLE
+#                       experiment for the pooled bar to be drawn (default 2).
+# @return data.frame(condition, mean, sd, n) with 0 or 1 rows (`condition`
+#         is always the literal "Experiment-wide" when 1 row).
+# @noRd
+pelsa_bar_error_data_overall <- function(per_sample_df, value_col,
+                                         min_replicates = 2L) {
+  empty <- data.frame(condition = character(0), mean = numeric(0),
+                      sd = numeric(0), n = integer(0), stringsAsFactors = FALSE)
+  if (is.null(per_sample_df) || !is.data.frame(per_sample_df) ||
+      nrow(per_sample_df) == 0L || !(value_col %in% names(per_sample_df))) {
+    return(empty)
+  }
+  values <- suppressWarnings(as.numeric(per_sample_df[[value_col]]))
+  groups <- rep("Experiment-wide", length(values))
+  agg <- .pelsa_bar_error_aggregate(values, groups, min_replicates)
+  agg$kept
+}
+
 # ---- per-sample bar order -----------------------------------------------------
 
 # Order the per-sample depth bars by the canonical sample order.
