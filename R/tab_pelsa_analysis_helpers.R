@@ -2342,7 +2342,7 @@ pelsa_coverage_by_sample <- function(proc_mat, matched, fasta_map,
 #
 # @section Cache contract:
 # The returned named list is the load-bearing contract Phases 6 (Summary) and 7
-# (Volcano) READ (never recompute). On SUCCESS it has exactly these 13
+# (Volcano) READ (never recompute). On SUCCESS it has exactly these 17
 # components (EXACT names + shapes as implemented):
 #   (NOTE: the former full-duplicate `annotation` frame is no longer stored; the
 #   cache now carries `annotation_features` - just the 3 feature columns,
@@ -2402,6 +2402,23 @@ pelsa_coverage_by_sample <- function(proc_mat, matched, fasta_map,
 #                  row; isoform-base fallback applied),
 #                  n_annotated_zero_feature (accessions present only as sentinel
 #                  rows in feat_df).
+#   missed_cleavage_rate_by_sample data.frame(sample, rate, n_quantified),
+#                  one row per sample column of the PROCESSED matrix. rate is
+#                  the fraction of that sample's quantified (finite &
+#                  non-zero) peptides with >= 1 missed cleavage; NA when
+#                  n_quantified == 0 for that sample.
+#   length_by_sample data.frame(sample, mean_length, n_quantified), one row
+#                  per sample column. mean_length is the mean residue length
+#                  of peptides quantified in that sample; NA when
+#                  n_quantified == 0.
+#   coverage_by_sample data.frame(sample, coverage, n_proteins), one row per
+#                  sample column. coverage is the MEAN per-protein coverage
+#                  fraction across proteins with >= 1 peptide quantified in
+#                  that sample (mean-of-ratios); NA when n_proteins == 0.
+#   condition_map  NAMED character vector, sample -> condition, over the
+#                  PROCESSED matrix's sample columns (same set condition_map
+#                  membership above is built from). Empty named character
+#                  vector when there is no usable condition column.
 #
 # A FAILED dataset is instead list(error = <message>, stage = <last stage label
 # reached, or NA>). Test with pelsa_analysis_failed(entry); the stage names the
@@ -2627,6 +2644,22 @@ pelsa_run_analysis_one <- function(gct,
     n_annotation_failed         = annotation_status$n_failed %||% 0L
   )
 
+  # --- per-sample QC metrics (missed-cleavage rate, length, coverage) -------
+  # Built from the same proc_mat / matched / peptide_metrics already
+  # assembled above. condition_map mirrors cmap_proc's construction (or an
+  # empty named character vector when there is no usable condition column),
+  # so the Summary dashboard reads a ready-made sample -> condition map
+  # instead of recomputing it at render time.
+  missed_cleavage_rate_by_sample <- pelsa_missed_cleavage_rate_by_sample(
+    proc_mat, peptide_metrics)
+  length_by_sample <- pelsa_length_by_sample(proc_mat, peptide_metrics)
+  coverage_by_sample <- pelsa_coverage_by_sample(proc_mat, matched, fasta_map)
+  condition_map <- if (has_cond_col) {
+    pelsa_condition_map_for(cdesc_cond, colnames(proc_mat), condition_col)
+  } else {
+    stats::setNames(character(0), character(0))
+  }
+
   list(
     matched             = matched,
     unmatched           = unmatched,
@@ -2641,7 +2674,11 @@ pelsa_run_analysis_one <- function(gct,
     annotation_features = annotation_features,
     feat_raw            = feat_df,
     unannotated         = unannotated,
-    qc                  = qc
+    qc                  = qc,
+    missed_cleavage_rate_by_sample = missed_cleavage_rate_by_sample,
+    length_by_sample    = length_by_sample,
+    coverage_by_sample  = coverage_by_sample,
+    condition_map       = condition_map
   )
 }
 

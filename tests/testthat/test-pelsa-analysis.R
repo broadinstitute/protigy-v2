@@ -453,7 +453,9 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
     c("matched", "unmatched", "cv", "n_quantified", "depth_summary",
       "coverage", "coverage_by_condition", "n_peptides_by_condition",
       "peptide_metrics", "length_by_condition", "annotation_features",
-      "feat_raw", "unannotated", "qc")
+      "feat_raw", "unannotated", "qc",
+      "missed_cleavage_rate_by_sample", "length_by_sample",
+      "coverage_by_sample", "condition_map")
   )
   # The full-duplicate `annotation` frame is NOT stored (memory win).
   expect_false("annotation" %in% names(one))
@@ -544,6 +546,23 @@ test_that("run_analysis_one builds all cache components with sane shapes", {
   expect_equal(one$qc$n_peptides, nrow(syn$peptides))
   # The failed bucket still equals the legacy unannotated length.
   expect_identical(one$qc$n_unannotated_accessions, length(one$unannotated))
+
+  # New per-sample fields: one row/entry per sample column, condition_map
+  # keyed the same way.
+  expect_setequal(colnames(one$missed_cleavage_rate_by_sample),
+                  c("sample", "rate", "n_quantified"))
+  expect_equal(nrow(one$missed_cleavage_rate_by_sample),
+              length(syn$sample_cols))
+  expect_setequal(colnames(one$length_by_sample),
+                  c("sample", "mean_length", "n_quantified"))
+  expect_equal(nrow(one$length_by_sample), length(syn$sample_cols))
+  expect_setequal(colnames(one$coverage_by_sample),
+                  c("sample", "coverage", "n_proteins"))
+  expect_equal(nrow(one$coverage_by_sample), length(syn$sample_cols))
+  expect_type(one$condition_map, "character")
+  expect_true(all(names(one$condition_map) %in% syn$sample_cols))
+  expect_setequal(unname(one$condition_map),
+                  c("AY9944_10uM", "DMSO", "LowN"))
 })
 
 # ---- pelsa_missed_cleavage_rate_by_sample -----------------------------------
