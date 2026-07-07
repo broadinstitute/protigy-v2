@@ -26,13 +26,33 @@ app_onStart <- function() {
   # (app_UI head) lets the UMD header take the browser branch (t.Plotly = e()),
   # which defines the globals cleanly. Expose the installed lib dirs so the head
   # tags can reference them. Registration is idempotent across app restarts.
+  # File basenames are derived from the installed package's own lib dir
+  # (list.files()) rather than hardcoded, so a future plotly/DT upgrade that
+  # renames its bundle (e.g. away from "plotly-latest.min.js") still resolves
+  # to a working file instead of a silent 404. Options carry the resolved
+  # basenames to app_UI (which builds the <script src> tags); fall back to
+  # today's known filenames if resolution ever comes up empty.
   plotly_lib <- system.file("htmlwidgets/lib/plotlyjs", package = "plotly")
-  dt_lib     <- system.file("htmlwidgets/lib/datatables", package = "DT")
+  dt_lib     <- system.file("htmlwidgets/lib/datatables/js", package = "DT")
+
+  plotly_js <- "plotly-latest.min.js"
   if (nzchar(plotly_lib)) {
     shiny::addResourcePath("protigy-plotlyjs", plotly_lib)
+    plotly_files <- list.files(plotly_lib, pattern = "^plotly.*\\.min\\.js$")
+    if (length(plotly_files) > 0) {
+      plotly_js <- plotly_files[1]
+    }
   }
+
+  dt_js <- "js/jquery.dataTables.min.js"
   if (nzchar(dt_lib)) {
-    shiny::addResourcePath("protigy-datatables", dt_lib)
+    shiny::addResourcePath("protigy-datatables", dirname(dt_lib))
+    dt_files <- list.files(dt_lib, pattern = "^jquery\\.dataTables.*\\.min\\.js$")
+    if (length(dt_files) > 0) {
+      dt_js <- file.path("js", dt_files[1])
+    }
   }
+
+  options(protigy.plotly_js = plotly_js, protigy.dt_js = dt_js)
 
 }

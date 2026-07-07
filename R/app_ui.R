@@ -38,10 +38,12 @@ app_UI <- function(request) {dashboardPage(
     # diverts to the CommonJS branch and throws "require is not defined", leaving
     # every plot/table blank. The DataTables script is a jQuery plugin, so it is
     # listed AFTER useShinyjs() (Shiny's jQuery is already on the page here).
-    # ASCII-only.
+    # Filenames are resolved in app_onStart (via list.files() on the installed
+    # plotly/DT lib dirs) rather than hardcoded here, so a package upgrade that
+    # renames the bundle does not silently 404 this tag. ASCII-only.
     tags$head(
-      tags$script(src = "protigy-plotlyjs/plotly-latest.min.js"),
-      tags$script(src = "protigy-datatables/js/jquery.dataTables.min.js")
+      tags$script(src = paste0("protigy-plotlyjs/", getOption("protigy.plotly_js", "plotly-latest.min.js"))),
+      tags$script(src = paste0("protigy-datatables/", getOption("protigy.dt_js", "js/jquery.dataTables.min.js")))
     ),
 
     # One-time client WebGL capability probe. WebGL renders in the USER's
