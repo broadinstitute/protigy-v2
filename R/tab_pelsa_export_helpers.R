@@ -180,3 +180,251 @@ pelsa_export_prot_len <- function(coverage, acc, peptides = NULL) {
   }
   if (is.na(plen) || plen < 1L) 1L else plen
 }
+
+################################################################################
+# PELSA Section 3 (volcano tab) per-ome export bodies.
+#
+# Extracted VERBATIM from PELSASection3_Ome_Server's export_volcano /
+# export_intensity / export_woods closures (that function was ~1458 lines,
+# driving the file over the 800-line cap -- see CLAUDE.md coding-style rules).
+# Each function takes its former closure captures as EXPLICIT arguments so it
+# is a plain, independently-testable function; the module server now just
+# gathers the current reactive values and calls it. Behavior is unchanged.
+################################################################################
+
+# Body of export_volcano: one volcano PNG per contrast (all-peptide + optional
+# best-peptide), sharing one x/y coord_cartesian range across every figure in
+# this ome's export so any two exported figures are visually comparable.
+# @noRd
+pelsa_section3_export_volcano <- function(dir_name, ome, stat_results, cache_entry,
+                                          feat_df, marker_accessions, color_mode,
+                                          label_mode, n_top_adjp, n_top_markers,
+                                          want_best, sig_cutoff, sig_stat,
+                                          self_curated, contrast_choices) {
+  out <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
+                                .PELSA_SUB_VOLCANO)
+  sr <- stat_results[[ome]]
+  entry <- cache_entry
+  matched <- if (is.null(entry)) NULL else entry$matched
+  fdf <- feat_df
+  markers <- marker_accessions
+  choices <- contrast_choices
+  # Precompute the contrast-invariant stat frame ONCE (its inputs sr/matched
+  # are fixed for this export). Guarded so a malformed/empty sr falls back to
+  # the per-call path inside pelsa_volcano_export_df (which safe_export's
+  # outer tryCatch still protects) rather than throwing before the loop.
+  stat_df_once <- if (is.data.frame(sr) && nrow(sr) > 0L) {
+    tryCatch(pelsa_volcano_stat_df(sr, matched %||% data.frame()),
+             error = function(e) NULL)
+  } else {
+    NULL
+  }
+  # ---- PASS 1: build every contrast's df_all/df_best WITHOUT rendering,
+  # tracking the union logFC/logP extent (+ the significance-cutoff line,
+  # which must stay visible) so every volcano PNG in this ome shares one
+  # fixed x/y range -- makes any two exported figures directly comparable.
+  built <- list()
+  x_lo <- Inf; x_hi <- -Inf; y_lo <- Inf; y_hi <- -Inf
+  track_range <- function(df) {
+    if (is.null(df) || nrow(df) == 0L) return(invisible(NULL))
+    # suppressWarnings: an all-NA logFC/logP column (never happens in
+    # practice -- pelsa_volcano_export_df derives both from real stats)
+    # would make min()/max() emit "no non-missing arguments" while still
+    # correctly returning Inf/-Inf, which the is.finite() guard below
+    # already degrades to per-plot autoscale.
+    suppressWarnings({
+      x_lo <<- min(x_lo, min(df$logFC, na.rm = TRUE))
+      x_hi <<- max(x_hi, max(df$logFC, na.rm = TRUE))
+      y_lo <<- min(y_lo, min(df$logP, na.rm = TRUE))
+      y_hi <<- max(y_hi, max(df$logP, na.rm = TRUE))
+    })
+    y_cut <- attr(df, "y_cutoff")
+    if (!is.null(y_cut) && is.finite(y_cut)) y_hi <<- max(y_hi, y_cut)
+  }
+  for (i in seq_along(choices)) {
+    contrast <- unname(choices[[i]])
+    df_all <- pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
+                                      "all_peptide", sig_cutoff = sig_cutoff,
+                                      is_self_curated = self_curated,
+                                      sig_stat = sig_stat,
+                                      .stat_df = stat_df_once)
+    track_range(df_all)
+    df_best <- if (want_best) {
+      pelsa_volcano_export_df(sr, matched, fdf, markers, contrast,
+                              "best_peptide", sig_cutoff = sig_cutoff,
+                              is_self_curated = self_curated,
+                              sig_stat = sig_stat, .stat_df = stat_df_once)
+    } else {
+      NULL
+    }
+    track_range(df_best)
+    built[[i]] <- list(contrast = contrast, df_all = df_all,
+                       df_best = df_best)
+  }
+  # No finite data across every contrast -- nothing to render; bail cleanly
+  # rather than pass Inf/-Inf into coord_cartesian.
+  shared_xlim <- if (is.finite(x_lo) && is.finite(x_hi)) c(x_lo, x_hi) else NULL
+  shared_ylim <- if (is.finite(y_lo) && is.finite(y_hi)) c(y_lo, y_hi) else NULL
+
+  # ---- PASS 2: render + save each contrast's figures with the shared range.
+  for (i in seq_along(built)) {
+    contrast <- built[[i]]$contrast
+    df_all <- built[[i]]$df_all
+    df_best <- built[[i]]$df_best
+    if (!is.null(df_all) && nrow(df_all) > 0L) {
+      p <- .pelsa_export_ggplot(df_all, df_all, color_mode, label_mode,
+                                n_top_adjp = n_top_adjp,
+                                n_top_markers = n_top_markers,
+                                contrast = contrast,
+                                volcano_label = "All-peptide volcano",
+                                sig_cutoff = sig_cutoff)
+      if (!is.null(shared_xlim)) {
+        p <- p + ggplot2::coord_cartesian(xlim = shared_xlim,
+                                          ylim = shared_ylim)
+      }
+      pelsa_save_figure(
+        p, out, paste0("all_peptide_volcano_", pelsa_safe_name(contrast)),
+        width = 6, height = 4.5)
+    }
+    if (want_best && !is.null(df_best) && nrow(df_best) > 0L) {
+      p <- .pelsa_export_ggplot(df_best, df_best, color_mode, label_mode,
+                                n_top_adjp = n_top_adjp,
+                                n_top_markers = n_top_markers,
+                                contrast = contrast,
+                                volcano_label = "Best-peptide volcano",
+                                sig_cutoff = sig_cutoff)
+      if (!is.null(shared_xlim)) {
+        p <- p + ggplot2::coord_cartesian(xlim = shared_xlim,
+                                          ylim = shared_ylim)
+      }
+      pelsa_save_figure(
+        p, out, paste0("best_peptide_volcano_", pelsa_safe_name(contrast)),
+        width = 6, height = 4.5)
+    }
+  }
+  invisible(out)
+}
+
+# Body of export_intensity: one intensity-line PNG per protein (marker |
+# significant), contrast-independent (uses the union-across-contrasts adj.P
+# via .PELSA_ANY_CONTRAST). @noRd
+pelsa_section3_export_intensity <- function(dir_name, ome, stat_results, cache_entry,
+                                            processed_mat, condition_map,
+                                            condition_order, sig_cutoff, sig_stat,
+                                            marker_accessions, log_transformation) {
+  entry <- cache_entry
+  if (is.null(entry)) return(invisible(NULL))
+  matched <- entry$matched %||% data.frame()
+  if (nrow(matched) == 0L) return(invisible(NULL))
+  pm <- processed_mat; cmap <- condition_map
+  corder <- condition_order
+  if (is.null(pm) || is.null(cmap) || length(corder) == 0L)
+    return(invisible(NULL))
+  stat_df <- pelsa_export_add_any_contrast(
+    pelsa_volcano_stat_df(stat_results[[ome]], matched))
+  markers <- marker_accessions
+  prot <- tryCatch(
+    pelsa_intensity_proteins(stat_df, matched, markers, .PELSA_ANY_CONTRAST,
+                             sig_cutoff, sig_stat = sig_stat),
+    error = function(e) NULL)
+  if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
+  d_mk <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
+                                 .PELSA_SUB_INTENSITY, .PELSA_GRP_MARKER)
+  d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
+                                 .PELSA_SUB_INTENSITY, .PELSA_GRP_SIGNIF)
+  # y-axis label log base reflects this dataset's declared transform so a
+  # log10 dataset is not mislabeled "log2(intensity)".
+  log_xf <- log_transformation %||% NA_character_
+  log_base <- if (identical(tolower(as.character(log_xf)), "log10")) 10L else 2L
+  cov <- entry$coverage %||% data.frame()
+  cov_lookup <- function(acc) {
+    if (is.data.frame(cov) &&
+        all(c("accession", "coverage") %in% colnames(cov))) {
+      idx <- which(as.character(cov$accession) == acc)
+      if (length(idx) > 0L) return(as.numeric(cov$coverage[idx[1L]]))
+    }
+    NA_real_
+  }
+  intensity_idx <- pelsa_intensity_build_index(matched)
+  for (i in seq_len(nrow(prot))) {
+    acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
+    ld <- tryCatch(
+      pelsa_intensity_line_data(acc, stat_df, matched, pm, cmap, corder,
+        .PELSA_ANY_CONTRAST, sig_cutoff, is_marker = is_mk,
+        show_all = TRUE, sig_stat = sig_stat, .index = intensity_idx),
+      error = function(e) NULL)
+    if (is.null(ld) || nrow(ld) == 0L) next
+    gene <- pelsa_export_gene_for(matched, acc)
+    p <- tryCatch(
+      pelsa_intensity_export_ggplot(ld, gene, acc, log_base,
+                                    coverage_frac = cov_lookup(acc)),
+      error = function(e) NULL)
+    if (is.null(p)) next
+    base <- paste0("intensityLine_", pelsa_safe_name(gene), "_",
+                   pelsa_safe_name(acc))
+    pelsa_save_figure(p, if (is_mk) d_mk else d_sg, base,
+                      width = 9, height = 5)
+  }
+  invisible(NULL)
+}
+
+# Body of export_woods: one coverage/Woods PNG per (protein x contrast),
+# split into marker | significant subfolders. @noRd
+pelsa_section3_export_woods <- function(dir_name, ome, stat_results, cache_entry,
+                                        feat_df, sig_cutoff, sig_stat,
+                                        marker_accessions, contrast_choices) {
+  entry <- cache_entry
+  if (is.null(entry)) return(invisible(NULL))
+  matched <- entry$matched %||% data.frame()
+  if (nrow(matched) == 0L) return(invisible(NULL))
+  stat_df <- pelsa_volcano_stat_df(stat_results[[ome]], matched)
+  stat_any <- pelsa_export_add_any_contrast(stat_df)
+  markers <- marker_accessions
+  prot <- tryCatch(
+    pelsa_intensity_proteins(stat_any, matched, markers, .PELSA_ANY_CONTRAST,
+                             sig_cutoff, sig_stat = sig_stat),
+    error = function(e) NULL)
+  if (is.null(prot) || nrow(prot) == 0L) return(invisible(NULL))
+  fdf <- feat_df %||% data.frame()
+  fdf_by_acc <- if (is.data.frame(fdf) && nrow(fdf) > 0L &&
+                    "accession" %in% colnames(fdf)) {
+    facc <- as.character(fdf$accession)
+    fvalid <- !is.na(facc) & nzchar(facc)
+    if (any(fvalid)) split(fdf[fvalid, , drop = FALSE], facc[fvalid]) else list()
+  } else {
+    list()
+  }
+  cov <- entry$coverage %||% data.frame()
+  choices <- contrast_choices
+  woods_idx <- pelsa_woods_build_index(matched, stat_df)
+  d_mk <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
+                                 .PELSA_SUB_WOODS, .PELSA_GRP_MARKER)
+  d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
+                                 .PELSA_SUB_WOODS, .PELSA_GRP_SIGNIF)
+  for (i in seq_len(nrow(prot))) {
+    acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
+    feats <- fdf_by_acc[[acc]] %||% fdf[0, , drop = FALSE]
+    gene <- pelsa_export_gene_for(matched, acc)
+    target <- if (is_mk) d_mk else d_sg
+    for (cj in seq_along(choices)) {
+      contrast <- unname(choices[[cj]])
+      pep <- tryCatch(
+        pelsa_woods_peptide_data(acc, matched, stat_df, contrast,
+                                 sig_cutoff, sig_stat = sig_stat,
+                                 .index = woods_idx),
+        error = function(e) NULL)
+      if (is.null(pep) || nrow(pep) == 0L) next
+      plen <- pelsa_export_prot_len(cov, acc, pep)
+      p <- tryCatch(
+        pelsa_woods_export_ggplot(pep, feats, plen, gene, acc, contrast,
+                                  sig_cutoff, sig_stat = sig_stat),
+        error = function(e) NULL)
+      if (is.null(p)) next
+      base <- paste0("woods_", pelsa_safe_name(gene), "_",
+                     pelsa_safe_name(acc), "_contrast_",
+                     pelsa_safe_name(contrast))
+      pelsa_save_figure(p, target, base, width = 9, height = 4.2)
+    }
+  }
+  invisible(NULL)
+}
