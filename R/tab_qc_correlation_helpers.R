@@ -180,17 +180,17 @@ create_corr_boxplot <- function (gct, col_of_interest, ome, custom_color_map = N
   }
   
   # make boxplot
-  ggplot(data = plot.data,
-              aes(x = .data$ind,
+  ggplot(data = plot.data,  
+              aes(x = .data$ind,  
                   y = .data$values)) +
-    geom_boxplot(aes(fill=.data$ind)) +
+    geom_boxplot(aes(fill=.data$ind)) + 
+    theme_bw() + #change theme
     fill_definition + #color scale
+    theme(text= element_text(size=12)) + #change font sizes
     ylab(paste0("Correlation (",corr_method,")")) + #y axis title
     xlab(col_of_interest) + #x axis title
     labs(fill = col_of_interest) + #legend title
-    ggtitle(paste0("Intra-group correlations (",corr_method,"): ",ome)) + #plot title
-    protigy_plot_theme() + #shared typography
-    guides(fill = guide_legend(override.aes = list(size = 2))) #smaller legend swatches
+    ggtitle(paste0("Intra-group correlations (",corr_method,"): ",ome)) #plot title
 
 }
 

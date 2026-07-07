@@ -182,8 +182,9 @@ create_cv_violin_plot <- function(cv_df, title_suffix = "", palette,
       color = "black",
       show.legend = FALSE
     ) +
-    protigy_plot_theme() +
+    ggplot2::theme_bw() +
     ggplot2::theme(
+      text = ggplot2::element_text(size = 14),
       axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1, size = font.size)
     ) +
     ggplot2::ggtitle(title) +
