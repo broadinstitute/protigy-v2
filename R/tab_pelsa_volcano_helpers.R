@@ -1157,7 +1157,7 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
     # (negated so ascending order() still picks it first).
     rawp <- volcano_df$P.Value
     tb   <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
-    direction <- ifelse(!is.na(logfc) & logfc < 0, "down", "up")
+    direction <- ifelse(is.na(logfc), "ns", ifelse(logfc < 0, "down", "up"))
     # PELSA weights downregulated peptides more heavily: the down bucket
     # keeps the full requested N, the up bucket keeps only half (rounded up).
     n_down <- max(1L, as.integer(n_top_adjp)[1L])
@@ -1175,8 +1175,8 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
       adjp  <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
       rawp  <- volcano_df$P.Value
       tb    <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
-      m_dir <- ifelse(!is.na(logfc[marker_idx]) & logfc[marker_idx] < 0,
-                      "down", "up")
+      m_dir <- ifelse(is.na(logfc[marker_idx]), "ns",
+                      ifelse(logfc[marker_idx] < 0, "down", "up"))
       n_down_mk <- max(1L, as.integer(n_top_markers)[1L])
       n_up_mk   <- ceiling(n_down_mk / 2)
       idx <- c(idx, .pelsa_top_n_by_direction(marker_idx, m_dir,
