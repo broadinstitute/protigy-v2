@@ -288,7 +288,8 @@ pelsa_read_fasta <- function(path, mode = c("uniprot", "self_curated")) {
   }
 
   lines <- readLines(path, warn = FALSE)
-  lines <- lines[nzchar(trimws(lines))] # drop blank lines
+  lines <- trimws(lines)
+  lines <- lines[nzchar(lines)] # drop blank lines
   if (length(lines) == 0L) {
     stop("pelsa_read_fasta: FASTA file is empty: ", path)
   }
