@@ -1472,6 +1472,43 @@ test_that("label-mode: top_n_adjp labels fewer than N when a bucket is small", {
   )
 })
 
+test_that("label-mode: top_n_adjp excludes NA-logFC rows from the up bucket", {
+  # A peptide with NA logFC (undefined direction) but a tiny adj.P.Val must
+  # NOT be picked into the "up" top-N bucket -- regression for the bug where
+  # `ifelse(!is.na(logfc) & logfc < 0, "down", "up")` defaulted NA logFC to
+  # "up", letting it steal an up-regulated slot.
+  df <- data.frame(
+    is_marker         = rep(FALSE, 3),
+    logFC             = c(1.0, NA_real_, -1.0),
+    adj.P.Val         = c(0.5, 0.001, 0.2),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  # Row 2 has the smallest adj.P.Val overall but NA logFC -> excluded from
+  # both buckets. Up bucket keeps row 1 (only "up" row); down bucket keeps
+  # row 3 (only "down" row).
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 2L),
+    c(1L, 3L)
+  )
+})
+
+test_that("label-mode: top_n_markers excludes NA-logFC rows from the up bucket", {
+  df <- data.frame(
+    is_marker         = rep(TRUE, 3),
+    logFC             = c(1.0, NA_real_, -1.0),
+    adj.P.Val         = c(0.5, 0.001, 0.2),
+    winning_accession = c("P1", "P2", "P3"),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 2L),
+    c(1L, 3L)
+  )
+})
+
 test_that("label-mode: top_n_adjp default N is 3", {
   df <- data.frame(
     is_marker         = rep(FALSE, 6),
