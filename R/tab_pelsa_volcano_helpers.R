@@ -2117,9 +2117,12 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 }
 
 # Build the per-point legend category + the manual color scale for a color mode.
-# significance: the 3 fixed direction buckets; feature: the 9 UniProt classes
-# (always all listed, mirroring the Woods feature legend). Returns the factor
-# category column for the background rows + a named values vector for the scale.
+# significance: the 3 fixed direction buckets, but "Non-significant" is EXCLUDED
+# from the legend (breaks) - non-significant points still render in their gray
+# color, they just never get their own legend key, regardless of how many rows
+# fall into that bucket. feature: the 9 UniProt classes (always all listed,
+# mirroring the Woods feature legend). Returns the factor category column for
+# the background rows + a named values vector for the scale + the legend breaks.
 # @noRd
 .pelsa_export_color_spec <- function(bg, color_mode) {
   if (identical(color_mode, "feature")) {
@@ -2128,14 +2131,17 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
     values <- stats::setNames(unname(PELSA_FEATURE_COLORS[keys]), labels)
     raw    <- as.character(bg$feature_class_primary)
     cat    <- factor(unname(.PELSA_FEATURE_LABELS[raw]), levels = labels)
-    list(category = cat, values = values, method = "feature coloring")
+    list(category = cat, values = values, breaks = labels,
+         method = "feature coloring")
   } else {
     labels <- unname(.PELSA_EXPORT_SIG_LABELS[c("down", "ns", "up")])
     values <- stats::setNames(
       c(.PELSA_SIG_COLOR_DOWN, .PELSA_SIG_COLOR_NS, .PELSA_SIG_COLOR_UP), labels)
     raw    <- as.character(bg$sig_direction)
     cat    <- factor(unname(.PELSA_EXPORT_SIG_LABELS[raw]), levels = labels)
-    list(category = cat, values = values, method = "significance coloring")
+    breaks <- setdiff(labels, .PELSA_EXPORT_SIG_LABELS[["ns"]])
+    list(category = cat, values = values, breaks = breaks,
+         method = "significance coloring")
   }
 }
 
@@ -2185,11 +2191,12 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
       hjust = 1.15, vjust = 1.5, size = 2, fontface = "bold",
       color = "grey30")
   }
-  if (nrow(mk) > 0L) {
-    gg <- gg + ggplot2::geom_point(
-      data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP, fill = "Marker"),
-      shape = 21, size = 1, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
-  }
+  # The marker layer is added even when mk is empty (0 rows -> an empty layer)
+  # so the fill aesthetic + its scale always exist and the "Marker" legend key
+  # always renders, regardless of how many marker peptides are in this view.
+  gg <- gg + ggplot2::geom_point(
+    data = mk, ggplot2::aes(x = .data$logFC, y = .data$logP, fill = "Marker"),
+    shape = 21, size = 1, stroke = 0.5, color = .PELSA_VOLCANO_MARKER_EDGE)
   # Bake peptide labels per the in-app label mode (the on-screen labels are
   # plotly annotations; the static export draws them as repelled boxed labels:
   # white box, black outline + text, black segment; force=20 to spread them).
@@ -2224,9 +2231,10 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 
   gg +
     ggplot2::scale_color_manual(name = NULL, values = spec$values,
-                                drop = FALSE) +
+                                breaks = spec$breaks, drop = FALSE) +
     ggplot2::scale_fill_manual(name = NULL,
-                               values = c("Marker" = .PELSA_VOLCANO_MARKER_COLOR)) +
+                               values = c("Marker" = .PELSA_VOLCANO_MARKER_COLOR),
+                               breaks = "Marker", limits = "Marker") +
     ggplot2::guides(
       color = ggplot2::guide_legend(
         order = 1, override.aes = list(size = 2, alpha = 1)),

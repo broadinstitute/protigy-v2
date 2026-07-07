@@ -913,6 +913,17 @@ test_that(".pelsa_export_color_spec: significance mode -> 3 fixed buckets", {
   expect_equal(as.character(spec$category)[3], "Upregulated")
 })
 
+test_that(".pelsa_export_color_spec: significance mode breaks exclude Non-significant", {
+  # The legend must never show a "Non-significant" key: values still carries the
+  # ns color (so gray points render), but breaks (which drives the legend keys
+  # via scale_color_manual(breaks=)) omits it - Downregulated/Upregulated only.
+  bg <- .make_export_df()
+  spec <- .pelsa_export_color_spec(bg, "significance")
+  expect_equal(spec$breaks, c("Downregulated", "Upregulated"))
+  expect_false("Non-significant" %in% spec$breaks)
+  expect_true("Non-significant" %in% names(spec$values))
+})
+
 test_that(".pelsa_export_color_spec: feature mode -> all 9 UniProt classes", {
   bg <- .make_export_df()
   spec <- .pelsa_export_color_spec(bg, "feature")
@@ -922,6 +933,8 @@ test_that(".pelsa_export_color_spec: feature mode -> all 9 UniProt classes", {
   expect_equal(unname(spec$values[.PELSA_FEATURE_LABELS[["folded_domain"]]]),
                unname(PELSA_FEATURE_COLORS[["folded_domain"]]))
   expect_equal(spec$method, "feature coloring")
+  # feature mode keeps every class as a legend break (no exclusion rule there).
+  expect_equal(spec$breaks, names(spec$values))
 })
 
 test_that(".pelsa_export_ggplot: title from contrast, subtitle from type + mode", {
@@ -976,6 +989,96 @@ test_that(".pelsa_export_ggplot: marker points drawn same size as background poi
   expect_equal(mk_size, bg_size)
   # the magenta ring (shape 21) is retained as the distinguishing cue.
   expect_equal(pt_layers[[which(is_marker_layer)[1]]]$aes_params$shape, 21)
+})
+
+# Mirrors the real bug report: a contrast with ZERO significantly-up, ZERO
+# significantly-down, and ZERO marker peptides (every row is "ns", is_marker
+# all FALSE). The legend must still show Downregulated/Upregulated/Marker keys
+# with their correct colors, and must never show a Non-significant key.
+.make_export_df_all_ns_no_markers <- function() {
+  df <- data.frame(
+    logFC = c(0.1, -0.2, 0.05),
+    logP  = c(0.5, 0.3, 0.2),
+    adj.P.Val = c(0.5, 0.6, 0.7),
+    sig_direction = c("ns", "ns", "ns"),
+    feature_class_primary = c("none", "none", "none"),
+    winning_accession = c("A", "B", "C"),
+    is_marker = c(FALSE, FALSE, FALSE),
+    label = c(NA, NA, NA),
+    stringsAsFactors = FALSE)
+  attr(df, "y_cutoff") <- 2.0
+  df
+}
+
+# Extracts the built color-scale legend keys (the labels that will actually
+# appear in the rendered legend) via ggplot_build()'s plot$scales, matching
+# this file's existing style of introspecting g$layers/g$scales rather than
+# rendering to a grob.
+.export_ggplot_color_breaks <- function(g) {
+  built <- ggplot2::ggplot_build(g)
+  color_scale <- built$plot$scales$get_scales("colour")
+  color_scale$get_breaks()
+}
+
+.export_ggplot_fill_breaks <- function(g) {
+  built <- ggplot2::ggplot_build(g)
+  fill_scale <- built$plot$scales$get_scales("fill")
+  fill_scale$get_breaks()
+}
+
+test_that(".pelsa_export_ggplot: zero significant + zero markers still show all legend keys", {
+  df <- .make_export_df_all_ns_no_markers()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  expect_silent(suppressWarnings(ggplot2::ggplot_build(g)))
+
+  color_breaks <- .export_ggplot_color_breaks(g)
+  expect_true("Downregulated" %in% color_breaks)
+  expect_true("Upregulated" %in% color_breaks)
+  expect_false("Non-significant" %in% color_breaks)
+
+  fill_breaks <- .export_ggplot_fill_breaks(g)
+  expect_true("Marker" %in% fill_breaks)
+})
+
+test_that(".pelsa_export_ggplot: marker layer always present (even with 0 marker rows)", {
+  # Root-cause regression: previously the marker geom_point layer was only
+  # added `if (nrow(mk) > 0L)`, so a view with zero markers had no fill
+  # aesthetic mapped anywhere and the "Marker" legend key vanished entirely.
+  df <- .make_export_df_all_ns_no_markers()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  pt_layers <- Filter(function(l) inherits(l$geom, "GeomPoint"), g$layers)
+  has_fill_layer <- any(vapply(pt_layers,
+    function(l) "fill" %in% names(l$mapping), logical(1)))
+  expect_true(has_fill_layer)
+})
+
+test_that(".pelsa_export_ggplot: non-significant points still render in the plot body", {
+  # The legend key disappears for "ns", but the underlying points must still be
+  # drawn (just uncredited in the legend) - confirm the background layer's data
+  # still contains all rows, colored via the ns entry in scale_color_manual's
+  # values (which is retained even though it is excluded from breaks).
+  df <- .make_export_df_all_ns_no_markers()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  bg_layer <- Filter(function(l) inherits(l$geom, "GeomPoint") &&
+                        !("fill" %in% names(l$mapping)), g$layers)[[1]]
+  expect_equal(nrow(bg_layer$data), nrow(df))
+  built <- ggplot2::ggplot_build(g)
+  bg_built <- built$data[[1]]
+  ns_color <- unname(.PELSA_SIG_COLOR_NS)
+  expect_true(all(bg_built$colour == ns_color))
+})
+
+test_that(".pelsa_export_ggplot: with significant + marker rows, legend still complete", {
+  # Regression protection: the normal (non-zero) case keeps working the same
+  # way as before - all three sig legend keys present, no Non-significant key,
+  # Marker key present.
+  df <- .make_export_df()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  color_breaks <- .export_ggplot_color_breaks(g)
+  expect_true(all(c("Downregulated", "Upregulated") %in% color_breaks))
+  expect_false("Non-significant" %in% color_breaks)
+  fill_breaks <- .export_ggplot_fill_breaks(g)
+  expect_true("Marker" %in% fill_breaks)
 })
 
 ################################################################################
