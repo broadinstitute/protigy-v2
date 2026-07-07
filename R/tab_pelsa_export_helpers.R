@@ -71,10 +71,16 @@ pelsa_export_input_files <- function(dir_name, fasta_path, annotation_path,
     # steer file.copy outside dir_name (path traversal). The browser normally
     # sends a bare basename, but never trust it -- strip any directory component.
     # basename() alone is not enough: basename("..") == ".." (and "." == "."),
-    # which still resolves to dir_name's parent/self via file.copy. pelsa_safe_name()
-    # keeps "." in its allowed charset, so it will NOT sanitize a pure-dot name --
-    # reject "." / ".." explicitly instead of relying on it here.
-    safe_base <- basename(name %||% basename(path))
+    # which still resolves to dir_name's parent/self via file.copy. It also does
+    # NOT treat "\\" as a separator on a POSIX host, so a crafted name like
+    # "C:\\evil\\x.txt" passes through whole. Normalize backslashes to "/" before
+    # basename(), then collapse any remaining unsafe characters via
+    # pelsa_safe_name() -- it keeps "." in its allowed charset, so it will NOT
+    # sanitize a pure-dot name -- reject "." / ".." explicitly instead of relying
+    # on it here.
+    raw_name <- name %||% basename(path)
+    safe_base <- basename(gsub("\\\\", "/", raw_name))
+    safe_base <- pelsa_safe_name(safe_base)
     if (safe_base %in% c("..", ".")) safe_base <- "unknown"
     dest <- file.path(dir_name, safe_base)
     file.copy(path, dest, overwrite = TRUE)
