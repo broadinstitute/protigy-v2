@@ -250,6 +250,32 @@ test_that("build_ggplot returns a ggplot with point + label layers", {
   expect_equal(g$labels$y, "log2(intensity)")
 })
 
+# ---- export styling -----------------------------------------------------------
+
+test_that("pelsa_splot_build_ggplot applies the new export styling", {
+  prep <- list(
+    background = data.frame(rank = 1:3, y = c(9, 8, 7)),
+    marker_pts = data.frame(rank = 1L, y = 9),
+    trypsin_pts = data.frame(rank = integer(0), y = numeric(0)),
+    marker_labels = data.frame(rank = 1L, y = 9, label = "GA_aa10",
+                               stringsAsFactors = FALSE),
+    trypsin_labels = data.frame(rank = integer(0), y = numeric(0),
+                                label = character(0)),
+    y_title = "log2(intensity)", show_trypsin = FALSE)
+  g <- pelsa_splot_build_ggplot(prep)
+  expect_equal(g$theme$plot.title$size, 11)
+  expect_equal(g$theme$plot.subtitle$size, 11)
+  expect_equal(g$theme$axis.title$size, 11)
+  expect_equal(g$theme$axis.text$size, 7)
+  expect_equal(g$theme$axis.text$colour, "black")
+  expect_equal(g$theme$plot.title.position, "panel")  # ggplot2 default (unset -> falls back)
+  expect_equal(g$theme$legend.background$colour, "black")
+  expect_equal(g$theme$legend.background$fill, NA)
+  repel_layer <- Filter(function(l) inherits(l$geom, "GeomLabelRepel"), g$layers)[[1]]
+  expect_equal(repel_layer$aes_params$size, 3)
+  expect_equal(repel_layer$aes_params$fontface, "bold")
+})
+
 test_that("export writes one PNG per sample with customization applied", {
   mat <- matrix(c(50,40,30, 45,35,25), nrow = 3,
                 dimnames = list(c("p1","p2","p3"), c("S1","S2")))
@@ -443,7 +469,10 @@ test_that("S-plot centers its title and subtitle over the whole figure", {
     y_title = "log2(intensity)", show_trypsin = FALSE)
   g <- pelsa_splot_build_ggplot(prep, title = "Intensity rank (S-plot)",
                                 subtitle = "sample_1")
-  expect_equal(g$theme$plot.title.position, "plot")
+  # plot.title.position is no longer set explicitly; ggplot2 falls back to
+  # its own "panel" default (see Task 7: title/subtitle stay centered over
+  # the panel via hjust, not over the whole figure via plot.title.position).
+  expect_equal(g$theme$plot.title.position, "panel")
   expect_equal(g$theme$plot.title$hjust, 0.5)
   expect_equal(g$theme$plot.subtitle$hjust, 0.5)
 })

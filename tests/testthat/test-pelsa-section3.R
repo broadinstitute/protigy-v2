@@ -4832,3 +4832,68 @@ test_that("woods_export_ggplot: no features -> builds fine, no widened note", {
   expect_false(grepl("widened", gg$labels$caption, ignore.case = TRUE))
 })
 
+# ---------------------------------------------------------------------------
+# Task 8: shared volcano x/y range across every figure in one ome's export.
+#
+# Every volcano PNG exported for one ome (across ALL contrasts, both all-peptide
+# and best-peptide types) must share the SAME coord_cartesian x/y range, so any
+# two exported figures are visually comparable side-by-side. The pre-Task-8
+# single-pass loop autoscaled each PNG to its own contrast's data.
+
+# A 2-contrast stat_results in the `_full` fixture shape (carries .row_id, aligns
+# to .mk_cache_full()'s matched rows). The two contrasts have deliberately
+# different logFC/P.Value extents so their independently-autoscaled ranges would
+# DIFFER -- the shared-range guarantee is what makes them equal.
+.mk_stat_results_full_2c <- function() {
+  list(Proteome = data.frame(
+    id                   = c("PEPA", "PEPB", "PEPC"),
+    .row_id              = c(1L, 2L, 3L),
+    PEP.StrippedSequence = c("PEPA", "PEPB", "PEPC"),
+    PG.ProteinAccessions = c("ACC1", "ACC2", "ACC1"),
+    PG.Genes             = c("G1", "G2", "G1"),
+    logFC.A_over_B       = c(2.0, -1.5, 0.1),
+    adj.P.Val.A_over_B   = c(0.001, 0.02, 0.8),
+    P.Value.A_over_B     = c(0.0001, 0.005, 0.7),
+    logFC.A_over_C       = c(4.0, -3.2, 0.6),
+    adj.P.Val.A_over_C   = c(0.03, 0.5, 0.9),
+    P.Value.A_over_C     = c(0.02, 0.4, 0.88),
+    stringsAsFactors     = FALSE, check.names = FALSE
+  ))
+}
+
+test_that("export_volcano applies the SAME x/y coord range to every volcano PNG for one ome", {
+  captured <- list()
+  testthat::local_mocked_bindings(
+    pelsa_save_figure = function(plot, dir_name, basename, width, height, ...) {
+      built <- ggplot2::ggplot_build(plot)
+      captured[[basename]] <<-
+        built$layout$panel_params[[1]][c("x.range", "y.range")]
+      invisible(NULL)
+    },
+    .package = "Protigy"
+  )
+  args <- .full_args()
+  args$stat_results <- reactive(.mk_stat_results_full_2c())
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = args,
+    {
+      # best panel ON -> both all-peptide AND best-peptide figures are built, so
+      # the shared range must hold across BOTH types AND both contrasts.
+      session$setInputs(pelsa_color_mode = "significance",
+                        pelsa_label_mode = "all_markers",
+                        pelsa_show_best_panel = TRUE)
+      # >=2 contrasts is what makes "all ranges equal" a real assertion.
+      expect_gte(length(contrast_choices()), 2L)
+      session$returned$volcano(tempfile())
+    }
+  )
+  # 2 contrasts x 2 types (all-peptide + best-peptide) = up to 4 PNGs.
+  expect_true(length(captured) >= 2L)
+  ranges <- lapply(captured, function(c) list(x = c$x.range, y = c$y.range))
+  first <- ranges[[1]]
+  for (r in ranges[-1]) {
+    expect_equal(r$x, first$x, tolerance = 1e-6)
+    expect_equal(r$y, first$y, tolerance = 1e-6)
+  }
+})

@@ -372,3 +372,223 @@ test_that("overall density plot carries a white halo behind mean/median labels",
   # Halo covers both labels, 8 copies each = 16 rows.
   expect_equal(nrow(halo[[1]]$data), 16L)
 })
+
+# ---- export styling: pelsa_overall_density_plot ------------------------------
+
+test_that("pelsa_overall_density_plot default (export=FALSE) keeps current on-screen styling", {
+  vals <- c(10, 20, 30, 40, 50)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t")
+  expect_equal(p$theme$plot.title$size, 14)
+  # theme_bw()'s own axis.text carries the grey "#4D4D4DFF" (not black) in this
+  # ggplot2 version -- export=FALSE must leave that inherited default alone.
+  expect_equal(p$theme$axis.text$colour, "#4D4D4DFF")
+  expect_equal(p$theme$plot.title.position, "plot")
+})
+
+test_that("pelsa_overall_density_plot export=TRUE applies export styling", {
+  vals <- c(10, 20, 30, 40, 50)
+  p <- pelsa_overall_density_plot(vals, x_label = "x", title = "t", export = TRUE)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_equal(p$theme$plot.subtitle$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+  sizes <- vapply(text_layers, function(l) l$aes_params$size %||% NA_real_, numeric(1))
+  expect_true(all(sizes[!is.na(sizes)] == 4.2))
+})
+
+test_that("pelsa_coverage_distribution_plot export=TRUE fixes x-axis range to (0, 1)", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
+  p <- pelsa_coverage_distribution_plot(cov, export = TRUE)
+  built <- ggplot2::ggplot_build(p)
+  x_range <- built$layout$panel_params[[1]]$x.range
+  # coord_cartesian(xlim=c(0,1)) with default ggplot expansion still reports
+  # panel_params x.range slightly beyond (0,1) by the expansion factor -- assert
+  # the UNDERLYING requested limits via the coord object rather than the
+  # expanded render range.
+  expect_equal(p$coordinates$limits$x, c(0, 1))
+})
+
+test_that("pelsa_coverage_distribution_plot default (export=FALSE) does not fix x-axis range", {
+  cov <- data.frame(accession = paste0("P", 1:5),
+                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
+  p <- pelsa_coverage_distribution_plot(cov)
+  # pelsa_overall_density_plot's own coord_cartesian(xlim=c(0, right_bound))
+  # always clamps the left edge to 0 with an unclamped (NA) right edge when no
+  # x_hi is supplied -- export=FALSE must leave that pre-existing clamp as-is,
+  # not add the export-only fixed (0, 1) range.
+  expect_equal(p$coordinates$limits$x, c(0, NA))
+})
+
+# ---- export styling: pelsa_per_condition_density_plot -------------------------
+
+test_that("pelsa_per_condition_density_plot default (export=FALSE) keeps current label text and size", {
+  df <- data.frame(condition = rep(c("A", "B"), each = 5),
+                   peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+                   stringsAsFactors = FALSE)
+  p <- pelsa_per_condition_density_plot(
+    df, value_col = "peptide_length", x_label = "Peptide length (residues)",
+    title = "t")
+  # Verified real layer order: geom_density, geom_vline, pelsa_halo_text_layers'
+  # (white) geom_text, then the colored geom_text -- 4 layers total, GeomText at
+  # indices 3 and 4, so gt_idx[2] is the colored label layer.
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  expect_equal(unname(gt_idx), c(3L, 4L))
+  built <- ggplot2::ggplot_build(p)
+  labels <- unique(built$data[[gt_idx[2]]]$label)
+  expect_true(any(grepl("^A median = ", labels)))
+  colored_layer <- p$layers[[gt_idx[2]]]
+  expect_equal(colored_layer$aes_params$size, 3)
+})
+
+test_that("pelsa_per_condition_density_plot export=TRUE drops condition-name prefix from label and keeps size 3", {
+  df <- data.frame(condition = rep(c("A", "B"), each = 5),
+                   peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
+                   stringsAsFactors = FALSE)
+  p <- pelsa_per_condition_density_plot(
+    df, value_col = "peptide_length", x_label = "Peptide length (residues)",
+    title = "t", export = TRUE)
+  built <- ggplot2::ggplot_build(p)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  labels <- unique(built$data[[gt_idx[2]]]$label)
+  expect_true(any(grepl("^median = ", labels)))
+  expect_false(any(grepl("^A median = |^B median = ", labels)))
+  colored_layer <- p$layers[[gt_idx[2]]]
+  expect_equal(colored_layer$aes_params$size, 3)  # UNCHANGED -- crowding exception
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+})
+
+# ---- export styling: pelsa_cv_kde_plot ---------------------------------------
+
+test_that("pelsa_cv_kde_plot export=TRUE applies export styling, keeps label size 3 and text unchanged", {
+  cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
+                   cv_status = rep("ok", 60),
+                   condition = rep(c("A", "B"), 30))
+  p <- pelsa_cv_kde_plot(cv, export = TRUE)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  colored_layer <- p$layers[[gt_idx[length(gt_idx)]]]
+  expect_equal(colored_layer$aes_params$size, 3)  # UNCHANGED -- crowding exception
+})
+
+test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling", {
+  cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
+                   cv_status = rep("ok", 60),
+                   condition = rep(c("A", "B"), 30))
+  p <- pelsa_cv_kde_plot(cv)
+  expect_equal(p$theme$plot.title$size, 14)
+  expect_equal(p$theme$plot.title.position, "plot")
+})
+
+# ---- export styling: pelsa_missed_cleavage_plot -------------------------------
+
+test_that("pelsa_missed_cleavage_plot parenthesizes the percentage in the bar label (both modes)", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p_screen <- pelsa_missed_cleavage_plot(pm)
+  p_export <- pelsa_missed_cleavage_plot(pm, export = TRUE)
+  built_screen <- ggplot2::ggplot_build(p_screen)
+  built_export <- ggplot2::ggplot_build(p_export)
+  gt_screen <- which(vapply(p_screen$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  gt_export <- which(vapply(p_export$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_screen$data[[gt_screen]]$label)))
+  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_export$data[[gt_export]]$label)))
+})
+
+test_that("pelsa_missed_cleavage_plot export=TRUE changes x-axis title and label size", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p <- pelsa_missed_cleavage_plot(pm, export = TRUE)
+  expect_equal(p$labels$x, "# of missed cleavages")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 4)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+  expect_equal(p$theme$axis.text$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)
+})
+
+test_that("pelsa_missed_cleavage_plot default (export=FALSE) keeps 'Missed cleavages' x title and size-3 label", {
+  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
+  p <- pelsa_missed_cleavage_plot(pm)
+  expect_equal(p$labels$x, "Missed cleavages")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
+})
+
+# ---- export styling: pelsa_depth_bar_plot -------------------------------------
+
+test_that("pelsa_depth_bar_plot export=TRUE removes x-axis title and enlarges x-axis text", {
+  nq <- c(S1 = 100L, S2 = 250L, S3 = 175L)
+  p <- pelsa_depth_bar_plot(nq, export = TRUE)
+  expect_null(p$labels$x)
+  expect_equal(p$theme$axis.text.x$size, 9)
+  expect_equal(p$theme$axis.text.x$colour, "black")
+  expect_equal(p$theme$axis.text$size, 8)  # y-axis (general rule) unaffected
+  expect_equal(p$theme$axis.text$colour, "black")
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 4)
+  expect_equal(p$theme$plot.title$size, 12)
+  expect_null(p$theme$plot.title.position)
+})
+
+test_that("pelsa_depth_bar_plot default (export=FALSE) keeps 'Sample' x title, size 11 x-text, size 3 label", {
+  nq <- c(S1 = 100L, S2 = 250L, S3 = 175L)
+  p <- pelsa_depth_bar_plot(nq)
+  expect_equal(p$labels$x, "Sample")
+  expect_equal(p$theme$axis.text.x$size, 11)
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
+  expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
+})
+
+# ---- export wiring: pelsa_section2_exports_for --------------------------------
+
+test_that("pelsa_section2_exports_for's QC bundle calls builders with export=TRUE and 5.6x3.5in canvas", {
+  entry <- list(
+    coverage = data.frame(accession = paste0("P", 1:5),
+                          coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
+                          protein_length = rep(100L, 5), stringsAsFactors = FALSE),
+    peptide_metrics = data.frame(peptide_seq = paste0("PEP", 1:5),
+                                 peptide_length = c(8, 9, 10, 11, 12),
+                                 missed_cleavages = rep(0L, 5), stringsAsFactors = FALSE),
+    cv = data.frame(cv_pct = numeric(0), cv_status = character(0), condition = character(0)),
+    n_quantified = c(S1 = 10L),
+    coverage_by_condition = data.frame(condition = character(0), coverage = numeric(0)),
+    length_by_condition = data.frame(condition = character(0), peptide_length = numeric(0))
+  )
+  captured <- list()
+  testthat::local_mocked_bindings(
+    pelsa_save_figure = function(plot, dir_name, basename, width, height, ...) {
+      captured[[basename]] <<- list(width = width, height = height,
+                                    title_size = plot$theme$plot.title$size,
+                                    axis_colour = plot$theme$axis.text$colour)
+      invisible(NULL)
+    },
+    .package = "Protigy"
+  )
+  tmp <- file.path(tempdir(), paste0("qcexport_", as.integer(runif(1, 1, 1e6))))
+  dir.create(tmp, recursive = TRUE, showWarnings = FALSE)
+  bundle <- pelsa_section2_exports_for(entry, ome = "ds1")
+  bundle$qc(tmp)
+  unlink(tmp, recursive = TRUE)
+
+  expect_true(length(captured) >= 1L)
+  for (nm in names(captured)) {
+    dims <- captured[[nm]]
+    expect_equal(dims$width, 5.6, info = paste("width for", nm))
+    expect_equal(dims$height, 3.5, info = paste("height for", nm))
+    expect_equal(dims$title_size, 12, info = paste("export title size for", nm))
+    expect_equal(dims$axis_colour, "black", info = paste("export axis colour for", nm))
+  }
+})

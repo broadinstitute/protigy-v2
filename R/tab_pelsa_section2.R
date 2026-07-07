@@ -742,9 +742,10 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
                                        value_fmt = function(v) sprintf("%.1f", v),
                                        fill = "#59a14f", subtitle = NULL,
                                        blank_msg = "Not enough values for a density.",
-                                       x_hi = NULL, x_scale = NULL) {
+                                       x_hi = NULL, x_scale = NULL, export = FALSE) {
   vals <- vals[is.finite(vals)]
   if (length(vals) < 2L) return(pelsa_blank_plot(blank_msg))
+  ann_size <- if (export) 4.2 else 3.2
   m  <- mean(vals)
   md <- stats::median(vals)
   y_top <- tryCatch(max(stats::density(vals)$y, na.rm = TRUE),
@@ -769,14 +770,12 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
     geom_density(fill = fill, alpha = 0.4, color = fill) +
     geom_vline(xintercept = m,  linetype = "dashed", color = "#e15759") +
     geom_vline(xintercept = md, linetype = "dashed", color = "#4e79a7") +
-    pelsa_halo_text_layers(halo_df, x_hi = max(vals), peak = y_top, size = 3.2) +
+    pelsa_halo_text_layers(halo_df, x_hi = max(vals), peak = y_top, size = ann_size) +
     annotate("text", x = m,  y = ys[1], label = paste0("mean = ", value_fmt(m)),
-             color = "#e15759", hjust = -0.05, size = 3.2, fontface = "bold") +
+             color = "#e15759", hjust = -0.05, size = ann_size, fontface = "bold") +
     annotate("text", x = md, y = ys[2],
              label = paste0("median = ", value_fmt(md)),
-             color = "#4e79a7", hjust = -0.05, size = 3.2, fontface = "bold") +
-    labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
-    protigy_plot_theme()
+             color = "#4e79a7", hjust = -0.05, size = ann_size, fontface = "bold")
   # Always clamp the left edge to 0 (vals here are always non-negative counts,
   # lengths, or fractions), mirroring pelsa_per_condition_density_plot's x_lo.
   # Without this, a floating density curve whose mass sits away from 0 can
@@ -784,6 +783,18 @@ pelsa_overall_density_plot <- function(vals, x_label, title,
   # "use the data's natural extent," preserving the unclamped-right-edge
   # behavior for callers (length/coverage) that don't pass x_hi.
   right_bound <- if (!is.null(x_hi) && is.finite(x_hi) && x_hi > 0) x_hi else NA
+  base_theme <- protigy_plot_theme()
+  if (export) {
+    base_theme$plot.title.position <- NULL
+  }
+  p <- p + labs(x = x_label, y = "Density", title = title, subtitle = subtitle) +
+    base_theme
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
   p <- p + coord_cartesian(xlim = c(0, right_bound))
   if (!is.null(x_scale)) p <- p + x_scale
   p
@@ -806,7 +817,7 @@ pelsa_per_condition_density_plot <- function(df, value_col,
                                              value_fmt = function(v) sprintf("%.1f", v),
                                              min_n = 2L,
                                              blank_msg = "No per-condition data to display.",
-                                             x_scale = NULL) {
+                                             x_scale = NULL, export = FALSE) {
   if (is.null(df) || !is.data.frame(df) || nrow(df) == 0L ||
       !all(c("condition", value_col) %in% names(df))) {
     return(pelsa_blank_plot(blank_msg))
@@ -854,10 +865,16 @@ pelsa_per_condition_density_plot <- function(df, value_col,
   # authoritative median). Mirrors the CV-KDE labels.
   medians$n <- as.integer(counts[as.character(medians$condition)])
   medians$label <- vapply(seq_len(nrow(medians)), function(i) {
-    sprintf("%s median = %s (n=%d)", medians$condition[i],
-            value_fmt(medians$value[i]), medians$n[i])
+    if (export) {
+      sprintf("median = %s", value_fmt(medians$value[i]))
+    } else {
+      sprintf("%s median = %s (n=%d)", medians$condition[i],
+              value_fmt(medians$value[i]), medians$n[i])
+    }
   }, character(1))
 
+  base_theme <- protigy_plot_theme()
+  if (export) base_theme$plot.title.position <- NULL
   p <- ggplot(d, aes(x = .data$value, color = .data$condition,
                 fill = .data$condition)) +
     geom_density(alpha = 0.15) +
@@ -872,31 +889,44 @@ pelsa_per_condition_density_plot <- function(df, value_col,
     coord_cartesian(xlim = c(x_lo, x_hi)) +
     labs(x = x_label, y = "Density", color = "Condition", fill = "Condition",
          title = title, subtitle = subtitle) +
-    protigy_plot_theme() +
+    base_theme +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
   if (!is.null(x_scale)) p <- p + x_scale
   p
 }
 
 # 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
-pelsa_coverage_distribution_plot <- function(coverage) {
+pelsa_coverage_distribution_plot <- function(coverage, export = FALSE) {
   vals <- pelsa_coverage_values(coverage)
   over_n <- pelsa_over_length_count(coverage)
   subtitle <- if (over_n > 0L)
     sprintf("Experiment-wide | %d clamped (over-length)", over_n) else
       "Experiment-wide"
-  pelsa_overall_density_plot(
+  p <- pelsa_overall_density_plot(
     vals, x_label = "Sequence coverage (%)",
     title = "Per-protein sequence coverage", fill = "#4e79a7",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v), subtitle = subtitle,
     blank_msg = "Not enough coverage values for a density.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
+    export = export)
+  # Overrides pelsa_overall_density_plot's own internal coord_cartesian (last
+  # coord wins) to fix the axis at (0, 1) for export; suppress the informational
+  # "Coordinate system already present" message this intentional override emits.
+  if (export) p <- suppressMessages(p + ggplot2::coord_cartesian(xlim = c(0, 1)))
+  p
 }
 
 # 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
 pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
-                                             condition_order = NULL) {
+                                             condition_order = NULL,
+                                             export = FALSE) {
   pelsa_per_condition_density_plot(
     coverage_by_condition, value_col = "coverage",
     condition_order = condition_order,
@@ -905,23 +935,26 @@ pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
     subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f%%", 100 * v),
     blank_msg = "No per-condition coverage - a condition column is required.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100))
+    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
+    export = export)
 }
 
 # 6A: peptide-length DENSITY (experiment-wide mode). @noRd
-pelsa_length_density_plot <- function(peptide_metrics) {
+pelsa_length_density_plot <- function(peptide_metrics, export = FALSE) {
   vals <- pelsa_length_values(peptide_metrics)
   pelsa_overall_density_plot(
     vals, x_label = "Peptide length (residues)",
     title = "Peptide-length distribution", fill = "#59a14f",
     value_fmt = function(v) sprintf("%.1f", v),
     subtitle = "Experiment-wide",
-    blank_msg = "Not enough peptides for a length density.")
+    blank_msg = "Not enough peptides for a length density.",
+    export = export)
 }
 
 # 6A: peptide-length DENSITY (per-condition mode). @noRd
 pelsa_length_by_condition_plot <- function(length_by_condition,
-                                           condition_order = NULL) {
+                                           condition_order = NULL,
+                                           export = FALSE) {
   pelsa_per_condition_density_plot(
     length_by_condition, value_col = "peptide_length",
     condition_order = condition_order,
@@ -929,7 +962,8 @@ pelsa_length_by_condition_plot <- function(length_by_condition,
     title = "Peptide-length distribution by condition",
     subtitle = "Per-condition",
     value_fmt = function(v) sprintf("%.1f", v),
-    blank_msg = "No per-condition lengths - a condition column is required.")
+    blank_msg = "No per-condition lengths - a condition column is required.",
+    export = export)
 }
 
 # 6B: experiment-wide CV DENSITY (pooled across conditions). Unlike the
@@ -953,8 +987,12 @@ pelsa_cv_overall_plot <- function(cv) {
     x_hi = x_hi)
 }
 
-# 6A: missed-cleavage bar (0,1,2,...). @noRd
-pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
+# 6A: missed-cleavage bar (0,1,2,...). export=TRUE applies static-figure
+# styling (title size 12, no "plot"-position override, black size-8 axis
+# text) plus a wider x-axis title and a larger bar-label font, matching the
+# export pattern used by the other section-2 QC plots. @noRd
+pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06,
+                                       export = FALSE) {
   df <- pelsa_missed_cleavage_data(peptide_metrics)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No missed-cleavage data."))
@@ -970,8 +1008,10 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
     df$missed, prettyNum(df$count, big.mark = ","), df$percent
   )
   df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
-  # Absolute count + percent of all identified peptides, stacked above each bar.
-  df$bar_label <- sprintf("%s\n%.1f%%", prettyNum(df$count, big.mark = ","),
+  # Absolute count + parenthesized percent of all identified peptides, stacked
+  # above each bar. Parenthesization applies in BOTH modes -- it is a
+  # label-content clarity fix, not export-specific styling.
+  df$bar_label <- sprintf("%s\n(%.1f%%)", prettyNum(df$count, big.mark = ","),
                           df$percent)
   # Lift the label `head_frac` of the tallest bar ABOVE each bar top (in-app
   # default 0.06 is larger than the depth plot's 0.04 so the 2-line count+percent
@@ -980,21 +1020,34 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06) {
   # the label bottom at label_y.
   head_room <- head_frac * max(df$count, na.rm = TRUE)
   df$label_y <- df$count + head_room
-  ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
+  x_title <- if (export) "# of missed cleavages" else "Missed cleavages"
+  label_size <- if (export) 4 else 3
+  p <- ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
     geom_col(fill = "#f28e2b") +
     geom_text(aes(y = .data$label_y, label = .data$bar_label),
-              vjust = 0, size = 3, fontface = "bold") +
+              vjust = 0, size = label_size, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.15))) +
-    labs(x = "Missed cleavages", y = "# of peptides",
+    labs(x = x_title, y = "# of peptides",
          title = "Missed-cleavage distribution") +
     protigy_plot_theme()
+  if (export) {
+    # Deleting the list element (not assigning theme(plot.title.position=NULL))
+    # is what actually drops the "plot"-wide-centering override so the title
+    # falls back to ggplot2's panel-centered default -- a `+ theme(x = NULL)`
+    # merge does NOT unset an already-set element in this ggplot2 version.
+    p$theme$plot.title.position <- NULL
+    p <- p + ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 # 6B: per-condition CV KDE. One density curve per ELIGIBLE condition (>= 20
 # finite "ok" CVs), a vertical dashed median line per condition (labels dodged),
 # x-limit at the 99th percentile of cv_pct. @noRd
-pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
+pelsa_cv_kde_plot <- function(cv, condition_order = NULL, export = FALSE) {
   if (is.null(cv) || !is.data.frame(cv) || nrow(cv) == 0L) {
     return(pelsa_blank_plot("No CV data - a raw GCT + condition column are required."))
   }
@@ -1028,7 +1081,9 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
   medians$label <- sprintf("%s median = %.1f%% (n=%d)", medians$condition,
                            medians$cv_pct, medians$n)
 
-  ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
+  base_theme <- protigy_plot_theme()
+  if (export) base_theme$plot.title.position <- NULL
+  p <- ggplot(ok, aes(x = .data$cv_pct, color = .data$condition,
                  fill = .data$condition)) +
     geom_density(alpha = 0.15) +
     geom_vline(data = medians,
@@ -1044,9 +1099,16 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL) {
     coord_cartesian(xlim = c(0, x_hi)) +
     labs(x = "CV (%)", y = "Density", color = "Condition", fill = "Condition",
          title = "Per-condition CV distribution") +
-    protigy_plot_theme() +
+    base_theme +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
+  if (export) {
+    p <- p + ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 12, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 # White-halo outline for the per-condition median labels. ggplot has no native
@@ -1084,7 +1146,8 @@ pelsa_halo_text_layers <- function(medians, x_hi, peak, size = 3) {
 
 # 6C: per-sample depth bar, ordered by sample_order (alphabetical fallback).
 # @noRd
-pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL, head_frac = 0.04) {
+pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL,
+                                 head_frac = 0.04, export = FALSE) {
   df <- pelsa_depth_bar_data(n_quantified, sample_order)
   if (nrow(df) == 0L) {
     return(pelsa_blank_plot("No per-sample depth data."))
@@ -1093,16 +1156,31 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL, head_frac = 
   # (in-app default 0.04; the export path passes a smaller value). Baked into
   # label_y (ggplotly drops nudge_y); vjust = 0 anchors the label bottom.
   df$label_y <- df$n + head_frac * max(df$n, na.rm = TRUE)
-  ggplot(df, aes(x = .data$sample, y = .data$n)) +
+  x_title <- if (export) NULL else "Sample"
+  label_size <- if (export) 4 else 3
+  x_text_size <- if (export) 9 else 11
+  p <- ggplot(df, aes(x = .data$sample, y = .data$n)) +
     geom_col(fill = "#76b7b2") +
     geom_text(aes(y = .data$label_y, label = prettyNum(.data$n, big.mark = ",")),
-              vjust = 0, size = 3, fontface = "bold") +
+              vjust = 0, size = label_size, fontface = "bold") +
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.12))) +
-    labs(x = "Sample", y = "Peptides quantified",
+    labs(x = x_title, y = "Peptides quantified",
          title = "Peptides quantified per sample") +
     protigy_plot_theme() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 11))
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
+                                     colour = if (export) "black" else NULL))
+  if (export) {
+    # Deleting the list element (not assigning theme(plot.title.position=NULL))
+    # is what actually drops the "plot"-wide-centering override so the title
+    # falls back to ggplot2's panel-centered default -- a `+ theme(x = NULL)`
+    # merge does NOT unset an already-set element in this ggplot2 version.
+    p$theme$plot.title.position <- NULL
+    p <- p + ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 ################################################################################
@@ -1228,30 +1306,32 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
     pm  <- entry$peptide_metrics %||% data.frame()
     cvd <- entry$cv %||% data.frame()
     nq  <- entry$n_quantified
-    save_fig <- function(p, base, w = 8, h = 5) tryCatch(
+    save_fig <- function(p, base, w = 5.6, h = 3.5) tryCatch(
       pelsa_save_figure(p, out, base, width = w, height = h),
       error = function(e) NULL)
 
     cbc <- entry$coverage_by_condition %||% data.frame()
     lbc <- entry$length_by_condition %||% data.frame()
     if (is.data.frame(cov) && nrow(cov) > 0L)
-      save_fig(pelsa_coverage_distribution_plot(cov),
+      save_fig(pelsa_coverage_distribution_plot(cov, export = TRUE),
                "coverage_distribution_experiment_wide")
     if (is.data.frame(cbc) && nrow(cbc) > 0L)
-      save_fig(pelsa_coverage_by_condition_plot(cbc, condition_order),
+      save_fig(pelsa_coverage_by_condition_plot(cbc, condition_order, export = TRUE),
                "coverage_distribution_per_condition")
     if (is.data.frame(pm) && nrow(pm) > 0L) {
-      save_fig(pelsa_length_density_plot(pm),
+      save_fig(pelsa_length_density_plot(pm, export = TRUE),
                "peptide_length_density_experiment_wide")
-      save_fig(pelsa_missed_cleavage_plot(pm, head_frac = 0.03), "missed_cleavage_bar")
+      save_fig(pelsa_missed_cleavage_plot(pm, head_frac = 0.03, export = TRUE),
+               "missed_cleavage_bar")
     }
     if (is.data.frame(lbc) && nrow(lbc) > 0L)
-      save_fig(pelsa_length_by_condition_plot(lbc, condition_order),
+      save_fig(pelsa_length_by_condition_plot(lbc, condition_order, export = TRUE),
                "peptide_length_density_per_condition")
     if (is.data.frame(cvd) && nrow(cvd) > 0L)
-      save_fig(pelsa_cv_kde_plot(cvd, condition_order), "cv_kde")
+      save_fig(pelsa_cv_kde_plot(cvd, condition_order, export = TRUE), "cv_kde")
     if (length(nq) > 0L)
-      save_fig(pelsa_depth_bar_plot(nq, sample_order, head_frac = 0.02), "n_peptides_per_sample")
+      save_fig(pelsa_depth_bar_plot(nq, sample_order, head_frac = 0.02, export = TRUE),
+               "n_peptides_per_sample")
 
     if (!is.null(gct)) {
       tryCatch(
