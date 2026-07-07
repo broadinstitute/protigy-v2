@@ -76,10 +76,10 @@ A read-only QC dashboard that reads the analysis cache (run **Start Analysis** f
 never recomputes). Value boxes report total peptides, fully-quantified peptides, peptides
 that failed FASTA matching, proteins with ≥1 / 0 annotated features, and failed annotations
 (with a hint for how many additional accessions were excluded as merged/deleted rather than
-counted as failures). Coverage, peptide-length, and CV panels toggle between
-**Experiment-wide** and **Per-condition** views; missed-cleavage and per-sample-depth are
-shown as their own bar charts. Collapsible tables list unmatched peptides and unannotated
-proteins, each with a CSV export.
+counted as failures). Coverage, peptide-length, missed-cleavage, and CV panels each
+toggle between **Experiment-wide** and **Per-condition** views. Per-sample depth has no
+such toggle -- it is always a single per-sample bar chart. Collapsible tables list
+unmatched peptides and unannotated proteins, each with a CSV export.
 
 **What the analysis computes:**
 - **Position mapping** — each peptide is matched as an **exact substring** of its protein's
@@ -97,8 +97,9 @@ A per-sample rank plot: peptides are ranked left-to-right by intensity (x = rank
 processed intensity) for the selected **Sample**. Marker-protein peptides are always
 overlaid in magenta; **Label trypsin peptides on the plot** additionally overlays common
 trypsin autolysis peptides in teal (useful as a loading/digestion sanity check); **Label
-markers** picks which marker proteins get their top peptides labeled by name. Renders via
-WebGL with an automatic SVG fallback, same as the volcano.
+markers** picks which marker proteins get their top peptides labeled by name (their top 3
+highest-intensity peptides, by default). Renders via WebGL with an automatic SVG fallback
+based on the browser's WebGL capability.
 
 ## Volcano Plot
 
@@ -123,21 +124,29 @@ completed PELSA run for the ome.
 - **Color points by** — *Significance* (default) or *UniProt feature class* (hidden for
   self-curated datasets).
 - **Label peptides** — choose any combination of: *All marker peptides*, *All significant
-  peptides*, *Top N most significant peptides* (the N smallest adjusted p-values per
-  up/down direction, regardless of significance), or *Top N marker peptides* (the N
-  smallest adjusted p-values per up/down direction, restricted to marker proteins). None
-  selected by default. Labels render as `<gene>_aa<position>`.
+  peptides*, *Top N most significant peptides* (ranks peptides by adjusted p-value
+  regardless of significance), or *Top N marker peptides* (same ranking, restricted to
+  marker proteins). None selected by default. Labels render as `<gene>_aa<position>`.
+  The two "Top N" modes each have their own **N** input (default **3**) and PELSA
+  deliberately weights the down direction: N is the count kept from the down-regulated
+  (`logFC < 0`) bucket, and only `ceiling(N / 2)` is kept from the up-regulated bucket.
+  Ties in adjusted p-value are broken by the smallest raw p-value, then by the largest
+  `|logFC|` if no raw p-value is available. Selecting a "Top N" checkbox automatically
+  unchecks and disables its counterpart in the same pair -- *Top N most significant
+  peptides* vs. *All significant peptides*, and *Top N marker peptides* vs. *All marker
+  peptides* -- the two pairs are independent of each other.
 - **Show best peptide per protein** — adds a second volcano with one point per protein's
   most significant peptide.
 
-Marker proteins are always shown in **magenta** regardless of the color mode. The plot
-renders all points via WebGL (`scattergl`) and falls back to SVG automatically if the
-browser lacks WebGL support.
+Marker proteins are always shown in **magenta** regardless of the color mode. The volcano
+always renders as SVG (not WebGL) for reliable per-point coloring, unlike the Summary
+tab's Intensity rank (S-plot), which does use WebGL with an automatic SVG fallback.
 
 ### Pinned protein views
 
-**Left-click any point** to pin that peptide. This opens a metadata panel (accession, gene,
-coverage, position, sequence, `logFC`, `adj.P.Val`) and two visualizations:
+**Left-click any point** to pin that peptide. This opens a metadata panel (peptide label,
+accession, gene, coverage, position, sequence, `logFC`, `adj.P.Val`, and the number of
+quantified peptides for the current contrast) and two visualizations:
 
 - **Intensity line plot** — one line per peptide occurrence; y = mean processed (log2)
   intensity per condition, x = condition (in your configured order). The pinned peptide's
@@ -147,8 +156,10 @@ coverage, position, sequence, `logFC`, `adj.P.Val`) and two visualizations:
   - **Coverage ruler** — protein backbone with peptide-covered residues in gold.
   - **Feature track** — UniProt features as colored, lane-packed segments by feature class.
   - **Woods plot** — each peptide as a horizontal segment from its start to end at y = `logFC`,
-    colored by `-log10(adj.P.Val)`. This is the core PELSA readout: it shows *where* along the
-    protein the treatment effect localizes relative to annotated structure/function.
+    colored by `-log10(adj.P.Val)` (or `-log10(P.Value)` when Statistics > Summary is set to
+    test on the nominal p-value -- the color statistic always follows that shared setting).
+    This is the core PELSA readout: it shows *where* along the protein the treatment effect
+    localizes relative to annotated structure/function.
 
 Clicking a Woods peptide cross-selects it on the volcano. **Add accession to marker list**
 sends the pinned protein to this ome's Setup marker list.
@@ -164,16 +175,21 @@ stage folders:
   (annotation omitted for self-curated datasets), and `missing_accessions.txt` (accessions
   absent from the annotation file).
 - **`02_qc/`** — three summary CSVs (`qc_sample_summary.csv`, `qc_condition_summary.csv`,
-  `qc_experiment_summary.csv`) plus the Summary tab's figures (coverage, peptide length, CV,
-  missed-cleavage, per-sample depth — experiment-wide and per-condition) and the per-sample
-  Intensity rank (S-plot) figures, all as PNGs.
-- **`03_volcano/`** — one subfolder per figure type, each split into `01_marker/` and
-  `02_significant/`:
-  - **`01_volcano/`** — one static PNG per contrast (`all_peptide_volcano_<contrast>.png`;
-    plus a best-peptide volcano if that option is on). Coloring and labels follow the
-    on-screen settings and the shared significance cutoff/statistic.
-  - **`02_intensity_line/`** — one PNG per protein.
-  - **`03_woods/`** — one PNG per protein × contrast.
+  `qc_experiment_summary.csv`) plus the Summary tab's figures as PNGs: coverage, peptide
+  length, and missed-cleavage each export both an experiment-wide and a per-condition PNG;
+  CV exports only the per-condition KDE PNG; per-sample depth exports a single per-sample
+  bar chart (no experiment-wide/per-condition split applies to either). The per-sample
+  Intensity rank (S-plot) figures are included as their own PNGs.
+- **`03_volcano/`** — one subfolder per figure type:
+  - **`01_volcano/`** — a flat folder: one static PNG per contrast
+    (`all_peptide_volcano_<contrast>.png`; plus a best-peptide volcano if that option is
+    on). Coloring and labels follow the on-screen settings and the shared significance
+    cutoff/statistic. Unlike the other two figure types below, there is no
+    marker/significant split (a volcano shows all peptides at once).
+  - **`02_intensity_line/`** — one PNG per protein, split into `01_marker/` and
+    `02_significant/`.
+  - **`03_woods/`** — one PNG per protein × contrast, split into `01_marker/` and
+    `02_significant/`.
 
 Figures are PNG at 300 DPI, re-derived from the analysis cache at export time.
 
