@@ -1189,9 +1189,17 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
       invisible(out)
     }
 
-    all_exports <- reactiveVal()
+    # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. all_omes()
+    # re-emits on every dataset add/remove (GCTs_and_params is replaced whole
+    # during setup); re-calling PELSASection1_Ome_Server() for an already-started
+    # ome would stack duplicate observers/outputs once it grows beyond today's
+    # empty placeholder. Guard with a started-registry, mirroring Section 3.
+    ome_export_store <- reactiveVal(list())  # ome -> exports, persists re-emits
+    started_omes     <- reactiveVal(character(0))
     observeEvent(all_omes(), {
-      ome_exports <- sapply(all_omes(), function(ome) {
+      new_omes <- setdiff(all_omes(), started_omes())
+      if (length(new_omes) == 0L) return()
+      new_exports <- sapply(new_omes, function(ome) {
         PELSASection1_Ome_Server(
           id                        = ome,
           ome                       = ome,
@@ -1201,12 +1209,20 @@ PELSASection1_Tab_Server <- function(id = "PELSASection1Tab",
           color_map                 = reactive(custom_colors()[[ome]])
         )
       }, simplify = FALSE)
-      # Attach the shared 01_setup export to each ome (setup_state is shared).
-      ome_exports <- stats::setNames(lapply(names(ome_exports), function(ome) {
-        c(ome_exports[[ome]] %||% list(),
+      # Attach the shared 01_setup export to each new ome (setup_state is shared).
+      new_exports <- stats::setNames(lapply(names(new_exports), function(ome) {
+        c(new_exports[[ome]] %||% list(),
           list(setup = make_setup_export(ome)))
-      }), names(ome_exports))
-      all_exports(ome_exports)
+      }), names(new_exports))
+      started_omes(c(started_omes(), new_omes))
+      ome_export_store(modifyList(ome_export_store(), new_exports))
+    })
+
+    # Expose exports for the CURRENTLY-present omes only (a removed ome's stored
+    # exports are dropped from the gathered set without re-instantiating others).
+    all_exports <- reactive({
+      store <- ome_export_store()
+      store[intersect(all_omes(), names(store))]
     })
 
     # Return an EXPLICIT list: $exports (the per-ome export reactiveVal consumed
