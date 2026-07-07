@@ -246,7 +246,9 @@
   # tab): "nom.p.val" classifies on the raw P.Value, otherwise on adj.P.Val.
   sig_col <- if (identical(sig_stat, "nom.p.val")) df$P.Value else df$adj.P.Val
   sig <- !is.na(sig_col) & sig_col < sig_cutoff
-  up <- sig & !is.na(df$logFC) & df$logFC > 0
+  # Use >= 0 for "up" so a significant peptide with logFC exactly 0 still gets
+  # bucketed/colored instead of falling through to "ns"/gray.
+  up <- sig & !is.na(df$logFC) & df$logFC >= 0
   down <- sig & !is.na(df$logFC) & df$logFC < 0
   sig_direction <- rep("ns", nrow(df))
   sig_direction[up] <- "up"
