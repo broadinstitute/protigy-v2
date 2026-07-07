@@ -6,8 +6,8 @@
 #     pelsa_cv_kde_eligibility    -  per-condition KDE eligibility (<20 finite skip)
 #     pelsa_sample_bar_order      -  per-sample bar order (sample_order, alpha fallback)
 #     pelsa_depth_bar_data        -  ordered per-sample bar data
-#     pelsa_coverage_values / pelsa_over_length_count / pelsa_length_values /
-#       pelsa_missed_cleavage_data  -  cache-table shaping
+#     pelsa_coverage_values / pelsa_over_length_count / pelsa_length_values
+#       -  cache-table shaping
 #     pelsa_section2_exports_for  -  re-derive CSVs from a cache entry
 #
 #   testServer (light): a synthetic pelsa_analysis cache (built via
@@ -835,9 +835,6 @@ test_that("per-condition median labels disclose n", {
 # matching the per-sample summary's "quantified" semantics.
 # ---------------------------------------------------------------------------
 test_that("condition summary n_peptides_quantified uses membership count, not CV row count", {
-  # cv has 3 rows for A and 2 for B (one row per peptide x condition, including
-  # non-quantified peptides). The TRUE quantified counts are fewer: 2 for A, 1
-  # for B. The old code returned table(cv$condition) = c(A=3, B=2) (wrong).
   cv <- data.frame(
     condition = c("A", "A", "A", "B", "B"),
     cv_pct    = c(10, 20, NA, 5, NA),
@@ -845,19 +842,34 @@ test_that("condition summary n_peptides_quantified uses membership count, not CV
   )
   entry <- list(
     cv = cv,
-    coverage_by_condition = data.frame(condition = character(0),
-                                       coverage = numeric(0)),
-    length_by_condition   = data.frame(condition = character(0),
-                                       peptide_length = numeric(0)),
-    # canonical per-condition quantified counts (finite & non-zero in >=1 sample)
+    coverage_by_sample = data.frame(
+      sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+      coverage = c(0.5, 0.6, 0.2, 0.3), n_proteins = rep(3L, 4L),
+      stringsAsFactors = FALSE),
+    length_by_sample = data.frame(
+      sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+      mean_length = c(9, 10, 14, 15), n_quantified = rep(20L, 4L),
+      stringsAsFactors = FALSE),
+    missed_cleavage_rate_by_sample = data.frame(
+      sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+      rate = c(0.1, 0.2, 0.5, 0.6), n_quantified = rep(20L, 4L),
+      stringsAsFactors = FALSE),
+    condition_map = c(A_R1 = "A", A_R2 = "A", B_R1 = "B", B_R2 = "B"),
     n_peptides_by_condition = c(A = 2L, B = 1L)
   )
 
   out <- pelsa_qc_condition_summary(entry)
   expect_true("n_peptides_quantified" %in% colnames(out))
   got <- stats::setNames(out$n_peptides_quantified, out$condition)
-  expect_equal(got[["A"]], 2L)   # NOT 3 (the CV-row count)
-  expect_equal(got[["B"]], 1L)   # NOT 2
+  expect_equal(got[["A"]], 2L)
+  expect_equal(got[["B"]], 1L)
+  expect_true(all(c("mean_coverage", "sd_coverage", "mean_peptide_length",
+                    "sd_peptide_length", "mean_missed_cleavage_rate",
+                    "sd_missed_cleavage_rate") %in% colnames(out)))
+  a_row <- out[out$condition == "A", ]
+  expect_equal(a_row$mean_coverage, 0.55)
+  expect_equal(a_row$mean_peptide_length, 9.5)
+  expect_equal(a_row$mean_missed_cleavage_rate, 0.15)
 })
 
 test_that("condition with CV data but zero quantified peptides reports 0, not NA", {
@@ -871,10 +883,14 @@ test_that("condition with CV data but zero quantified peptides reports 0, not NA
   )
   entry <- list(
     cv = cv,
-    coverage_by_condition = data.frame(condition = character(0),
-                                       coverage = numeric(0)),
-    length_by_condition   = data.frame(condition = character(0),
-                                       peptide_length = numeric(0)),
+    coverage_by_sample = data.frame(sample = character(0), coverage = numeric(0),
+                                    n_proteins = integer(0), stringsAsFactors = FALSE),
+    length_by_sample = data.frame(sample = character(0), mean_length = numeric(0),
+                                  n_quantified = integer(0), stringsAsFactors = FALSE),
+    missed_cleavage_rate_by_sample = data.frame(
+      sample = character(0), rate = numeric(0), n_quantified = integer(0),
+      stringsAsFactors = FALSE),
+    condition_map = character(0),
     n_peptides_by_condition = c(A = 2L)   # C absent -> 0 quantified
   )
   out <- pelsa_qc_condition_summary(entry)
@@ -883,6 +899,49 @@ test_that("condition with CV data but zero quantified peptides reports 0, not NA
   expect_equal(got[["C"]], 0L)            # 0, NOT NA
   expect_false(anyNA(out$n_peptides_quantified))
   expect_equal(got[["A"]], 2L)
+})
+
+test_that("condition summary drops the old median_coverage/median_peptide_length columns", {
+  entry <- list(
+    cv = data.frame(condition = character(0), cv_pct = numeric(0)),
+    coverage_by_sample = data.frame(sample = "A_R1", coverage = 0.5,
+                                    n_proteins = 2L, stringsAsFactors = FALSE),
+    length_by_sample = data.frame(sample = "A_R1", mean_length = 10,
+                                  n_quantified = 5L, stringsAsFactors = FALSE),
+    missed_cleavage_rate_by_sample = data.frame(
+      sample = "A_R1", rate = 0.2, n_quantified = 5L, stringsAsFactors = FALSE),
+    condition_map = c(A_R1 = "A"),
+    n_peptides_by_condition = c(A = 5L)
+  )
+  out <- pelsa_qc_condition_summary(entry)
+  expect_false("median_coverage" %in% colnames(out))
+  expect_false("median_peptide_length" %in% colnames(out))
+})
+
+test_that("pelsa_qc_experiment_summary reports per-sample-averaged mean/sd columns", {
+  entry <- list(
+    qc = list(n_peptides = 10L, n_unmatched_rows = 1L,
+             n_unannotated_accessions = 2L),
+    unmatched = data.frame(), unannotated = character(2),
+    coverage = data.frame(accession = c("P1", "P2")),
+    coverage_by_sample = data.frame(
+      sample = c("A_R1", "A_R2"), coverage = c(0.4, 0.6),
+      n_proteins = c(2L, 2L), stringsAsFactors = FALSE),
+    length_by_sample = data.frame(
+      sample = c("A_R1", "A_R2"), mean_length = c(9, 11),
+      n_quantified = c(5L, 5L), stringsAsFactors = FALSE),
+    missed_cleavage_rate_by_sample = data.frame(
+      sample = c("A_R1", "A_R2"), rate = c(0.1, 0.3),
+      n_quantified = c(5L, 5L), stringsAsFactors = FALSE)
+  )
+  out <- pelsa_qc_experiment_summary(entry)
+  expect_false("mean_missed_cleavages" %in% colnames(out))
+  expect_true(all(c("mean_missed_cleavage_rate", "sd_missed_cleavage_rate",
+                    "mean_coverage", "sd_coverage", "mean_peptide_length",
+                    "sd_peptide_length") %in% colnames(out)))
+  expect_equal(out$mean_missed_cleavage_rate, 0.2)
+  expect_equal(out$mean_coverage, 0.5)
+  expect_equal(out$mean_peptide_length, 10)
 })
 
 # ---- 6A value boxes: three-way annotation QC --------------------------------

@@ -1236,34 +1236,39 @@ pelsa_qc_sample_summary <- function(entry) {
   )
 }
 
-# Per-condition QC summary: median/mean CV, sequence coverage and peptide length.
-# Coverage + length come from the QC tab's per-condition cache fields
-# (coverage_by_condition / length_by_condition); CV from the per-peptide cv
-# frame. Columns absent from the cache are simply omitted (graceful).
+# Per-condition QC summary: median/mean CV (unchanged, from the per-peptide
+# cv frame), and mean/sd of the per-sample-averaged coverage, peptide-length,
+# and missed-cleavage rate (matching the Summary bar+error-bar panels).
+# Columns absent from the cache are simply omitted (graceful).
 # @noRd
 pelsa_qc_condition_summary <- function(entry, condition_order = NULL) {
-  agg <- function(df, col, fun) {
-    if (!is.data.frame(df) || nrow(df) == 0L ||
-        !all(c("condition", col) %in% colnames(df))) {
+  cv <- entry$cv %||% data.frame()
+  agg_cv <- function(fun) {
+    if (!is.data.frame(cv) || nrow(cv) == 0L ||
+        !all(c("condition", "cv_pct") %in% colnames(cv))) {
       return(stats::setNames(numeric(0), character(0)))
     }
-    tapply(as.numeric(df[[col]]), as.character(df$condition), function(x) {
+    tapply(as.numeric(cv$cv_pct), as.character(cv$condition), function(x) {
       x <- x[is.finite(x)]
       if (length(x) == 0L) NA_real_ else fun(x)
     })
   }
-  cv  <- entry$cv %||% data.frame()
-  cov <- entry$coverage_by_condition %||% data.frame()
-  len <- entry$length_by_condition %||% data.frame()
+  med_cv  <- agg_cv(stats::median)
+  mean_cv <- agg_cv(mean)
 
-  med_cv  <- agg(cv,  "cv_pct",         stats::median)
-  mean_cv <- agg(cv,  "cv_pct",         mean)
-  med_cov  <- agg(cov, "coverage",       stats::median)
-  mean_cov <- agg(cov, "coverage",       mean)
-  med_len  <- agg(len, "peptide_length", stats::median)
-  mean_len <- agg(len, "peptide_length", mean)
+  cmap <- entry$condition_map %||% character(0)
+  bar_stats <- function(per_sample_df, value_col) {
+    agg <- pelsa_bar_error_data(per_sample_df %||% data.frame(), value_col,
+                                cmap, condition_order, min_replicates = 1L)$data
+    list(mean = stats::setNames(agg$mean, agg$condition),
+        sd   = stats::setNames(agg$sd, agg$condition))
+  }
+  cov_stats <- bar_stats(entry$coverage_by_sample, "coverage")
+  len_stats <- bar_stats(entry$length_by_sample, "mean_length")
+  mc_stats  <- bar_stats(entry$missed_cleavage_rate_by_sample, "rate")
 
-  conds <- unique(c(names(med_cv), names(med_cov), names(med_len)))
+  conds <- unique(c(names(med_cv), names(cov_stats$mean), names(len_stats$mean),
+                    names(mc_stats$mean)))
   if (length(conds) == 0L) return(data.frame())
   if (!is.null(condition_order)) {
     ordered <- intersect(condition_order, conds)
@@ -1283,19 +1288,24 @@ pelsa_qc_condition_summary <- function(entry, condition_order = NULL) {
   n_quant[is.na(n_quant)] <- 0L
 
   data.frame(
-    condition             = conds,
-    n_peptides_quantified = n_quant,
-    median_cv_pct         = unname(med_cv[conds]),
-    mean_cv_pct           = unname(mean_cv[conds]),
-    median_coverage       = unname(med_cov[conds]),
-    mean_coverage         = unname(mean_cov[conds]),
-    median_peptide_length = unname(med_len[conds]),
-    mean_peptide_length   = unname(mean_len[conds]),
+    condition                    = conds,
+    n_peptides_quantified        = n_quant,
+    median_cv_pct                = unname(med_cv[conds]),
+    mean_cv_pct                  = unname(mean_cv[conds]),
+    mean_coverage                = unname(cov_stats$mean[conds]),
+    sd_coverage                  = unname(cov_stats$sd[conds]),
+    mean_peptide_length          = unname(len_stats$mean[conds]),
+    sd_peptide_length            = unname(len_stats$sd[conds]),
+    mean_missed_cleavage_rate    = unname(mc_stats$mean[conds]),
+    sd_missed_cleavage_rate      = unname(mc_stats$sd[conds]),
     stringsAsFactors = FALSE
   )
 }
 
-# Experiment-wide QC summary: totals + FASTA/annotation failure counts/percents.
+# Experiment-wide QC summary: totals + FASTA/annotation failure counts/
+# percents, plus mean/sd of the per-sample-averaged coverage, peptide-length,
+# and missed-cleavage rate pooled across ALL samples (matching the Summary
+# "Experiment-wide" bar+error-bar panels).
 # @noRd
 pelsa_qc_experiment_summary <- function(entry) {
   qc <- entry$qc %||% list()
@@ -1305,18 +1315,30 @@ pelsa_qc_experiment_summary <- function(entry) {
   n_unann <- as.integer(qc$n_unannotated_accessions %||%
                           length(entry$unannotated %||% character(0)))
   n_acc <- nrow(entry$coverage %||% data.frame())  # distinct matched accessions
-  pm <- entry$peptide_metrics %||% data.frame()
-  mmc <- if (is.data.frame(pm) && "missed_cleavages" %in% colnames(pm) &&
-             nrow(pm) > 0L)
-    mean(as.numeric(pm$missed_cleavages), na.rm = TRUE) else NA_real_
   pct <- function(num, den) if (is.na(den) || den <= 0L) NA_real_ else 100 * num / den
+
+  overall_stats <- function(per_sample_df, value_col) {
+    agg <- pelsa_bar_error_data_overall(per_sample_df %||% data.frame(),
+                                        value_col, min_replicates = 1L)
+    if (nrow(agg) == 0L) list(mean = NA_real_, sd = NA_real_)
+    else list(mean = agg$mean, sd = agg$sd)
+  }
+  cov <- overall_stats(entry$coverage_by_sample, "coverage")
+  len <- overall_stats(entry$length_by_sample, "mean_length")
+  mc  <- overall_stats(entry$missed_cleavage_rate_by_sample, "rate")
+
   data.frame(
-    n_peptides_total         = n_total,
-    n_unmatched_peptides     = n_unmatched,
-    pct_unmatched_peptides   = pct(n_unmatched, n_total),
-    n_unannotated_proteins   = n_unann,
-    pct_unannotated_proteins = pct(n_unann, n_acc),
-    mean_missed_cleavages    = mmc,
+    n_peptides_total             = n_total,
+    n_unmatched_peptides         = n_unmatched,
+    pct_unmatched_peptides       = pct(n_unmatched, n_total),
+    n_unannotated_proteins       = n_unann,
+    pct_unannotated_proteins     = pct(n_unann, n_acc),
+    mean_missed_cleavage_rate    = mc$mean,
+    sd_missed_cleavage_rate      = mc$sd,
+    mean_coverage                = cov$mean,
+    sd_coverage                  = cov$sd,
+    mean_peptide_length          = len$mean,
+    sd_peptide_length            = len$sd,
     stringsAsFactors = FALSE
   )
 }
@@ -1340,31 +1362,38 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
     utils::write.csv(pelsa_qc_experiment_summary(entry),
                      file.path(out, "qc_experiment_summary.csv"), row.names = FALSE)
 
-    cov <- entry$coverage %||% data.frame()
-    pm  <- entry$peptide_metrics %||% data.frame()
     cvd <- entry$cv %||% data.frame()
     nq  <- entry$n_quantified
     save_fig <- function(p, base, w = 5.6, h = 3.5) tryCatch(
       pelsa_save_figure(p, out, base, width = w, height = h),
       error = function(e) NULL)
 
-    cbc <- entry$coverage_by_condition %||% data.frame()
-    lbc <- entry$length_by_condition %||% data.frame()
-    if (is.data.frame(cov) && nrow(cov) > 0L)
-      save_fig(pelsa_coverage_distribution_plot(cov, export = TRUE),
+    cbs <- entry$coverage_by_sample %||% data.frame()
+    lbs <- entry$length_by_sample %||% data.frame()
+    mbs <- entry$missed_cleavage_rate_by_sample %||% data.frame()
+    cmap <- entry$condition_map %||% character(0)
+    if (nrow(cbs) > 0L) {
+      save_fig(pelsa_coverage_plot(cbs, cmap, mode = "overall", export = TRUE),
                "coverage_distribution_experiment_wide")
-    if (is.data.frame(cbc) && nrow(cbc) > 0L)
-      save_fig(pelsa_coverage_by_condition_plot(cbc, condition_order, export = TRUE),
+      save_fig(pelsa_coverage_plot(cbs, cmap, condition_order,
+                                  mode = "per_condition", export = TRUE),
                "coverage_distribution_per_condition")
-    if (is.data.frame(pm) && nrow(pm) > 0L) {
-      save_fig(pelsa_length_density_plot(pm, export = TRUE),
-               "peptide_length_density_experiment_wide")
-      save_fig(pelsa_missed_cleavage_plot(pm, head_frac = 0.03, export = TRUE),
-               "missed_cleavage_bar")
     }
-    if (is.data.frame(lbc) && nrow(lbc) > 0L)
-      save_fig(pelsa_length_by_condition_plot(lbc, condition_order, export = TRUE),
+    if (nrow(lbs) > 0L) {
+      save_fig(pelsa_length_plot(lbs, cmap, mode = "overall", export = TRUE),
+               "peptide_length_density_experiment_wide")
+      save_fig(pelsa_length_plot(lbs, cmap, condition_order,
+                                 mode = "per_condition", export = TRUE),
                "peptide_length_density_per_condition")
+    }
+    if (nrow(mbs) > 0L) {
+      save_fig(pelsa_missed_cleavage_plot(mbs, cmap, mode = "overall",
+                                          export = TRUE),
+               "missed_cleavage_rate_experiment_wide")
+      save_fig(pelsa_missed_cleavage_plot(mbs, cmap, condition_order,
+                                          mode = "per_condition", export = TRUE),
+               "missed_cleavage_rate_per_condition")
+    }
     if (is.data.frame(cvd) && nrow(cvd) > 0L)
       save_fig(pelsa_cv_kde_plot(cvd, condition_order, export = TRUE), "cv_kde")
     if (length(nq) > 0L)
