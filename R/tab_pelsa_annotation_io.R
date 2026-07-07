@@ -196,12 +196,41 @@ pelsa_read_annotation_file <- function(path) {
     stop("pelsa_read_annotation_file: annotation file not found: ", path)
   }
 
-  # Read ALL columns as character and coerce coords ourselves. readr's per-column
-  # type guessing is DANGEROUS for the sparse text columns: `disposition` and
-  # `primary_accession` are blank on every leading `resolved` row (the sentinels
-  # ship LAST), so readr guesses them `logical`/NA from the head and silently
-  # coerces the real values (e.g. the merged primary "Q3I5F7") to NA. Forcing
-  # character preserves them; start/end become integer via as.integer() below.
+  raw <- .pelsa_read_annotation_raw(path)
+  if (nrow(raw) == 0L) return(pelsa_empty_feature_frame())
+
+  cols <- .pelsa_parse_annotation_columns(raw)
+  cols <- .pelsa_apply_sentinel_rules(cols)
+  cols <- .pelsa_classify_and_filter_features(cols)
+
+  data.frame(
+    accession         = cols$accession,
+    feature_type      = cols$feature_type,
+    start             = cols$start,
+    end               = cols$end,
+    description       = cols$description,
+    feature_class     = cols$feature_class,
+    class_score       = cols$class_score,
+    coord_quality     = cols$coord_quality,
+    disposition       = cols$disposition,
+    primary_accession = cols$primary_accession,
+    stringsAsFactors = FALSE
+  )
+}
+
+# Read the raw annotation TSV and validate the required column set.
+#
+# Reads ALL columns as character and coerces coords in the caller. readr's
+# per-column type guessing is DANGEROUS for the sparse text columns:
+# `disposition` and `primary_accession` are blank on every leading `resolved`
+# row (the sentinels ship LAST), so readr guesses them `logical`/NA from the
+# head and silently coerces the real values (e.g. the merged primary
+# "Q3I5F7") to NA. Forcing character preserves them.
+#
+# @param path  path to the annotation TSV
+# @return raw data.frame, all columns character
+# @noRd
+.pelsa_read_annotation_raw <- function(path) {
   raw <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE,
                          col_types = readr::cols(.default = readr::col_character()))
   required <- c("accession", "feature_type", "start", "end", "description")
@@ -210,20 +239,29 @@ pelsa_read_annotation_file <- function(path) {
     stop("pelsa_read_annotation_file: missing required column(s): ",
          paste(missing, collapse = ", "))
   }
+  raw
+}
 
-  if (nrow(raw) == 0L) return(pelsa_empty_feature_frame())
-
+# Parse the raw character columns into their typed forms (coords as integer,
+# optional disposition/primary_accession/coord_quality columns defaulted).
+#
+# @param raw  data.frame from .pelsa_read_annotation_raw()
+# @return named list of parallel vectors: accession, feature_type, start, end,
+#   description, disposition, primary_accession
+# @noRd
+.pelsa_parse_annotation_columns <- function(raw) {
   accession    <- as.character(raw$accession)
   # Blank cells parse to NA via readr; normalize feature_type/description to ""
   # so the sentinel test and the stored values match the canonical cache schema.
   feature_type <- ifelse(is.na(raw$feature_type), "", as.character(raw$feature_type))
-  # Coords are read as character (see col_types above); blank/whitespace -> NA
-  # BEFORE as.integer() so no spurious "NAs introduced by coercion" warning fires
-  # on sentinel rows (which legitimately carry no interval). A non-blank cell that
-  # is NOT a valid integer (e.g. "N/A", "12?") is a genuine malformed coordinate,
-  # not a sentinel -- flag it explicitly (with the offending accession/value)
-  # rather than letting it fall through to as.integer()'s generic, row-less
-  # "NAs introduced by coercion" warning.
+  # Coords are read as character (see col_types in the raw reader); blank/
+  # whitespace -> NA BEFORE as.integer() so no spurious "NAs introduced by
+  # coercion" warning fires on sentinel rows (which legitimately carry no
+  # interval). A non-blank cell that is NOT a valid integer (e.g. "N/A",
+  # "12?") is a genuine malformed coordinate, not a sentinel -- flag it
+  # explicitly (with the offending accession/value) rather than letting it
+  # fall through to as.integer()'s generic, row-less "NAs introduced by
+  # coercion" warning.
   blank_to_na  <- function(x) { x <- trimws(as.character(x)); x[!nzchar(x)] <- NA; x }
   # Positive-integer only: protein residue positions are 1-based, so "0" or a
   # leading "-" is a malformed coordinate, not a legitimate value. This also
@@ -265,6 +303,27 @@ pelsa_read_annotation_file <- function(path) {
     rep("", nrow(raw))
   }
 
+  list(
+    accession = accession, feature_type = feature_type, start = start,
+    end = end, description = description, disposition = disposition,
+    primary_accession = primary_accession, raw = raw
+  )
+}
+
+# Detect sentinel rows (zero-feature or disposition-excluded) and null their
+# coords, then resolve coord_quality against the sentinel mask.
+#
+# @param cols  list from .pelsa_parse_annotation_columns()
+# @return the same list, with start/end nulled for disposition sentinels and a
+#   coord_quality element added
+# @noRd
+.pelsa_apply_sentinel_rules <- function(cols) {
+  start <- cols$start
+  end <- cols$end
+  feature_type <- cols$feature_type
+  disposition <- cols$disposition
+  raw <- cols$raw
+
   # ZERO-FEATURE SENTINEL rows: the external fetch workflow emits one row per
   # accession it RESOLVED but that carries no features -- blank feature_type +
   # no interval (NA start/end) + blank coord_quality. These must become the
@@ -304,12 +363,25 @@ pelsa_read_annotation_file <- function(path) {
     ifelse(is_sentinel, "", "exact")
   }
 
-  feature_class <- pelsa_feature_to_class(feature_type, description)
+  c(cols[c("accession", "feature_type", "description", "disposition",
+           "primary_accession")],
+    list(start = start, end = end, coord_quality = coord_quality,
+         is_sentinel = is_sentinel))
+}
+
+# Derive feature_class/class_score, then drop fuzzy-coordinate feature rows.
+#
+# @param cols  list from .pelsa_apply_sentinel_rules()
+# @return the same list (minus is_sentinel), all vectors filtered to the
+#   kept (non-fuzzy) rows, with feature_class/class_score added
+# @noRd
+.pelsa_classify_and_filter_features <- function(cols) {
+  feature_class <- pelsa_feature_to_class(cols$feature_type, cols$description)
   # NONE_FEATURE_CLASS is defined in tab_pelsa_annotation_helpers.R (co-located
   # with its first user pelsa_annotate_features); referenced here across files.
   # Safe under load_all/package build (all R/ sourced first). If that constant is
   # renamed/moved, grep both files.
-  feature_class[is_sentinel] <- NONE_FEATURE_CLASS
+  feature_class[cols$is_sentinel] <- NONE_FEATURE_CLASS
   scores <- pelsa_feature_class_scores()
   class_score <- as.integer(scores[feature_class])
   class_score[is.na(class_score)] <- 0L   # "none"/unknown -> 0 (sentinel score)
@@ -325,29 +397,18 @@ pelsa_read_annotation_file <- function(path) {
   # accounted accession as n_failed. They usually ship blank coord_quality, but a
   # disposition sentinel can retain a literal "fuzzy" cell (line above only blanks
   # non-sentinels), so guard on is_sentinel here.
-  keep_exact <- is_sentinel | tolower(trimws(coord_quality)) != "fuzzy"
-  accession         <- accession[keep_exact]
-  feature_type      <- feature_type[keep_exact]
-  start             <- start[keep_exact]
-  end               <- end[keep_exact]
-  description       <- description[keep_exact]
-  feature_class     <- feature_class[keep_exact]
-  class_score       <- class_score[keep_exact]
-  coord_quality     <- coord_quality[keep_exact]
-  disposition       <- disposition[keep_exact]
-  primary_accession <- primary_accession[keep_exact]
+  keep_exact <- cols$is_sentinel | tolower(trimws(cols$coord_quality)) != "fuzzy"
 
-  data.frame(
-    accession         = accession,
-    feature_type      = feature_type,
-    start             = start,
-    end               = end,
-    description       = description,
-    feature_class     = feature_class,
-    class_score       = class_score,
-    coord_quality     = coord_quality,
-    disposition       = disposition,
-    primary_accession = primary_accession,
-    stringsAsFactors = FALSE
+  list(
+    accession         = cols$accession[keep_exact],
+    feature_type      = cols$feature_type[keep_exact],
+    start             = cols$start[keep_exact],
+    end               = cols$end[keep_exact],
+    description       = cols$description[keep_exact],
+    feature_class     = feature_class[keep_exact],
+    class_score       = class_score[keep_exact],
+    coord_quality     = cols$coord_quality[keep_exact],
+    disposition       = cols$disposition[keep_exact],
+    primary_accession = cols$primary_accession[keep_exact]
   )
 }

@@ -529,7 +529,31 @@ pelsa_map_peptide_positions <- function(exploded_df,
     rep(NA_character_, n)
   }
 
-  # ---- Classify rows (vectorized) -----------------------------------------
+  classified <- .pelsa_classify_peptide_rows(seqs, accs, fasta_map)
+
+  matched <- .pelsa_build_matched_rows(
+    exploded_df, seqs, classified$candidate, classified$starts_list,
+    classified$n_hits, empty_matched
+  )
+  unmatched <- .pelsa_build_unmatched_rows(
+    seqs, accs, genes, pos_tokens, classified$reason, empty_unmatched
+  )
+
+  list(matched = matched, unmatched = unmatched)
+}
+
+# Classify each exploded row as a substring-match candidate, and compute its
+# unmatched `reason` when it is not (or fails to match).
+#
+# @param seqs      character vector of peptide sequences
+# @param accs      character vector of accessions (parallel to seqs)
+# @param fasta_map named list / character vector accession -> AA string
+# @return list(candidate = logical, reason = character, starts_list = list,
+#   n_hits = integer) all parallel to seqs/accs
+# @noRd
+.pelsa_classify_peptide_rows <- function(seqs, accs, fasta_map) {
+  n <- length(seqs)
+
   # 1. Sequence format validation (one regex over the whole column). An NA
   #    peptide sequence is also treated as invalid -> bad_sequence_format
   #    (NA and malformed sequences are intentionally lumped under one reason).
@@ -559,42 +583,65 @@ pelsa_map_peptide_positions <- function(exploded_df,
   still_missing <- candidate & n_hits == 0L
   reason[still_missing] <- "sequence_not_found"
 
-  # ---- Build matched rows (one per occurrence, vectorized expansion) ------
+  list(candidate = candidate, reason = reason, starts_list = starts_list,
+       n_hits = n_hits)
+}
+
+# Build the matched-cache rows (one row per FASTA-substring occurrence,
+# vectorized expansion) from the classification result.
+#
+# @param exploded_df  the original exploded peptide data.frame
+# @param seqs         character vector of peptide sequences
+# @param candidate    logical, from .pelsa_classify_peptide_rows()
+# @param starts_list  list of integer match-start vectors, from same
+# @param n_hits       integer vector of per-row match counts, from same
+# @param empty_matched  empty-frame template (used when there are no matches)
+# @return data.frame, one row per (peptide, accession, occurrence) match
+# @noRd
+.pelsa_build_matched_rows <- function(exploded_df, seqs, candidate,
+                                       starts_list, n_hits, empty_matched) {
   matched_rows <- candidate & n_hits > 0L
-  if (any(matched_rows)) {
-    row_idx <- rep.int(which(matched_rows), n_hits[matched_rows])
-    pep_start <- unlist(starts_list[matched_rows], use.names = FALSE)
-    occ_idx <- sequence(n_hits[matched_rows])
-    n_occ <- rep.int(n_hits[matched_rows], n_hits[matched_rows])
-    pep_len <- nchar(seqs[row_idx])
+  if (!any(matched_rows)) return(empty_matched)
 
-    matched <- exploded_df[row_idx, , drop = FALSE]
-    rownames(matched) <- NULL
-    matched$pep_start <- as.integer(pep_start)
-    matched$pep_end <- as.integer(pep_start + pep_len - 1L)
-    matched$pep_occurrence_idx <- as.integer(occ_idx)
-    matched$n_occurrences <- as.integer(n_occ)
-  } else {
-    matched <- empty_matched
-  }
+  row_idx <- rep.int(which(matched_rows), n_hits[matched_rows])
+  pep_start <- unlist(starts_list[matched_rows], use.names = FALSE)
+  occ_idx <- sequence(n_hits[matched_rows])
+  n_occ <- rep.int(n_hits[matched_rows], n_hits[matched_rows])
+  pep_len <- nchar(seqs[row_idx])
 
-  # ---- Build unmatched rows -----------------------------------------------
+  matched <- exploded_df[row_idx, , drop = FALSE]
+  rownames(matched) <- NULL
+  matched$pep_start <- as.integer(pep_start)
+  matched$pep_end <- as.integer(pep_start + pep_len - 1L)
+  matched$pep_occurrence_idx <- as.integer(occ_idx)
+  matched$n_occurrences <- as.integer(n_occ)
+  matched
+}
+
+# Build the unmatched QC rows from the classification result.
+#
+# @param seqs, accs, genes, pos_tokens  parallel character vectors describing
+#   each exploded row
+# @param reason         character vector of unmatched reasons (NA = matched),
+#   from .pelsa_classify_peptide_rows()
+# @param empty_unmatched  empty-frame template (used when nothing is unmatched)
+# @return data.frame, one row per unmatched peptide/accession pair
+# @noRd
+.pelsa_build_unmatched_rows <- function(seqs, accs, genes, pos_tokens, reason,
+                                         empty_unmatched) {
   unmatched_mask <- !is.na(reason)
-  if (any(unmatched_mask)) {
-    unmatched <- data.frame(
-      peptide_sequence = seqs[unmatched_mask],
-      accession = accs[unmatched_mask],
-      gene = genes[unmatched_mask],
-      pep_position = pos_tokens[unmatched_mask],
-      reason = reason[unmatched_mask],
-      stringsAsFactors = FALSE
-    )
-    rownames(unmatched) <- NULL
-  } else {
-    unmatched <- empty_unmatched
-  }
+  if (!any(unmatched_mask)) return(empty_unmatched)
 
-  list(matched = matched, unmatched = unmatched)
+  unmatched <- data.frame(
+    peptide_sequence = seqs[unmatched_mask],
+    accession = accs[unmatched_mask],
+    gene = genes[unmatched_mask],
+    pep_position = pos_tokens[unmatched_mask],
+    reason = reason[unmatched_mask],
+    stringsAsFactors = FALSE
+  )
+  rownames(unmatched) <- NULL
+  unmatched
 }
 ################################################################################
 # Module: PELSA per-protein sequence coverage (interval union).
@@ -659,20 +706,8 @@ pelsa_sequence_coverage <- function(matched_cache,
                                     acc_col = "accession",
                                     start_col = "pep_start",
                                     end_col = "pep_end") {
-  # ---- Boundary validation (fail fast) ------------------------------------
-  if (!is.data.frame(matched_cache)) {
-    stop("pelsa_sequence_coverage: matched_cache must be a data.frame")
-  }
-  if (!is.list(fasta_map) && !is.character(fasta_map)) {
-    stop("pelsa_sequence_coverage: fasta_map must be a named list or ",
-         "character vector")
-  }
-  for (col in c(acc_col, start_col, end_col)) {
-    if (!col %in% colnames(matched_cache)) {
-      stop("pelsa_sequence_coverage: column '", col, "' not found in ",
-           "matched_cache")
-    }
-  }
+  .pelsa_validate_coverage_inputs(matched_cache, fasta_map, acc_col, start_col,
+                                  end_col)
 
   out_cols <- c(
     "accession", "covered_residues", "protein_length", "coverage",
@@ -729,7 +764,23 @@ pelsa_sequence_coverage <- function(matched_cache,
   # ---- FASTA length with isoform-base fallback ----------------------------
   protein_length <- .pelsa_resolve_fasta_length(acc_vec, fasta_map)
 
-  # ---- Coverage: soft-fail-to-NA + clamp/warn/flag on over-length ---------
+  out <- .pelsa_coverage_from_lengths(acc_vec, covered_residues, protein_length)
+  out[, out_cols]
+}
+
+# Compute per-accession coverage fraction, soft-failing to NA and clamping/
+# flagging over-length spans (never erroring).
+#
+# @param acc_vec           character vector of distinct accessions
+# @param covered_residues  integer union length per accession (parallel to
+#   acc_vec)
+# @param protein_length    integer FASTA length per accession (NA if
+#   unresolved), parallel to acc_vec
+# @return data.frame(accession, covered_residues, protein_length, coverage,
+#   over_length_flag)
+# @noRd
+.pelsa_coverage_from_lengths <- function(acc_vec, covered_residues,
+                                          protein_length) {
   # Spans came from substring matching the SAME FASTA, so covered <= length
   # always holds for a correctly-mapped protein. An over-length span would be a
   # 2B regression, but it must NOT abort the whole user-facing Summary metric
@@ -752,7 +803,7 @@ pelsa_sequence_coverage <- function(matched_cache,
   ok <- resolved & protein_length > 0L
   coverage[ok] <- covered_residues[ok] / protein_length[ok]
 
-  out <- data.frame(
+  data.frame(
     accession = acc_vec,
     covered_residues = covered_residues,
     protein_length = protein_length,
@@ -760,7 +811,28 @@ pelsa_sequence_coverage <- function(matched_cache,
     over_length_flag = over,
     stringsAsFactors = FALSE
   )
-  out[, out_cols]
+}
+
+# Validate pelsa_sequence_coverage()'s inputs, failing fast with a clear
+# message rather than a cryptic downstream error.
+#
+# @noRd
+.pelsa_validate_coverage_inputs <- function(matched_cache, fasta_map, acc_col,
+                                             start_col, end_col) {
+  if (!is.data.frame(matched_cache)) {
+    stop("pelsa_sequence_coverage: matched_cache must be a data.frame")
+  }
+  if (!is.list(fasta_map) && !is.character(fasta_map)) {
+    stop("pelsa_sequence_coverage: fasta_map must be a named list or ",
+         "character vector")
+  }
+  for (col in c(acc_col, start_col, end_col)) {
+    if (!col %in% colnames(matched_cache)) {
+      stop("pelsa_sequence_coverage: column '", col, "' not found in ",
+           "matched_cache")
+    }
+  }
+  invisible(TRUE)
 }
 
 # Union length of inclusive 1-based intervals, sorted by (start, end).
