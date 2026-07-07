@@ -438,33 +438,33 @@ PELSASection3_Ome_Server <- function(id,
       set_label_mode(input$pelsa_label_mode)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
-    # Per-ome N for "top_n_adjp" (default 5); same ome-only scope as
+    # Per-ome N for "top_n_adjp" (default 3); same ome-only scope as
     # label_mode_registry - applies to every contrast automatically.
     n_top_adjp_for_ome <- reactive({
       reg <- if (is.null(n_top_adjp_registry)) list() else n_top_adjp_registry()
-      reg[[ome]] %||% 5L
+      reg[[ome]] %||% 3L
     })
     set_n_top_adjp <- function(n) {
       if (is.null(n_top_adjp_registry)) return()
       reg <- n_top_adjp_registry()
       val <- suppressWarnings(as.integer(n)[1L])
-      reg[[ome]] <- if (is.na(val)) 1L else max(1L, val)
+      reg[[ome]] <- if (is.na(val)) 3L else max(1L, val)
       n_top_adjp_registry(reg)
     }
     observeEvent(input$pelsa_n_top_adjp, {
       set_n_top_adjp(input$pelsa_n_top_adjp)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
-    # Per-ome N for "top_n_markers" (default 5); same ome-only scope.
+    # Per-ome N for "top_n_markers" (default 3); same ome-only scope.
     n_top_markers_for_ome <- reactive({
       reg <- if (is.null(n_top_markers_registry)) list() else n_top_markers_registry()
-      reg[[ome]] %||% 5L
+      reg[[ome]] %||% 3L
     })
     set_n_top_markers <- function(n) {
       if (is.null(n_top_markers_registry)) return()
       reg <- n_top_markers_registry()
       val <- suppressWarnings(as.integer(n)[1L])
-      reg[[ome]] <- if (is.na(val)) 1L else max(1L, val)
+      reg[[ome]] <- if (is.na(val)) 3L else max(1L, val)
       n_top_markers_registry(reg)
     }
     observeEvent(input$pelsa_n_top_markers, {
@@ -869,14 +869,16 @@ PELSASection3_Ome_Server <- function(id,
         conditionalPanel(
           condition = sprintf(
             "input['%s'].indexOf('top_n_adjp') > -1", ns("pelsa_label_mode")),
-          numericInput(ns("pelsa_n_top_adjp"), "N (most significant, per up/down):",
+          numericInput(ns("pelsa_n_top_adjp"),
+                       "N (downregulated; upregulated = ceil(N/2)):",
                        value = isolate(n_top_adjp_for_ome()),
                        min = 1, step = 1, width = "220px")
         ),
         conditionalPanel(
           condition = sprintf(
             "input['%s'].indexOf('top_n_markers') > -1", ns("pelsa_label_mode")),
-          numericInput(ns("pelsa_n_top_markers"), "N (markers, per up/down):",
+          numericInput(ns("pelsa_n_top_markers"),
+                       "N (downregulated; upregulated = ceil(N/2)):",
                        value = isolate(n_top_markers_for_ome()),
                        min = 1, step = 1, width = "220px")
         ),

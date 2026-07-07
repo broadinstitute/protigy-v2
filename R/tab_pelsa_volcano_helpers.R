@@ -1084,20 +1084,23 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # group in the PELSA sidebar allows selecting any combination):
 #   "all_markers"        every marker-protein peptide (is_marker == TRUE).
 #   "all_significant"    every significant peptide (Significant == TRUE).
-#   "top_n_adjp"         the n_top_adjp smallest adj.P.Val peptides in EACH
-#                        logFC-sign bucket (logFC >= 0 -> "up", logFC < 0 ->
-#                        "down"; union of both buckets). Ranks ALL peptides
-#                        regardless of significance. Ties in adj.P.Val (common
-#                        at high test counts, where BH-adjustment collapses
-#                        many raw p-values to a shared plateau) are broken by
-#                        the smallest raw P.Value, or by the largest |logFC|
-#                        when P.Value is unavailable.
+#   "top_n_adjp"         the n_top_adjp smallest adj.P.Val peptides in the
+#                        "down" logFC-sign bucket (logFC < 0), plus
+#                        ceiling(n_top_adjp / 2) smallest adj.P.Val peptides
+#                        in the "up" bucket (logFC >= 0); union of both
+#                        buckets. Ranks ALL peptides regardless of
+#                        significance. Ties in adj.P.Val (common at high test
+#                        counts, where BH-adjustment collapses many raw
+#                        p-values to a shared plateau) are broken by the
+#                        smallest raw P.Value, or by the largest |logFC| when
+#                        P.Value is unavailable.
 #   "top_n_markers"      the n_top_markers smallest adj.P.Val MARKER peptides
-#                        (is_marker == TRUE) in EACH logFC-sign bucket
-#                        (logFC >= 0 -> "up", logFC < 0 -> "down"; union of
-#                        both buckets). Ranks ALL marker peptides regardless
-#                        of significance. Same adj.P.Val tiebreak as
-#                        "top_n_adjp" (raw P.Value, then |logFC|).
+#                        (is_marker == TRUE) in the "down" logFC-sign bucket
+#                        (logFC < 0), plus ceiling(n_top_markers / 2) smallest
+#                        adj.P.Val MARKER peptides in the "up" bucket
+#                        (logFC >= 0); union of both buckets. Ranks ALL marker
+#                        peptides regardless of significance. Same adj.P.Val
+#                        tiebreak as "top_n_adjp" (raw P.Value, then |logFC|).
 #
 # Returns the UNION of matching rows across every mode in the vector, as
 # 1-based row indices (sorted, unique). An empty/NULL `mode` returns
@@ -1108,15 +1111,17 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 #                          sig_direction, adj.P.Val, logFC).
 # @param mode               a character vector; each element one of the four
 #                           modes above. NULL or character(0) means no labels.
-# @param n_top_adjp         N per direction for "top_n_adjp" (default
-#                           5, coerced to >= 1).
-# @param n_top_markers      N per direction for "top_n_markers" (default 5,
+# @param n_top_adjp         N for the "down" bucket of "top_n_adjp"; the "up"
+#                           bucket keeps ceiling(N / 2) (default 3, coerced
+#                           to >= 1).
+# @param n_top_markers      N for the "down" bucket of "top_n_markers"; the
+#                           "up" bucket keeps ceiling(N / 2) (default 3,
 #                           coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
 pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
-                                     n_top_adjp = 5L,
-                                     n_top_markers = 5L) {
+                                     n_top_adjp = 3L,
+                                     n_top_markers = 3L) {
   if (!is.data.frame(volcano_df)) {
     stop("pelsa_volcano_label_rows: volcano_df must be a data.frame")
   }
@@ -1151,8 +1156,14 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
     rawp <- volcano_df$P.Value
     tb   <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
     direction <- ifelse(!is.na(logfc) & logfc < 0, "down", "up")
+    # PELSA weights downregulated peptides more heavily: the down bucket
+    # keeps the full requested N, the up bucket keeps only half (rounded up).
+    n_down <- max(1L, as.integer(n_top_adjp)[1L])
+    n_up   <- ceiling(n_down / 2)
     idx <- c(idx, .pelsa_top_n_by_direction(seq_len(n), direction, adjp,
-                                            n_top_adjp, tiebreak_value = tb))
+                                            n_top_down = n_down,
+                                            n_top_up = n_up,
+                                            tiebreak_value = tb))
   }
 
   if ("top_n_markers" %in% mode) {
@@ -1164,8 +1175,12 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
       tb    <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
       m_dir <- ifelse(!is.na(logfc[marker_idx]) & logfc[marker_idx] < 0,
                       "down", "up")
+      n_down_mk <- max(1L, as.integer(n_top_markers)[1L])
+      n_up_mk   <- ceiling(n_down_mk / 2)
       idx <- c(idx, .pelsa_top_n_by_direction(marker_idx, m_dir,
-                                              adjp[marker_idx], n_top_markers,
+                                              adjp[marker_idx],
+                                              n_top_down = n_down_mk,
+                                              n_top_up = n_up_mk,
                                               tiebreak_value = tb[marker_idx]))
     }
   }
@@ -1173,25 +1188,34 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
   sort(unique(idx))
 }
 
-# Keep the n_top rows with the smallest `value` within each of the "up"/"down"
+# Keep the top N rows with the smallest `value` within each of the "up"/"down"
 # buckets of `direction` (any other direction value, e.g. "ns", is excluded
-# from both buckets). `idx` are the original row indices these
+# from both buckets). `n_top_down`/`n_top_up` are independent per-bucket
+# limits (PELSA weights downregulated peptides more heavily by default, so
+# callers commonly pass a smaller n_top_up than n_top_down -- see
+# pelsa_volcano_label_rows). `idx` are the original row indices these
 # (direction, value) entries correspond to. Stable: ties / NA values resolve
 # by original index order; NA values sort last. If a bucket has fewer than
-# n_top eligible rows, all of them are kept (no padding, no error).
+# its n_top eligible rows, all of them are kept (no padding, no error).
 #
+# @param n_top_down number of rows to keep from the "down" bucket.
+# @param n_top_up   number of rows to keep from the "up" bucket.
 # @param tiebreak_value optional secondary sort key (same length as `idx`/
 #   `direction`/`value`), used ascending to break ties in `value` before
 #   falling back to original index order. Pass a NEGATED value if "largest
-#   wins" is desired (e.g. -abs(logFC)). When NULL (default), behavior is
-#   IDENTICAL to before this parameter existed (ties broken by index only).
+#   wins" is desired (e.g. -abs(logFC)).
 # @return sorted unique original indices kept (union of both buckets).
 # @noRd
-.pelsa_top_n_by_direction <- function(idx, direction, value, n_top,
+.pelsa_top_n_by_direction <- function(idx, direction, value,
+                                      n_top_down, n_top_up,
                                       tiebreak_value = NULL) {
-  n_top <- max(1L, as.integer(n_top)[1L])
-  if (is.na(n_top)) n_top <- 5L
-  keep_bucket <- function(want) {
+  clamp_n <- function(n, default = 5L) {
+    n <- max(1L, as.integer(n)[1L])
+    if (is.na(n)) default else n
+  }
+  n_top_down <- clamp_n(n_top_down)
+  n_top_up   <- clamp_n(n_top_up)
+  keep_bucket <- function(want, n_top) {
     bucket <- which(direction == want)
     if (length(bucket) == 0L) return(integer(0))
     bucket_idx <- idx[bucket]
@@ -1203,7 +1227,7 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
     }
     head(bucket_idx[ord], n_top)
   }
-  sort(unique(c(keep_bucket("up"), keep_bucket("down"))))
+  sort(unique(c(keep_bucket("up", n_top_up), keep_bucket("down", n_top_down))))
 }
 
 # ---- "showing N of M" honesty note ------------------------------------------
@@ -1427,10 +1451,10 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 # @param color_mode  "significance" | "feature".
 # @param label_mode  a character vector of pelsa_volcano_label_rows() modes
 #   (possibly empty).
-# @param n_top_adjp         N per up/down bucket for the "top_n_adjp"
-#   mode (default 5).
-# @param n_top_markers      N per up/down bucket for the "top_n_markers" mode
-#   (default 5).
+# @param n_top_adjp         N for the "down" bucket of "top_n_adjp"; the "up"
+#   bucket keeps ceiling(N / 2) (default 3).
+# @param n_top_markers      N for the "down" bucket of "top_n_markers"; the
+#   "up" bucket keeps ceiling(N / 2) (default 3).
 # @param source_id   the plotly source id (ns("pelsa_volcano") /
 #   ns("pelsa_volcano_best")).
 # @param selection   NULL, or a list(origin, accession, peptide_seq) - the
@@ -1443,8 +1467,8 @@ pelsa_volcano_clicked_point_trace <- function(df, selection = NULL,
 pelsa_volcano_build_plot <- function(df, full_df = df,
                                      color_mode = "significance",
                                      label_mode = character(0),
-                                     n_top_adjp = 5L,
-                                     n_top_markers = 5L,
+                                     n_top_adjp = 3L,
+                                     n_top_markers = 3L,
                                      source_id = "pelsa_volcano",
                                      selection = NULL, find_mask = NULL,
                                      register_click = FALSE,
@@ -2161,8 +2185,8 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 # @noRd
 .pelsa_export_ggplot <- function(df, full_df, color_mode = "significance",
                                  label_mode = character(0),
-                                 n_top_adjp = 5L,
-                                 n_top_markers = 5L,
+                                 n_top_adjp = 3L,
+                                 n_top_markers = 3L,
                                  contrast = NULL, volcano_label = NULL,
                                  sig_cutoff = .PELSA_EXPORT_SIG_CUTOFF) {
   color_mode <- color_mode %||% "significance"

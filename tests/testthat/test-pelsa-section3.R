@@ -1409,13 +1409,14 @@ test_that("label-mode: top_n_adjp takes N smallest adj.P.Val per logFC-sign dire
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
-  # up bucket (rows 1,2,3,6): smallest 2 by adj.P.Val -> row2(0.1), row3(0.2).
+  # down keeps the full N=2; up keeps only ceiling(2/2)=1 (asymmetric split).
+  # up bucket (rows 1,2,3,6): smallest 1 by adj.P.Val -> row2(0.1).
   # down bucket (rows 4,5): smallest 2 -> both (only 2 available).
   # row 6 (non-significant is irrelevant here) still ranked in the up bucket,
   # but loses on adj.P.Val (0.9 is the largest).
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 2L),
-    c(2L, 3L, 4L, 5L)
+    c(2L, 4L, 5L)
   )
 })
 
@@ -1436,7 +1437,7 @@ test_that("label-mode: top_n_adjp labels fewer than N when a bucket is small", {
   )
 })
 
-test_that("label-mode: top_n_adjp default N is 5", {
+test_that("label-mode: top_n_adjp default N is 3", {
   df <- data.frame(
     is_marker         = rep(FALSE, 6),
     logFC             = rep(1.0, 6),
@@ -1445,10 +1446,12 @@ test_that("label-mode: top_n_adjp default N is 5", {
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
-  # No n_top_adjp arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
+  # No n_top_adjp arg supplied -> defaults to 3. All rows are "up" (down
+  # bucket empty), so the up bucket's limit is ceiling(3/2) = 2 -> rows 1-2
+  # kept (smallest adj.P.Val), rows 3-6 dropped.
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_adjp"),
-    c(1L, 2L, 3L, 4L, 5L)
+    c(1L, 2L)
   )
 })
 
@@ -1524,7 +1527,7 @@ test_that("label-mode: top_n_markers labels fewer than N when a bucket is small"
   )
 })
 
-test_that("label-mode: top_n_markers default N is 5", {
+test_that("label-mode: top_n_markers default N is 3", {
   df <- data.frame(
     is_marker         = rep(TRUE, 6),
     logFC             = rep(1.0, 6),
@@ -1533,10 +1536,12 @@ test_that("label-mode: top_n_markers default N is 5", {
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
-  # No n_top_markers arg supplied -> defaults to 5 -> rows 1-5 kept, row 6 dropped.
+  # No n_top_markers arg supplied -> defaults to 3. All rows are "up" (down
+  # bucket empty), so the up bucket's limit is ceiling(3/2) = 2 -> rows 1-2
+  # kept (smallest adj.P.Val), rows 3-6 dropped.
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_markers"),
-    c(1L, 2L, 3L, 4L, 5L)
+    c(1L, 2L)
   )
 })
 
@@ -1572,7 +1577,8 @@ test_that(".pelsa_top_n_by_direction: tiebreak_value breaks adj.P.Val ties by sm
   value <- rep(0.05, 5)
   tiebreak <- c(0.9, 0.1, 0.5, 0.01, 0.3)
   expect_equal(
-    .pelsa_top_n_by_direction(idx, direction, value, n_top = 2L,
+    .pelsa_top_n_by_direction(idx, direction, value,
+                               n_top_down = 2L, n_top_up = 2L,
                                tiebreak_value = tiebreak),
     c(2L, 4L)
   )
@@ -1594,14 +1600,109 @@ test_that(".pelsa_top_n_by_direction: without tiebreak_value, behavior is unchan
   expect_equal(old_style, c(1L, 2L))
 
   expect_equal(
-    .pelsa_top_n_by_direction(idx, direction, value, n_top = 2L),
+    .pelsa_top_n_by_direction(idx, direction, value,
+                               n_top_down = 2L, n_top_up = 2L),
     old_style
   )
   expect_equal(
-    .pelsa_top_n_by_direction(idx, direction, value, n_top = 2L,
+    .pelsa_top_n_by_direction(idx, direction, value,
+                               n_top_down = 2L, n_top_up = 2L,
                                tiebreak_value = NULL),
     old_style
   )
+})
+
+test_that(".pelsa_top_n_by_direction: n_top_down and n_top_up are independent per-bucket limits", {
+  # 5 "up" rows and 5 "down" rows, distinct values in each bucket.
+  idx <- 1:10
+  direction <- c(rep("up", 5), rep("down", 5))
+  value <- c(0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.04, 0.03, 0.02, 0.01)
+  # up bucket (rows 1-5): smallest 3 by value -> rows 5,4,3 (values .1,.2,.3).
+  # down bucket (rows 6-10): smallest 2 by value -> rows 10,9 (values .01,.02).
+  expect_equal(
+    .pelsa_top_n_by_direction(idx, direction, value,
+                               n_top_down = 2L, n_top_up = 3L),
+    c(3L, 4L, 5L, 9L, 10L)
+  )
+})
+
+test_that("label-mode: top_n_adjp N=10 keeps 10 down + 5 up (asymmetric split)", {
+  set.seed(1)
+  n_down <- 12L
+  n_up <- 12L
+  df <- data.frame(
+    is_marker         = rep(FALSE, n_down + n_up),
+    logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
+    adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
+                          seq(0.01, by = 0.01, length.out = n_up)),
+    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    label             = paste0("l", seq_len(n_down + n_up)),
+    stringsAsFactors  = FALSE
+  )
+  # down bucket (rows 1-12): keeps the full N=10 -> smallest 10 adj.P.Val,
+  # i.e. rows 1-10.
+  # up bucket (rows 13-24): keeps ceiling(10/2) = 5 -> smallest 5 adj.P.Val,
+  # i.e. rows 13-17.
+  idx <- pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 10L)
+  expect_equal(idx, c(1:10, 13:17))
+  expect_equal(length(which(idx <= n_down)), 10L)
+  expect_equal(length(which(idx > n_down)), 5L)
+})
+
+test_that("label-mode: top_n_adjp N=5 keeps 5 down + 3 up (ceiling rounds up)", {
+  n_down <- 8L
+  n_up <- 8L
+  df <- data.frame(
+    is_marker         = rep(FALSE, n_down + n_up),
+    logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
+    adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
+                          seq(0.01, by = 0.01, length.out = n_up)),
+    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    label             = paste0("l", seq_len(n_down + n_up)),
+    stringsAsFactors  = FALSE
+  )
+  # down bucket (rows 1-8): keeps the full N=5 -> rows 1-5.
+  # up bucket (rows 9-16): keeps ceiling(5/2) = 3 -> rows 9-11.
+  idx <- pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 5L)
+  expect_equal(idx, c(1:5, 9:11))
+  expect_equal(length(which(idx <= n_down)), 5L)
+  expect_equal(length(which(idx > n_down)), 3L)
+})
+
+test_that("label-mode: top_n_markers N=10 keeps 10 down + 5 up (asymmetric split)", {
+  n_down <- 12L
+  n_up <- 12L
+  df <- data.frame(
+    is_marker         = rep(TRUE, n_down + n_up),
+    logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
+    adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
+                          seq(0.01, by = 0.01, length.out = n_up)),
+    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    label             = paste0("l", seq_len(n_down + n_up)),
+    stringsAsFactors  = FALSE
+  )
+  idx <- pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 10L)
+  expect_equal(idx, c(1:10, 13:17))
+  expect_equal(length(which(idx <= n_down)), 10L)
+  expect_equal(length(which(idx > n_down)), 5L)
+})
+
+test_that("label-mode: top_n_markers N=5 keeps 5 down + 3 up (ceiling rounds up)", {
+  n_down <- 8L
+  n_up <- 8L
+  df <- data.frame(
+    is_marker         = rep(TRUE, n_down + n_up),
+    logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
+    adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
+                          seq(0.01, by = 0.01, length.out = n_up)),
+    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    label             = paste0("l", seq_len(n_down + n_up)),
+    stringsAsFactors  = FALSE
+  )
+  idx <- pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 5L)
+  expect_equal(idx, c(1:5, 9:11))
+  expect_equal(length(which(idx <= n_down)), 5L)
+  expect_equal(length(which(idx > n_down)), 3L)
 })
 
 test_that("label-mode: top_n_adjp breaks adj.P.Val ties by smallest raw P.Value", {
@@ -1614,11 +1715,12 @@ test_that("label-mode: top_n_adjp breaks adj.P.Val ties by smallest raw P.Value"
     label             = letters[1:5],
     stringsAsFactors  = FALSE
   )
-  # All 5 rows tied on adj.P.Val -> tiebreak by smallest raw P.Value.
-  # Smallest 2 P.Value: row2 (0.005), row3 (0.03).
+  # All rows are "up" (down bucket empty), so the up bucket's limit is
+  # ceiling(2/2) = 1, not 2 (asymmetric split). All 5 rows tied on
+  # adj.P.Val -> tiebreak by smallest raw P.Value: row2 (0.005) wins.
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_adjp", n_top_adjp = 2L),
-    c(2L, 3L)
+    2L
   )
 })
 
@@ -2645,9 +2747,9 @@ test_that("top-N values are per-ome: set while viewing one contrast, applied whe
       contrast_a <- unname(choices[[1L]])
       contrast_b <- unname(choices[[2L]])
 
-      # Default N is 5 before any input.
-      expect_identical(n_top_adjp_for_ome(), 5L)
-      expect_identical(n_top_markers_for_ome(), 5L)
+      # Default N is 3 before any input.
+      expect_identical(n_top_adjp_for_ome(), 3L)
+      expect_identical(n_top_markers_for_ome(), 3L)
 
       session$setInputs(pelsa_volcano_contrast = contrast_a,
                         pelsa_n_top_adjp = 8,
@@ -2687,8 +2789,10 @@ test_that("invalid N input (blank/zero/negative) coerces to a valid integer >= 1
       session$setInputs(pelsa_n_top_adjp = -3)
       expect_identical(n_top_adjp_for_ome(), 1L)
 
+      # Blank/NA input goes through the is.na() fallback branch, whose default
+      # is now 3 (not the max(1L, val) floor used by the 0/-3 cases above).
       session$setInputs(pelsa_n_top_adjp = NA)
-      expect_identical(n_top_adjp_for_ome(), 1L)
+      expect_identical(n_top_adjp_for_ome(), 3L)
     }
   )
 })
