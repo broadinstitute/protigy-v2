@@ -34,7 +34,13 @@ form to every other non-skipped dataset.
 - **Feature annotation file (.tsv)** — one row per feature. Required columns:
   `accession`, `feature_type`, `start`, `end`, `description` (1-based, inclusive
   coordinates); optional `coord_quality` (`exact`/`fuzzy`, defaults to `exact`). A row
-  flagged `fuzzy` (its coordinates are not exact) is excluded from the analysis. This file
+  flagged `fuzzy` (its coordinates are not exact) is excluded from the analysis. Coordinates
+  must be positive integers: a `start`/`end` cell that is present but not a valid positive
+  integer (for example `0`, a negative number, a fraction like `45.7`, or text like `N/A`)
+  is reported in a warning that names the offending accession(s) and then treated as
+  **missing** — the feature's residue interval is dropped rather than mis-mapped. A blank
+  coordinate cell is a legitimate "no interval" marker (used by zero-feature and
+  merged/deleted sentinel rows) and does not trigger the warning. This file
   is produced by an **external UniProt-fetch workflow** — there is no in-app fetching.
   The file may optionally be **self-describing**: a `disposition` column
   (`resolved`/`merged`/`demerged`/`deleted`) plus `primary_accession` records what happened
@@ -108,12 +114,23 @@ completed PELSA run for the ome.
 
 - **x-axis** — `logFC` for the selected contrast.
 - **y-axis** — `-log10(P.Value)` (raw p-value). Each point is one peptide.
-- **Significance is two-sided**: a peptide is significant when its adjusted or nominal
-  p-value (whichever the Statistics tab is set to test on) passes the cutoff — **dark red**
-  when up (`logFC > 0`), **blue** when down (`logFC < 0`), **gray** otherwise. A dashed line
-  marks the empirical raw-p threshold. Both the **significance cutoff** and the **statistic
-  it's tested against** (adjusted vs. nominal p-value) are shared with the Statistics tab
-  (`Statistics → Summary`) and are not set here (default cutoff 0.05).
+- **Significance is two-sided**: a significant peptide is colored whether it goes up or
+  down — **dark red** when up (`logFC >= 0`), **blue** when down (`logFC < 0`), **gray**
+  when not significant. The up/down split is `logFC >= 0` vs `logFC < 0`, so a significant
+  peptide sitting exactly at `logFC = 0` is drawn dark red (up), not gray. Both the
+  **significance cutoff** and the **statistic it's tested against** (adjusted vs. nominal
+  p-value) are shared with the Statistics tab (`Statistics → Summary`) and are not set here
+  (default cutoff 0.05).
+- **How significance is decided** depends on which statistic the Statistics tab is set to
+  test on, and matches that tab exactly at the boundary peptide:
+  - **Adjusted p-value mode (default)** — a peptide is significant when its point sits above
+    the **dashed line**, an *empirical* raw-p threshold. The line is drawn at
+    `-log10` of the largest raw `P.Value` among all peptides that pass `adj.P.Val < cutoff`
+    (it is `Inf` — nothing significant — if none pass). This is the same empirical,
+    ties-inclusive rule the Statistics volcano uses, and it can differ slightly from a strict
+    `adj.P.Val < cutoff` test right at the boundary.
+  - **Nominal p-value mode** — a peptide is significant by a direct `P.Value < cutoff` test;
+    the dashed line sits at `-log10(cutoff)` on the raw-p axis.
 
 ### Controls
 
@@ -129,18 +146,28 @@ completed PELSA run for the ome.
   marker proteins). None selected by default. Labels render as `<gene>_aa<position>`.
   The two "Top N" modes each have their own **N** input (default **3**) and PELSA
   deliberately weights the down direction: N is the count kept from the down-regulated
-  (`logFC < 0`) bucket, and only `ceiling(N / 2)` is kept from the up-regulated bucket.
-  Ties in adjusted p-value are broken by the smallest raw p-value, then by the largest
-  `|logFC|` if no raw p-value is available. Selecting a "Top N" checkbox automatically
-  unchecks and disables its counterpart in the same pair -- *Top N most significant
-  peptides* vs. *All significant peptides*, and *Top N marker peptides* vs. *All marker
-  peptides* -- the two pairs are independent of each other.
+  (`logFC < 0`) bucket, and only `ceiling(N / 2)` is kept from the up-regulated
+  (`logFC >= 0`) bucket. A peptide with a **missing `logFC`** belongs to neither bucket and
+  is never picked by a "Top N" mode. Ties in adjusted p-value (common when BH-adjustment
+  collapses many raw p-values onto a shared plateau) are broken by the smallest raw
+  p-value, then by the largest `|logFC|` if no raw p-value is available. Selecting a "Top N"
+  checkbox automatically unchecks and disables its counterpart in the same pair -- *Top N
+  most significant peptides* vs. *All significant peptides*, and *Top N marker peptides* vs.
+  *All marker peptides* -- the two pairs are independent of each other.
+  - **On-plot labels are capped**: to keep the plot responsive, at most the **500**
+    most-significant candidate peptides (by adjusted p-value) are ever considered for an
+    on-plot text label, and overlapping labels are then thinned out. The unbounded modes
+    (*All marker peptides* / *All significant peptides*) can select far more peptides than
+    that; the label text is a display aid, so the long tail past 500 is silently dropped
+    while every selected peptide still keeps its point and tooltip.
 - **Show best peptide per protein** — adds a second volcano with one point per protein's
   most significant peptide.
 
-Marker proteins are always shown in **magenta** regardless of the color mode. The volcano
-always renders as SVG (not WebGL) for reliable per-point coloring, unlike the Summary
-tab's Intensity rank (S-plot), which does use WebGL with an automatic SVG fallback.
+Marker proteins are always shown in **magenta** regardless of the color mode. Like the
+Summary tab's Intensity rank (S-plot), the volcano renders on **WebGL** for speed, with an
+automatic **SVG fallback** when the browser reports no WebGL support. Point colors and text
+labels are baked into the figure at build time (and highlights are drawn as overlay traces)
+rather than restyled in place, because in-place recoloring is unreliable on WebGL.
 
 ### Pinned protein views
 
@@ -158,8 +185,9 @@ quantified peptides for the current contrast) and two visualizations:
   - **Woods plot** — each peptide as a horizontal segment from its start to end at y = `logFC`,
     colored by `-log10(adj.P.Val)` (or `-log10(P.Value)` when Statistics > Summary is set to
     test on the nominal p-value -- the color statistic always follows that shared setting).
-    This is the core PELSA readout: it shows *where* along the protein the treatment effect
-    localizes relative to annotated structure/function.
+    The color scale is capped at `-log10 = 5` so a handful of extremely tiny p-values do not
+    flatten the rest of the gradient. This is the core PELSA readout: it shows *where* along
+    the protein the treatment effect localizes relative to annotated structure/function.
 
 Clicking a Woods peptide cross-selects it on the volcano. **Add accession to marker list**
 sends the pinned protein to this ome's Setup marker list.
@@ -182,10 +210,10 @@ stage folders:
   Intensity rank (S-plot) figures are included as their own PNGs.
 - **`03_volcano/`** — one subfolder per figure type:
   - **`01_volcano/`** — a flat folder: one static PNG per contrast
-    (`all_peptide_volcano_<contrast>.png`; plus a best-peptide volcano if that option is
-    on). Coloring and labels follow the on-screen settings and the shared significance
-    cutoff/statistic. Unlike the other two figure types below, there is no
-    marker/significant split (a volcano shows all peptides at once).
+    (`all_peptide_volcano_<contrast>.png`; plus `best_peptide_volcano_<contrast>.png` when
+    *Show best peptide per protein* is on). Coloring and labels follow the on-screen settings
+    and the shared significance cutoff/statistic. Unlike the other two figure types below,
+    there is no marker/significant split (a volcano shows all peptides at once).
   - **`02_intensity_line/`** — one PNG per protein, split into `01_marker/` and
     `02_significant/`.
   - **`03_woods/`** — one PNG per protein × contrast, split into `01_marker/` and
