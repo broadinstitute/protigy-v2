@@ -216,7 +216,7 @@ test_that("coverage values keep finite [0,1], over-length count works", {
   expect_equal(pelsa_over_length_count(NULL), 0L)
 })
 
-test_that("length values + missed-cleavage data shape correctly", {
+test_that("length values shape correctly", {
   pm <- data.frame(
     PEP.StrippedSequence = c("AAA", "BBBB", "CC"),
     missed_cleavages = c(0L, 1L, 0L),
@@ -224,74 +224,6 @@ test_that("length values + missed-cleavage data shape correctly", {
     stringsAsFactors = FALSE
   )
   expect_setequal(pelsa_length_values(pm), c(3, 4, 2))
-  mc <- pelsa_missed_cleavage_data(pm)
-  expect_identical(mc$missed, c(0L, 1L))
-  expect_identical(mc$count, c(2L, 1L))
-})
-
-test_that("missed-cleavage data includes percent of all identified peptides", {
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:4),
-    missed_cleavages = c(0L, 0L, 1L, 2L),
-    peptide_length   = rep(8L, 4L),
-    stringsAsFactors = FALSE
-  )
-  mc <- pelsa_missed_cleavage_data(pm)
-  expect_identical(mc$missed, c(0L, 1L, 2L))
-  expect_identical(mc$count, c(2L, 1L, 1L))
-  # percent is count / total peptides identified (nrow(pm)) * 100.
-  expect_equal(mc$percent, c(50, 25, 25))
-  # all 4 peptides have finite missed-cleavage values, so percents sum to 100.
-  expect_equal(sum(mc$percent), 100)
-})
-
-test_that("missed-cleavage percent denominator is ALL identified peptides, not just finite", {
-  # 2 of 4 peptides have a non-finite missed-cleavage value. The denominator is
-  # still nrow(pm) = 4 (= qc$n_peptides / total peptides identified), so the
-  # bars cover only 2 peptides and percents sum to 50, NOT 100.
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:4),
-    missed_cleavages = c(0L, 1L, NA_integer_, NA_integer_),
-    peptide_length   = rep(8L, 4L),
-    stringsAsFactors = FALSE
-  )
-  mc <- pelsa_missed_cleavage_data(pm)
-  expect_identical(mc$missed, c(0L, 1L))
-  expect_identical(mc$count, c(1L, 1L))
-  # denominator is 4 (all rows), not 2 (finite rows): 1/4 = 25% each.
-  expect_equal(mc$percent, c(25, 25))
-  expect_equal(sum(mc$percent), 50)
-})
-
-test_that("missed-cleavage empty result carries a numeric percent column", {
-  mc <- pelsa_missed_cleavage_data(NULL)
-  expect_identical(nrow(mc), 0L)
-  expect_true("percent" %in% names(mc))
-  expect_type(mc$percent, "double")
-})
-
-test_that("missed-cleavage data fills gaps with zero-count rows for even spacing", {
-  # Peptides have 0, 1, 2, 3, 5, 7 missed cleavages -> 4 and 6 are gaps.
-  # The helper must emit a contiguous 0..7 sequence, with count 0 / percent 0
-  # at the missing values so the bar chart can draw a visible empty slot.
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:8),
-    missed_cleavages = c(0L, 0L, 1L, 2L, 3L, 5L, 7L, 7L),
-    peptide_length   = rep(8L, 8L),
-    stringsAsFactors = FALSE
-  )
-  mc <- pelsa_missed_cleavage_data(pm)
-  # Contiguous 0..7 (max observed is 7), no gaps.
-  expect_identical(mc$missed, 0:7)
-  # Observed counts at 0,1,2,3,5,7; zeros filled at 4 and 6.
-  expect_identical(mc$count, c(2L, 1L, 1L, 1L, 0L, 1L, 0L, 2L))
-  # Gap rows carry percent 0; observed rows are count / nrow(pm) * 100.
-  expect_equal(mc$percent[mc$missed == 4L], 0)
-  expect_equal(mc$percent[mc$missed == 6L], 0)
-  expect_equal(mc$percent[mc$missed == 0L], 25)   # 2 / 8 * 100
-  expect_equal(mc$percent[mc$missed == 7L], 25)   # 2 / 8 * 100
-  # Percentages still sum over the same numerator (8 finite peptides / 8 total).
-  expect_equal(sum(mc$percent), 100)
 })
 
 # ---- CV plot render paths (cv = NULL / all-skipped) --------------------------
@@ -951,94 +883,6 @@ test_that("condition with CV data but zero quantified peptides reports 0, not NA
   expect_equal(got[["C"]], 0L)            # 0, NOT NA
   expect_false(anyNA(out$n_peptides_quantified))
   expect_equal(got[["A"]], 2L)
-})
-
-# ---------------------------------------------------------------------------
-# pelsa_missed_cleavage_plot: integer peptide counts must render as plain
-# integers, not scientific notation (label_scientific turned 5 -> "5e+00").
-# ---------------------------------------------------------------------------
-test_that("missed-cleavage y-axis uses plain integer labels, not scientific", {
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:6),
-    missed_cleavages = c(0L, 0L, 0L, 1L, 1L, 2L),
-    peptide_length = rep(8L, 6L),
-    stringsAsFactors = FALSE
-  )
-  p <- pelsa_missed_cleavage_plot(pm)
-  expect_s3_class(p, "ggplot")
-  # Pull the y continuous scale's label formatter and apply it to typical counts.
-  y_scale <- p$scales$scales[[which(vapply(p$scales$scales,
-    function(s) "y" %in% s$aesthetics, logical(1)))[1]]]
-  labs <- y_scale$get_labels(c(5, 20, 1000))
-  # Plain integers, NOT scientific ("5e+00").
-  expect_false(any(grepl("e\\+", labs)),
-               info = paste("got scientific labels:", paste(labs, collapse = ", ")))
-  expect_true(grepl("5", labs[1], fixed = TRUE))
-})
-
-test_that("missed-cleavage plot bakes count + percent into a tooltip text aesthetic", {
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:4),
-    missed_cleavages = c(0L, 0L, 1L, 2L),
-    peptide_length = rep(8L, 4L),
-    stringsAsFactors = FALSE
-  )
-  p <- pelsa_missed_cleavage_plot(pm)
-  expect_s3_class(p, "ggplot")
-  # A `text` aesthetic must be mapped (used as the plotly tooltip). ggplotly
-  # reads it whether it lives in the plot-level mapping or a layer mapping.
-  has_text_aes <- "text" %in% names(p$mapping) ||
-    any(vapply(p$layers, function(l) "text" %in% names(l$mapping), logical(1)))
-  expect_true(has_text_aes)
-  # The built data must contain the formatted tooltip strings with both the
-  # count and the percent for the largest bar (count 2 = 50.0%).
-  built <- ggplot2::ggplot_build(p)$data[[1]]
-  expect_true("text" %in% names(built))
-  expect_true(any(grepl("50.0%", built$text, fixed = TRUE)))
-  expect_true(any(grepl("Peptides: 2", built$text, fixed = TRUE)))
-})
-
-test_that("missed-cleavage plot shows contiguous x positions with an empty-slot tooltip", {
-  # Gap at 6 (no peptide has 6 missed cleavages). The plot must reserve an
-  # axis slot at 6 and give it a 'Peptides: 0' tooltip, not collapse 5 -> 7.
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:7),
-    missed_cleavages = c(0L, 1L, 2L, 3L, 4L, 5L, 7L),
-    peptide_length = rep(8L, 7L),
-    stringsAsFactors = FALSE
-  )
-  p <- pelsa_missed_cleavage_plot(pm)
-  expect_s3_class(p, "ggplot")
-  # X factor levels are contiguous 0..7 (gap value 6 included as a level).
-  built <- ggplot2::ggplot_build(p)
-  expect_identical(levels(built$plot$data$missed),
-                   as.character(0:7))
-  # The gap slot (6) carries an explicit zero-count tooltip.
-  txt <- built$data[[1]]$text
-  expect_true(any(grepl("Missed cleavages: 6", txt, fixed = TRUE)))
-  expect_true(any(grepl("Peptides: 0", txt, fixed = TRUE)))
-  expect_true(any(grepl("Percent: 0.0%", txt, fixed = TRUE)))
-})
-
-test_that("missed-cleavage tooltip counts have no stray padding spaces (mixed widths)", {
-  # A lopsided distribution (one big bar at 0, small tail) is the natural shape
-  # of missed-cleavage data. format(vector) right-justifies to a common width,
-  # which would inject leading spaces ("Peptides:     5"). Each count must be
-  # formatted independently so small counts render flush.
-  pm <- data.frame(
-    PEP.StrippedSequence = paste0("PEP", 1:1205),
-    missed_cleavages = c(rep(0L, 1200L), rep(1L, 5L)),
-    peptide_length = rep(8L, 1205L),
-    stringsAsFactors = FALSE
-  )
-  p <- pelsa_missed_cleavage_plot(pm)
-  txt <- ggplot2::ggplot_build(p)$data[[1]]$text
-  # Big bar keeps its thousands separator.
-  expect_true(any(grepl("Peptides: 1,200", txt, fixed = TRUE)))
-  # Small bar is flush, NOT padded to the wide bar's width.
-  expect_true(any(grepl("Peptides: 5", txt, fixed = TRUE)))
-  # No tooltip contains a run of consecutive spaces (the padding signature).
-  expect_false(any(grepl("  ", txt, fixed = TRUE)))
 })
 
 # ---- 6A value boxes: three-way annotation QC --------------------------------

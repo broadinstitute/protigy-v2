@@ -252,8 +252,7 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
       )
     })
 
-    # Per-protein sequence coverage - experiment-wide density (default) OR a
-    # per-condition density (toggle).
+    # Per-protein sequence coverage - experiment-wide (default) OR per-condition.
     coverage_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
@@ -261,40 +260,76 @@ PELSASection2_Tab_Server <- function(id = "PELSASection2Tab",
         return(pelsa_blank_plot(
           "No peptides mapped to FASTA - check species / FASTA."))
       }
-      if (identical(input$coverage_mode %||% "overall", "per_condition")) {
-        pelsa_coverage_by_condition_plot(entry$coverage_by_condition,
-                                         active_condition_order())
-      } else {
-        pelsa_coverage_distribution_plot(entry$coverage)
-      }
+      mode <- if (identical(input$coverage_mode %||% "overall", "per_condition"))
+        "per_condition" else "overall"
+      pelsa_coverage_plot(entry$coverage_by_sample, entry$condition_map,
+                         active_condition_order(), mode = mode)
     })
     output$coverage_plot <- renderPlotly({
       ggplotly(coverage_plot_reactive())
     })
+    output$coverage_skipped_note <- renderUI({
+      entry <- active_entry()
+      req(entry)
+      if (identical(input$coverage_mode %||% "overall", "overall")) return(NULL)
+      agg <- pelsa_bar_error_data(entry$coverage_by_sample, "coverage",
+                                  entry$condition_map, active_condition_order())
+      if (nrow(agg$skipped) == 0L) return(NULL)
+      msg <- paste(sprintf("%s (n=%d)", agg$skipped$condition, agg$skipped$n),
+                  collapse = ", ")
+      tags$p(sprintf("Skipped (<2 replicate samples): %s", msg),
+            style = "color:#6c757d; font-size:0.9em;")
+    })
 
-    # Peptide-length density - experiment-wide (default) OR per-condition (toggle).
+    # Peptide-length - experiment-wide (default) OR per-condition.
     length_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
-      if (identical(input$length_mode %||% "overall", "per_condition")) {
-        pelsa_length_by_condition_plot(entry$length_by_condition,
-                                       active_condition_order())
-      } else {
-        pelsa_length_density_plot(entry$peptide_metrics)
-      }
+      mode <- if (identical(input$length_mode %||% "overall", "per_condition"))
+        "per_condition" else "overall"
+      pelsa_length_plot(entry$length_by_sample, entry$condition_map,
+                       active_condition_order(), mode = mode)
     })
     output$length_plot <- renderPlotly({
       ggplotly(length_plot_reactive())
     })
+    output$length_skipped_note <- renderUI({
+      entry <- active_entry()
+      req(entry)
+      if (identical(input$length_mode %||% "overall", "overall")) return(NULL)
+      agg <- pelsa_bar_error_data(entry$length_by_sample, "mean_length",
+                                  entry$condition_map, active_condition_order())
+      if (nrow(agg$skipped) == 0L) return(NULL)
+      msg <- paste(sprintf("%s (n=%d)", agg$skipped$condition, agg$skipped$n),
+                  collapse = ", ")
+      tags$p(sprintf("Skipped (<2 replicate samples): %s", msg),
+            style = "color:#6c757d; font-size:0.9em;")
+    })
 
-    # Missed-cleavage bar.
+    # Missed-cleavage rate - experiment-wide (default) OR per-condition.
     missed_plot_reactive <- reactive({
       entry <- active_entry()
       req(entry)
-      pelsa_missed_cleavage_plot(entry$peptide_metrics)
+      mode <- if (identical(input$missed_mode %||% "overall", "per_condition"))
+        "per_condition" else "overall"
+      pelsa_missed_cleavage_plot(entry$missed_cleavage_rate_by_sample,
+                                entry$condition_map, active_condition_order(),
+                                mode = mode)
     })
     output$missed_plot <- renderPlotly({
-      ggplotly(missed_plot_reactive(), tooltip = "text")
+      ggplotly(missed_plot_reactive())
+    })
+    output$missed_skipped_note <- renderUI({
+      entry <- active_entry()
+      req(entry)
+      if (identical(input$missed_mode %||% "overall", "overall")) return(NULL)
+      agg <- pelsa_bar_error_data(entry$missed_cleavage_rate_by_sample, "rate",
+                                  entry$condition_map, active_condition_order())
+      if (nrow(agg$skipped) == 0L) return(NULL)
+      msg <- paste(sprintf("%s (n=%d)", agg$skipped$condition, agg$skipped$n),
+                  collapse = ", ")
+      tags$p(sprintf("Skipped (<2 replicate samples): %s", msg),
+            style = "color:#6c757d; font-size:0.9em;")
     })
 
     ## 6B - PER-CONDITION CV KDE ##
@@ -624,7 +659,9 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       ),
       shinydashboardPlus::box(
+        pelsa_mode_toggle(ns, "missed_mode", "overall"),
         plotlyOutput(ns("missed_plot")),
+        uiOutput(ns("missed_skipped_note")),
         title = "Missed-cleavage distribution", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       )
@@ -636,12 +673,14 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
       shinydashboardPlus::box(
         pelsa_mode_toggle(ns, "coverage_mode", "overall"),
         plotlyOutput(ns("coverage_plot")),
+        uiOutput(ns("coverage_skipped_note")),
         title = "Per-protein sequence coverage", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       ),
       shinydashboardPlus::box(
         pelsa_mode_toggle(ns, "length_mode", "overall"),
         plotlyOutput(ns("length_plot")),
+        uiOutput(ns("length_skipped_note")),
         title = "Peptide-length distribution", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       )
@@ -951,67 +990,49 @@ pelsa_per_condition_density_plot <- function(df, value_col,
   p
 }
 
-# 6A: per-protein sequence coverage DENSITY (experiment-wide mode). @noRd
-pelsa_coverage_distribution_plot <- function(coverage, export = FALSE) {
-  vals <- pelsa_coverage_values(coverage)
-  over_n <- pelsa_over_length_count(coverage)
-  subtitle <- if (over_n > 0L)
-    sprintf("Experiment-wide | %d clamped (over-length)", over_n) else
-      "Experiment-wide"
-  p <- pelsa_overall_density_plot(
-    vals, x_label = "Sequence coverage (%)",
+# 6A: per-protein sequence coverage bar+error-bar (mean +/- SD across
+# replicate samples per condition, or pooled experiment-wide). @noRd
+pelsa_coverage_plot <- function(coverage_by_sample, condition_map,
+                                condition_order = NULL,
+                                mode = c("overall", "per_condition"),
+                                min_replicates = 2L, export = FALSE) {
+  mode <- match.arg(mode)
+  bar_df <- if (identical(mode, "per_condition")) {
+    pelsa_bar_error_data(coverage_by_sample, "coverage", condition_map,
+                        condition_order, min_replicates)$data
+  } else {
+    pelsa_bar_error_data_overall(coverage_by_sample, "coverage", min_replicates)
+  }
+  pelsa_condition_bar_plot(
+    bar_df, y_label = "Sequence coverage (%)",
     title = "Per-protein sequence coverage", fill = "#4e79a7",
-    value_fmt = function(v) sprintf("%.1f%%", 100 * v), subtitle = subtitle,
-    blank_msg = "Not enough coverage values for a density.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
-    export = export)
-  # Overrides pelsa_overall_density_plot's own internal coord_cartesian (last
-  # coord wins) to fix the axis at (0, 1) for export; suppress the informational
-  # "Coordinate system already present" message this intentional override emits.
-  if (export) p <- suppressMessages(p + ggplot2::coord_cartesian(xlim = c(0, 1)))
-  p
-}
-
-# 6A: per-protein sequence coverage DENSITY (per-condition mode). @noRd
-pelsa_coverage_by_condition_plot <- function(coverage_by_condition,
-                                             condition_order = NULL,
-                                             export = FALSE) {
-  pelsa_per_condition_density_plot(
-    coverage_by_condition, value_col = "coverage",
-    condition_order = condition_order,
-    x_label = "Sequence coverage (%)",
-    title = "Per-protein sequence coverage by condition",
-    subtitle = "Per-condition",
-    value_fmt = function(v) sprintf("%.1f%%", 100 * v),
-    blank_msg = "No per-condition coverage - a condition column is required.",
-    x_scale = ggplot2::scale_x_continuous(labels = function(x) x * 100),
+    y_fmt = function(v) sprintf("%.1f%%", 100 * v),
+    blank_msg = sprintf(
+      "No condition has >= %d replicate samples with coverage data.",
+      min_replicates),
     export = export)
 }
 
-# 6A: peptide-length DENSITY (experiment-wide mode). @noRd
-pelsa_length_density_plot <- function(peptide_metrics, export = FALSE) {
-  vals <- pelsa_length_values(peptide_metrics)
-  pelsa_overall_density_plot(
-    vals, x_label = "Peptide length (residues)",
+# 6A: peptide-length bar+error-bar (mean +/- SD across replicate samples per
+# condition, or pooled experiment-wide). @noRd
+pelsa_length_plot <- function(length_by_sample, condition_map,
+                              condition_order = NULL,
+                              mode = c("overall", "per_condition"),
+                              min_replicates = 2L, export = FALSE) {
+  mode <- match.arg(mode)
+  bar_df <- if (identical(mode, "per_condition")) {
+    pelsa_bar_error_data(length_by_sample, "mean_length", condition_map,
+                        condition_order, min_replicates)$data
+  } else {
+    pelsa_bar_error_data_overall(length_by_sample, "mean_length", min_replicates)
+  }
+  pelsa_condition_bar_plot(
+    bar_df, y_label = "Peptide length (residues)",
     title = "Peptide-length distribution", fill = "#59a14f",
-    value_fmt = function(v) sprintf("%.1f", v),
-    subtitle = "Experiment-wide",
-    blank_msg = "Not enough peptides for a length density.",
-    export = export)
-}
-
-# 6A: peptide-length DENSITY (per-condition mode). @noRd
-pelsa_length_by_condition_plot <- function(length_by_condition,
-                                           condition_order = NULL,
-                                           export = FALSE) {
-  pelsa_per_condition_density_plot(
-    length_by_condition, value_col = "peptide_length",
-    condition_order = condition_order,
-    x_label = "Peptide length (residues)",
-    title = "Peptide-length distribution by condition",
-    subtitle = "Per-condition",
-    value_fmt = function(v) sprintf("%.1f", v),
-    blank_msg = "No per-condition lengths - a condition column is required.",
+    y_fmt = function(v) sprintf("%.1f", v),
+    blank_msg = sprintf(
+      "No condition has >= %d replicate samples with length data.",
+      min_replicates),
     export = export)
 }
 
@@ -1036,61 +1057,29 @@ pelsa_cv_overall_plot <- function(cv) {
     x_hi = x_hi)
 }
 
-# 6A: missed-cleavage bar (0,1,2,...). export=TRUE applies static-figure
-# styling (title size 12, no "plot"-position override, black size-8 axis
-# text) plus a wider x-axis title and a larger bar-label font, matching the
-# export pattern used by the other section-2 QC plots. @noRd
-pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06,
-                                       export = FALSE) {
-  df <- pelsa_missed_cleavage_data(peptide_metrics)
-  if (nrow(df) == 0L) {
-    return(pelsa_blank_plot("No missed-cleavage data."))
+# 6A: missed-cleavage RATE bar+error-bar (mean +/- SD across replicate
+# samples per condition, or pooled experiment-wide). Rate = fraction of a
+# sample's quantified peptides with >= 1 missed cleavage. @noRd
+pelsa_missed_cleavage_plot <- function(missed_cleavage_rate_by_sample,
+                                       condition_map, condition_order = NULL,
+                                       mode = c("overall", "per_condition"),
+                                       min_replicates = 2L, export = FALSE) {
+  mode <- match.arg(mode)
+  bar_df <- if (identical(mode, "per_condition")) {
+    pelsa_bar_error_data(missed_cleavage_rate_by_sample, "rate",
+                        condition_map, condition_order, min_replicates)$data
+  } else {
+    pelsa_bar_error_data_overall(missed_cleavage_rate_by_sample, "rate",
+                                 min_replicates)
   }
-  # Pre-format the per-bar tooltip: count + percentage of all identified
-  # peptides. Baked into a `text` aesthetic so ggplotly(tooltip = "text")
-  # shows exactly this. \n becomes a line break in the plotly hover box.
-  # prettyNum (NOT format) so each count formats independently: format() on a
-  # vector right-justifies every element to the widest one's width, which would
-  # inject leading spaces into smaller counts ("Peptides:     5").
-  df$tooltip <- sprintf(
-    "Missed cleavages: %d\nPeptides: %s\nPercent: %.1f%%",
-    df$missed, prettyNum(df$count, big.mark = ","), df$percent
-  )
-  df$missed <- factor(df$missed, levels = sort(unique(df$missed)))
-  # Absolute count + parenthesized percent of all identified peptides, stacked
-  # above each bar. Parenthesization applies in BOTH modes -- it is a
-  # label-content clarity fix, not export-specific styling.
-  df$bar_label <- sprintf("%s\n(%.1f%%)", prettyNum(df$count, big.mark = ","),
-                          df$percent)
-  # Lift the label `head_frac` of the tallest bar ABOVE each bar top (in-app
-  # default 0.06 is larger than the depth plot's 0.04 so the 2-line count+percent
-  # label clears the bar with comparable breathing room; the export path passes a
-  # smaller value). Baked into label_y (ggplotly drops nudge_y); vjust = 0 anchors
-  # the label bottom at label_y.
-  head_room <- head_frac * max(df$count, na.rm = TRUE)
-  df$label_y <- df$count + head_room
-  x_title <- if (export) "# of missed cleavages" else "Missed cleavages"
-  label_size <- if (export) 4 else 3
-  p <- ggplot(df, aes(x = .data$missed, y = .data$count, text = .data$tooltip)) +
-    geom_col(fill = "#f28e2b") +
-    geom_text(aes(y = .data$label_y, label = .data$bar_label),
-              vjust = 0, size = label_size, fontface = "bold") +
-    scale_y_continuous(labels = scales::label_comma(),
-                       expand = expansion(mult = c(0, 0.15))) +
-    labs(x = x_title, y = "# of peptides",
-         title = "Missed-cleavage distribution") +
-    protigy_plot_theme()
-  if (export) {
-    # Deleting the list element (not assigning theme(plot.title.position=NULL))
-    # is what actually drops the "plot"-wide-centering override so the title
-    # falls back to ggplot2's panel-centered default -- a `+ theme(x = NULL)`
-    # merge does NOT unset an already-set element in this ggplot2 version.
-    p$theme$plot.title.position <- NULL
-    p <- p + ggplot2::theme(
-      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
-      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
-  }
-  p
+  pelsa_condition_bar_plot(
+    bar_df, y_label = "Missed-cleavage rate (%)",
+    title = "Missed-cleavage distribution", fill = "#f28e2b",
+    y_fmt = function(v) sprintf("%.1f%%", 100 * v),
+    blank_msg = sprintf(
+      "No condition has >= %d replicate samples with missed-cleavage data.",
+      min_replicates),
+    export = export)
 }
 
 # 6B: per-condition CV KDE. One density curve per ELIGIBLE condition (>= 20

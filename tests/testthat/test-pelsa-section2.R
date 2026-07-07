@@ -181,15 +181,6 @@ test_that("cv kde median labels are bold", {
   expect_true(any(faces == "bold"))
 })
 
-# ---- Task 8: missed-cleavage bar labels --------------------------------------
-
-test_that("missed-cleavage plot draws a count+percent label per bar", {
-  pm <- data.frame(missed_cleavages = c(0,0,0,1,1,2))
-  p <- pelsa_missed_cleavage_plot(pm)
-  text_layers <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
-  expect_length(text_layers, 1)
-})
-
 # ---- Task 9: depth bar count labels + x-axis text size 11 -------------------
 
 test_that("depth bar draws a count label per sample and sizes x-axis text to 11", {
@@ -206,22 +197,6 @@ test_that("in-app bar labels sit ABOVE the bar (vjust=0 + baked label_y headroom
   # ggplotly drops nudge_y, so the headroom is baked into the text layer's y.
   # Assert on the BUILT layer data (layer_data) -- the raw layer$data slot is a
   # waiver here (aes-only geom_text), which would make a direct comparison vacuous.
-  pm <- data.frame(
-    peptide_seq = paste0("PEP", 1:6),
-    peptide_length = c(8, 9, 10, 11, 12, 13),
-    missed_cleavages = c(0, 0, 1, 1, 2, 0),
-    stringsAsFactors = FALSE
-  )
-  g_mc <- pelsa_missed_cleavage_plot(pm)
-  txt_mc <- Filter(function(l) inherits(l$geom, "GeomText"), g_mc$layers)
-  expect_length(txt_mc, 1L)
-  expect_equal(txt_mc[[1]]$aes_params$vjust, 0)
-  # geom_text is the 2nd layer (geom_col is 1st). Built text y > built col y.
-  col_y_mc  <- ggplot2::layer_data(g_mc, 1)$y   # bar tops
-  text_y_mc <- ggplot2::layer_data(g_mc, 2)$y   # baked label_y
-  expect_equal(length(text_y_mc), length(col_y_mc))
-  expect_true(all(text_y_mc > col_y_mc))
-
   nq <- c(S1 = 1200L, S2 = 1500L, S3 = 900L)
   g_d <- pelsa_depth_bar_plot(nq)
   txt_d <- Filter(function(l) inherits(l$geom, "GeomText"), g_d$layers)
@@ -234,23 +209,6 @@ test_that("in-app bar labels sit ABOVE the bar (vjust=0 + baked label_y headroom
 })
 
 test_that("bar-label head_frac controls the gap: defaults are in-app, smaller = export", {
-  pm <- data.frame(
-    peptide_seq = paste0("PEP", 1:6),
-    peptide_length = c(8, 9, 10, 11, 12, 13),
-    missed_cleavages = c(0, 0, 1, 1, 2, 0),
-    stringsAsFactors = FALSE
-  )
-  # Default (in-app) missed-cleavage gap vs a halved export gap.
-  g_app <- pelsa_missed_cleavage_plot(pm)                    # head_frac = 0.06
-  g_exp <- pelsa_missed_cleavage_plot(pm, head_frac = 0.03)  # export
-  gap_app <- ggplot2::layer_data(g_app, 2)$y - ggplot2::layer_data(g_app, 1)$y
-  gap_exp <- ggplot2::layer_data(g_exp, 2)$y - ggplot2::layer_data(g_exp, 1)$y
-  expect_true(all(gap_app > 0))
-  expect_true(all(gap_exp > 0))                 # export still clears the bar (no clash)
-  expect_true(all(gap_exp < gap_app))           # export gap is smaller
-  # 0.03 is half of 0.06 -> export gap ~= half the in-app gap (allow float slack).
-  expect_equal(mean(gap_exp) / mean(gap_app), 0.5, tolerance = 1e-6)
-
   # Depth: default 0.04 (in-app), 0.02 export -> half.
   nq <- c(S1 = 1200L, S2 = 1500L, S3 = 900L)
   d_app <- pelsa_depth_bar_plot(nq)                          # head_frac = 0.04
@@ -266,32 +224,89 @@ test_that("bar-label head_frac controls the gap: defaults are in-app, smaller = 
   expect_s3_class(d_pos, "ggplot")
 })
 
-# ---- Task 2: density plot x-axis always includes 0 ------
+# ---- Task 5: per-sample bar+errorbar panels (missed-cleavage/coverage/length) --
 
-test_that("peptide-length density plot always includes 0 on the x-axis, even when all values are far from 0", {
-  pm <- data.frame(
-    peptide_seq = paste0("PEP", 1:20),
-    peptide_length = seq(30, 68, by = 2),  # min 30, far from 0
-    missed_cleavages = rep(0L, 20),
+test_that("pelsa_missed_cleavage_plot draws one bar per eligible condition (per_condition mode)", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "A_R3", "B_R1"),
+    rate = c(0.1, 0.2, 0.3, 0.9),
+    n_quantified = c(10L, 10L, 10L, 10L),
     stringsAsFactors = FALSE
   )
-  g <- pelsa_length_density_plot(pm)
-  built <- ggplot2::ggplot_build(g)
-  x_range <- built$layout$panel_params[[1]]$x.range
-  expect_true(x_range[1] <= 0)
+  cmap <- c(A_R1 = "A", A_R2 = "A", A_R3 = "A", B_R1 = "B")
+  # B has only 1 replicate -> dropped (min_replicates = 2 default).
+  p <- pelsa_missed_cleavage_plot(per_sample, cmap, mode = "per_condition")
+  expect_s3_class(p, "ggplot")
+  built <- ggplot2::ggplot_build(p)
+  bar_idx <- which(vapply(p$layers, function(l) class(l$geom)[1], character(1))
+                   == "GeomCol")
+  expect_equal(nrow(built$data[[bar_idx]]), 1L)  # only "A" is eligible
 })
 
-test_that("sequence-coverage density plot always includes 0 on the x-axis, even when all values are far from 0", {
-  cov <- data.frame(
-    accession = paste0("P", 1:20),
-    coverage = seq(0.5, 0.95, length.out = 20),  # min 0.5, far from 0
-    protein_length = rep(100L, 20),
+test_that("pelsa_missed_cleavage_plot pools all samples in overall mode", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+    rate = c(0.1, 0.2, 0.5, 0.7),
+    n_quantified = rep(10L, 4L),
     stringsAsFactors = FALSE
   )
-  g <- pelsa_coverage_distribution_plot(cov)
-  built <- ggplot2::ggplot_build(g)
-  x_range <- built$layout$panel_params[[1]]$x.range
-  expect_true(x_range[1] <= 0)
+  cmap <- c(A_R1 = "A", A_R2 = "A", B_R1 = "B", B_R2 = "B")
+  p <- pelsa_missed_cleavage_plot(per_sample, cmap, mode = "overall")
+  built <- ggplot2::ggplot_build(p)
+  bar_idx <- which(vapply(p$layers, function(l) class(l$geom)[1], character(1))
+                   == "GeomCol")
+  expect_equal(nrow(built$data[[bar_idx]]), 1L)
+  expect_equal(built$data[[bar_idx]]$y, mean(c(0.1, 0.2, 0.5, 0.7)))
+})
+
+test_that("pelsa_missed_cleavage_plot y-axis label is a percent", {
+  per_sample <- data.frame(sample = c("A_R1", "A_R2"), rate = c(0.1, 0.3),
+                           n_quantified = c(5L, 5L), stringsAsFactors = FALSE)
+  cmap <- c(A_R1 = "A", A_R2 = "A")
+  p <- pelsa_missed_cleavage_plot(per_sample, cmap, mode = "per_condition")
+  expect_match(p$labels$y, "%")
+})
+
+test_that("pelsa_coverage_plot renders bar+errorbar in both modes", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+    coverage = c(0.5, 0.6, 0.2, 0.3),
+    n_proteins = rep(4L, 4L),
+    stringsAsFactors = FALSE
+  )
+  cmap <- c(A_R1 = "A", A_R2 = "A", B_R1 = "B", B_R2 = "B")
+  p_cond <- pelsa_coverage_plot(per_sample, cmap, mode = "per_condition")
+  expect_s3_class(p_cond, "ggplot")
+  p_overall <- pelsa_coverage_plot(per_sample, cmap, mode = "overall")
+  expect_s3_class(p_overall, "ggplot")
+  expect_match(p_cond$labels$y, "%")
+})
+
+test_that("pelsa_length_plot renders bar+errorbar in both modes", {
+  per_sample <- data.frame(
+    sample = c("A_R1", "A_R2", "B_R1", "B_R2"),
+    mean_length = c(9, 10, 14, 15),
+    n_quantified = rep(20L, 4L),
+    stringsAsFactors = FALSE
+  )
+  cmap <- c(A_R1 = "A", A_R2 = "A", B_R1 = "B", B_R2 = "B")
+  p_cond <- pelsa_length_plot(per_sample, cmap, mode = "per_condition")
+  expect_s3_class(p_cond, "ggplot")
+  p_overall <- pelsa_length_plot(per_sample, cmap, mode = "overall")
+  expect_s3_class(p_overall, "ggplot")
+})
+
+test_that("all three panels fall back to blank plot when no condition is eligible", {
+  per_sample <- data.frame(sample = "A_R1", rate = 0.1, n_quantified = 5L,
+                           stringsAsFactors = FALSE)
+  cmap <- c(A_R1 = "A")
+  p <- pelsa_missed_cleavage_plot(per_sample, cmap, mode = "per_condition")
+  # annotate("text", ...) stores its label as a layer aes_param, not in data.
+  ann_text <- unlist(lapply(p$layers, function(l) {
+    if (inherits(l$geom, "GeomText")) l$aes_params$label else NULL
+  }))
+  expect_true(any(grepl("No condition has >= 2 replicate samples", ann_text,
+                       fixed = TRUE)))
 })
 
 test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
@@ -306,74 +321,6 @@ test_that("pelsa_per_condition_density_plot renders a supplied subtitle", {
     title = "Peptide-length distribution by condition",
     subtitle = "Per-condition")
   expect_equal(g$labels$subtitle, "Per-condition")
-})
-
-test_that("experiment-wide density builders carry an 'Experiment-wide' subtitle", {
-  cov <- data.frame(accession = paste0("P", 1:5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
-                    protein_length = rep(100L, 5),
-                    stringsAsFactors = FALSE)
-  g_cov <- pelsa_coverage_distribution_plot(cov)
-  expect_true(grepl("^Experiment-wide", g_cov$labels$subtitle))
-
-  pm <- data.frame(peptide_seq = paste0("PEP", 1:5),
-                   peptide_length = c(8, 9, 10, 11, 12),
-                   missed_cleavages = rep(0L, 5),
-                   stringsAsFactors = FALSE)
-  g_len <- pelsa_length_density_plot(pm)
-  expect_equal(g_len$labels$subtitle, "Experiment-wide")
-})
-
-test_that("per-condition density builders carry a 'Per-condition' subtitle", {
-  cbc <- data.frame(condition = rep(c("A", "B"), each = 5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5,
-                                 0.15, 0.25, 0.35, 0.45, 0.55),
-                    stringsAsFactors = FALSE)
-  g_cov <- pelsa_coverage_by_condition_plot(cbc, condition_order = c("A", "B"))
-  expect_equal(g_cov$labels$subtitle, "Per-condition")
-
-  lbc <- data.frame(condition = rep(c("A", "B"), each = 5),
-                    peptide_length = c(8, 9, 10, 11, 12, 7, 8, 9, 10, 11),
-                    stringsAsFactors = FALSE)
-  g_len <- pelsa_length_by_condition_plot(lbc, condition_order = c("A", "B"))
-  expect_equal(g_len$labels$subtitle, "Per-condition")
-})
-
-test_that("coverage density plots use a percent x-axis title (both modes)", {
-  cov <- data.frame(accession = paste0("P", 1:5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
-                    protein_length = rep(100L, 5),
-                    stringsAsFactors = FALSE)
-  g_over <- pelsa_coverage_distribution_plot(cov)
-  expect_equal(g_over$labels$x, "Sequence coverage (%)")
-
-  cbc <- data.frame(condition = rep(c("A", "B"), each = 5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5,
-                                 0.15, 0.25, 0.35, 0.45, 0.55),
-                    stringsAsFactors = FALSE)
-  g_cond <- pelsa_coverage_by_condition_plot(cbc, condition_order = c("A", "B"))
-  expect_equal(g_cond$labels$x, "Sequence coverage (%)")
-})
-
-test_that("coverage percent tick labels convert a fraction break to whole percent", {
-  cov <- data.frame(accession = paste0("P", 1:5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
-                    protein_length = rep(100L, 5),
-                    stringsAsFactors = FALSE)
-  g <- pelsa_coverage_distribution_plot(cov)
-  # The x scale's label function maps fraction breaks -> percent numbers.
-  xsc <- g$scales$get_scales("x")
-  expect_false(is.null(xsc))
-  expect_equal(xsc$labels(c(0, 0.25, 0.5)), c(0, 25, 50))
-})
-
-test_that("length density keeps its raw (non-percent) x axis", {
-  pm <- data.frame(peptide_seq = paste0("PEP", 1:5),
-                   peptide_length = c(8, 9, 10, 11, 12),
-                   missed_cleavages = rep(0L, 5),
-                   stringsAsFactors = FALSE)
-  g <- pelsa_length_density_plot(pm)
-  expect_equal(g$labels$x, "Peptide length (residues)")
 })
 
 # ---- failed-annotation value box color -------------------------------------
@@ -445,32 +392,6 @@ test_that("pelsa_overall_density_plot export=TRUE applies export styling", {
   expect_true(all(sizes[!is.na(sizes)] == 4.2))
 })
 
-test_that("pelsa_coverage_distribution_plot export=TRUE fixes x-axis range to (0, 1)", {
-  cov <- data.frame(accession = paste0("P", 1:5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
-                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
-  p <- pelsa_coverage_distribution_plot(cov, export = TRUE)
-  built <- ggplot2::ggplot_build(p)
-  x_range <- built$layout$panel_params[[1]]$x.range
-  # coord_cartesian(xlim=c(0,1)) with default ggplot expansion still reports
-  # panel_params x.range slightly beyond (0,1) by the expansion factor -- assert
-  # the UNDERLYING requested limits via the coord object rather than the
-  # expanded render range.
-  expect_equal(p$coordinates$limits$x, c(0, 1))
-})
-
-test_that("pelsa_coverage_distribution_plot default (export=FALSE) does not fix x-axis range", {
-  cov <- data.frame(accession = paste0("P", 1:5),
-                    coverage = c(0.1, 0.2, 0.3, 0.4, 0.5),
-                    protein_length = rep(100L, 5), stringsAsFactors = FALSE)
-  p <- pelsa_coverage_distribution_plot(cov)
-  # pelsa_overall_density_plot's own coord_cartesian(xlim=c(0, right_bound))
-  # always clamps the left edge to 0 with an unclamped (NA) right edge when no
-  # x_hi is supplied -- export=FALSE must leave that pre-existing clamp as-is,
-  # not add the export-only fixed (0, 1) range.
-  expect_equal(p$coordinates$limits$x, c(0, NA))
-})
-
 # ---- export styling: pelsa_per_condition_density_plot -------------------------
 
 test_that("pelsa_per_condition_density_plot default (export=FALSE) keeps current label text and size", {
@@ -538,40 +459,6 @@ test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling", {
   p <- pelsa_cv_kde_plot(cv)
   expect_equal(p$theme$plot.title$size, 14)
   expect_equal(p$theme$plot.title.position, "plot")
-})
-
-# ---- export styling: pelsa_missed_cleavage_plot -------------------------------
-
-test_that("pelsa_missed_cleavage_plot parenthesizes the percentage in the bar label (both modes)", {
-  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
-  p_screen <- pelsa_missed_cleavage_plot(pm)
-  p_export <- pelsa_missed_cleavage_plot(pm, export = TRUE)
-  built_screen <- ggplot2::ggplot_build(p_screen)
-  built_export <- ggplot2::ggplot_build(p_export)
-  gt_screen <- which(vapply(p_screen$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
-  gt_export <- which(vapply(p_export$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
-  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_screen$data[[gt_screen]]$label)))
-  expect_true(any(grepl("\\(\\d+\\.\\d%\\)", built_export$data[[gt_export]]$label)))
-})
-
-test_that("pelsa_missed_cleavage_plot export=TRUE changes x-axis title and label size", {
-  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
-  p <- pelsa_missed_cleavage_plot(pm, export = TRUE)
-  expect_equal(p$labels$x, "# of missed cleavages")
-  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
-  expect_equal(p$layers[[gt_idx]]$aes_params$size, 4)
-  expect_equal(p$theme$plot.title$size, 12)
-  expect_null(p$theme$plot.title.position)
-  expect_equal(p$theme$axis.text$colour, "black")
-  expect_equal(p$theme$axis.text$size, 8)
-})
-
-test_that("pelsa_missed_cleavage_plot default (export=FALSE) keeps 'Missed cleavages' x title and size-3 label", {
-  pm <- data.frame(missed_cleavages = c(0, 0, 0, 1, 1, 2))
-  p <- pelsa_missed_cleavage_plot(pm)
-  expect_equal(p$labels$x, "Missed cleavages")
-  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"), logical(1)))
-  expect_equal(p$layers[[gt_idx]]$aes_params$size, 3)
 })
 
 # ---- export styling: pelsa_depth_bar_plot -------------------------------------
