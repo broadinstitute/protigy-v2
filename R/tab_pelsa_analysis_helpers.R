@@ -2811,22 +2811,27 @@ pelsa_run_analysis <- function(gcts,
     # Per-dataset uploads: the FASTA + annotation file are resolved by the
     # dataset name itself (resolve_fasta(ds)/resolve_feat(ds)), memoized per ds.
     # When no resolvers are given, fall back to the shared fasta_map/feat_df (the
-    # legacy single-map path the older tests use).
-    ds_fasta    <- resolve_one(fasta_cache, resolve_fasta, fasta_map, ds)
-    ds_feat     <- resolve_one(feat_cache,  resolve_feat,  feat_df,   ds)
-
+    # legacy single-map path the older tests use). These resolvers can stop()
+    # on a malformed upload (bad FASTA/annotation), so they run INSIDE the
+    # per-dataset tryCatch: a bad upload for one dataset must not abort the
+    # whole batch (see per-dataset error entry above for the not-found case).
     out[[ds]] <- tryCatch(
-      pelsa_run_analysis_one(
-        gct          = gcts[[ds]],
-        gct_original = if (is.list(gcts_original)) gcts_original[[ds]] else NULL,
-        fasta_map    = ds_fasta,
-        feat_df      = ds_feat,
-        condition_col = condition_cols[[ds]],
-        min_nonNA    = min_nonNA,
-        log_base     = ds_log_base,
-        progress     = sub_progress,
-        stage_env    = stage_env
-      ),
+      {
+        ds_fasta <- resolve_one(fasta_cache, resolve_fasta, fasta_map, ds)
+        ds_feat  <- resolve_one(feat_cache,  resolve_feat,  feat_df,   ds)
+
+        pelsa_run_analysis_one(
+          gct          = gcts[[ds]],
+          gct_original = if (is.list(gcts_original)) gcts_original[[ds]] else NULL,
+          fasta_map    = ds_fasta,
+          feat_df      = ds_feat,
+          condition_col = condition_cols[[ds]],
+          min_nonNA    = min_nonNA,
+          log_base     = ds_log_base,
+          progress     = sub_progress,
+          stage_env    = stage_env
+        )
+      },
       error = function(e) list(error = conditionMessage(e),
                                stage = stage_env$stage)
     )
