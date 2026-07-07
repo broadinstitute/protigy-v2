@@ -391,20 +391,31 @@ test_that("Setup Tab UI renders the expected control output ids", {
 test_that("Setup control ids are namespaced + wired in the module server", {
   # The control ids are emitted inside renderUI() server-side, so assert against
   # the deparsed module-server body (closed-form, non-flaky) that each expected
-  # control id is present.
+  # control id is present. The per-dataset condition/replicate config + the
+  # apply-to-all button are wired by pelsa_wire_dataset_config()
+  # (tab_pelsa_section1_server_helpers.R), extracted out of
+  # PELSASection1_Tab_Server to keep that function under the coding-style size
+  # budget, so their ids live in THAT function's body instead.
   ids <- c(
     "pelsa_skip", "pelsa_fasta", "pelsa_self_curated", "pelsa_annotation",
     "pelsa_compound",
     "pelsa_marker_input", "pelsa_add_markers", "pelsa_marker_table",
-    "pelsa_remove_markers", "pelsa_clear_markers",
+    "pelsa_remove_markers", "pelsa_clear_markers"
+  )
+  wiring_ids <- c(
     # per-dataset config + apply-to-all button (the datasets checkbox is gone;
     # the per-tab Skip toggle is the single opt-out).
     "pelsa_apply_all", "pelsa_perdataset_config"
   )
   fn_body <- paste(deparse(body(PELSASection1_Tab_Server)), collapse = "\n")
+  wiring_body <- paste(deparse(body(pelsa_wire_dataset_config)), collapse = "\n")
   for (id in ids) {
     expect_match(fn_body, id, fixed = TRUE,
                  info = paste("control id missing from Setup server:", id))
+  }
+  for (id in wiring_ids) {
+    expect_match(wiring_body, id, fixed = TRUE,
+                 info = paste("control id missing from dataset-config wiring:", id))
   }
 })
 
