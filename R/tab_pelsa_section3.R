@@ -1450,10 +1450,17 @@ PELSASection3_Ome_Server <- function(id,
       x_lo <- Inf; x_hi <- -Inf; y_lo <- Inf; y_hi <- -Inf
       track_range <- function(df) {
         if (is.null(df) || nrow(df) == 0L) return(invisible(NULL))
-        x_lo <<- min(x_lo, min(df$logFC, na.rm = TRUE))
-        x_hi <<- max(x_hi, max(df$logFC, na.rm = TRUE))
-        y_lo <<- min(y_lo, min(df$logP, na.rm = TRUE))
-        y_hi <<- max(y_hi, max(df$logP, na.rm = TRUE))
+        # suppressWarnings: an all-NA logFC/logP column (never happens in
+        # practice -- pelsa_volcano_export_df derives both from real stats)
+        # would make min()/max() emit "no non-missing arguments" while still
+        # correctly returning Inf/-Inf, which the is.finite() guard below
+        # already degrades to per-plot autoscale.
+        suppressWarnings({
+          x_lo <<- min(x_lo, min(df$logFC, na.rm = TRUE))
+          x_hi <<- max(x_hi, max(df$logFC, na.rm = TRUE))
+          y_lo <<- min(y_lo, min(df$logP, na.rm = TRUE))
+          y_hi <<- max(y_hi, max(df$logP, na.rm = TRUE))
+        })
         y_cut <- attr(df, "y_cutoff")
         if (!is.null(y_cut) && is.finite(y_cut)) y_hi <<- max(y_hi, y_cut)
       }

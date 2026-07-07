@@ -1032,6 +1032,10 @@ pelsa_missed_cleavage_plot <- function(peptide_metrics, head_frac = 0.06,
          title = "Missed-cleavage distribution") +
     protigy_plot_theme()
   if (export) {
+    # Deleting the list element (not assigning theme(plot.title.position=NULL))
+    # is what actually drops the "plot"-wide-centering override so the title
+    # falls back to ggplot2's panel-centered default -- a `+ theme(x = NULL)`
+    # merge does NOT unset an already-set element in this ggplot2 version.
     p$theme$plot.title.position <- NULL
     p <- p + ggplot2::theme(
       plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
@@ -1167,6 +1171,10 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL,
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
                                      colour = if (export) "black" else NULL))
   if (export) {
+    # Deleting the list element (not assigning theme(plot.title.position=NULL))
+    # is what actually drops the "plot"-wide-centering override so the title
+    # falls back to ggplot2's panel-centered default -- a `+ theme(x = NULL)`
+    # merge does NOT unset an already-set element in this ggplot2 version.
     p$theme$plot.title.position <- NULL
     p <- p + ggplot2::theme(
       plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
