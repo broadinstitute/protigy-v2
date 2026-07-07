@@ -655,14 +655,14 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
     fluidRow(
       shinydashboardPlus::box(
         plotlyOutput(ns("depth_plot")),
-        title = "Peptides quantified per sample", status = "primary",
+        title = "Number of quantified peptides", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       ),
       shinydashboardPlus::box(
         pelsa_mode_toggle(ns, "missed_mode", "overall"),
         plotlyOutput(ns("missed_plot")),
         uiOutput(ns("missed_skipped_note")),
-        title = "Missed-cleavage distribution", status = "primary",
+        title = "Missed-cleavage rate", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       )
     ),
@@ -674,14 +674,14 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
         pelsa_mode_toggle(ns, "coverage_mode", "overall"),
         plotlyOutput(ns("coverage_plot")),
         uiOutput(ns("coverage_skipped_note")),
-        title = "Per-protein sequence coverage", status = "primary",
+        title = "Protein sequence coverage", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       ),
       shinydashboardPlus::box(
         pelsa_mode_toggle(ns, "length_mode", "overall"),
         plotlyOutput(ns("length_plot")),
         uiOutput(ns("length_skipped_note")),
-        title = "Peptide-length distribution", status = "primary",
+        title = "Average peptide length", status = "primary",
         width = 6, headerBorder = TRUE, solidHeader = TRUE
       )
     ),
@@ -693,7 +693,7 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
         plotlyOutput(ns("cv_plot")),
         uiOutput(ns("cv_skipped_note")),
         uiOutput(ns("cv_caption")),
-        title = "Per-condition CV",
+        title = "Coefficient of variation (CV)",
         status = "primary", width = 12, headerBorder = TRUE, solidHeader = TRUE
       )
     ),
@@ -1005,7 +1005,7 @@ pelsa_coverage_plot <- function(coverage_by_sample, condition_map,
   }
   pelsa_condition_bar_plot(
     bar_df, y_label = "Sequence coverage (%)",
-    title = "Per-protein sequence coverage", fill = "#4e79a7",
+    title = "Protein sequence coverage", fill = "#4e79a7",
     y_fmt = function(v) sprintf("%.1f%%", 100 * v),
     blank_msg = sprintf(
       "No condition has >= %d replicate samples with coverage data.",
@@ -1028,7 +1028,7 @@ pelsa_length_plot <- function(length_by_sample, condition_map,
   }
   pelsa_condition_bar_plot(
     bar_df, y_label = "Peptide length (residues)",
-    title = "Peptide-length distribution", fill = "#59a14f",
+    title = "Average peptide length", fill = "#59a14f",
     y_fmt = function(v) sprintf("%.1f", v),
     blank_msg = sprintf(
       "No condition has >= %d replicate samples with length data.",
@@ -1051,7 +1051,7 @@ pelsa_cv_overall_plot <- function(cv) {
   x_hi <- if (length(vals) > 0L)
     stats::quantile(vals, 0.99, na.rm = TRUE, names = FALSE) else NULL
   pelsa_overall_density_plot(
-    vals, x_label = "CV (%)", title = "CV distribution", fill = "#af7aa1",
+    vals, x_label = "CV (%)", title = "Coefficient of variation (CV)", fill = "#af7aa1",
     value_fmt = function(v) sprintf("%.1f%%", v), subtitle = subtitle,
     blank_msg = "No CV data - a raw GCT + condition column are required.",
     x_hi = x_hi)
@@ -1074,7 +1074,7 @@ pelsa_missed_cleavage_plot <- function(missed_cleavage_rate_by_sample,
   }
   pelsa_condition_bar_plot(
     bar_df, y_label = "Missed-cleavage rate (%)",
-    title = "Missed-cleavage distribution", fill = "#f28e2b",
+    title = "Missed-cleavage rate", fill = "#f28e2b",
     y_fmt = function(v) sprintf("%.1f%%", 100 * v),
     blank_msg = sprintf(
       "No condition has >= %d replicate samples with missed-cleavage data.",
@@ -1136,7 +1136,7 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL, export = FALSE) {
               hjust = -0.05, size = 3, show.legend = FALSE, fontface = "bold") +
     coord_cartesian(xlim = c(0, x_hi)) +
     labs(x = "CV (%)", y = "Density", color = "Condition", fill = "Condition",
-         title = "Per-condition CV distribution") +
+         title = "Coefficient of variation (CV)") +
     base_theme +
     guides(color = guide_legend(override.aes = list(size = 2)),
            fill  = guide_legend(override.aes = list(size = 2)))
@@ -1204,7 +1204,7 @@ pelsa_depth_bar_plot <- function(n_quantified, sample_order = NULL,
     scale_y_continuous(labels = scales::label_comma(),
                        expand = expansion(mult = c(0, 0.12))) +
     labs(x = x_title, y = "Peptides quantified",
-         title = "Peptides quantified per sample") +
+         title = "Number of quantified peptides") +
     protigy_plot_theme() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
                                      colour = if (export) "black" else NULL))

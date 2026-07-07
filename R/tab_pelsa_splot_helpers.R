@@ -320,6 +320,7 @@ pelsa_splot_build_plotly <- function(prep, use_webgl = TRUE,
 
   p <- plotly::layout(
     p,
+    title = list(text = "Intensity rank (S-plot)", x = 0.5),
     xaxis = list(title = "Intensity rank (highest \u2192 lowest)",
                  zeroline = FALSE, showgrid = TRUE, gridcolor = "grey92"),
     yaxis = list(title = prep$y_title, zeroline = FALSE, showgrid = TRUE,
