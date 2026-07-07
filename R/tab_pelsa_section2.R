@@ -716,9 +716,59 @@ pelsa_section2_dashboard_ui <- function(ns, ome,
 # A blank placeholder plot carrying a centered message (used when a panel cannot
 # be drawn, e.g. zero FASTA matches). @noRd
 pelsa_blank_plot <- function(message) {
+  df <- data.frame(x = 0, y = 0, label = message)
   ggplot() +
-    annotate("text", x = 0, y = 0, label = message, size = 4) +
+    geom_text(data = df, aes(x = x, y = y, label = label), size = 4) +
     theme_void()
+}
+
+# Condition (or pooled "Experiment-wide") bar+error-bar plot: one bar per row
+# of `bar_df` (mean), an error bar at mean +/- sd (omitted when sd is NA,
+# e.g. a defensive n=1 row that slipped past the caller's min_replicates
+# gate), and a value+n label above each bar/whisker. No x-axis title -- the
+# bar's own tick label (condition name, or "Experiment-wide") is
+# self-explanatory, mirroring pelsa_depth_bar_plot's bar-label layout but
+# WITHOUT that plot's "Sample" x title (this builder's x is a condition, not
+# a sample). export=TRUE applies the same static-figure styling used by the
+# other Section-2 QC plots (title size 12 centered, black size-8 axis text).
+# @noRd
+pelsa_condition_bar_plot <- function(bar_df, y_label, title, fill,
+                                     y_fmt = function(v) sprintf("%.1f", v),
+                                     blank_msg = "Not enough replicate samples to plot.",
+                                     export = FALSE) {
+  if (is.null(bar_df) || !is.data.frame(bar_df) || nrow(bar_df) == 0L) {
+    return(pelsa_blank_plot(blank_msg))
+  }
+  df <- bar_df
+  df$condition <- factor(df$condition, levels = df$condition)
+  df$ymin <- ifelse(is.na(df$sd), df$mean, df$mean - df$sd)
+  df$ymax <- ifelse(is.na(df$sd), df$mean, df$mean + df$sd)
+  head_room <- 0.06 * max(df$ymax, na.rm = TRUE)
+  df$label_y <- df$ymax + head_room
+  df$bar_label <- sprintf("%s\n(n=%d)", y_fmt(df$mean), df$n)
+
+  label_size <- if (export) 4 else 3
+  x_text_size <- if (export) 9 else 11
+  p <- ggplot(df, aes(x = .data$condition, y = .data$mean)) +
+    geom_col(fill = fill) +
+    geom_errorbar(aes(ymin = .data$ymin, ymax = .data$ymax),
+                  data = df[!is.na(df$sd), , drop = FALSE],
+                  width = 0.2) +
+    geom_text(aes(y = .data$label_y, label = .data$bar_label),
+              vjust = 0, size = label_size, fontface = "bold") +
+    scale_y_continuous(labels = scales::label_comma(),
+                       expand = expansion(mult = c(0, 0.18))) +
+    labs(x = NULL, y = y_label, title = title) +
+    protigy_plot_theme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = x_text_size,
+                                     colour = if (export) "black" else NULL))
+  if (export) {
+    p$theme$plot.title.position <- NULL
+    p <- p + ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.text  = ggplot2::element_text(size = 8, colour = "black"))
+  }
+  p
 }
 
 # Experiment-wide DENSITY with BOTH a dashed mean and a dashed median line, the

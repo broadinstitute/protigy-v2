@@ -124,6 +124,51 @@ test_that("per-condition density median labels are bold", {
   expect_true(any(faces == "bold"))
 })
 
+test_that("pelsa_condition_bar_plot draws one bar per row with an error bar and value label", {
+  bar_df <- data.frame(condition = c("A", "B"), mean = c(10, 20),
+                       sd = c(1, 2), n = c(3L, 4L), stringsAsFactors = FALSE)
+  p <- pelsa_condition_bar_plot(bar_df, y_label = "Rate (%)", title = "Test",
+                                fill = "#f28e2b")
+  expect_s3_class(p, "ggplot")
+  built <- ggplot2::ggplot_build(p)
+  # One geom_col layer (bars) + one geom_errorbar layer + a text layer.
+  geoms <- vapply(p$layers, function(l) class(l$geom)[1], character(1))
+  expect_true("GeomCol" %in% geoms)
+  expect_true("GeomErrorbar" %in% geoms)
+  expect_true("GeomText" %in% geoms)
+})
+
+test_that("pelsa_condition_bar_plot returns a blank plot for 0-row input", {
+  bar_df <- data.frame(condition = character(0), mean = numeric(0),
+                       sd = numeric(0), n = integer(0), stringsAsFactors = FALSE)
+  p <- pelsa_condition_bar_plot(bar_df, y_label = "Rate (%)", title = "Test",
+                                fill = "#f28e2b",
+                                blank_msg = "No eligible conditions.")
+  built <- ggplot2::ggplot_build(p)
+  expect_true(any(grepl("No eligible conditions", built$plot$layers[[1]]$data$label,
+                       fixed = TRUE)))
+})
+
+test_that("pelsa_condition_bar_plot drops the x-axis title", {
+  bar_df <- data.frame(condition = "A", mean = 10, sd = 1, n = 3L,
+                       stringsAsFactors = FALSE)
+  p <- pelsa_condition_bar_plot(bar_df, y_label = "Rate (%)", title = "Test",
+                                fill = "#f28e2b")
+  expect_null(p$labels$x)
+})
+
+test_that("pelsa_condition_bar_plot omits the error bar when sd is NA (n=1 row)", {
+  bar_df <- data.frame(condition = "A", mean = 10, sd = NA_real_, n = 1L,
+                       stringsAsFactors = FALSE)
+  p <- pelsa_condition_bar_plot(bar_df, y_label = "Rate (%)", title = "Test",
+                                fill = "#f28e2b")
+  built <- ggplot2::ggplot_build(p)
+  eb_idx <- which(vapply(p$layers, function(l) class(l$geom)[1], character(1))
+                 == "GeomErrorbar")
+  eb_data <- built$data[[eb_idx]]
+  expect_equal(nrow(eb_data), 0L)
+})
+
 test_that("cv kde median labels are bold", {
   cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
                    cv_status = rep("ok", 60),
