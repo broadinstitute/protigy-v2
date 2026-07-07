@@ -406,7 +406,8 @@ pelsa_volcano_label_annotation_list <- function(lab_df, color_mode,
     ny <- (lab_df$logP[i]  - yr[1]) / ys
     too_close <- FALSE
     for (pl in placed) {
-      if (sqrt((nx - pl$nx)^2 + (ny - pl$ny)^2) < min_dist) {
+      dist <- sqrt((nx - pl$nx)^2 + (ny - pl$ny)^2)
+      if (!is.na(dist) && dist < min_dist) {
         too_close <- TRUE; break
       }
     }
