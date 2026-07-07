@@ -238,14 +238,25 @@
 }
 
 # Attach the two-sided significance columns (Significant / sig_direction /
-# sig_color) to a frame already carrying logFC / adj.P.Val. Vectorized.
+# sig_color) to a frame already carrying logFC / adj.P.Val / logP. Vectorized.
 #
+# @param y_cutoff  the empirical raw-p threshold (-log10 scale) from
+#   .pelsa_volcano_y_cutoff(), used only in "adj.p.val" mode so the boundary
+#   peptide is classified identically to the Statistics tab's
+#   `df$logP > y_cutoff` rule (a strict adj.P.Val < sig_cutoff comparison can
+#   disagree with that empirical, ties-inclusive threshold at the boundary).
 # @noRd
-.pelsa_attach_significance <- function(df, sig_cutoff, sig_stat = "adj.p.val") {
+.pelsa_attach_significance <- function(df, sig_cutoff, sig_stat = "adj.p.val",
+                                       y_cutoff = NULL) {
   # Honor the user-selected significance statistic (shared with the Statistics
-  # tab): "nom.p.val" classifies on the raw P.Value, otherwise on adj.P.Val.
-  sig_col <- if (identical(sig_stat, "nom.p.val")) df$P.Value else df$adj.P.Val
-  sig <- !is.na(sig_col) & sig_col < sig_cutoff
+  # tab): "nom.p.val" classifies on the raw P.Value directly; "adj.p.val"
+  # mirrors tab_stat_plot_helpers.R's `df$logP > y_cutoff` empirical rule so
+  # both tabs agree at the boundary peptide.
+  sig <- if (identical(sig_stat, "nom.p.val")) {
+    !is.na(df$P.Value) & df$P.Value < sig_cutoff
+  } else {
+    !is.na(df$logP) & df$logP > y_cutoff
+  }
   # Use >= 0 for "up" so a significant peptide with logFC exactly 0 still gets
   # bucketed/colored instead of falling through to "ns"/gray.
   up <- sig & !is.na(df$logFC) & df$logFC >= 0
@@ -470,13 +481,16 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   df[[key_col]] <- NULL
 
   # ---- Two-sided significance + display clamp ------------------------------
-  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat)
+  # y_cutoff must be computed BEFORE attach_significance: in "adj.p.val" mode
+  # the two-sided sig flag is derived from this same empirical threshold (see
+  # .pelsa_attach_significance) so it agrees with the Statistics tab at the
+  # boundary peptide.
+  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
+                                      sig_stat)
+  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat, y_cutoff)
   if (!is.null(logfc_cap)) {
     df$logFC <- pmax(pmin(df$logFC, logfc_cap), -logfc_cap)
   }
-
-  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
-                                      sig_stat)
 
   df <- df[, .pelsa_volcano_out_cols(), drop = FALSE]
   rownames(df) <- NULL
@@ -641,16 +655,18 @@ pelsa_build_volcano_df <- function(stat_df, matched_cache, feat_df, markers,
   # The 2G rollup already built the ;-joined multilabel over won accessions.
   df$label <- rolled$label
 
-  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat)
+  # y_cutoff: empirical raw-p at adj.P.Val == sig_cutoff over the best-peptide
+  # dots (the dashed line is computed on what is plotted); -log10(cutoff) when
+  # the user selected the nominal-p statistic. Computed BEFORE
+  # attach_significance since the "adj.p.val" sig flag is derived from this
+  # same threshold (see .pelsa_attach_significance) so it agrees with the
+  # Statistics tab at the boundary peptide.
+  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
+                                      sig_stat)
+  df <- .pelsa_attach_significance(df, sig_cutoff, sig_stat, y_cutoff)
   if (!is.null(logfc_cap)) {
     df$logFC <- pmax(pmin(df$logFC, logfc_cap), -logfc_cap)
   }
-
-  # y_cutoff: empirical raw-p at adj.P.Val == sig_cutoff over the best-peptide
-  # dots (the dashed line is computed on what is plotted); -log10(cutoff) when
-  # the user selected the nominal-p statistic.
-  y_cutoff <- .pelsa_volcano_y_cutoff(df$adj.P.Val, df$P.Value, sig_cutoff,
-                                      sig_stat)
 
   df <- df[, .pelsa_volcano_out_cols(), drop = FALSE]
   rownames(df) <- NULL

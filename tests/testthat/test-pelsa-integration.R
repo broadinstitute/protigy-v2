@@ -203,19 +203,35 @@ test_that("PELSA pipeline is COHERENT end-to-end on a larger synthetic frame", {
   expect_equal(nrow(vdf), n_pep)
   # sig_direction / sig_color consistent with the input adj.P.Val / logFC.
   adjp_in <- syn$peptides[[fx$adjp_col]]
+  pval_in <- syn$peptides[[paste0("P.Value.", fx$contrast)]]
   logfc_in <- syn$peptides[[paste0("logFC.", fx$contrast)]]
   # Align vdf rows to the input by peptide sequence (all-peptide preserves the
   # stat_df row order, but assert on the contract, not the order).
   idx <- match(vdf$id, syn$peptides$PEP.StrippedSequence)
-  exp_sig <- !is.na(adjp_in[idx]) & adjp_in[idx] < 0.05
+  # Significance mirrors the Statistics tab's empirical rule: raw-p (logP) vs.
+  # the -log10 of the largest P.Value among adj.P.Val < cutoff peptides (a
+  # strict adj.P.Val < cutoff oracle disagrees with the app at that boundary
+  # peptide - see .pelsa_attach_significance).
+  passing <- which(!is.na(adjp_in[idx]) & adjp_in[idx] < 0.05)
+  y_cut_exp <- if (length(passing) > 0) {
+    -log10(max(pval_in[idx][passing], na.rm = TRUE))
+  } else {
+    Inf
+  }
+  exp_sig <- !is.na(pval_in[idx]) & -log10(pval_in[idx]) > y_cut_exp
   expect_equal(vdf$Significant, exp_sig)
   expect_equal(vdf$sig_direction[exp_sig & logfc_in[idx] > 0],
                rep("up", sum(exp_sig & logfc_in[idx] > 0)))
   expect_true(all(vdf$sig_color[vdf$sig_direction == "up"] == "darkred"))
   expect_true(all(vdf$sig_color[vdf$sig_direction == "down"] == "#1f4e9c"))
   expect_true(all(vdf$sig_color[vdf$sig_direction == "ns"] == "gray"))
-  # y_cutoff is finite when something passes.
-  expect_true(any(exp_sig))
+  # y_cutoff is finite whenever at least one peptide passes the adj.P.Val
+  # filter (the empirical rule ties out any peptide sharing the max raw-p
+  # among the passing set - e.g. this fixture's two passing peptides share
+  # the same P.Value, so BOTH land exactly at y_cutoff and are excluded by
+  # the Significant flag's strict `>` while y_cutoff itself stays finite; see
+  # .pelsa_attach_significance).
+  expect_true(length(passing) > 0)
   expect_true(is.finite(attr(vdf, "y_cutoff")))
   # is_marker flags the seeded ISOFORM marker peptide (P12345-2 -> ISOPEPTIDEK)
   # AND the TIE-protein marker peptides  -  via the SAME isoform-base rule used

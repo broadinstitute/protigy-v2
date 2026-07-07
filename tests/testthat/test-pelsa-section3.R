@@ -25,7 +25,9 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
 #
 # ONE tidy row per SOURCE peptide for the all-peptide panel (no explode), with:
 #   - id / logFC / adj.P.Val / P.Value / logP (mirrors build_volcano_df),
-#   - Significant (adj.P.Val < sig_cutoff),
+#   - Significant (logP > the empirical y_cutoff derived from adj.P.Val <
+#     sig_cutoff  -  mirrors the Statistics tab's own rule so both tabs agree
+#     at the boundary peptide; see .pelsa_attach_significance),
 #   - sig_direction {up,down,ns} + sig_color (TWO-SIDED: up=darkred, down=blue,
 #     ns=gray)  -  Decision #4,
 #   - feature_class_primary / feature_color (via 2I pelsa_annotate_features),
@@ -95,15 +97,24 @@ source(testthat::test_path("fixtures/pelsa/generate_synthetic.R"))
 # --- sig_direction / sig_color: TWO-SIDED ------------------------------------
 
 test_that("significant up peptide -> up / darkred", {
+  # A decoy second passing peptide with a LARGER raw P.Value (still adj.P.Val
+  # < cutoff, but weaker evidence) becomes the max-P.Value-among-passing
+  # peptide instead of PEPUP, keeping PEPUP off the empirical y_cutoff
+  # boundary (see .pelsa_attach_significance) so this test exercises ordinary
+  # significance, not the boundary tie-break.
   stat <- .make_stat_df(
-    seq = "PEPUP", acc = "ACC1", genes = "GUP",
-    logfc = 2.0, adjp = 0.001, pval = 0.0005,
-    pep_start = 10L, pep_end = 14L, row_id = 1L
+    seq = c("PEPUP", "DECOY"), acc = c("ACC1", "ACC2"), genes = c("GUP", "GDEC"),
+    logfc = c(2.0, 1.0), adjp = c(0.001, 0.01), pval = c(0.0005, 0.03),
+    pep_start = c(10L, 30L), pep_end = c(14L, 34L), row_id = c(1L, 2L)
   )
-  matched <- .make_matched("PEPUP", "ACC1", "GUP", 10L, 14L, row_id = 1L)
+  matched <- rbind(
+    .make_matched("PEPUP", "ACC1", "GUP", 10L, 14L, row_id = 1L),
+    .make_matched("DECOY", "ACC2", "GDEC", 30L, 34L, row_id = 2L)
+  )
 
   out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
                                 markers = character(0), contrast = "C1")
+  out <- out[out$id == "PEPUP", , drop = FALSE]
 
   expect_equal(nrow(out), 1L)
   expect_true(out$Significant)
@@ -112,15 +123,20 @@ test_that("significant up peptide -> up / darkred", {
 })
 
 test_that("significant down peptide -> down / blue (two-sided, not filtered)", {
+  # Decoy peptide (see above) keeps PEPDN off the empirical boundary.
   stat <- .make_stat_df(
-    seq = "PEPDN", acc = "ACC1", genes = "GDN",
-    logfc = -2.0, adjp = 0.001, pval = 0.0005,
-    pep_start = 10L, pep_end = 14L, row_id = 1L
+    seq = c("PEPDN", "DECOY"), acc = c("ACC1", "ACC2"), genes = c("GDN", "GDEC"),
+    logfc = c(-2.0, 1.0), adjp = c(0.001, 0.01), pval = c(0.0005, 0.03),
+    pep_start = c(10L, 30L), pep_end = c(14L, 34L), row_id = c(1L, 2L)
   )
-  matched <- .make_matched("PEPDN", "ACC1", "GDN", 10L, 14L, row_id = 1L)
+  matched <- rbind(
+    .make_matched("PEPDN", "ACC1", "GDN", 10L, 14L, row_id = 1L),
+    .make_matched("DECOY", "ACC2", "GDEC", 30L, 34L, row_id = 2L)
+  )
 
   out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
                                 markers = character(0), contrast = "C1")
+  out <- out[out$id == "PEPDN", , drop = FALSE]
 
   expect_equal(out$sig_direction, "down")
   expect_equal(out$sig_color, "#1f4e9c")
@@ -426,22 +442,28 @@ test_that("all_peptide span falls back to the representative span when the winne
 # --- contrast = NULL (already-renamed columns) -------------------------------
 
 test_that("contrast=NULL reads already-renamed logFC/adj.P.Val/P.Value", {
+  # Decoy second row (see the significant up/down tests above) keeps PEPR off
+  # the empirical y_cutoff boundary.
   stat <- data.frame(
-    PEP.StrippedSequence = "PEPR",
-    PG.ProteinAccessions = "ACC1",
-    PG.Genes             = "GR",
-    pep_start            = 10L,
-    pep_end              = 14L,
-    logFC                = 2.0,
-    adj.P.Val            = 0.001,
-    P.Value              = 0.0005,
-    .row_id              = 1L,
+    PEP.StrippedSequence = c("PEPR", "DECOY"),
+    PG.ProteinAccessions = c("ACC1", "ACC2"),
+    PG.Genes             = c("GR", "GDEC"),
+    pep_start            = c(10L, 30L),
+    pep_end              = c(14L, 34L),
+    logFC                = c(2.0, 1.0),
+    adj.P.Val            = c(0.001, 0.01),
+    P.Value              = c(0.0005, 0.03),
+    .row_id              = c(1L, 2L),
     stringsAsFactors     = FALSE,
     check.names          = FALSE
   )
-  matched <- .make_matched("PEPR", "ACC1", "GR", 10L, 14L, row_id = 1L)
+  matched <- rbind(
+    .make_matched("PEPR", "ACC1", "GR", 10L, 14L, row_id = 1L),
+    .make_matched("DECOY", "ACC2", "GDEC", 30L, 34L, row_id = 2L)
+  )
   out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
                                 markers = character(0), contrast = NULL)
+  out <- out[out$id == "PEPR", , drop = FALSE]
   expect_equal(out$sig_direction, "up")
   expect_equal(out$logFC, 2.0)
 })
@@ -539,24 +561,28 @@ test_that("sig_stat defaults to adj.p.val (unchanged) when unset", {
 test_that("best_peptide panel uses 2G rollup (one dot per distinct best-peptide)", {
   # Two accessions A,B; peptide BEST wins both with the smallest adj.P.Val.
   # all_peptide would emit 2 source-peptide rows; best_peptide rolls BEST to 1.
+  # DECOY (a third, unrelated accession) is a second passing peptide with a
+  # LARGER raw P.Value than BEST (still adj.P.Val < cutoff, but weaker
+  # evidence), keeping BEST off the empirical y_cutoff boundary (see
+  # .pelsa_attach_significance).
   stat <- .make_stat_df(
-    seq = c("BEST", "OTHER"),
-    acc = c("A;B", "A"),
-    genes = c("GA;GB", "GA"),
-    logfc = c(-2.0, 0.5),
-    adjp = c(0.001, 0.30),
-    pval = c(0.0005, 0.20),
-    pep_start = c(10L, 50L),
-    pep_end = c(14L, 54L),
-    row_id = c(1L, 2L)
+    seq = c("BEST", "OTHER", "DECOY"),
+    acc = c("A;B", "A", "C"),
+    genes = c("GA;GB", "GA", "GDEC"),
+    logfc = c(-2.0, 0.5, 1.0),
+    adjp = c(0.001, 0.30, 0.01),
+    pval = c(0.0005, 0.20, 0.03),
+    pep_start = c(10L, 50L, 70L),
+    pep_end = c(14L, 54L, 74L),
+    row_id = c(1L, 2L, 3L)
   )
   matched <- .make_matched(
-    seq = c("BEST", "BEST", "OTHER"),
-    accession = c("A", "B", "A"),
-    gene = c("GA", "GB", "GA"),
-    pep_start = c(10L, 20L, 50L),
-    pep_end = c(14L, 24L, 54L),
-    row_id = c(1L, 1L, 2L)
+    seq = c("BEST", "BEST", "OTHER", "DECOY"),
+    accession = c("A", "B", "A", "C"),
+    gene = c("GA", "GB", "GA", "GDEC"),
+    pep_start = c(10L, 20L, 50L, 70L),
+    pep_end = c(14L, 24L, 54L, 74L),
+    row_id = c(1L, 1L, 2L, 3L)
   )
 
   all_out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
@@ -565,11 +591,13 @@ test_that("best_peptide panel uses 2G rollup (one dot per distinct best-peptide)
   best_out <- pelsa_build_volcano_df(stat, matched, feat_df = .make_feat("X", 1L, 2L, "other"),
                                      markers = character(0), contrast = "C1",
                                      opts = list(panel = "best_peptide"))
+  best_out <- best_out[best_out$id == "BEST", , drop = FALSE]
 
-  # all_peptide: one row per source peptide (BEST, OTHER) = 2 rows.
-  expect_equal(nrow(all_out), 2L)
-  # best_peptide: BEST wins A and B (one dot) + OTHER never wins (A taken by BEST)
-  #   -> exactly 1 distinct best-peptide.
+  # all_peptide: one row per source peptide (BEST, OTHER, DECOY) = 3 rows.
+  expect_equal(nrow(all_out), 3L)
+  # best_peptide: BEST wins A and B (one dot) + OTHER never wins (A taken by
+  # BEST) + DECOY's own accession C -> exactly 1 distinct BEST dot (filtered
+  # above from the full best-peptide rollup).
   expect_equal(nrow(best_out), 1L)
   expect_equal(best_out$id, "BEST")
   # Two-sided color + feature/marker still attached on the best-peptide panel.
@@ -591,26 +619,30 @@ test_that("H2: best-peptide dot for a non-unique stripped seq is mutually consis
   # dot's protein/gene/span/color/y-height came from A1 while its logFC came from
   # the rollup (A2)  -  a dot whose label, color, and HEIGHT belonged to different
   # proteins. The fix derives ALL of those from the rollup's WON accession (A2).
+  # DECOY (a fourth, unrelated accession/peptide) is a second passing peptide
+  # with a LARGER raw P.Value than SHARED's winning row (still adj.P.Val <
+  # cutoff, but weaker evidence), keeping SHARED off the empirical y_cutoff
+  # boundary (see .pelsa_attach_significance).
   stat <- data.frame(
-    PEP.StrippedSequence = c("SHARED", "SHARED", "OTHER"),
-    PG.ProteinAccessions = c("A1", "A2", "A3"),
-    PG.Genes             = c("GA1", "GA2", "GA3"),
-    pep_start            = c(10L, 200L, 50L),
-    pep_end              = c(14L, 204L, 54L),
-    .row_id              = c(1L, 2L, 3L),
+    PEP.StrippedSequence = c("SHARED", "SHARED", "OTHER", "DECOY"),
+    PG.ProteinAccessions = c("A1", "A2", "A3", "A4"),
+    PG.Genes             = c("GA1", "GA2", "GA3", "GA4"),
+    pep_start            = c(10L, 200L, 50L, 70L),
+    pep_end              = c(14L, 204L, 54L, 74L),
+    .row_id              = c(1L, 2L, 3L, 4L),
     stringsAsFactors     = FALSE, check.names = FALSE
   )
-  stat[["logFC.C1"]]     <- c(3.0, -1.0, 0.2)
-  stat[["adj.P.Val.C1"]] <- c(0.5, 0.001, 0.8)
-  stat[["P.Value.C1"]]   <- c(0.5, 0.001, 0.7)
+  stat[["logFC.C1"]]     <- c(3.0, -1.0, 0.2, 1.0)
+  stat[["adj.P.Val.C1"]] <- c(0.5, 0.001, 0.8, 0.01)
+  stat[["P.Value.C1"]]   <- c(0.5, 0.001, 0.7, 0.03)
 
   matched <- .make_matched(
-    seq       = c("SHARED", "SHARED", "OTHER"),
-    accession = c("A1", "A2", "A3"),
-    gene      = c("GA1", "GA2", "GA3"),
-    pep_start = c(10L, 200L, 50L),
-    pep_end   = c(14L, 204L, 54L),
-    row_id    = c(1L, 2L, 3L)
+    seq       = c("SHARED", "SHARED", "OTHER", "DECOY"),
+    accession = c("A1", "A2", "A3", "A4"),
+    gene      = c("GA1", "GA2", "GA3", "GA4"),
+    pep_start = c(10L, 200L, 50L, 70L),
+    pep_end   = c(14L, 204L, 54L, 74L),
+    row_id    = c(1L, 2L, 3L, 4L)
   )
 
   out <- pelsa_build_volcano_df(
@@ -739,14 +771,17 @@ test_that("partial contrast triplet (only some columns present) errors loudly", 
 test_that("peptide absent from matched_cache -> NA label, row retained, colored", {
   # Two source peptides; only MAPPED has a matched_cache row. UNMAPPED (e.g. it
   # failed FASTA matching upstream) must still appear as a row with NA label and
-  # full sig/color attached -- never dropped, never a crash.
+  # full sig/color attached -- never dropped, never a crash. UNMAPPED's raw
+  # P.Value is smaller than MAPPED's (still both adj.P.Val < cutoff) so
+  # UNMAPPED isn't the max-P.Value-among-passing peptide and stays off the
+  # empirical y_cutoff boundary (see .pelsa_attach_significance).
   stat <- .make_stat_df(
     seq = c("MAPPED", "UNMAPPED"),
     acc = c("ACC1", "ACC2"),
     genes = c("GM", "GU"),
     logfc = c(2.0, -2.0),
     adjp = c(0.001, 0.001),
-    pval = c(0.0005, 0.0005),
+    pval = c(0.005, 0.0005),
     pep_start = c(10L, 30L),
     pep_end = c(14L, 34L),
     row_id = c(1L, 2L)
