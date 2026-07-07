@@ -1081,6 +1081,50 @@ test_that(".pelsa_export_ggplot: with significant + marker rows, legend still co
   expect_true("Marker" %in% fill_breaks)
 })
 
+# Mirror-image bug report: every row is a marker (is_marker all TRUE), so the
+# non-marker/background subset is empty. The color aesthetic (Downregulated/
+# Upregulated) must still be attached to a layer and appear in the legend, and
+# building the plot must not emit ggplot2's "No shared levels found" warning.
+.make_export_df_all_markers <- function() {
+  df <- data.frame(
+    logFC = c(1.5, -1.8, 0.9),
+    logP  = c(3.0, 2.5, 2.1),
+    adj.P.Val = c(0.001, 0.002, 0.01),
+    sig_direction = c("up", "down", "up"),
+    feature_class_primary = c("none", "none", "none"),
+    winning_accession = c("A", "B", "C"),
+    is_marker = c(TRUE, TRUE, TRUE),
+    label = c(NA, NA, NA),
+    stringsAsFactors = FALSE)
+  attr(df, "y_cutoff") <- 2.0
+  df
+}
+
+test_that(".pelsa_export_ggplot: all-marker view still shows both direction legend keys", {
+  df <- .make_export_df_all_markers()
+  expect_true(nrow(pelsa_volcano_marker_split(df)$background) == 0L)
+
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  expect_no_warning(suppressMessages(ggplot2::ggplot_build(g)))
+
+  color_breaks <- .export_ggplot_color_breaks(g)
+  expect_true("Downregulated" %in% color_breaks)
+  expect_true("Upregulated" %in% color_breaks)
+  expect_false("Non-significant" %in% color_breaks)
+})
+
+test_that(".pelsa_export_ggplot: background layer always present (even with 0 background rows)", {
+  # Root-cause regression: previously the background geom_point layer was only
+  # added `if (nrow(bg) > 0L)`, so a view with zero background rows had no
+  # color aesthetic mapped anywhere and both direction legend keys vanished.
+  df <- .make_export_df_all_markers()
+  g <- .pelsa_export_ggplot(df, df, color_mode = "significance")
+  pt_layers <- Filter(function(l) inherits(l$geom, "GeomPoint"), g$layers)
+  has_color_layer <- any(vapply(pt_layers,
+    function(l) "colour" %in% names(l$mapping), logical(1)))
+  expect_true(has_color_layer)
+})
+
 ################################################################################
 # --- from test-pelsa-volcano-ui.R  (volcano UI helpers + testServer (Section 3)) ---
 ################################################################################

@@ -2169,14 +2169,15 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
   mk <- split$markers
   spec <- .pelsa_export_color_spec(bg, color_mode)
 
-  gg <- ggplot2::ggplot()
-  if (nrow(bg) > 0L) {
-    bg$legend_cat <- spec$category
-    gg <- gg + ggplot2::geom_point(
-      data = bg, ggplot2::aes(x = .data$logFC, y = .data$logP,
-                              color = .data$legend_cat),
-      alpha = .PELSA_VOLCANO_BG_ALPHA, size = 1)
-  }
+  # The background layer is added even when bg is empty (0 rows -> an empty
+  # layer) so the color aesthetic + its scale always exist and the direction
+  # legend keys always render, regardless of how many background peptides are
+  # in this view (mirrors the marker-layer handling below).
+  bg$legend_cat <- spec$category
+  gg <- ggplot2::ggplot() + ggplot2::geom_point(
+    data = bg, ggplot2::aes(x = .data$logFC, y = .data$logP,
+                            color = .data$legend_cat),
+    alpha = .PELSA_VOLCANO_BG_ALPHA, size = 1)
   y_cut <- attr(full_df, "y_cutoff")
   if (!is.null(y_cut) && is.finite(y_cut)) {
     gg <- gg + ggplot2::geom_hline(yintercept = y_cut, linetype = "dashed",
@@ -2231,7 +2232,8 @@ pelsa_plotted_intensities_df <- function(stat_raw, matched, markers, contrast,
 
   gg +
     ggplot2::scale_color_manual(name = NULL, values = spec$values,
-                                breaks = spec$breaks, drop = FALSE) +
+                                breaks = spec$breaks, drop = FALSE,
+                                limits = names(spec$values)) +
     ggplot2::scale_fill_manual(name = NULL,
                                values = c("Marker" = .PELSA_VOLCANO_MARKER_COLOR),
                                breaks = "Marker", limits = "Marker") +
