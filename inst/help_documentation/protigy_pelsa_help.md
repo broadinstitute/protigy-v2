@@ -165,6 +165,10 @@ completed PELSA run for the ome.
     while every selected peptide still keeps its point and tooltip.
 - **Show best peptide per protein** — adds a second volcano with one point per protein's
   most significant peptide.
+- **Apply these settings to all datasets** — copies the current dataset's volcano
+  customization (color mode, label modes, both N values, and the best-peptide toggle) to
+  every other dataset in the session, so you do not have to re-configure each ome. It does
+  not change marker lists or per-contrast selections.
 
 Marker proteins are always shown in **magenta** regardless of the color mode. Like the
 Summary tab's Intensity rank (S-plot), the volcano renders on **WebGL** for speed, with an
