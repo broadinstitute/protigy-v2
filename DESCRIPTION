@@ -64,7 +64,10 @@ Imports:
     IRanges,
     matrixStats,
     ragg,
-    stringi
+    stringi,
+    future,
+    furrr,
+    progressr
 Depends:
     R (>= 4.0.0),
     shiny

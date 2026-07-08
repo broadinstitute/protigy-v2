@@ -18,6 +18,9 @@
 #' @import janitor
 #' @import snakecase
 #' @importFrom Matrix crossprod tcrossprod
+#' @importFrom future availableCores plan multisession sequential
+#' @importFrom furrr future_walk
+#' @importFrom progressr progressor withProgressShiny handlers
 #' @importFrom shinydashboard dashboardBody dashboardSidebar
 #' @importFrom shinydashboardPlus dashboardPage dashboardHeader box boxSidebar boxDropdown
 #' @importFrom grid gpar
