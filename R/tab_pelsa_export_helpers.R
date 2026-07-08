@@ -196,11 +196,18 @@ pelsa_export_prot_len <- function(coverage, acc, peptides = NULL) {
 # Cap the per-export protein set to at most `cap` proteins for rendering.
 # ALL marker proteins are kept; remaining slots are filled with the most-
 # significant non-marker proteins (smallest per-protein ANY-contrast adj.P).
-# Returns list(keep = <prot subset>, skipped = <data.frame(accession, gene?,
-# adj.P)>). `stat_any` must carry an adj.P.Val.<.PELSA_ANY_CONTRAST> column
-# (add it via pelsa_export_add_any_contrast). When nrow(prot) <= cap, keep =
-# prot and skipped has 0 rows. @noRd
-pelsa_export_cap_proteins <- function(prot, stat_any,
+# Returns list(keep = <prot subset>, skipped = <data.frame(accession, adj.P)>);
+# callers add a `gene` column before writing the manifest.
+#
+# Per-protein adj.P is derived from `stat_any`'s adj.P.Val.<.PELSA_ANY_CONTRAST>
+# column. That frame is PEPTIDE-LEVEL and keyed by `.row_id` / PEP.StrippedSequence
+# (NO `accession` column), so the peptide adj.P is joined onto accessions THROUGH
+# `matched` (which carries accession + the same join keys) -- the same join
+# pelsa_intensity_proteins uses. If `stat_any` itself already carries an
+# `accession` column (e.g. a pre-joined test frame), that direct path is used
+# instead. When nrow(prot) <= cap, keep = prot and skipped has 0 rows.
+# @noRd
+pelsa_export_cap_proteins <- function(prot, stat_any, matched = NULL,
                                       cap = .PELSA_EXPORT_FIGURE_CAP) {
   empty_skipped <- data.frame(accession = character(0), adj.P = numeric(0),
                               stringsAsFactors = FALSE)
@@ -208,22 +215,51 @@ pelsa_export_cap_proteins <- function(prot, stat_any,
     return(list(keep = prot, skipped = empty_skipped))
   }
   any_col <- paste0("adj.P.Val.", .PELSA_ANY_CONTRAST)
-  # Per-protein min ANY-contrast adj.P (na.rm); missing -> Inf so it sorts last.
-  padj <- rep(Inf, nrow(prot))
-  if (is.data.frame(stat_any) && all(c("accession", any_col) %in% colnames(stat_any))) {
-    acc_s <- as.character(stat_any[["accession"]])
+  # Per-accession min ANY-contrast adj.P (finite only; missing -> Inf, sorts last).
+  agg <- NULL
+  if (is.data.frame(stat_any) && any_col %in% colnames(stat_any)) {
     p_s <- suppressWarnings(as.numeric(stat_any[[any_col]]))
-    agg <- tapply(p_s, acc_s, FUN = function(v) {
-      v <- v[is.finite(v)]
-      if (length(v) == 0L) Inf else min(v)
-    })
+    if ("accession" %in% colnames(stat_any)) {
+      # Direct path: stat_any already carries accession (pre-joined frame).
+      acc_s <- as.character(stat_any[["accession"]])
+    } else if (is.data.frame(matched) && "accession" %in% colnames(matched)) {
+      # Join path: map each matched row's accession to its peptide's adj.P via
+      # the .row_id (else PEP.StrippedSequence) key shared by both frames.
+      use_row_id <- ".row_id" %in% colnames(stat_any) &&
+        ".row_id" %in% colnames(matched)
+      if (use_row_id) {
+        key_s <- stat_any[[".row_id"]]; key_m <- matched[[".row_id"]]
+      } else if ("PEP.StrippedSequence" %in% colnames(stat_any) &&
+                 "PEP.StrippedSequence" %in% colnames(matched)) {
+        key_s <- as.character(stat_any[["PEP.StrippedSequence"]])
+        key_m <- as.character(matched[["PEP.StrippedSequence"]])
+      } else {
+        key_s <- NULL
+      }
+      if (!is.null(key_s)) {
+        acc_s <- as.character(matched[["accession"]])
+        p_s   <- p_s[match(key_m, key_s)]  # peptide adj.P aligned to matched rows
+      } else {
+        acc_s <- NULL
+      }
+    } else {
+      acc_s <- NULL
+    }
+    if (!is.null(acc_s)) {
+      agg <- tapply(p_s, acc_s, FUN = function(v) {
+        v <- v[is.finite(v)]
+        if (length(v) == 0L) Inf else min(v)
+      })
+    }
+  }
+  padj <- rep(Inf, nrow(prot))
+  if (!is.null(agg)) {
     m <- agg[as.character(prot$accession)]
     padj <- ifelse(is.na(m), Inf, as.numeric(m))
   }
   is_mk <- as.logical(prot$is_marker)
   is_mk[is.na(is_mk)] <- FALSE
   n_mk <- sum(is_mk)
-  # Non-marker rows ordered by smallest adj.P.
   nonmk_idx <- which(!is_mk)
   nonmk_order <- nonmk_idx[order(padj[nonmk_idx])]
   slots_left <- max(0L, cap - n_mk)
@@ -390,7 +426,7 @@ pelsa_section3_export_intensity <- function(dir_name, ome, stat_results, cache_e
                                  .PELSA_SUB_INTENSITY, .PELSA_GRP_SIGNIF)
   # Cap the protein set; record the overflow. skipped_proteins.tsv sits in the
   # intensity sub-stage folder (parent of the marker/significant split).
-  capped <- pelsa_export_cap_proteins(prot, stat_df)
+  capped <- pelsa_export_cap_proteins(prot, stat_df, matched = matched)
   prot <- capped$keep
   if (nrow(capped$skipped) > 0L) {
     skip <- capped$skipped
@@ -480,7 +516,7 @@ pelsa_section3_export_woods <- function(dir_name, ome, stat_results, cache_entry
                                  .PELSA_SUB_WOODS, .PELSA_GRP_SIGNIF)
   # Cap the protein set; record the overflow. skipped_proteins.tsv sits in the
   # woods sub-stage folder (parent of the marker/significant split).
-  capped <- pelsa_export_cap_proteins(prot, stat_any)
+  capped <- pelsa_export_cap_proteins(prot, stat_any, matched = matched)
   prot <- capped$keep
   if (nrow(capped$skipped) > 0L) {
     skip <- capped$skipped

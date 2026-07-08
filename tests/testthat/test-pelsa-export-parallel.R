@@ -104,6 +104,34 @@ test_that("pelsa_export_cap_proteins keeps markers + top non-markers by adj.P", 
   expect_true("adj.P" %in% colnames(res$skipped))
 })
 
+test_that("cap ranking keeps the most-significant non-markers using real caller inputs (matched-joined)", {
+  # 10 proteins, 1 marker, cap 4. frac_sig makes the FIRST 5 significant
+  # (adj.P 0.001) and the rest not (0.5); markers kept regardless.
+  # pelsa_intensity_proteins() itself only returns marker | significant
+  # proteins, so `prot` here is the marker (ACC001) + the 5 significant
+  # peptides (ACC002-ACC005 in this fixture's ordering) -- cap 4 forces one
+  # of the (tied, all adj.P == 0.001) significant non-markers to be skipped.
+  fx <- .make_pelsa_export_fixture(n_proteins = 10L, n_markers = 1L, frac_sig = 0.5)
+  matched  <- fx$cache_entry$matched
+  stat_df  <- pelsa_volcano_stat_df(fx$stat_results[[fx$ome]], matched)
+  stat_any <- pelsa_export_add_any_contrast(stat_df)
+  prot     <- pelsa_intensity_proteins(stat_any, matched, fx$marker_accessions,
+                                       .PELSA_ANY_CONTRAST, 0.05, sig_stat = "adj.p.val")
+  res <- pelsa_export_cap_proteins(prot, stat_any, matched = matched, cap = 4L)
+
+  # The manifest adj.P must be FINITE (the bug made these all Inf).
+  expect_true(all(is.finite(res$skipped$adj.P)) || nrow(res$skipped) == 0L)
+  expect_lte(nrow(res$keep), 4L)
+  # Marker is always kept; every kept/skipped accession is drawn from the
+  # significant set the fixture produced (never Inf-ranked arbitrary rows).
+  expect_true("ACC001" %in% res$keep$accession)
+  sig_accessions <- prot$accession[!prot$is_marker]
+  expect_true(all(res$skipped$accession %in% sig_accessions))
+  # Real ranking (finite adj.P), not arbitrary retention: skipped adj.P must
+  # equal the peptide-level significant adj.P (0.001), not Inf.
+  expect_true(all(res$skipped$adj.P == 0.001))
+})
+
 test_that("pelsa_export_can_parallelize is FALSE under load_all (pkg not installed)", {
   # In dev (devtools::load_all), Protigy is not in installed.packages().
   # This is the exact condition that must force the sequential fallback.
@@ -209,6 +237,7 @@ test_that("intensity export sequential-branch output matches a forced-sequential
 
   rel <- function(d) sort(list.files(d, recursive = TRUE))
   expect_identical(rel(base_dir), rel(seq_dir))
+  expect_true(length(rel(base_dir)) > 0L)   # non-vacuity: dirs are actually populated
   # NOTE: real multisession (installed-package) equivalence is validated once
   # Protigy is R CMD INSTALLed; under devtools::load_all the render map always
   # takes the sequential fallback (Task 5b), so both runs here exercise that path.
