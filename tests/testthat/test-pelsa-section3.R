@@ -5730,3 +5730,23 @@ test_that("export_intensity caps at 150 proteins and writes skipped_proteins.tsv
   expect_true(all(c("accession", "gene", "adj.P") %in% colnames(skipped)))
   expect_gt(nrow(skipped), 0L)
 })
+
+test_that("export_woods caps at 150 proteins and writes skipped_proteins.tsv", {
+  fx <- .make_pelsa_export_fixture(n_proteins = 200L, n_markers = 1L)
+  dir <- withr::local_tempdir()
+  pelsa_section3_export_woods(
+    dir_name = dir, ome = fx$ome, stat_results = fx$stat_results,
+    cache_entry = fx$cache_entry, feat_df = fx$feat_df,
+    sig_cutoff = 0.05, sig_stat = "adj.p.val",
+    marker_accessions = fx$marker_accessions,
+    contrast_choices = fx$contrast_choices)
+  base <- file.path(dir, .PELSA_STAGE_VOLCANO, .PELSA_SUB_WOODS)
+  manifest <- file.path(base, "skipped_proteins.tsv")
+  expect_true(file.exists(manifest))
+  # Distinct rendered proteins <= cap. Files are per protein x contrast; extract
+  # the ACC### token from each filename.
+  pngs <- list.files(base, pattern = "\\.png$", recursive = TRUE)
+  accs <- unique(regmatches(basename(pngs),
+                            regexpr("ACC[0-9]+", basename(pngs))))
+  expect_lte(length(accs), 150L)
+})

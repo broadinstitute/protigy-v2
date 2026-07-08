@@ -478,6 +478,22 @@ pelsa_section3_export_woods <- function(dir_name, ome, stat_results, cache_entry
                                  .PELSA_SUB_WOODS, .PELSA_GRP_MARKER)
   d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
                                  .PELSA_SUB_WOODS, .PELSA_GRP_SIGNIF)
+  # Cap the protein set; record the overflow. skipped_proteins.tsv sits in the
+  # woods sub-stage folder (parent of the marker/significant split).
+  capped <- pelsa_export_cap_proteins(prot, stat_any)
+  prot <- capped$keep
+  if (nrow(capped$skipped) > 0L) {
+    skip <- capped$skipped
+    skip$gene <- vapply(skip$accession,
+                        function(a) pelsa_export_gene_for(matched, a), character(1))
+    utils::write.table(
+      skip[, c("accession", "gene", "adj.P"), drop = FALSE],
+      file.path(dir_name, .PELSA_STAGE_VOLCANO, .PELSA_SUB_WOODS,
+                "skipped_proteins.tsv"),
+      sep = "\t", row.names = FALSE, quote = FALSE)
+  }
+  # ---- BUILD phase (sequential): one item per (protein, contrast) ------------
+  items <- list()
   for (i in seq_len(nrow(prot))) {
     acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
     feats <- fdf_by_acc[[acc]] %||% fdf[0, , drop = FALSE]
@@ -492,16 +508,22 @@ pelsa_section3_export_woods <- function(dir_name, ome, stat_results, cache_entry
         error = function(e) NULL)
       if (is.null(pep) || nrow(pep) == 0L) next
       plen <- pelsa_export_prot_len(cov, acc, pep)
-      p <- tryCatch(
-        pelsa_woods_export_ggplot(pep, feats, plen, gene, acc, contrast,
-                                  sig_cutoff, sig_stat = sig_stat),
-        error = function(e) NULL)
-      if (is.null(p)) next
       base <- paste0("woods_", pelsa_safe_name(gene), "_",
                      pelsa_safe_name(acc), "_contrast_",
                      pelsa_safe_name(contrast))
-      pelsa_save_figure(p, target, base, width = 9, height = 4.2)
+      items[[length(items) + 1L]] <- list(
+        pep = pep, feats = feats, plen = plen, gene = gene, acc = acc,
+        contrast = contrast, dir = target, base = base)
     }
   }
+  # ---- RENDER phase (parallel) ----------------------------------------------
+  render_one <- function(item) tryCatch({
+    p <- pelsa_woods_export_ggplot(item$pep, item$feats, item$plen, item$gene,
+                                   item$acc, item$contrast,
+                                   sig_cutoff, sig_stat = sig_stat)
+    if (is.null(p)) return(invisible(NULL))
+    pelsa_save_figure(p, item$dir, item$base, width = 9, height = 4.2)
+  }, error = function(e) NULL)
+  pelsa_export_render_map(items, render_one)
   invisible(NULL)
 }
