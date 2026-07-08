@@ -70,3 +70,36 @@ test_that("pelsa_export_render_map is a no-op for progress with no handler", {
   # No progressr handler registered -> progressor() calls are silent no-ops.
   expect_silent(pelsa_export_render_map(as.list(1:3), function(x) invisible(NULL)))
 })
+
+test_that(".PELSA_EXPORT_FIGURE_CAP is 150", {
+  expect_identical(.PELSA_EXPORT_FIGURE_CAP, 150L)
+})
+
+test_that("pelsa_export_cap_proteins keeps all when under the cap", {
+  prot <- data.frame(accession = c("A", "B"), is_marker = c(FALSE, TRUE),
+                     stringsAsFactors = FALSE)
+  stat_any <- data.frame(
+    accession = c("A", "B"),
+    "adj.P.Val.any_contrast" = c(0.01, 0.2), check.names = FALSE)
+  res <- pelsa_export_cap_proteins(prot, stat_any, cap = 10L)
+  expect_identical(nrow(res$keep), 2L)
+  expect_identical(nrow(res$skipped), 0L)
+})
+
+test_that("pelsa_export_cap_proteins keeps markers + top non-markers by adj.P", {
+  # 1 marker (M) + 4 non-markers with varying adj.P; cap = 3.
+  prot <- data.frame(
+    accession = c("M", "N1", "N2", "N3", "N4"),
+    is_marker = c(TRUE, FALSE, FALSE, FALSE, FALSE),
+    stringsAsFactors = FALSE)
+  stat_any <- data.frame(
+    accession = c("M", "N1", "N2", "N3", "N4"),
+    "adj.P.Val.any_contrast" = c(0.9, 0.001, 0.05, 0.01, 0.5),
+    check.names = FALSE)
+  res <- pelsa_export_cap_proteins(prot, stat_any, cap = 3L)
+  # Marker M always kept; remaining 2 slots -> N1 (0.001) and N3 (0.01).
+  expect_setequal(res$keep$accession, c("M", "N1", "N3"))
+  expect_setequal(res$skipped$accession, c("N2", "N4"))
+  # skipped frame carries an adj.P column for the manifest.
+  expect_true("adj.P" %in% colnames(res$skipped))
+})

@@ -193,6 +193,50 @@ pelsa_export_prot_len <- function(coverage, acc, peptides = NULL) {
   if (is.na(plen) || plen < 1L) 1L else plen
 }
 
+# Cap the per-export protein set to at most `cap` proteins for rendering.
+# ALL marker proteins are kept; remaining slots are filled with the most-
+# significant non-marker proteins (smallest per-protein ANY-contrast adj.P).
+# Returns list(keep = <prot subset>, skipped = <data.frame(accession, gene?,
+# adj.P)>). `stat_any` must carry an adj.P.Val.<.PELSA_ANY_CONTRAST> column
+# (add it via pelsa_export_add_any_contrast). When nrow(prot) <= cap, keep =
+# prot and skipped has 0 rows. @noRd
+pelsa_export_cap_proteins <- function(prot, stat_any,
+                                      cap = .PELSA_EXPORT_FIGURE_CAP) {
+  empty_skipped <- data.frame(accession = character(0), adj.P = numeric(0),
+                              stringsAsFactors = FALSE)
+  if (!is.data.frame(prot) || nrow(prot) <= cap) {
+    return(list(keep = prot, skipped = empty_skipped))
+  }
+  any_col <- paste0("adj.P.Val.", .PELSA_ANY_CONTRAST)
+  # Per-protein min ANY-contrast adj.P (na.rm); missing -> Inf so it sorts last.
+  padj <- rep(Inf, nrow(prot))
+  if (is.data.frame(stat_any) && all(c("accession", any_col) %in% colnames(stat_any))) {
+    acc_s <- as.character(stat_any[["accession"]])
+    p_s <- suppressWarnings(as.numeric(stat_any[[any_col]]))
+    agg <- tapply(p_s, acc_s, FUN = function(v) {
+      v <- v[is.finite(v)]
+      if (length(v) == 0L) Inf else min(v)
+    })
+    m <- agg[as.character(prot$accession)]
+    padj <- ifelse(is.na(m), Inf, as.numeric(m))
+  }
+  is_mk <- as.logical(prot$is_marker)
+  is_mk[is.na(is_mk)] <- FALSE
+  n_mk <- sum(is_mk)
+  # Non-marker rows ordered by smallest adj.P.
+  nonmk_idx <- which(!is_mk)
+  nonmk_order <- nonmk_idx[order(padj[nonmk_idx])]
+  slots_left <- max(0L, cap - n_mk)
+  keep_nonmk <- utils::head(nonmk_order, slots_left)
+  keep_idx <- sort(c(which(is_mk), keep_nonmk))
+  skip_idx <- setdiff(seq_len(nrow(prot)), keep_idx)
+  skipped <- data.frame(
+    accession = as.character(prot$accession[skip_idx]),
+    adj.P = padj[skip_idx],
+    stringsAsFactors = FALSE)
+  list(keep = prot[keep_idx, , drop = FALSE], skipped = skipped)
+}
+
 ################################################################################
 # PELSA Section 3 (volcano tab) per-ome export bodies.
 #

@@ -29,6 +29,14 @@
 # intensity panel split). Kept in one place so figures + footnotes stay in sync.
 .PELSA_EXPORT_SIG_CUTOFF <- 0.05
 
+# Lenient per-export cap on the number of PROTEINS rendered as Woods/intensity
+# figures. Real analyses essentially never hit it; it bounds a pathological run
+# (thousands of significant proteins) so parallel rendering can't spawn an
+# unbounded number of ggsave calls. Overflow proteins are recorded in
+# skipped_proteins.tsv instead of rendered. Proteins is the axis that explodes
+# (Woods then multiplies by contrasts). @noRd
+.PELSA_EXPORT_FIGURE_CAP <- 150L
+
 # Figure-export format switches. PNG (via the ragg AGG device) is the shipping
 # format; every exported figure is rasterized at this DPI. PDF output is kept in
 # the code but switched OFF by default - flip .PELSA_EXPORT_PDF to TRUE to also
