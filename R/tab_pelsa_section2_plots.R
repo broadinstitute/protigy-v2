@@ -637,30 +637,40 @@ pelsa_section2_exports_for <- function(entry, ome, condition_order = NULL,
     if (nrow(cbs) > 0L) {
       save_fig(pelsa_coverage_plot(cbs, cmap, mode = "overall", export = TRUE),
                "coverage_distribution_experiment_wide")
+      cov_bars <- nrow(pelsa_bar_error_data(cbs, "coverage", cmap,
+                                            condition_order)$data)
       save_fig(pelsa_coverage_plot(cbs, cmap, condition_order,
                                   mode = "per_condition", export = TRUE),
-               "coverage_distribution_per_condition")
+               "coverage_distribution_per_condition",
+               w = pelsa_bar_export_width(cov_bars))
     }
     if (nrow(lbs) > 0L) {
       save_fig(pelsa_length_plot(lbs, cmap, mode = "overall", export = TRUE),
                "peptide_length_density_experiment_wide")
+      len_bars <- nrow(pelsa_bar_error_data(lbs, "mean_length", cmap,
+                                            condition_order)$data)
       save_fig(pelsa_length_plot(lbs, cmap, condition_order,
                                  mode = "per_condition", export = TRUE),
-               "peptide_length_density_per_condition")
+               "peptide_length_density_per_condition",
+               w = pelsa_bar_export_width(len_bars))
     }
     if (nrow(mbs) > 0L) {
       save_fig(pelsa_missed_cleavage_plot(mbs, cmap, mode = "overall",
                                           export = TRUE),
                "missed_cleavage_rate_experiment_wide")
+      mc_bars <- nrow(pelsa_bar_error_data(mbs, "rate", cmap,
+                                           condition_order)$data)
       save_fig(pelsa_missed_cleavage_plot(mbs, cmap, condition_order,
                                           mode = "per_condition", export = TRUE),
-               "missed_cleavage_rate_per_condition")
+               "missed_cleavage_rate_per_condition",
+               w = pelsa_bar_export_width(mc_bars))
     }
     if (is.data.frame(cvd) && nrow(cvd) > 0L)
       save_fig(pelsa_cv_kde_plot(cvd, condition_order, export = TRUE), "cv_kde")
     if (length(nq) > 0L)
       save_fig(pelsa_depth_bar_plot(nq, sample_order, head_frac = 0.02, export = TRUE),
-               "n_peptides_per_sample")
+               "n_peptides_per_sample",
+               w = pelsa_bar_export_width(length(nq)))
 
     if (!is.null(gct)) {
       tryCatch(
