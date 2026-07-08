@@ -99,3 +99,25 @@ test_that("volcano export legend text is small (8pt) with a tight key", {
   expect_lte(g$theme$legend.text$size, 8)
   expect_lte(as.numeric(g$theme$legend.key.size), 9)
 })
+
+test_that("pelsa_bar_export_width holds the floor for small bar counts", {
+  expect_equal(pelsa_bar_export_width(1), 5.6)
+  expect_equal(pelsa_bar_export_width(3), 5.6)
+  expect_equal(pelsa_bar_export_width(9), 5.6)  # 0.6*9 = 5.4 < floor
+})
+
+test_that("pelsa_bar_export_width grows 0.6in per bar past the floor", {
+  expect_equal(pelsa_bar_export_width(15), 9.0)   # 0.6*15
+  expect_equal(pelsa_bar_export_width(30), 18.0)  # 0.6*30
+})
+
+test_that("pelsa_bar_export_width clamps to the 30in ceiling", {
+  expect_equal(pelsa_bar_export_width(50), 30)
+  expect_equal(pelsa_bar_export_width(200), 30)
+})
+
+test_that("pelsa_bar_export_width degrades non-positive / NA input to the floor", {
+  expect_equal(pelsa_bar_export_width(0), 5.6)
+  expect_equal(pelsa_bar_export_width(-5), 5.6)
+  expect_equal(pelsa_bar_export_width(NA_integer_), 5.6)
+})

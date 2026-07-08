@@ -53,6 +53,18 @@ pelsa_save_figure <- function(plot, dir_name, basename, width = 9, height = 5,
   invisible(paths)
 }
 
+# Dynamic export width (inches) for a QC bar figure with `n_bars` bars: grow
+# ~0.6in per bar, but never below the 5.6in floor (keeps small datasets looking
+# exactly as they do today) and never above a 30in ceiling (bounds the PNG size
+# for pathological sample counts). Non-positive / NA / non-integer input degrades
+# to the floor. @noRd
+pelsa_bar_export_width <- function(n_bars) {
+  n <- suppressWarnings(as.integer(n_bars))
+  if (length(n) != 1L || is.na(n)) n <- 1L
+  n <- max(1L, n)
+  min(30, max(5.6, 0.6 * n))
+}
+
 # Copy a dataset's uploaded FASTA + annotation file (verbatim) into dir_name and
 # write missing_accessions.txt (dataset accessions absent from the annotation
 # file = the "failed to resolve annotation" set). Files are written under their
