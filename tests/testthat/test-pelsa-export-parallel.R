@@ -32,3 +32,41 @@ test_that("pelsa_export_workers on a 64-core machine caps at 8", {
   )
   expect_identical(pelsa_export_workers(1000L), 8L)
 })
+
+test_that("pelsa_export_render_map applies render_one to every item (sequential plan)", {
+  # Force sequential so the side effects land in THIS process (writes to a file).
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
+  tmp <- tempfile(fileext = ".txt")
+  items <- as.list(1:5)
+  render_one <- function(item) cat(item, "\n", file = tmp, append = TRUE)
+  pelsa_export_render_map(items, render_one)
+  got <- sort(as.integer(readLines(tmp)))
+  expect_identical(got, 1:5)
+})
+
+test_that("pelsa_export_render_map returns invisibly NULL on empty items", {
+  expect_null(pelsa_export_render_map(list(), function(x) x))
+})
+
+test_that("pelsa_export_render_map: render_one owning tryCatch skips a bad item", {
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
+  tmp <- tempfile(fileext = ".txt")
+  items <- as.list(1:4)
+  render_one <- function(item) tryCatch({
+    if (item == 3L) stop("boom")
+    cat(item, "\n", file = tmp, append = TRUE)
+  }, error = function(e) NULL)
+  # Must NOT propagate the item==3 error.
+  expect_silent(pelsa_export_render_map(items, render_one))
+  got <- sort(as.integer(readLines(tmp)))
+  expect_identical(got, c(1L, 2L, 4L))
+})
+
+test_that("pelsa_export_render_map is a no-op for progress with no handler", {
+  old <- future::plan(future::sequential)
+  on.exit(future::plan(old), add = TRUE)
+  # No progressr handler registered -> progressor() calls are silent no-ops.
+  expect_silent(pelsa_export_render_map(as.list(1:3), function(x) invisible(NULL)))
+})
