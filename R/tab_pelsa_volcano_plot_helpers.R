@@ -13,6 +13,25 @@
 # rationale (relayout/restyle do not reliably re-render on scattergl).
 ################################################################################
 
+# ---- plottable-row filter (keep x/y/color/text arrays the same length) ------
+
+# Drop rows a scatter/scattergl trace cannot position: a point with NA logFC (x)
+# or NA logP (y). plotly PRUNES NA-x/NA-y from a trace's coordinate arrays but
+# does NOT prune the parallel marker.color / text vectors passed alongside, so a
+# frame with NA-logFC rows (common here: limma emits NA logFC "Partial NA
+# coefficients" for many peptides) would desync colors/tips from their points --
+# every color after the first dropped row shifts onto the wrong point, painting
+# significant peptides with a non-significant (gray) color. Filtering the frame
+# BEFORE deriving x/y/color/text keeps all four arrays the same length and in
+# register, so each point keeps its own sig/feature color. @noRd
+.pelsa_volcano_plottable_rows <- function(d) {
+  if (!is.data.frame(d) || nrow(d) == 0L) return(d)
+  keep <- !is.na(d$logFC) & !is.na(d$logP)
+  out <- d[keep, , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
 # ---- volcano hover-tip (shared by the base build + the gold overlay) --------
 
 # Build the 6-line volcano hover text for a set of df rows. Factored out of
@@ -176,8 +195,8 @@ pelsa_volcano_build_plot <- function(df, full_df = df,
   color_mode <- color_mode %||% "significance"
 
   split <- pelsa_volcano_marker_split(df)
-  bg     <- split$background
-  mk     <- split$markers
+  bg     <- .pelsa_volcano_plottable_rows(split$background)
+  mk     <- .pelsa_volcano_plottable_rows(split$markers)
 
   # The selection/find highlight is baked into the build (rebuild-on-select:
   # per-point marker.color restyle is unreliable on WebGL scattergl, so the gold
