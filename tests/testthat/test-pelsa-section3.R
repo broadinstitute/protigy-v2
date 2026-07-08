@@ -3095,6 +3095,95 @@ test_that("color-mode + best-panel survive the switch-away destroy-NULL", {
   )
 })
 
+test_that("Apply-to-all writes the active ome's five settings into every ome's registries", {
+  label_reg <- reactiveVal(list())
+  adjp_reg  <- reactiveVal(list())
+  mk_reg    <- reactiveVal(list())
+  color_reg <- reactiveVal(list())
+  best_reg  <- reactiveVal(list())
+  tick      <- reactiveVal(0L)
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = reactive("Proteome"),
+      all_omes = reactive(c("Proteome", "Phosphoproteome")),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = label_reg,
+      n_top_adjp_registry = adjp_reg,
+      n_top_markers_registry = mk_reg,
+      color_mode_registry = color_reg,
+      show_best_panel_registry = best_reg,
+      apply_all_tick = tick,
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      # Configure the active ome.
+      session$setInputs(pelsa_label_mode = c("all_markers", "top_n_markers"),
+                        pelsa_n_top_adjp = 5,
+                        pelsa_n_top_markers = 4,
+                        pelsa_color_mode = "feature",
+                        pelsa_show_best_panel = TRUE)
+      before <- tick()
+      # Click "apply to all".
+      session$setInputs(pelsa_apply_all = 1)
+
+      # The OTHER ome's slots now mirror the active ome.
+      expect_setequal(label_reg()[["Phosphoproteome"]],
+                      c("all_markers", "top_n_markers"))
+      expect_identical(adjp_reg()[["Phosphoproteome"]], 5L)
+      expect_identical(mk_reg()[["Phosphoproteome"]], 4L)
+      expect_identical(color_reg()[["Phosphoproteome"]], "feature")
+      expect_identical(best_reg()[["Phosphoproteome"]], TRUE)
+      # And the broadcast tick advanced.
+      expect_true(tick() > before)
+    }
+  )
+})
+
+test_that("Apply-to-all skips the reserved multi_ome dataset", {
+  label_reg <- reactiveVal(list())
+  color_reg <- reactiveVal(list())
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = reactive("Proteome"),
+      all_omes = reactive(c("Proteome", "multi_ome")),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = label_reg,
+      n_top_adjp_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      color_mode_registry = color_reg,
+      show_best_panel_registry = reactiveVal(list()),
+      apply_all_tick = reactiveVal(0L),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      session$setInputs(pelsa_label_mode = c("all_significant"),
+                        pelsa_color_mode = "feature")
+      session$setInputs(pelsa_apply_all = 1)
+      # multi_ome must NOT receive a slot.
+      expect_null(label_reg()[["multi_ome"]])
+      expect_null(color_reg()[["multi_ome"]])
+      # The active ome itself is still set (harmless self-write).
+      expect_setequal(label_reg()[["Proteome"]], "all_significant")
+    }
+  )
+})
+
 test_that("7D: best-panel df built ONLY when the checkbox is ON", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",

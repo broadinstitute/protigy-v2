@@ -146,6 +146,7 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     n_top_markers_registry     <- reactiveVal(list())  # ome -> integer N (top_n_markers)
     color_mode_registry        <- reactiveVal(list())  # ome -> "significance"/"feature"
     show_best_panel_registry   <- reactiveVal(list())  # ome -> logical (best panel on)
+    apply_all_tick             <- reactiveVal(0L)  # bumped by "apply to all"
 
     # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. Each
     # PELSASection3_Ome_Server() registers many live observers (volcano/Woods
@@ -177,6 +178,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           n_top_markers_registry    = n_top_markers_registry,
           color_mode_registry       = color_mode_registry,
           show_best_panel_registry  = show_best_panel_registry,
+          apply_all_tick            = apply_all_tick,
+          all_omes                  = all_omes,
           marker_add_request        = marker_add_request,
           use_webgl                 = use_webgl
         )
@@ -224,6 +227,8 @@ PELSASection3_Ome_Server <- function(id,
                                      n_top_markers_registry = NULL,
                                      color_mode_registry = NULL,
                                      show_best_panel_registry = NULL,
+                                     apply_all_tick = NULL,
+                                     all_omes = reactive(ome),
                                      marker_add_request = NULL,
                                      use_webgl = reactive(TRUE)) {
 
@@ -537,6 +542,57 @@ PELSASection3_Ome_Server <- function(id,
       if (!is_active_ome()) return()  # ignore the switch-away destroy-NULL
       set_show_best_panel(input$pelsa_show_best_panel)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
+    # "Apply to all datasets": copy THIS (active) ome's five volcano settings
+    # into every other ome's registry slots, then bump the shared broadcast
+    # tick. Writing the registries directly (not via each ome's inputs) is what
+    # makes this reach omes whose sidebar is not currently mounted -- their
+    # stored slots are updated, and their sidebar renders from those slots the
+    # next time that dataset is viewed. The reserved "multi_ome" dataset is
+    # skipped. A no-op guard: only the active ome owns a live button.
+    observeEvent(input$pelsa_apply_all, {
+      if (!is_active_ome()) return()
+      targets <- setdiff(all_omes(), "multi_ome")
+      modes <- label_mode_for_ome()
+      nadj  <- n_top_adjp_for_ome()
+      nmk   <- n_top_markers_for_ome()
+      cmode <- color_mode_for_ome()
+      best  <- show_best_panel_for_ome()
+      write_slot <- function(rv, val) {
+        if (is.null(rv)) return()
+        reg <- rv()
+        for (t in targets) reg[[t]] <- val
+        rv(reg)
+      }
+      write_slot(label_mode_registry, as.character(modes %||% character(0)))
+      write_slot(n_top_adjp_registry, nadj)
+      write_slot(n_top_markers_registry, nmk)
+      write_slot(color_mode_registry, cmode)
+      write_slot(show_best_panel_registry, best)
+      if (!is.null(apply_all_tick)) {
+        apply_all_tick(isolate(apply_all_tick()) + 1L)
+      }
+    }, ignoreInit = TRUE)
+
+    # When another ome broadcasts an "apply to all", refresh THIS ome's live
+    # inputs from its (now-updated) registry slots so the visible controls match
+    # the applied settings. For an unmounted ome these update*Input calls are
+    # harmless no-ops; the stored slots already hold the applied values, so the
+    # sidebar renders correctly when that dataset is next shown. Guarded on a
+    # non-null tick so the default single-ome test path is inert.
+    observeEvent(if (is.null(apply_all_tick)) NULL else apply_all_tick(), {
+      if (is.null(apply_all_tick)) return()
+      shiny::updateCheckboxGroupInput(session, "pelsa_label_mode",
+                                      selected = label_mode_for_ome())
+      shiny::updateNumericInput(session, "pelsa_n_top_adjp",
+                                value = n_top_adjp_for_ome())
+      shiny::updateNumericInput(session, "pelsa_n_top_markers",
+                                value = n_top_markers_for_ome())
+      shiny::updateRadioButtons(session, "pelsa_color_mode",
+                                selected = color_mode_for_ome())
+      shiny::updateCheckboxInput(session, "pelsa_show_best_panel",
+                                 value = show_best_panel_for_ome())
+    }, ignoreInit = TRUE)
 
     # Mutual exclusion, two INDEPENDENT pairs (adjp pair does not affect the
     # marker pair). Wiring lives in pelsa_wire_label_mode_exclusion()

@@ -298,6 +298,12 @@ pelsa_render_volcano_sidebar <- function(ns,
                   "Show best peptide per protein", value = show_best_panel_for_ome),
     helpText("Marker-protein peptides are always drawn in magenta on top."),
     hr(),
+    actionButton(ns("pelsa_apply_all"),
+                 "Apply these settings to all datasets",
+                 icon = shiny::icon("copy"), class = "btn-sm"),
+    helpText("Copies this dataset's color mode, label modes, N values, and ",
+             "best-peptide toggle to every other dataset."),
+    hr(),
     fluidRow(
       # LEFT column: the volcano point color key. Narrower than the feature
       # column - the key labels are short, so it cedes width to the right.
