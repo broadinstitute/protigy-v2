@@ -200,8 +200,13 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
           }
         }
         
-        # Use withProgress for progress tracking
-        withProgress(message = "Compiling exports...", value = 0, {
+        # progressr::withProgressShiny is a documented, backward-compatible
+        # drop-in for shiny::withProgress that ALSO relays progressr progressions
+        # -- including those signalled from PELSA's future/furrr render workers
+        # -- into this same Shiny progress bar. The existing incProgress() calls
+        # below are unchanged (per-export-function ticks); the per-figure detail
+        # comes from the workers via progressr.
+        progressr::withProgressShiny(message = "Compiling exports...", value = 0, {
           current_export <- 0
           
           # loop through selected tabs
