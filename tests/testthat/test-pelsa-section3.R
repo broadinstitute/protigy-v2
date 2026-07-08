@@ -5707,20 +5707,12 @@ test_that("export_volcano applies the SAME x/y coord range to every volcano PNG 
 })
 
 test_that("export_intensity caps at 150 proteins and writes skipped_proteins.tsv", {
-  # pelsa_export_render_map always establishes its OWN multisession plan
-  # (R/tab_pelsa_export_parallel.R), which requires Protigy to be an installed,
-  # attachable package -- not true for a devtools::load_all() dev session. Run
-  # render_one sequentially in-process instead; this still exercises the real
-  # cap/manifest logic in pelsa_section3_export_intensity, only swapping out the
-  # (already independently-tested, see test-pelsa-export-parallel.R) parallel
-  # fan-out mechanism.
-  testthat::local_mocked_bindings(
-    pelsa_export_render_map = function(items, render_one) {
-      for (item in items) render_one(item)
-      invisible(NULL)
-    },
-    .package = "Protigy"
-  )
+  # pelsa_export_render_map auto-falls back to a sequential in-process loop
+  # when the package cannot be parallelized (R/tab_pelsa_export_parallel.R,
+  # pelsa_export_can_parallelize()) -- true for this devtools::load_all() dev
+  # session, since PSOCK multisession workers can only library() an installed
+  # package. No mock needed here: the real render map exercises its own
+  # (already independently-tested, see test-pelsa-export-parallel.R) fallback.
   fx <- .make_pelsa_export_fixture(n_proteins = 200L, n_markers = 1L)
   dir <- withr::local_tempdir()
   pelsa_section3_export_intensity(

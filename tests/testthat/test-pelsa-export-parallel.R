@@ -103,3 +103,42 @@ test_that("pelsa_export_cap_proteins keeps markers + top non-markers by adj.P", 
   # skipped frame carries an adj.P column for the manifest.
   expect_true("adj.P" %in% colnames(res$skipped))
 })
+
+test_that("pelsa_export_can_parallelize is FALSE under load_all (pkg not installed)", {
+  # In dev (devtools::load_all), Protigy is not in installed.packages().
+  # This is the exact condition that must force the sequential fallback.
+  expect_type(pelsa_export_can_parallelize(), "logical")
+  expect_length(pelsa_export_can_parallelize(), 1L)
+})
+
+test_that("render_map runs sequentially in-process when not parallelizable", {
+  # Force the not-installed branch regardless of the real environment.
+  testthat::local_mocked_bindings(
+    pelsa_export_can_parallelize = function() FALSE, .package = "Protigy")
+  tmp <- tempfile(fileext = ".txt")
+  items <- as.list(1:5)
+  # A render_one that references a value from THIS process's closure would fail
+  # in a PSOCK worker but must succeed in-process -- proving we stayed in-process.
+  token <- "in-process-only"
+  render_one <- function(item) cat(token, item, "\n", file = tmp, append = TRUE)
+  # Must NOT set a multisession plan: capture the plan before/after.
+  before <- future::plan()
+  pelsa_export_render_map(items, render_one)
+  after <- future::plan()
+  expect_identical(class(before), class(after))   # plan untouched
+  got <- readLines(tmp)
+  expect_length(got, 5L)
+  expect_true(all(grepl("in-process-only", got)))
+})
+
+test_that("render_map sequential fallback still skips a bad item (render_one owns tryCatch)", {
+  testthat::local_mocked_bindings(
+    pelsa_export_can_parallelize = function() FALSE, .package = "Protigy")
+  tmp <- tempfile(fileext = ".txt")
+  render_one <- function(item) tryCatch({
+    if (item == 3L) stop("boom")
+    cat(item, "\n", file = tmp, append = TRUE)
+  }, error = function(e) NULL)
+  expect_silent(pelsa_export_render_map(as.list(1:4), render_one))
+  expect_identical(sort(as.integer(readLines(tmp))), c(1L, 2L, 4L))
+})

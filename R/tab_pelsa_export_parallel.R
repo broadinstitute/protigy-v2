@@ -27,7 +27,22 @@ pelsa_export_workers <- function(n_items) {
   max(1L, min(headroom, ceiling_, as.integer(n_items)))
 }
 
-# Fan a side-effecting per-figure render over parallel workers.
+# Can we safely use multisession (PSOCK) workers? Only when the package is
+# INSTALLED -- a fresh worker R session `library()`s the installed package to
+# resolve the namespaced calls inside render_one. Under devtools::load_all()
+# the functions live only in the main session's memory, so workers cannot see
+# them and the parallel batch would throw. In that case we render sequentially
+# in-process instead (still correct, just not parallel). NOTE: system.file() /
+# find.package() are NOT reliable here (they return the source dir under
+# load_all); installed.packages() is the true "workers can library() it" test.
+# @noRd
+pelsa_export_can_parallelize <- function() {
+  "Protigy" %in% rownames(utils::installed.packages())
+}
+
+# Fan a side-effecting per-figure render over parallel workers, or -- when the
+# package cannot be parallelized (not installed; see pelsa_export_can_parallelize())
+# or there is only one worker available -- run render_one sequentially in-process.
 #   items      : list of self-contained work units (each carries everything one
 #                figure needs; must be small -- shipped to workers via PSOCK)
 #   render_one : function(item) that builds the plot and writes the file. It is
@@ -35,21 +50,36 @@ pelsa_export_workers <- function(n_items) {
 #                tryCatch(..., error = function(e) NULL) so one bad figure is
 #                skipped rather than aborting the batch (matches the pre-parallel
 #                per-figure tryCatch in the export bodies).
-# Establishes its OWN `multisession` plan via with(plan(...), local = TRUE), which
-# auto-restores the caller's prior plan on exit -- even on error -- so a user's
-# global future plan is never clobbered (future package-developer pattern). Each
-# call spins workers up and down independently.
-# Progress: one progressr step per item; furrr relays worker progressions to the
-# main session. With no handler registered the steps are silent no-ops.
+# Parallel path establishes its OWN `multisession` plan via with(plan(...),
+# local = TRUE), which auto-restores the caller's prior plan on exit -- even on
+# error -- so a user's global future plan is never clobbered (future
+# package-developer pattern). Each call spins workers up and down independently.
+# Sequential path sets NO plan at all (the caller's plan, if any, is left
+# untouched) and simply loops render_one in-process -- this is what keeps
+# devtools::load_all() dev sessions correct (see pelsa_export_can_parallelize()).
+# Progress: one progressr step per item on BOTH paths; furrr relays worker
+# progressions to the main session on the parallel path. With no handler
+# registered the steps are silent no-ops.
 # Returns invisibly NULL. @noRd
 pelsa_export_render_map <- function(items, render_one) {
   if (!length(items)) return(invisible(NULL))
-  workers <- pelsa_export_workers(length(items))
-  with(future::plan(future::multisession, workers = workers), local = TRUE)
   p <- progressr::progressor(along = items)
-  furrr::future_walk(items, function(item) {
-    render_one(item)
-    p()
-  })
+  workers <- pelsa_export_workers(length(items))
+  # Parallel only when the package is installed (PSOCK workers can library it)
+  # AND there is more than one worker to use. Otherwise render in-process: this
+  # keeps dev (load_all) + single-core + tiny-batch runs correct and fast, and
+  # never leaves a silently-empty export.
+  if (pelsa_export_can_parallelize() && workers > 1L) {
+    with(future::plan(future::multisession, workers = workers), local = TRUE)
+    furrr::future_walk(items, function(item) {
+      render_one(item)
+      p()
+    })
+  } else {
+    for (item in items) {
+      render_one(item)
+      p()
+    }
+  }
   invisible(NULL)
 }
