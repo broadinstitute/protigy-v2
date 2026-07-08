@@ -225,7 +225,9 @@ pelsa_render_volcano_sidebar <- function(ns,
                                          is_self_curated,
                                          label_mode_for_ome,
                                          n_top_adjp_for_ome,
-                                         n_top_markers_for_ome) {
+                                         n_top_markers_for_ome,
+                                         color_mode_for_ome = "significance",
+                                         show_best_panel_for_ome = FALSE) {
   tagList(
     selectInput(
       ns("pelsa_volcano_contrast"), "Select Contrast:",
@@ -259,7 +261,7 @@ pelsa_render_volcano_sidebar <- function(ns,
         ns("pelsa_color_mode"), "Color points by:",
         choices = c("Significance (two-sided)" = "significance",
                     "UniProt feature class"     = "feature"),
-        selected = "significance"
+        selected = color_mode_for_ome
       )
     },
     hr(),
@@ -293,7 +295,7 @@ pelsa_render_volcano_sidebar <- function(ns,
     # 7D best-peptide second panel toggle (lazy: the best-peptide df is built
     # only while this is ON; freed when toggled off).
     checkboxInput(ns("pelsa_show_best_panel"),
-                  "Show best peptide per protein", value = FALSE),
+                  "Show best peptide per protein", value = show_best_panel_for_ome),
     helpText("Marker-protein peptides are always drawn in magenta on top."),
     hr(),
     fluidRow(

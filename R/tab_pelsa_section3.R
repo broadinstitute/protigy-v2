@@ -144,6 +144,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
     label_mode_registry        <- reactiveVal(list())  # ome -> character() label mode
     n_top_adjp_registry <- reactiveVal(list())  # ome -> integer N (top_n_adjp)
     n_top_markers_registry     <- reactiveVal(list())  # ome -> integer N (top_n_markers)
+    color_mode_registry        <- reactiveVal(list())  # ome -> "significance"/"feature"
+    show_best_panel_registry   <- reactiveVal(list())  # ome -> logical (best panel on)
 
     # Per-ome (per-dataset) server: instantiate ONCE per ome and reuse. Each
     # PELSASection3_Ome_Server() registers many live observers (volcano/Woods
@@ -173,6 +175,8 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           label_mode_registry       = label_mode_registry,
           n_top_adjp_registry       = n_top_adjp_registry,
           n_top_markers_registry    = n_top_markers_registry,
+          color_mode_registry       = color_mode_registry,
+          show_best_panel_registry  = show_best_panel_registry,
           marker_add_request        = marker_add_request,
           use_webgl                 = use_webgl
         )
@@ -218,6 +222,8 @@ PELSASection3_Ome_Server <- function(id,
                                      label_mode_registry = NULL,
                                      n_top_adjp_registry = NULL,
                                      n_top_markers_registry = NULL,
+                                     color_mode_registry = NULL,
+                                     show_best_panel_registry = NULL,
                                      marker_add_request = NULL,
                                      use_webgl = reactive(TRUE)) {
 
@@ -496,6 +502,42 @@ PELSASection3_Ome_Server <- function(id,
       set_n_top_markers(input$pelsa_n_top_markers)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
+    # Color mode is PER-OME with the same shape/scope as the label-mode
+    # registry (default "significance"). The write-back carries the same
+    # is_active_ome() switch-away guard so the destroy-NULL on switch does not
+    # wipe the stored choice.
+    color_mode_for_ome <- reactive({
+      reg <- if (is.null(color_mode_registry)) list() else color_mode_registry()
+      reg[[ome]] %||% "significance"
+    })
+    set_color_mode <- function(m) {
+      if (is.null(color_mode_registry)) return()
+      reg <- color_mode_registry()
+      reg[[ome]] <- as.character(m %||% "significance")[1L]
+      color_mode_registry(reg)
+    }
+    observeEvent(input$pelsa_color_mode, {
+      if (!is_active_ome()) return()  # ignore the switch-away destroy-NULL
+      set_color_mode(input$pelsa_color_mode)
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
+    # Best-panel toggle is PER-OME (default FALSE); same guarded pattern.
+    show_best_panel_for_ome <- reactive({
+      reg <- if (is.null(show_best_panel_registry)) list() else
+        show_best_panel_registry()
+      isTRUE(reg[[ome]] %||% FALSE)
+    })
+    set_show_best_panel <- function(v) {
+      if (is.null(show_best_panel_registry)) return()
+      reg <- show_best_panel_registry()
+      reg[[ome]] <- isTRUE(v)
+      show_best_panel_registry(reg)
+    }
+    observeEvent(input$pelsa_show_best_panel, {
+      if (!is_active_ome()) return()  # ignore the switch-away destroy-NULL
+      set_show_best_panel(input$pelsa_show_best_panel)
+    }, ignoreNULL = FALSE, ignoreInit = FALSE)
+
     # Mutual exclusion, two INDEPENDENT pairs (adjp pair does not affect the
     # marker pair). Wiring lives in pelsa_wire_label_mode_exclusion()
     # (R/tab_pelsa_section3_server_helpers.R) to keep this server function
@@ -709,7 +751,9 @@ PELSASection3_Ome_Server <- function(id,
         is_self_curated       = is_self_curated_r(),
         label_mode_for_ome    = isolate(label_mode_for_ome()),
         n_top_adjp_for_ome    = isolate(n_top_adjp_for_ome()),
-        n_top_markers_for_ome = isolate(n_top_markers_for_ome())
+        n_top_markers_for_ome = isolate(n_top_markers_for_ome()),
+        color_mode_for_ome    = isolate(color_mode_for_ome()),
+        show_best_panel_for_ome = isolate(show_best_panel_for_ome())
       )
     })
 

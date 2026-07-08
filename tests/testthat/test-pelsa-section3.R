@@ -3026,6 +3026,75 @@ test_that("un-checking ALL label modes WHILE active still clears the stored sele
   )
 })
 
+test_that("color-mode + best-panel persist into their per-ome registries while active", {
+  color_reg <- reactiveVal(list())
+  best_reg  <- reactiveVal(list())
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = reactive("Proteome"),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      color_mode_registry = color_reg,
+      show_best_panel_registry = best_reg,
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      session$setInputs(pelsa_color_mode = "feature",
+                        pelsa_show_best_panel = TRUE)
+      expect_identical(color_reg()[["Proteome"]], "feature")
+      expect_identical(best_reg()[["Proteome"]], TRUE)
+      expect_identical(color_mode_for_ome(), "feature")
+      expect_identical(show_best_panel_for_ome(), TRUE)
+    }
+  )
+})
+
+test_that("color-mode + best-panel survive the switch-away destroy-NULL", {
+  color_reg <- reactiveVal(list())
+  best_reg  <- reactiveVal(list())
+  active_ds <- reactiveVal("Proteome")
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = active_ds,
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      color_mode_registry = color_reg,
+      show_best_panel_registry = best_reg,
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      session$setInputs(pelsa_color_mode = "feature",
+                        pelsa_show_best_panel = TRUE)
+      # Switch away, then the sidebar tears down -> NULL inputs.
+      active_ds("Phosphoproteome")
+      session$flushReact()
+      session$setInputs(pelsa_color_mode = NULL, pelsa_show_best_panel = NULL)
+      expect_identical(color_reg()[["Proteome"]], "feature")
+      expect_identical(best_reg()[["Proteome"]], TRUE)
+    }
+  )
+})
+
 test_that("7D: best-panel df built ONLY when the checkbox is ON", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",
