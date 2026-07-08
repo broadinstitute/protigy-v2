@@ -174,19 +174,34 @@ pelsa_wire_label_mode_exclusion <- function(input, session, ns) {
   # "all_significant" and vice versa; checking "top_n_markers"
   # unchecks+disables "all_markers" and vice versa. Mirrors the pattern in
   # R/tab_stat_plot.R:315-350 (a different subsystem's volcano, same idiom).
+  # Only push a corrected selection when it actually differs from what the
+  # client already holds. In a live browser every updateCheckboxGroupInput()
+  # round-trips back as a NEW input$pelsa_label_mode value and re-fires THIS
+  # observer; re-sending an unchanged selection is a self-perpetuating engine
+  # -- combined with a user's fast second click (arriving mid round-trip) the
+  # two value streams never reconcile and the checkbox blinks on/off forever.
+  # Sending only genuine corrections makes a conflict-free selection emit
+  # nothing, so the loop has no engine and settles in exactly one bounce
+  # regardless of click speed. `runjs()` for the disabled/opacity styling is
+  # idempotent (it just re-asserts the DOM state) and never re-fires the
+  # observer, so it stays unconditional.
+  update_if_changed <- function(new_sel) {
+    if (!setequal(new_sel, input$pelsa_label_mode %||% character(0))) {
+      updateCheckboxGroupInput(session, "pelsa_label_mode", selected = new_sel)
+    }
+  }
+
   observeEvent(input$pelsa_label_mode, {
     grp_id <- ns("pelsa_label_mode")
     modes <- input$pelsa_label_mode %||% character(0)
 
     if ("top_n_adjp" %in% modes) {
-      updateCheckboxGroupInput(session, "pelsa_label_mode",
-        selected = setdiff(modes, "all_significant"))
+      update_if_changed(setdiff(modes, "all_significant"))
       shinyjs::runjs(sprintf(
         "$('#%s input[value=\"all_significant\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
         grp_id))
     } else if ("all_significant" %in% modes) {
-      updateCheckboxGroupInput(session, "pelsa_label_mode",
-        selected = setdiff(modes, "top_n_adjp"))
+      update_if_changed(setdiff(modes, "top_n_adjp"))
       shinyjs::runjs(sprintf(
         "$('#%s input[value=\"top_n_adjp\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
         grp_id))
@@ -197,14 +212,12 @@ pelsa_wire_label_mode_exclusion <- function(input, session, ns) {
     }
 
     if ("top_n_markers" %in% modes) {
-      updateCheckboxGroupInput(session, "pelsa_label_mode",
-        selected = setdiff(modes, "all_markers"))
+      update_if_changed(setdiff(modes, "all_markers"))
       shinyjs::runjs(sprintf(
         "$('#%s input[value=\"all_markers\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
         grp_id))
     } else if ("all_markers" %in% modes) {
-      updateCheckboxGroupInput(session, "pelsa_label_mode",
-        selected = setdiff(modes, "top_n_markers"))
+      update_if_changed(setdiff(modes, "top_n_markers"))
       shinyjs::runjs(sprintf(
         "$('#%s input[value=\"top_n_markers\"]').prop('disabled', true).closest('label').css('opacity', 0.4);",
         grp_id))

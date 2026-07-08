@@ -2822,27 +2822,20 @@ test_that("top_n_adjp and all_significant are mutually exclusive (independent of
         expect_true("top_n_adjp" %in% sel)
       }
 
-      # Strengthen the above: with this specific combination, the observer's
-      # significant-pair branch and marker-pair branch BOTH fire (each is an
-      # unconditional if/else-if/else, and here "top_n_adjp" satisfies
-      # the significant-pair's `if`, while "all_markers" satisfies the
-      # marker-pair's `else if`) -- always in that fixed order, each emitting
-      # exactly one updateCheckboxGroupInput() call. A cross-pair coupling bug
-      # (e.g. the marker-pair branch wrongly dropping "top_n_adjp", or
-      # the significant-pair branch wrongly dropping "all_markers") would slip
-      # past a check that only looks at "top_n_adjp" membership, since
-      # "all_markers" surviving is never verified. Assert on EACH call
-      # individually, tied to the branch that produced it: the significant-
-      # pair call (uses setdiff(modes, "all_significant"), so it must keep
-      # both "top_n_adjp" AND "all_markers" intact -- "all_significant"
-      # was never selected, so nothing should be dropped at all here); the
-      # marker-pair call (uses setdiff(modes, "top_n_markers"), so it too must
-      # keep both untouched, since "top_n_markers" was never selected).
-      expect_length(captured, 2L)
-      significant_pair_call <- captured[[1]]
-      marker_pair_call <- captured[[2]]
-      expect_setequal(significant_pair_call, c("top_n_adjp", "all_markers"))
-      expect_setequal(marker_pair_call, c("top_n_adjp", "all_markers"))
+      # Strengthen the above: with this specific combination, BOTH the
+      # significant-pair branch ("top_n_adjp" satisfies its `if`) and the
+      # marker-pair branch ("all_markers" satisfies its `else if`) run, but
+      # NEITHER has a conflict to correct: the significant pair would
+      # setdiff(modes, "all_significant") and the marker pair
+      # setdiff(modes, "top_n_markers"), and neither excluded value is present,
+      # so both branches compute a selection identical to `modes`. Since the
+      # observer now suppresses updates that would not change the selection
+      # (the convergence guard that stops the fast-click blink), a conflict-
+      # free combination must emit ZERO updateCheckboxGroupInput() calls. A
+      # cross-pair coupling bug (e.g. the marker-pair branch wrongly dropping
+      # "top_n_adjp") would instead produce a genuinely-different selection and
+      # therefore surface as a spurious update here.
+      expect_length(captured, 0L)
 
       # Checking "top_n_markers" now must drop "all_markers" (marker pair
       # only) via the same updateCheckboxGroupInput mechanism.
@@ -2852,6 +2845,69 @@ test_that("top_n_adjp and all_significant are mutually exclusive (independent of
       last_sel <- captured[[length(captured)]]
       expect_true("top_n_markers" %in% last_sel)
       expect_false("all_markers" %in% last_sel)
+    }
+  )
+})
+
+test_that("exclusion observer converges: a conflict-free selection issues NO checkbox update", {
+  # Root-cause guard for the "fast clicking makes the checkbox blink forever"
+  # bug (see R/tab_pelsa_section3_server_helpers.R pelsa_wire_label_mode_exclusion).
+  # In a live browser every updateCheckboxGroupInput() the observer sends
+  # round-trips back as a NEW input$pelsa_label_mode value, which re-fires the
+  # SAME observer. If the observer re-sends the selection even when nothing
+  # conflicts, that self-send is an endless engine: each fire emits an update,
+  # which re-fires, ... and a user's fast second click injects a competing
+  # value mid-loop that the two streams never reconcile -> indefinite blink.
+  # The convergence contract: when the current selection has NO conflict, the
+  # observer must issue ZERO updateCheckboxGroupInput() calls (nothing to fix),
+  # so the loop has no engine and settles in one bounce. testServer has no
+  # client round-trip, so we assert directly on the number of update sends the
+  # observer emits for a conflict-free selection (the value it WOULD keep
+  # re-sending in a browser). Today the observer emits one send per pair (2)
+  # for any selection, conflict or not -- that is the non-converging engine.
+  captured <- list()
+  testthat::local_mocked_bindings(
+    updateCheckboxGroupInput = function(session, inputId, selected = NULL, ...) {
+      captured[[length(captured) + 1]] <<- selected
+    },
+    .package = "Protigy"
+  )
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = reactiveVal(list()),
+      n_top_adjp_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      # One item from each pair, no conflict: nothing needs correcting, so the
+      # observer must emit no update at all. (Before the fix this emitted 2.)
+      captured <<- list()
+      session$setInputs(pelsa_label_mode = c("top_n_adjp", "top_n_markers"))
+      expect_length(captured, 0L)
+
+      # Empty selection: also conflict-free -> no update.
+      captured <<- list()
+      session$setInputs(pelsa_label_mode = character(0))
+      expect_length(captured, 0L)
+
+      # A genuine conflict (both members of the significant pair) must STILL
+      # correct exactly once, and the corrected selection must itself be
+      # conflict-free so the browser round-trip of it emits nothing further.
+      captured <<- list()
+      session$setInputs(pelsa_label_mode = c("all_significant", "top_n_adjp"))
+      expect_length(captured, 1L)
+      fixed <- captured[[1]]
+      expect_false(all(c("all_significant", "top_n_adjp") %in% fixed))
     }
   )
 })
