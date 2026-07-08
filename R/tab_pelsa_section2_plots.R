@@ -378,8 +378,17 @@ pelsa_cv_kde_plot <- function(cv, condition_order = NULL, export = FALSE) {
   medians$x <- medians$cv_pct
   cv_counts <- table(ok$condition)
   medians$n <- as.integer(cv_counts[as.character(medians$condition)])
-  medians$label <- sprintf("%s median = %.1f%% (n=%d)", medians$condition,
-                           medians$cv_pct, medians$n)
+  # On-screen: prefix the condition + disclose n so overlapping curves stay
+  # disambiguated. On export: strip both so the shorter "median = xxx%" label
+  # doesn't clip at the right plot boundary (mirrors pelsa_per_condition_density_plot).
+  medians$label <- vapply(seq_len(nrow(medians)), function(i) {
+    if (export) {
+      sprintf("median = %.1f%%", medians$cv_pct[i])
+    } else {
+      sprintf("%s median = %.1f%% (n=%d)", medians$condition[i],
+              medians$cv_pct[i], medians$n[i])
+    }
+  }, character(1))
 
   base_theme <- pelsa_plot_theme()
   if (export) base_theme$plot.title.position <- NULL

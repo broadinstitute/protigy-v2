@@ -437,7 +437,7 @@ test_that("pelsa_per_condition_density_plot export=TRUE drops condition-name pre
 
 # ---- export styling: pelsa_cv_kde_plot ---------------------------------------
 
-test_that("pelsa_cv_kde_plot export=TRUE applies export styling, keeps label size 3 and text unchanged", {
+test_that("pelsa_cv_kde_plot export=TRUE applies export styling, drops condition prefix + n from label, keeps size 3", {
   cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
                    cv_status = rep("ok", 60),
                    condition = rep(c("A", "B"), 30))
@@ -450,15 +450,27 @@ test_that("pelsa_cv_kde_plot export=TRUE applies export styling, keeps label siz
                         logical(1)))
   colored_layer <- p$layers[[gt_idx[length(gt_idx)]]]
   expect_equal(colored_layer$aes_params$size, 3)  # UNCHANGED -- crowding exception
+  # Export label is shortened to just "median = xxx%" (no condition prefix, no n)
+  # so it doesn't clip at the right plot boundary.
+  labels <- unique(ggplot2::ggplot_build(p)$data[[gt_idx[length(gt_idx)]]]$label)
+  expect_true(any(grepl("^median = ", labels)))
+  expect_false(any(grepl("^A median = |^B median = ", labels)))
+  expect_false(any(grepl("\\(n=", labels)))
 })
 
-test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling", {
+test_that("pelsa_cv_kde_plot default (export=FALSE) keeps current styling and full label", {
   cv <- data.frame(cv_pct = abs(rnorm(60, 30, 10)),
                    cv_status = rep("ok", 60),
                    condition = rep(c("A", "B"), 30))
   p <- pelsa_cv_kde_plot(cv)
   expect_equal(p$theme$plot.title$size, 14)
   expect_equal(p$theme$plot.title.position, "plot")
+  # On-screen label keeps the condition prefix + (n=) for disambiguation.
+  gt_idx <- which(vapply(p$layers, function(l) inherits(l$geom, "GeomText"),
+                        logical(1)))
+  labels <- unique(ggplot2::ggplot_build(p)$data[[gt_idx[length(gt_idx)]]]$label)
+  expect_true(any(grepl("^A median = .*\\(n=", labels)) ||
+              any(grepl("^B median = .*\\(n=", labels)))
 })
 
 # ---- export styling: pelsa_depth_bar_plot -------------------------------------
