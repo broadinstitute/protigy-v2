@@ -143,11 +143,14 @@ completed PELSA run for the ome.
 - **Label peptides** — choose any combination of: *All marker peptides*, *All significant
   peptides*, *Top N most significant peptides* (ranks peptides by adjusted p-value
   regardless of significance), or *Top N marker peptides* (same ranking, restricted to
-  marker proteins). None selected by default. Labels render as `<gene>_aa<position>`.
+  marker proteins and applied **per marker** -- each marker protein gets its own top-N
+  labels, grouped by its winning accession, so a peptide-rich marker cannot crowd out the
+  others). None selected by default. Labels render as `<gene>_aa<position>`.
   The two "Top N" modes each have their own **N** input (default **3**) and PELSA
   deliberately weights the down direction: N is the count kept from the down-regulated
   (`logFC < 0`) bucket, and only `ceiling(N / 2)` is kept from the up-regulated
-  (`logFC >= 0`) bucket. A peptide with a **missing `logFC`** belongs to neither bucket and
+  (`logFC >= 0`) bucket -- for *Top N marker peptides* this split is applied within each
+  marker protein separately. A peptide with a **missing `logFC`** belongs to neither bucket and
   is never picked by a "Top N" mode. Ties in adjusted p-value (common when BH-adjustment
   collapses many raw p-values onto a shared plateau) are broken by the smallest raw
   p-value, then by the largest `|logFC|` if no raw p-value is available. Selecting a "Top N"
