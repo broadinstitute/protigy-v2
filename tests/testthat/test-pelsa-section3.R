@@ -1494,12 +1494,16 @@ test_that("label-mode: top_n_adjp excludes NA-logFC rows from the up bucket", {
   )
 })
 
-test_that("label-mode: top_n_markers excludes NA-logFC rows from the up bucket", {
+test_that("label-mode: top_n_markers excludes NA-logFC rows from the up bucket (per marker)", {
+  # All three rows share ONE marker (winning_accession "P1") so this exercises
+  # a single group. Row 2 has NA logFC -> belongs to neither bucket, so with
+  # N=2 the down bucket keeps row 3 (logFC<0) and the up bucket keeps row 1
+  # (logFC>0); row 2 is never picked.
   df <- data.frame(
     is_marker         = rep(TRUE, 3),
     logFC             = c(1.0, NA_real_, -1.0),
     adj.P.Val         = c(0.5, 0.001, 0.2),
-    winning_accession = c("P1", "P2", "P3"),
+    winning_accession = c("P1", "P1", "P1"),
     label             = c("a", "b", "c"),
     stringsAsFactors  = FALSE
   )
@@ -1543,59 +1547,115 @@ test_that("label-mode: top_n_adjp includes a non-significant winner (no gate)", 
   )
 })
 
-test_that("label-mode: top_n_markers takes N smallest adj.P.Val per logFC-sign bucket, markers only", {
+test_that("label-mode: top_n_markers takes N smallest adj.P.Val per bucket, per marker, markers only", {
+  # Four marker rows all in ONE marker group ("P1"); row 5 is NOT a marker.
+  # up bucket (rows 1,2): N=1 -> smaller adj.P.Val -> row 2 (0.1).
+  # down bucket (rows 3,4): N=1 -> smaller adj.P.Val -> row 3 (0.05).
+  # Row 5 (is_marker FALSE) is excluded even with the smallest adj.P.Val.
   df <- data.frame(
     is_marker         = c(TRUE, TRUE, TRUE, TRUE, FALSE),
     logFC             = c(2.0, 1.5, -1.0, -0.5, -3.0),
     adj.P.Val         = c(0.3, 0.1, 0.05, 0.2, 0.001),
-    winning_accession = c("P1", "P2", "P3", "P4", "P5"),
+    winning_accession = c("P1", "P1", "P1", "P1", "P5"),
     label             = letters[1:5],
     stringsAsFactors  = FALSE
   )
-  # Marker rows only: 1,2 (logFC>0 -> up), 3,4 (logFC<0 -> down). Row 5 is
-  # NOT a marker (is_marker FALSE) and must be excluded even though it has
-  # the smallest adj.P.Val of all 5 rows.
-  # up bucket (rows 1,2): N=1 -> smallest adj.P.Val -> row2(0.1).
-  # down bucket (rows 3,4): N=1 -> smallest adj.P.Val -> row3(0.05).
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
     c(2L, 3L)
   )
 })
 
-test_that("label-mode: top_n_markers ranks ALL markers regardless of significance", {
+test_that("label-mode: top_n_markers ranks ALL markers regardless of significance (per marker)", {
+  # Both rows share marker "P1"; neither is significant, but the mode ranks all
+  # marker rows anyway. Both logFC>0 -> up bucket; N=1 keeps the smaller adj.P.
   df <- data.frame(
     is_marker         = c(TRUE, TRUE),
     Significant       = c(FALSE, FALSE),
     sig_direction     = c("ns", "ns"),
     logFC             = c(1.0, 2.0),
     adj.P.Val         = c(0.5, 0.9),
-    winning_accession = c("P1", "P2"),
+    winning_accession = c("P1", "P1"),
     label             = c("a", "b"),
     stringsAsFactors  = FALSE
   )
-  # Neither row is significant, but top_n_markers ranks ALL markers anyway.
-  # Both rows are logFC > 0 ("up" bucket); N=1 keeps only the smaller adj.P.Val.
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
     1L
   )
 })
 
-test_that("label-mode: top_n_markers labels fewer than N when a bucket is small", {
+test_that("label-mode: top_n_markers labels fewer than N when a bucket is small (per marker)", {
+  # One marker group ("P1"). up bucket has only row 1 -> kept even with N=5;
+  # down bucket has rows 2,3 -> both kept (fewer than 5, no error/padding).
   df <- data.frame(
     is_marker         = c(TRUE, TRUE, TRUE),
     logFC             = c(1.0, -1.0, -2.0),
     adj.P.Val         = c(0.1, 0.2, 0.3),
-    winning_accession = c("P1", "P2", "P3"),
+    winning_accession = c("P1", "P1", "P1"),
     label             = c("a", "b", "c"),
     stringsAsFactors  = FALSE
   )
-  # up bucket has only 1 row -> kept even though N=5.
-  # down bucket has 2 rows, N=5 -> both kept.
   expect_equal(
     pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 5L),
     c(1L, 2L, 3L)
+  )
+})
+
+test_that("label-mode: top_n_markers applies N PER marker (two markers, own budgets)", {
+  # Marker P1: rows 1,2 (up), row 3 (down). Marker P2: rows 4,5 (down), row 6 (up).
+  # N=1 -> up ceil(1/2)=1, down 1 per marker.
+  # P1: up keeps smaller-adjP of {1:0.4, 2:0.1} -> row 2; down keeps row 3.
+  # P2: down keeps smaller-adjP of {4:0.3, 5:0.05} -> row 5; up keeps row 6.
+  df <- data.frame(
+    is_marker         = rep(TRUE, 6),
+    logFC             = c( 1.0,  2.0, -1.0, -1.0, -2.0,  1.0),
+    adj.P.Val         = c(0.40, 0.10, 0.20, 0.30, 0.05, 0.15),
+    winning_accession = c("P1", "P1", "P1", "P2", "P2", "P2"),
+    label             = letters[1:6],
+    stringsAsFactors  = FALSE
+  )
+  # Expected union: P1 -> {2 (up), 3 (down)}, P2 -> {5 (down), 6 (up)}.
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
+    c(2L, 3L, 5L, 6L)
+  )
+})
+
+test_that("label-mode: top_n_markers does not let one marker crowd out another", {
+  # P1 has the three globally-smallest adj.P.Val down-regulated peptides
+  # (rows 1,2,3). P2 has one weaker down-regulated peptide (row 4). Under the
+  # OLD pooled behavior with N=2, P2's row 4 would be crowded out entirely.
+  # Under per-marker N=2: P1 keeps rows 1,2; P2 keeps its only row 4.
+  df <- data.frame(
+    is_marker         = rep(TRUE, 4),
+    logFC             = c(-1.0, -1.0, -1.0, -1.0),
+    adj.P.Val         = c(0.01, 0.02, 0.03, 0.40),
+    winning_accession = c("P1", "P1", "P1", "P2"),
+    label             = letters[1:4],
+    stringsAsFactors  = FALSE
+  )
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 2L),
+    c(1L, 2L, 4L)
+  )
+})
+
+test_that("label-mode: top_n_markers groups NA/blank winning_accession as one catch-all marker", {
+  # Two marker rows have NA winning_accession, one has "". They must all fall
+  # into a SINGLE catch-all group (not be dropped). All three are down-regulated;
+  # N=1 keeps only the smallest adj.P.Val across the catch-all -> row 2.
+  df <- data.frame(
+    is_marker         = rep(TRUE, 3),
+    logFC             = c(-1.0, -1.0, -1.0),
+    adj.P.Val         = c(0.20, 0.05, 0.30),
+    winning_accession = c(NA_character_, NA_character_, ""),
+    label             = c("a", "b", "c"),
+    stringsAsFactors  = FALSE
+  )
+  expect_equal(
+    pelsa_volcano_label_rows(df, "top_n_markers", n_top_markers = 1L),
+    2L
   )
 })
 
@@ -1604,7 +1664,7 @@ test_that("label-mode: top_n_markers default N is 3", {
     is_marker         = rep(TRUE, 6),
     logFC             = rep(1.0, 6),
     adj.P.Val         = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06),
-    winning_accession = paste0("P", 1:6),
+    winning_accession = rep("P1", 6),
     label             = letters[1:6],
     stringsAsFactors  = FALSE
   )
@@ -1707,7 +1767,7 @@ test_that("label-mode: top_n_adjp N=10 keeps 10 down + 5 up (asymmetric split)",
     logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
     adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
                           seq(0.01, by = 0.01, length.out = n_up)),
-    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    winning_accession = rep("P1", n_down + n_up),
     label             = paste0("l", seq_len(n_down + n_up)),
     stringsAsFactors  = FALSE
   )
@@ -1729,7 +1789,7 @@ test_that("label-mode: top_n_adjp N=5 keeps 5 down + 3 up (ceiling rounds up)", 
     logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
     adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
                           seq(0.01, by = 0.01, length.out = n_up)),
-    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    winning_accession = rep("P1", n_down + n_up),
     label             = paste0("l", seq_len(n_down + n_up)),
     stringsAsFactors  = FALSE
   )
@@ -1749,7 +1809,7 @@ test_that("label-mode: top_n_markers N=10 keeps 10 down + 5 up (asymmetric split
     logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
     adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
                           seq(0.01, by = 0.01, length.out = n_up)),
-    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    winning_accession = rep("P1", n_down + n_up),
     label             = paste0("l", seq_len(n_down + n_up)),
     stringsAsFactors  = FALSE
   )
@@ -1767,7 +1827,7 @@ test_that("label-mode: top_n_markers N=5 keeps 5 down + 3 up (ceiling rounds up)
     logFC             = c(rep(-1.0, n_down), rep(1.0, n_up)),
     adj.P.Val         = c(seq(0.01, by = 0.01, length.out = n_down),
                           seq(0.01, by = 0.01, length.out = n_up)),
-    winning_accession = paste0("P", seq_len(n_down + n_up)),
+    winning_accession = rep("P1", n_down + n_up),
     label             = paste0("l", seq_len(n_down + n_up)),
     stringsAsFactors  = FALSE
   )
@@ -1802,7 +1862,7 @@ test_that("label-mode: top_n_markers breaks adj.P.Val ties by smallest raw P.Val
     logFC             = c(1.0, 1.0, 1.0, 1.0, 1.0),   # all "up"
     adj.P.Val         = c(0.05, 0.05, 0.05, 0.05, 0.05),
     P.Value           = c(0.04, 0.005, 0.03, 0.09, 0.001),
-    winning_accession = paste0("P", 1:5),
+    winning_accession = c("P1", "P1", "P1", "P1", "P5"),
     label             = letters[1:5],
     stringsAsFactors  = FALSE
   )

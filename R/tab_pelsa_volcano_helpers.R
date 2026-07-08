@@ -426,13 +426,18 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 #                        p-values to a shared plateau) are broken by the
 #                        smallest raw P.Value, or by the largest |logFC| when
 #                        P.Value is unavailable.
-#   "top_n_markers"      the n_top_markers smallest adj.P.Val MARKER peptides
-#                        (is_marker == TRUE) in the "down" logFC-sign bucket
-#                        (logFC < 0), plus ceiling(n_top_markers / 2) smallest
-#                        adj.P.Val MARKER peptides in the "up" bucket
-#                        (logFC >= 0); union of both buckets. Ranks ALL marker
+#   "top_n_markers"      per MARKER (grouped by winning_accession): the
+#                        n_top_markers smallest adj.P.Val MARKER peptides
+#                        (is_marker == TRUE) in that marker's "down" logFC-sign
+#                        bucket (logFC < 0), plus ceiling(n_top_markers / 2)
+#                        smallest adj.P.Val MARKER peptides in that marker's
+#                        "up" bucket (logFC >= 0). The union across all markers
+#                        is returned, so N is applied independently per marker
+#                        (one marker cannot crowd out another). Ranks ALL marker
 #                        peptides regardless of significance. Same adj.P.Val
 #                        tiebreak as "top_n_adjp" (raw P.Value, then |logFC|).
+#                        Marker rows with a missing/blank winning_accession are
+#                        pooled into one catch-all group.
 #
 # Returns the UNION of matching rows across every mode in the vector, as
 # 1-based row indices (sorted, unique). An empty/NULL `mode` returns
@@ -446,9 +451,9 @@ pelsa_volcano_marker_split <- function(volcano_df) {
 # @param n_top_adjp         N for the "down" bucket of "top_n_adjp"; the "up"
 #                           bucket keeps ceiling(N / 2) (default 3, coerced
 #                           to >= 1).
-# @param n_top_markers      N for the "down" bucket of "top_n_markers"; the
-#                           "up" bucket keeps ceiling(N / 2) (default 3,
-#                           coerced to >= 1).
+# @param n_top_markers      N for the "down" bucket of "top_n_markers", applied
+#                           PER marker; each marker's "up" bucket keeps
+#                           ceiling(N / 2) (default 3, coerced to >= 1).
 # @return integer vector of row indices to label.
 # @noRd
 pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
@@ -505,15 +510,27 @@ pelsa_volcano_label_rows <- function(volcano_df, mode = character(0),
       adjp  <- as.numeric(volcano_df$adj.P.Val %||% rep(NA_real_, n))
       rawp  <- volcano_df$P.Value
       tb    <- if (!is.null(rawp)) as.numeric(rawp) else -abs(logfc)
-      m_dir <- ifelse(is.na(logfc[marker_idx]), "ns",
-                      ifelse(logfc[marker_idx] < 0, "down", "up"))
       n_down_mk <- max(1L, as.integer(n_top_markers)[1L])
       n_up_mk   <- ceiling(n_down_mk / 2)
-      idx <- c(idx, .pelsa_top_n_by_direction(marker_idx, m_dir,
-                                              adjp[marker_idx],
-                                              n_top_down = n_down_mk,
-                                              n_top_up = n_up_mk,
-                                              tiebreak_value = tb[marker_idx]))
+      # PER-MARKER: group marker rows by their winning_accession and run the
+      # per-direction top-N once within each marker so no marker can crowd out
+      # another. A missing (NA) or blank winner would silently drop a marker
+      # from the grouping; fold all such rows into one catch-all group instead
+      # (marker rows normally carry a reconciled non-empty winner, so this only
+      # guards an edge case). Group keys use the row's winning_accession value.
+      winner <- as.character(volcano_df$winning_accession %||%
+                               rep(NA_character_, n))
+      grp_key <- winner[marker_idx]
+      grp_key[is.na(grp_key) | !nzchar(grp_key)] <- "__pelsa_na_marker__"
+      for (g in unique(grp_key)) {
+        g_rows <- marker_idx[grp_key == g]
+        g_dir  <- ifelse(is.na(logfc[g_rows]), "ns",
+                         ifelse(logfc[g_rows] < 0, "down", "up"))
+        idx <- c(idx, .pelsa_top_n_by_direction(g_rows, g_dir, adjp[g_rows],
+                                                n_top_down = n_down_mk,
+                                                n_top_up = n_up_mk,
+                                                tiebreak_value = tb[g_rows]))
+      }
     }
   }
 
