@@ -5705,3 +5705,36 @@ test_that("export_volcano applies the SAME x/y coord range to every volcano PNG 
     expect_equal(r$y, first$y, tolerance = 1e-6)
   }
 })
+
+test_that("export_intensity caps at 150 proteins and writes skipped_proteins.tsv", {
+  # pelsa_export_render_map always establishes its OWN multisession plan
+  # (R/tab_pelsa_export_parallel.R), which requires Protigy to be an installed,
+  # attachable package -- not true for a devtools::load_all() dev session. Run
+  # render_one sequentially in-process instead; this still exercises the real
+  # cap/manifest logic in pelsa_section3_export_intensity, only swapping out the
+  # (already independently-tested, see test-pelsa-export-parallel.R) parallel
+  # fan-out mechanism.
+  testthat::local_mocked_bindings(
+    pelsa_export_render_map = function(items, render_one) {
+      for (item in items) render_one(item)
+      invisible(NULL)
+    },
+    .package = "Protigy"
+  )
+  fx <- .make_pelsa_export_fixture(n_proteins = 200L, n_markers = 1L)
+  dir <- withr::local_tempdir()
+  pelsa_section3_export_intensity(
+    dir_name = dir, ome = fx$ome, stat_results = fx$stat_results,
+    cache_entry = fx$cache_entry, processed_mat = fx$processed_mat,
+    condition_map = fx$condition_map, condition_order = fx$condition_order,
+    sig_cutoff = 0.05, sig_stat = "adj.p.val",
+    marker_accessions = fx$marker_accessions, log_transformation = "log2")
+  base <- file.path(dir, .PELSA_STAGE_VOLCANO, .PELSA_SUB_INTENSITY)
+  pngs <- list.files(base, pattern = "\\.png$", recursive = TRUE)
+  expect_lte(length(pngs), 150L)          # never more than the cap
+  manifest <- file.path(base, "skipped_proteins.tsv")
+  expect_true(file.exists(manifest))
+  skipped <- read.delim(manifest, stringsAsFactors = FALSE)
+  expect_true(all(c("accession", "gene", "adj.P") %in% colnames(skipped)))
+  expect_gt(nrow(skipped), 0L)
+})

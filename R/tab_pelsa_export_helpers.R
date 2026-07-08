@@ -388,8 +388,21 @@ pelsa_section3_export_intensity <- function(dir_name, ome, stat_results, cache_e
                                  .PELSA_SUB_INTENSITY, .PELSA_GRP_MARKER)
   d_sg <- pelsa_export_stage_dir(dir_name, .PELSA_STAGE_VOLCANO,
                                  .PELSA_SUB_INTENSITY, .PELSA_GRP_SIGNIF)
-  # y-axis label log base reflects this dataset's declared transform so a
-  # log10 dataset is not mislabeled "log2(intensity)".
+  # Cap the protein set; record the overflow. skipped_proteins.tsv sits in the
+  # intensity sub-stage folder (parent of the marker/significant split).
+  capped <- pelsa_export_cap_proteins(prot, stat_df)
+  prot <- capped$keep
+  if (nrow(capped$skipped) > 0L) {
+    skip <- capped$skipped
+    skip$gene <- vapply(skip$accession,
+                        function(a) pelsa_export_gene_for(matched, a), character(1))
+    utils::write.table(
+      skip[, c("accession", "gene", "adj.P"), drop = FALSE],
+      file.path(dir_name, .PELSA_STAGE_VOLCANO, .PELSA_SUB_INTENSITY,
+                "skipped_proteins.tsv"),
+      sep = "\t", row.names = FALSE, quote = FALSE)
+  }
+  # y-axis label log base reflects this dataset's declared transform.
   log_xf <- log_transformation %||% NA_character_
   log_base <- if (identical(tolower(as.character(log_xf)), "log10")) 10L else 2L
   cov <- entry$coverage %||% data.frame()
@@ -402,6 +415,8 @@ pelsa_section3_export_intensity <- function(dir_name, ome, stat_results, cache_e
     NA_real_
   }
   intensity_idx <- pelsa_intensity_build_index(matched)
+  # ---- BUILD phase (sequential): assemble self-contained per-figure items ----
+  items <- list()
   for (i in seq_len(nrow(prot))) {
     acc <- prot$accession[i]; is_mk <- isTRUE(prot$is_marker[i])
     ld <- tryCatch(
@@ -411,16 +426,22 @@ pelsa_section3_export_intensity <- function(dir_name, ome, stat_results, cache_e
       error = function(e) NULL)
     if (is.null(ld) || nrow(ld) == 0L) next
     gene <- pelsa_export_gene_for(matched, acc)
-    p <- tryCatch(
-      pelsa_intensity_export_ggplot(ld, gene, acc, log_base,
-                                    coverage_frac = cov_lookup(acc)),
-      error = function(e) NULL)
-    if (is.null(p)) next
     base <- paste0("intensityLine_", pelsa_safe_name(gene), "_",
                    pelsa_safe_name(acc))
-    pelsa_save_figure(p, if (is_mk) d_mk else d_sg, base,
-                      width = 9, height = 5)
+    items[[length(items) + 1L]] <- list(
+      ld = ld, gene = gene, acc = acc, log_base = log_base,
+      coverage_frac = cov_lookup(acc), dir = if (is_mk) d_mk else d_sg,
+      base = base)
   }
+  # ---- RENDER phase (parallel): build ggplot + write PNG per item ------------
+  render_one <- function(item) tryCatch({
+    p <- pelsa_intensity_export_ggplot(item$ld, item$gene, item$acc,
+                                       item$log_base,
+                                       coverage_frac = item$coverage_frac)
+    if (is.null(p)) return(invisible(NULL))
+    pelsa_save_figure(p, item$dir, item$base, width = 9, height = 5)
+  }, error = function(e) NULL)
+  pelsa_export_render_map(items, render_one)
   invisible(NULL)
 }
 
