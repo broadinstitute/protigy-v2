@@ -77,7 +77,8 @@ Suggests:
     chromote,
     viridisLite,
     withr,
-    jsonlite
+    jsonlite,
+    png
 Config/testthat/edition: 3
 LazyData: false
 RoxygenNote: 8.0.0
