@@ -2869,6 +2869,103 @@ test_that("invalid N input (blank/zero/negative) coerces to a valid integer >= 1
   )
 })
 
+test_that("switching AWAY (sidebar destroyed -> NULL inputs) does NOT wipe the stored label mode / top-N", {
+  # The PELSA volcano renders only the ACTIVE dataset via a renderUI swap keyed
+  # on active_dataset(); switching away DESTROYS this ome's sidebar, and Shiny
+  # reports every destroyed input as NULL on the next flush. The write-back
+  # observers must NOT persist that transient NULL into the per-ome registries
+  # (that would wipe the user's customization for the ome they switched away
+  # from). This unit test simulates the destroy by pushing NULL through the
+  # very inputs the sidebar owns, then asserts the registries kept the last
+  # user-chosen values.
+  label_reg <- reactiveVal(list())
+  adjp_reg  <- reactiveVal(list())
+  mk_reg    <- reactiveVal(list())
+  # The app-level active dataset. Starts on this ome, then flips to another
+  # dataset to model the user switching away (the switch advances this reactive
+  # BEFORE the sidebar is torn down, so the destroy-NULL arrives while this ome
+  # is already inactive).
+  active_ds <- reactiveVal("Proteome")
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = active_ds,
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = label_reg,
+      n_top_adjp_registry = adjp_reg,
+      n_top_markers_registry = mk_reg,
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      # User picks a labeling mode + top-N values while this ome is active.
+      session$setInputs(pelsa_label_mode = c("all_markers", "top_n_adjp"),
+                        pelsa_n_top_adjp = 7,
+                        pelsa_n_top_markers = 4)
+      expect_setequal(label_mode_for_ome(), c("all_markers", "top_n_adjp"))
+      expect_identical(n_top_adjp_for_ome(), 7L)
+      expect_identical(n_top_markers_for_ome(), 4L)
+
+      # Switch AWAY: the app selects a different dataset first...
+      active_ds("Phosphoproteome")
+      session$flushReact()
+      # ...then this ome's sidebar (checkboxGroupInput + numericInputs) is
+      # removed from the DOM, so Shiny sends NULL for each of its inputs.
+      session$setInputs(pelsa_label_mode = NULL,
+                        pelsa_n_top_adjp = NULL,
+                        pelsa_n_top_markers = NULL)
+
+      # The stored customization for THIS ome must survive the destroy so it is
+      # restored when the user switches back.
+      expect_setequal(label_reg()[["Proteome"]],
+                      c("all_markers", "top_n_adjp"))
+      expect_identical(adjp_reg()[["Proteome"]], 7L)
+      expect_identical(mk_reg()[["Proteome"]], 4L)
+    }
+  )
+})
+
+test_that("un-checking ALL label modes WHILE active still clears the stored selection", {
+  # The guard added for the switch-away destroy-NULL must NOT swallow a genuine
+  # "uncheck everything" the user performs while this ome is active: a
+  # checkboxGroupInput reports NULL for an all-unchecked state too, and that
+  # (active) NULL must persist as character(0) so the labels actually clear.
+  label_reg <- reactiveVal(list())
+  shiny::testServer(
+    PELSASection3_Ome_Server,
+    args = list(
+      id = "Proteome", ome = "Proteome",
+      GCT_processed = reactive(NULL), parameters = reactive(NULL),
+      default_annotation_column = reactive(NULL), color_map = reactive(NULL),
+      active_dataset = reactive("Proteome"),   # stays active throughout
+      stat_results = reactive(.mk_stat_results()),
+      stat_params = reactive(.mk_stat_params()),
+      pelsa_analysis = reactive(.mk_cache()),
+      pelsa_setup_state = reactive(.mk_setup_state()),
+      poi_registry = reactiveVal(list()),
+      label_mode_registry = label_reg,
+      n_top_adjp_registry = reactiveVal(list()),
+      n_top_markers_registry = reactiveVal(list()),
+      use_webgl = reactive(FALSE)
+    ),
+    {
+      session$setInputs(pelsa_label_mode = c("all_markers"))
+      expect_setequal(label_mode_for_ome(), "all_markers")
+
+      # Uncheck all -> NULL WHILE active -> must clear to character(0).
+      session$setInputs(pelsa_label_mode = NULL)
+      expect_identical(label_reg()[["Proteome"]], character(0))
+      expect_identical(label_mode_for_ome(), character(0))
+    }
+  )
+})
+
 test_that("7D: best-panel df built ONLY when the checkbox is ON", {
   shiny::testServer(PELSASection3_Ome_Server, args = .full_args(), {
     session$setInputs(pelsa_color_mode = "significance",

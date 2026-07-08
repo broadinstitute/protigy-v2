@@ -164,6 +164,7 @@ PELSASection3_Tab_Server <- function(id = "PELSASection3Tab",
           parameters                = reactive(parameters()[[ome]]),
           default_annotation_column = reactive(default_annotations()[[ome]]),
           color_map                 = reactive(custom_colors()[[ome]]),
+          active_dataset            = active_dataset,
           stat_results              = stat_results_r,
           stat_params               = stat_params_r,
           pelsa_analysis            = analysis_r,
@@ -208,6 +209,7 @@ PELSASection3_Ome_Server <- function(id,
                                      parameters,
                                      default_annotation_column,
                                      color_map,
+                                     active_dataset = reactive(ome),
                                      stat_results = reactive(NULL),
                                      stat_params = reactive(NULL),
                                      pelsa_analysis = reactive(NULL),
@@ -234,6 +236,22 @@ PELSASection3_Ome_Server <- function(id,
     # forcing SVG trades away WebGL's GPU rendering speed (unneeded at PELSA's
     # realistic point counts) for reliable significance/feature coloring.
     use_webgl <- reactive(FALSE)
+
+    # Whether THIS ome is the one the app is currently showing. The volcano
+    # renders only the active dataset via a renderUI swap (see the parent's
+    # output$ome_tabset_box), so switching away DESTROYS this ome's sidebar and
+    # Shiny reports every destroyed input as NULL on the next flush. The
+    # write-back observers below guard on this so that transient destroy-NULL is
+    # NOT mistaken for a user "uncheck everything" and does NOT wipe this ome's
+    # stored customization. active_dataset() has already advanced to the NEW ome
+    # by the time the destroy-NULL arrives (the switch drives active_dataset()
+    # first, the UI teardown second), so isolate() here reads the post-switch
+    # value and the guard is FALSE for the ome being left. Read via isolate() in
+    # each observer to avoid adding active_dataset() as a firing dependency.
+    # NOTE: that browser ordering is a Shiny-runtime property; the unit test
+    # SIMULATES it (testServer has no live DOM to auto-null a destroyed input),
+    # so it is verified by reasoning + manual smoke, not asserted by the test.
+    is_active_ome <- function() identical(isolate(active_dataset()), ome)
 
     ## ------------------------------------------------------------------------
     ## 7A - STAT-SOURCE GATE
@@ -434,7 +452,12 @@ PELSASection3_Ome_Server <- function(id,
     # needed; changing the checkboxes IS applying to every contrast.
     # ignoreNULL = FALSE: an all-unchecked checkboxGroupInput reports NULL,
     # not character(0), and that NULL must still clear the stored selection.
+    # BUT a NULL also arrives when this ome's sidebar is DESTROYED on switch-
+    # away; guarding on is_active_ome() keeps a genuine uncheck-all (fired while
+    # active) while dropping the destroy-NULL (fired once this ome is inactive),
+    # so the stored selection is not wiped just by switching datasets.
     observeEvent(input$pelsa_label_mode, {
+      if (!is_active_ome()) return()
       set_label_mode(input$pelsa_label_mode)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
@@ -452,6 +475,7 @@ PELSASection3_Ome_Server <- function(id,
       n_top_adjp_registry(reg)
     }
     observeEvent(input$pelsa_n_top_adjp, {
+      if (!is_active_ome()) return()  # ignore the switch-away destroy-NULL
       set_n_top_adjp(input$pelsa_n_top_adjp)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
@@ -468,6 +492,7 @@ PELSASection3_Ome_Server <- function(id,
       n_top_markers_registry(reg)
     }
     observeEvent(input$pelsa_n_top_markers, {
+      if (!is_active_ome()) return()  # ignore the switch-away destroy-NULL
       set_n_top_markers(input$pelsa_n_top_markers)
     }, ignoreNULL = FALSE, ignoreInit = FALSE)
 
