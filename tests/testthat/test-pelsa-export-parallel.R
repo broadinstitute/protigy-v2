@@ -104,6 +104,42 @@ test_that("pelsa_export_cap_proteins keeps markers + top non-markers by adj.P", 
   expect_true("adj.P" %in% colnames(res$skipped))
 })
 
+test_that("pelsa_export_cap_proteins: an accession absent from the adj.P source degrades to Inf, never crashes", {
+  # Contract guard: a prot accession NOT present in the adj.P source must sort
+  # LAST (Inf), not crash. Regression for the NA-rowname hazard where a single-
+  # bracket lookup returned an NA-NAMED element that aborted the skipped data.frame
+  # with "row names contain missing values".
+  prot <- data.frame(
+    accession = c("M", "N1", "N2", "GHOST"),
+    is_marker = c(TRUE, FALSE, FALSE, FALSE),
+    stringsAsFactors = FALSE)
+  # Direct-accession path: GHOST absent from stat_any.
+  stat_any <- data.frame(
+    accession = c("M", "N1", "N2"),
+    "adj.P.Val.any_contrast" = c(0.9, 0.001, 0.05),
+    check.names = FALSE)
+  res <- pelsa_export_cap_proteins(prot, stat_any, cap = 2L)
+  # Cap 2: marker M kept, best non-marker N1 (0.001) kept; N2 (0.05) and GHOST
+  # (Inf) skipped. GHOST must sort last with adj.P == Inf.
+  expect_setequal(res$keep$accession, c("M", "N1"))
+  expect_setequal(res$skipped$accession, c("N2", "GHOST"))
+  ghost_adjp <- res$skipped$adj.P[res$skipped$accession == "GHOST"]
+  expect_true(is.infinite(ghost_adjp))
+  # No NA rownames leaked into the skipped frame.
+  expect_false(anyNA(rownames(res$skipped)))
+
+  # Matched-join path: same GHOST-absent condition via a peptide-level frame.
+  matched <- data.frame(
+    accession = c("M", "N1", "N2", "GHOST"), .row_id = 1:4,
+    PEP.StrippedSequence = paste0("PEP", 1:4), stringsAsFactors = FALSE)
+  stat_peptide <- data.frame(
+    .row_id = 1:3, PEP.StrippedSequence = paste0("PEP", 1:3),
+    "adj.P.Val.any_contrast" = c(0.9, 0.001, 0.05), check.names = FALSE)
+  res2 <- pelsa_export_cap_proteins(prot, stat_peptide, matched = matched, cap = 2L)
+  expect_setequal(res2$skipped$accession, c("N2", "GHOST"))
+  expect_true(is.infinite(res2$skipped$adj.P[res2$skipped$accession == "GHOST"]))
+})
+
 test_that("cap ranking keeps the most-significant non-markers using real caller inputs (matched-joined)", {
   # 10 proteins, 1 marker, cap 4. frac_sig makes the FIRST 5 significant
   # (adj.P 0.001) and the rest not (0.5); markers kept regardless.

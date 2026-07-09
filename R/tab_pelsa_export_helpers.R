@@ -255,7 +255,12 @@ pelsa_export_cap_proteins <- function(prot, stat_any, matched = NULL,
   padj <- rep(Inf, nrow(prot))
   if (!is.null(agg)) {
     m <- agg[as.character(prot$accession)]
-    padj <- ifelse(is.na(m), Inf, as.numeric(m))
+    # unname(): a prot accession absent from `agg` returns an NA-NAMED element
+    # (single-bracket `[` on a named vector), and that NA name would survive into
+    # `data.frame(adj.P = padj[skip_idx])` below and abort with "row names contain
+    # missing values". Strip names so a genuinely-missing accession degrades to
+    # Inf (sorts last) as documented, instead of crashing.
+    padj <- unname(ifelse(is.na(m), Inf, as.numeric(m)))
   }
   is_mk <- as.logical(prot$is_marker)
   is_mk[is.na(is_mk)] <- FALSE
