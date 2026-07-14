@@ -512,8 +512,14 @@ createCdesc <- function(sample_ids, experimentalDesign, file_name) {
   # Get metadata columns (all columns except columnName)
   metadata_columns <- setdiff(names(experimentalDesign), "columnName")
   
-  # Create cdesc data.frame starting with Sample.ID
+  # Create cdesc data.frame. The `id` column is required by cmapR: subset_gct()
+  # -> subset_to_ids() looks up samples by a column literally named `id` (this is
+  # what parse_gctx() supplies for .gct uploads). Without it, any column-wise
+  # subset -- e.g. QC > CV's qc_cv_align_source() -- errors with
+  # "the following column names are not found in df: id". `Sample.ID` is retained
+  # as the user-facing annotation column that downstream tabs read.
   cdesc <- data.frame(
+    id        = sample_ids,
     Sample.ID = sample_ids,
     stringsAsFactors = FALSE
   )
