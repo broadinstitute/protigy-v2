@@ -271,6 +271,55 @@ test_that("createCdesc creates correct column descriptions", {
   expect_equal(cdesc$Group, c("Group1", "Group2"))
 })
 
+test_that("createCdesc emits an 'id' column matching the sample ids (cmapR contract)", {
+  # cmapR's subset_gct() -> subset_to_ids() requires the cdesc to carry a column
+  # literally named 'id'. Experimental designs authored by users do NOT contain an
+  # 'id' column, so createCdesc must supply one itself (mirroring parse_gctx()).
+  experimental_design <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Experiment = c("Control", "Treatment"),
+    Group      = c("Group1", "Group2"),
+    stringsAsFactors = FALSE
+  )
+  sample_columns <- c("Sample1", "Sample2")
+
+  cdesc <- createCdesc(sample_columns, experimental_design, "test_file.csv")
+
+  expect_true("id" %in% colnames(cdesc))
+  expect_equal(cdesc$id, sample_columns)
+})
+
+test_that("convertToGCT yields a cmapR-subsettable GCT when the experimental design has no 'id' column", {
+  # Regression: QC > CV called subset_gct() on a non-GCT upload whose experimental
+  # design lacked an 'id' column, tripping cmapR's "column names are not found in
+  # df: id" error. The constructed GCT must be subsettable by cid.
+  test_data <- data.frame(
+    protein_id = c("P1", "P2", "P3"),
+    Sample1    = c(1, 2, 3),
+    Sample2    = c(4, 5, 6),
+    stringsAsFactors = FALSE
+  )
+  experimental_design <- data.frame(
+    columnName = c("Sample1", "Sample2"),
+    Genotype   = c("WT", "MUT"),
+    Treatment  = c("A", "B"),
+    stringsAsFactors = FALSE
+  )
+
+  gct_obj <- convertToGCT(test_data, experimental_design, "test_file.csv", "protein_id")
+
+  expect_true("id" %in% colnames(gct_obj@cdesc))
+
+  # The failing operation from QC > CV (qc_cv_align_source / filtered_gct).
+  expect_no_error(
+    cmapR::subset_gct(
+      gct_obj,
+      rid = seq_len(nrow(gct_obj@mat)),
+      cid = seq_len(ncol(gct_obj@mat))
+    )
+  )
+})
+
 test_that("filterExperimentalColumns filters correctly", {
   experimental_design <- data.frame(
     columnName = c("Sample1", "Sample2"),
