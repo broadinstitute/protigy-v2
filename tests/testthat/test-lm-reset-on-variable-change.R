@@ -149,3 +149,107 @@ test_that("unchecking a variable after an interaction was chosen does not error"
     }
   )
 })
+
+
+test_that("Multi contrast with net-zero pairs is dropped by contrast_specs", {
+  # Regression test: the contrast builder's net-zero guard drops Multi contrasts
+  # when both pairs are identical (A-B)-(A-B)=0 or individually zero (A-A)-(B-B)=0.
+  # This test verifies the guard is wired and fires correctly.
+  shiny::testServer(
+    lmSetup_Tab_Server,
+    args = list(
+      id = "lm",
+      GCTs_and_params = make_lm_setup_gcap(),
+      globals = make_globals()
+    ),
+    {
+      session$setInputs(selected_ome = "proteome")
+      session$setInputs(selected_variables = "PAM50")
+
+      # Seed a single Simple-mode row with real coefficients.
+      row_id <- contrast_rows()[[1]]$id
+      do.call(session$setInputs, setNames(
+        list("PAM50LumA", "PAM50Basal"),
+        c(paste0("num_", row_id), paste0("den_", row_id))
+      ))
+
+      # Flip to Multi mode. The toggle reassigns the row id.
+      do.call(session$setInputs, setNames(
+        list("multi"), paste0("type_", row_id)
+      ))
+
+      # Re-read the row id AFTER toggle (it changed).
+      rows <- contrast_rows()
+      expect_length(rows, 1L)
+      new_row_id <- rows[[1]]$id
+
+      # Set the four slots to an IDENTICAL-PAIRS net-zero config:
+      # num=PAM50LumA, den=PAM50Basal, num2=PAM50LumA, den2=PAM50Basal
+      # -> (LumA-Basal)-(LumA-Basal) = 0, should be dropped.
+      do.call(session$setInputs, setNames(
+        list("PAM50LumA", "PAM50Basal", "PAM50LumA", "PAM50Basal"),
+        c(paste0("num_", new_row_id), paste0("den_", new_row_id),
+          paste0("num2_", new_row_id), paste0("den2_", new_row_id))
+      ))
+
+      # Flush to trigger reactive updates.
+      session$flushReact()
+
+      # Assert that the net-zero row is DROPPED by contrast_specs.
+      specs <- contrast_specs()
+      expect_length(specs, 0L)
+    }
+  )
+})
+
+
+test_that("Multi contrast with valid (non-net-zero) pairs is kept by contrast_specs", {
+  # Positive control: ensure the guard does not over-reject valid contrasts.
+  # This test verifies a difference-of-differences contrast with distinct pairs
+  # is NOT dropped.
+  shiny::testServer(
+    lmSetup_Tab_Server,
+    args = list(
+      id = "lm",
+      GCTs_and_params = make_lm_setup_gcap(),
+      globals = make_globals()
+    ),
+    {
+      session$setInputs(selected_ome = "proteome")
+      session$setInputs(selected_variables = "PAM50")
+
+      # Seed a single Simple-mode row.
+      row_id <- contrast_rows()[[1]]$id
+      do.call(session$setInputs, setNames(
+        list("PAM50LumA", "PAM50Basal"),
+        c(paste0("num_", row_id), paste0("den_", row_id))
+      ))
+
+      # Flip to Multi mode.
+      do.call(session$setInputs, setNames(
+        list("multi"), paste0("type_", row_id)
+      ))
+
+      # Re-read the row id.
+      rows <- contrast_rows()
+      new_row_id <- rows[[1]]$id
+
+      # Set VALID (non-zero) difference-of-differences:
+      # num=PAM50LumA, den=PAM50Basal, num2=PAM50LumB, den2=PAM50Basal
+      # -> (LumA-Basal)-(LumB-Basal) != 0, should NOT be dropped.
+      do.call(session$setInputs, setNames(
+        list("PAM50LumA", "PAM50Basal", "PAM50LumB", "PAM50Basal"),
+        c(paste0("num_", new_row_id), paste0("den_", new_row_id),
+          paste0("num2_", new_row_id), paste0("den2_", new_row_id))
+      ))
+
+      # Flush to trigger reactive updates.
+      session$flushReact()
+
+      # Assert that the valid contrast is KEPT by contrast_specs.
+      specs <- contrast_specs()
+      expect_length(specs, 1L)
+      expect_identical(specs[[1]]$type, "multi")
+    }
+  )
+})
