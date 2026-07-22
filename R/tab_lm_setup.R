@@ -922,6 +922,11 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           if (any(!nzchar(slots))) {
             validation <- list(ok = FALSE, message = "(choose all four coefficients A, B, C, D)",
                                unknown = character(0))
+          } else if ((identical(r$num, r$num2) && identical(r$den, r$den2)) ||
+                     (identical(r$num, r$den) && identical(r$num2, r$den2))) {
+            validation <- list(ok = FALSE,
+                               message = "zero contrast (the two pairs cancel)",
+                               unknown = character(0))
           } else {
             validation <- validate_advanced_expr(expr_for_preview, coefs)
           }
@@ -1044,9 +1049,16 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           r$type <- type_val
           r$num <- ""; r$den <- ""; r$num2 <- ""; r$den2 <- ""
           if (!isTRUE(r$label_user_edited)) r$label <- ""
+          # Assign a fresh row id so the re-rendered slot dropdowns get new
+          # inputIds. Without this, the persist observe re-runs within the same
+          # flush, the type branch no longer fires (type already updated), and
+          # the slot-persist branch reads the OLD dropdown inputs (which still
+          # hold pre-toggle values because the client never round-tripped the
+          # reset) and writes the stale values back -- silently defeating the
+          # clear. A new id orphans those stale inputs (they read NULL). This
+          # mirrors the reset in observeEvent(input$selected_variables, ...).
+          r$id <- new_contrast_row_id()
           changed <<- TRUE
-          # Skip reading the (now-stale) slot inputs this cycle; the re-render
-          # will repopulate empty dropdowns.
           return(r)
         }
         # Slot A/B (both modes)
@@ -1160,6 +1172,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         if (identical(r$type, "multi")) {
           slots <- c(r$num %||% "", r$den %||% "", r$num2 %||% "", r$den2 %||% "")
           if (any(!nzchar(slots))) return(NULL)
+          if (identical(r$num, r$num2) && identical(r$den, r$den2)) return(NULL)
+          if (identical(r$num, r$den) && identical(r$num2, r$den2)) return(NULL)
           e <- build_multi_expr(r$num, r$den, r$num2, r$den2)
           lbl <- if (isTRUE(r$label_user_edited) && nzchar(r$label %||% ""))
                     r$label else make_multi_label(r$num, r$den, r$num2, r$den2)

@@ -72,6 +72,58 @@ test_that("changing selected_variables reseeds contrast_rows to a single empty r
 })
 
 
+test_that("flipping a card's mode Single->Multi clears num/den (spec #5)", {
+  # Regression test: the persist observe used to clear num/den/num2/den2 on a
+  # type toggle, then call contrast_rows(new_rows), which re-invalidated the
+  # SAME observe within the same flush. On the re-run, type_val already
+  # equalled the updated r$type, so the toggle branch was skipped and the
+  # slot-persist branch read the (stale, pre-toggle) num_/den_ inputs back
+  # into the row -- silently defeating the clear. Fixed by reseeding the row
+  # id on toggle so the stale slot inputs are orphaned (read NULL).
+  shiny::testServer(
+    lmSetup_Tab_Server,
+    args = list(
+      id = "lm",
+      GCTs_and_params = make_lm_setup_gcap(),
+      globals = make_globals()
+    ),
+    {
+      session$setInputs(selected_ome = "proteome")
+      session$setInputs(selected_variables = "PAM50")
+
+      # Seed a single Single-mode row with real coefficients set. Input ids
+      # are keyed by the row's internal id (num_<id>/den_<id>/type_<id>), so
+      # build the setInputs call dynamically via do.call.
+      row_id <- contrast_rows()[[1]]$id
+      do.call(session$setInputs, setNames(
+        list("PAM50LumA", "PAM50Basal"),
+        c(paste0("num_", row_id), paste0("den_", row_id))
+      ))
+
+      row <- contrast_rows()[[1]]
+      expect_identical(row$num, "PAM50LumA")
+      expect_identical(row$den, "PAM50Basal")
+      expect_identical(row$type, "simple")
+
+      # Flip the mode from Single to Multi using the CURRENT row id.
+      do.call(session$setInputs, setNames(
+        list("multi"), paste0("type_", row_id)
+      ))
+
+      # The fix reassigns the row's id, so read by POSITION, not old id.
+      rows <- contrast_rows()
+      expect_length(rows, 1L)
+      row <- rows[[1]]
+      expect_identical(row$type, "multi")
+      expect_identical(row$num, "")
+      expect_identical(row$den, "")
+      expect_identical(row$num2, "")
+      expect_identical(row$den2, "")
+    }
+  )
+})
+
+
 test_that("unchecking a variable after an interaction was chosen does not error", {
   # The original crash: interaction_terms persists stale (non-NULL) after a
   # variable is removed, and formula_string()'s combn() blew up on length 1.
