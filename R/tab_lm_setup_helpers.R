@@ -239,6 +239,36 @@ summarize_sample_drops <- function(cdesc, model_vars) {
 }
 
 
+#' Resolve selected interaction terms into variable pairs
+#'
+#' Turns the LM setup module's `(selected_variables, interaction_terms)` input
+#' pair into the list of interaction variable pairs consumed by
+#' [build_formula_string()] and the fit. Crucially, it is crash-proof for any
+#' number of selected variables: the interaction picker's `interaction_terms`
+#' checkbox input persists stale (non-`NULL`) after a variable is unchecked, so
+#' this helper must NOT call `utils::combn(selected_variables, 2)` unless at
+#' least two variables are currently selected -- `combn(x, 2)` errors with
+#' "n < m" when `length(x) < 2`. Any stale interaction label that no longer maps
+#' to a current pair is silently dropped.
+#'
+#' @param selected_variables Character vector of currently selected variable
+#'   names (`input$selected_variables`).
+#' @param interaction_terms Character vector of checked interaction labels in the
+#'   picker's `"A : B"` format (`input$interaction_terms`); may be `NULL`.
+#' @return A list of length-2 character vectors (the chosen interaction pairs),
+#'   in `combn()` enumeration order. Empty list when fewer than two variables
+#'   are selected, when `interaction_terms` is empty, or when no label matches.
+parse_interaction_terms <- function(selected_variables, interaction_terms) {
+  # Fewer than two variables -> no pairs are possible; never touch combn().
+  if (length(selected_variables) < 2) return(list())
+  if (length(interaction_terms) == 0) return(list())
+
+  pairs <- utils::combn(selected_variables, 2, simplify = FALSE)
+  pair_labels <- vapply(pairs, function(p) paste(p[1], ":", p[2]), character(1))
+  pairs[pair_labels %in% interaction_terms]
+}
+
+
 #' Build a formula string from user selections
 #'
 #' @param variables Character vector of selected variable names
