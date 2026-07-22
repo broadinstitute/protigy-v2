@@ -1,6 +1,6 @@
 Package: Protigy
 Title: Proteomics Toolset for Integrative Data Analysis
-Version: 2.6.1
+Version: 2.6.2
 Authors@R: c(
     person("Natalie M", "Clark", , "nclark@broadinstitute.org", role = c("aut", "cre")),
     person("Cameron", "Lian", , "glian@broadinstitute.org ", role = "aut"),
