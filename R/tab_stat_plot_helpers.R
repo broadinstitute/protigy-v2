@@ -232,7 +232,33 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       annotate("text", x = x_range[2], y = y_range[2], label = group1, hjust = 1.1, vjust = 3.1, size = 5, fontface = "bold", color = "red")
   }
   
-  # Add ggrepel labels for PDF export (mirrors add_volcano_labels color logic)
+  # Highlight and label are independent, mirroring add_volcano_labels():
+  #   * HIGHLIGHT (magenta geom_point)  -  POI-exclusive; drawn whenever
+  #     label_proteins are supplied, regardless of label_mode.
+  #   * LABEL (ggrepel text)             -  driven only by label_mode.
+
+  ## HIGHLIGHT PASS  -  magenta markers for POI points, independent of label_mode.
+  if (length(label_proteins) > 0) {
+    poi_hl <- df[df$id %in% label_proteins, , drop = FALSE]
+    if (nrow(poi_hl) > 0) {
+      poi_hl$label_col <- .volcano_label_hex
+      volcano <- volcano +
+        geom_point(
+          data        = poi_hl,
+          aes(
+            x     = .data$logFC,
+            y     = .data$logP,
+            color = .data$label_col,
+            text  = .data$.hover_text
+          ),
+          inherit.aes = FALSE,
+          size        = 2,
+          show.legend = FALSE
+        )
+    }
+  }
+
+  ## LABEL PASS  -  ggrepel text annotations, driven by label_mode only.
   if (length(label_mode) > 0) {
     label_df_gg <- data.frame(
       id = character(0), logFC = numeric(0), logP = numeric(0),
@@ -273,18 +299,6 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       )
       label_df_gg$.hover_text <- df$.hover_text[match(as.character(label_df_gg$id), as.character(df$id))]
       volcano <- volcano +
-        geom_point(
-          data        = label_df_gg,
-          aes(
-            x     = .data$logFC,
-            y     = .data$logP,
-            color = .data$label_col,
-            text  = .data$.hover_text
-          ),
-          inherit.aes = FALSE,
-          size        = 2,
-          show.legend = FALSE
-        ) +
         ggrepel::geom_text_repel(
           data          = label_df_gg,
           aes(x = .data$logFC, y = .data$logP, label = .data$label_txt,
@@ -610,11 +624,20 @@ volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label
 }
 
 
-# Add color-coded feature labels as Plotly annotations.
+# Add the volcano highlight overlay and color-coded feature labels.
+#
+# Highlighting (magenta point overlay) and labeling (text annotations) are two
+# INDEPENDENT concerns:
+#   * Highlight  -  driven ONLY by `poi` (search / click selections). POI points
+#     always get the magenta marker overlay, regardless of `label_mode`. This is
+#     POI-exclusive: significant / top-N points are NOT highlighted magenta.
+#   * Label      -  driven ONLY by `label_mode`. Text annotations are drawn for
+#     whichever modes are active ("poi", "significant", "significant_top20").
 #
 # p               - plotly object (output of ggplotly)
 # df              - data frame with columns: id, logFC, logP, Significant, geneSymbol
-# poi             - character vector of feature IDs to label as POI
+# poi             - character vector of feature IDs to highlight (and label when
+#                   "poi" is in label_mode)
 # label_mode      - character vector; "poi", "significant_top20", and/or "significant"
 #                 ("significant" includes all sig; if both sig modes are set, all wins)
 # y_cutoff        - significance y threshold (used to identify Significant points)
@@ -625,16 +648,41 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
                                 label_display_trim_enabled = FALSE,
                                 n_top = 20L) {
 
+  poi <- unique(as.character(poi))
+
   show_poi <- "poi" %in% label_mode
   show_sig <- "significant" %in% label_mode
   show_sig_top <- "significant_top20" %in% label_mode
 
+  ## HIGHLIGHT PASS  ----------------------------------------------------------
+  # Draw the magenta marker overlay for every POI point, independent of any
+  # label mode. This is what "search to highlight" produces on its own.
+  poi_rows_all <- df[as.character(df$id) %in% poi, , drop = FALSE]
+  if (nrow(poi_rows_all) > 0) {
+    p <- plotly::add_trace(
+      p,
+      data       = poi_rows_all,
+      x          = ~logFC,
+      y          = ~logP,
+      type       = "scatter",
+      mode       = "markers",
+      marker     = list(color = .volcano_label_hex, size = 9,
+                        line = list(color = "white", width = 1.5)),
+      showlegend = FALSE,
+      hoverinfo  = "skip",
+      inherit    = FALSE
+    )
+  }
+
+  # Nothing to label if no label mode is active: highlight (above) may still have
+  # been applied, but no text annotations are drawn.
   if (!show_poi && !show_sig && !show_sig_top) {
     hidden_count_rv(0L)
     return(p)
   }
 
-  # Build label data frame
+  ## LABEL PASS  --------------------------------------------------------------
+  # Build the set of features that receive text annotations, driven by label_mode.
   label_df <- data.frame(
     id        = character(0),
     logFC     = numeric(0),
@@ -732,20 +780,9 @@ add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
   label_df_kept <- label_df[keep_idx, , drop = FALSE]
   if (nrow(label_df_kept) == 0) return(p)
 
-  # Colored marker overlay for labeled points
-  p <- plotly::add_trace(
-    p,
-    data       = label_df_kept,
-    x          = ~logFC,
-    y          = ~logP,
-    type       = "scatter",
-    mode       = "markers",
-    marker     = list(color = label_df_kept$label_col, size = 9,
-                      line = list(color = "white", width = 1.5)),
-    showlegend = FALSE,
-    hoverinfo  = "skip",
-    inherit    = FALSE
-  )
+  # No marker overlay here: the magenta point highlight is POI-exclusive and is
+  # drawn in the highlight pass above. The label pass adds text annotations only,
+  # so significant / top-N labeled points keep their normal significance color.
 
   # White-background text annotations (no arrow)
   annotations <- lapply(seq_len(nrow(label_df_kept)), function(i) {

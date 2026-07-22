@@ -436,6 +436,156 @@ test_that("add_volcano_labels with significant_top20 caps labeled significant ro
   expect_equal(n_ann, 20L)
 })
 
+## Highlight vs. label separation #############################################
+# Search-to-highlight (POI) controls the magenta point overlay; "Label Features"
+# (label_mode) controls only whether text annotations are drawn. Highlighting a
+# POI must NOT require a label mode, and significant/top-N modes color no points
+# magenta (highlight is POI-exclusive).
+
+# Count magenta highlight overlay traces (the "#FF00FF" marker layer) in a built
+# plotly object. The base scatter uses plotly's default blue, so any trace whose
+# marker color is the volcano label hex is a highlight overlay.
+count_magenta_traces <- function(built) {
+  sum(vapply(built$x$data, function(tr) {
+    isTRUE(any(unlist(tr$marker$color) == .volcano_label_hex))
+  }, logical(1)))
+}
+
+test_that("add_volcano_labels highlights POI in magenta with no label mode and no annotations", {
+  skip_if_not_installed("plotly")
+  df <- data.frame(
+    id = c("A", "B", "C"), logFC = c(1, -1, 0.1),
+    logP = c(4, 3, 1), Significant = c(TRUE, TRUE, FALSE),
+    geneSymbol = c("G1", "G2", "G3"), stringsAsFactors = FALSE
+  )
+  p  <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(p, df, poi = "A", label_mode = character(0),
+                               y_cutoff = 2, hidden_count_rv = rv)
+  built <- plotly::plotly_build(result)
+  # One magenta highlight overlay for the single POI point ...
+  expect_equal(count_magenta_traces(built), 1L)
+  # ... and NO text annotations, because no label mode is active.
+  expect_length(built$x$layout$annotations %||% list(), 0L)
+})
+
+test_that("add_volcano_labels with empty poi and no mode adds no highlight and no annotations", {
+  skip_if_not_installed("plotly")
+  df <- data.frame(
+    id = c("A", "B"), logFC = c(1, -1), logP = c(4, 3),
+    Significant = c(TRUE, FALSE), geneSymbol = c("G1", "G2"),
+    stringsAsFactors = FALSE
+  )
+  p  <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(p, df, poi = character(0), label_mode = character(0),
+                               y_cutoff = 2, hidden_count_rv = rv)
+  built <- plotly::plotly_build(result)
+  expect_equal(count_magenta_traces(built), 0L)
+  expect_length(built$x$layout$annotations %||% list(), 0L)
+})
+
+test_that("add_volcano_labels adds POI text annotation only when 'poi' label mode is on", {
+  skip_if_not_installed("plotly")
+  df <- data.frame(
+    id = c("A", "B", "C"), logFC = c(1, -1, 0.1),
+    logP = c(4, 3, 1), Significant = c(TRUE, TRUE, FALSE),
+    geneSymbol = c("G1", "G2", "G3"), stringsAsFactors = FALSE
+  )
+  p  <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(p, df, poi = "A", label_mode = "poi",
+                               y_cutoff = 2, hidden_count_rv = rv)
+  built <- plotly::plotly_build(result)
+  # Still highlighted, and now also labeled.
+  expect_equal(count_magenta_traces(built), 1L)
+  ann <- built$x$layout$annotations %||% list()
+  expect_length(ann, 1L)
+  expect_equal(ann[[1]]$text, "G1")
+})
+
+test_that("add_volcano_labels significant mode labels points but adds no magenta highlight (POI-exclusive)", {
+  skip_if_not_installed("plotly")
+  df <- data.frame(
+    id = c("A", "B", "C"), logFC = c(1, -1, 0.1),
+    logP = c(4, 3, 1), Significant = c(TRUE, TRUE, FALSE),
+    geneSymbol = c("G1", "G2", "G3"), stringsAsFactors = FALSE
+  )
+  p  <- make_test_plotly(df)
+  rv <- mock_rv()
+  result <- add_volcano_labels(p, df, poi = character(0), label_mode = "significant",
+                               y_cutoff = 2, hidden_count_rv = rv)
+  built <- plotly::plotly_build(result)
+  # Two significant points get text labels ...
+  expect_length(built$x$layout$annotations %||% list(), 2L)
+  # ... but significance alone does NOT paint points magenta.
+  expect_equal(count_magenta_traces(built), 0L)
+})
+
+## plotVolcano highlight/label parity (PDF export path) #######################
+# The exported ggplot must mirror the on-screen separation: POI points get the
+# magenta highlight geom even with no label mode; significant/top-N points are
+# labeled but not highlighted magenta (POI-exclusive highlight).
+
+# Minimal two-sample stat_results df + reactive-style accessors for plotVolcano.
+make_volcano_export_fixture <- function() {
+  df <- data.frame(
+    id         = c("A", "B", "C", "D"),
+    geneSymbol = c("GA", "GB", "GC", "GD"),
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+  df[["logFC.X_over_Y"]]        <- c(2, -2, 0.1, 1.5)
+  df[["Log.P.Value.X_over_Y"]]  <- c(5, 4, 0.5, 3)
+  df[["adj.P.Val.X_over_Y"]]    <- c(0.001, 0.002, 0.9, 0.01)
+  df[["P.value.X_over_Y"]]      <- c(0.0001, 0.0002, 0.5, 0.001)
+  sp <- list(myome = list(test = "Two-sample Moderated T-test", cutoff = 0.05,
+                          stat = "p.val", contrasts = "X / Y", groups = NULL))
+  list(df = df, statp = function() sp, statr = function() list(myome = df))
+}
+
+# Count magenta highlight POINT layers: geom_point layers whose data carries the
+# magenta highlight color. Excludes ggrepel text layers (their text may be magenta
+# for labeling, which is a separate concern from point highlighting).
+count_magenta_geom_layers <- function(gg) {
+  sum(vapply(gg$layers, function(ly) {
+    d <- ly$data
+    inherits(ly$geom, "GeomPoint") &&
+      is.data.frame(d) && "label_col" %in% names(d) && nrow(d) > 0 &&
+      any(d$label_col == .volcano_label_hex)
+  }, logical(1)))
+}
+
+test_that("plotVolcano highlights POI in magenta even when label_mode is empty", {
+  skip_if_not_installed("ggplot2")
+  fx <- make_volcano_export_fixture()
+  gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
+                    label_proteins = c("A"), label_mode = character(0))
+  expect_gte(count_magenta_geom_layers(gg), 1L)
+})
+
+test_that("plotVolcano does not highlight anything magenta when no POI and no label mode", {
+  skip_if_not_installed("ggplot2")
+  fx <- make_volcano_export_fixture()
+  gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
+                    label_proteins = character(0), label_mode = character(0))
+  expect_equal(count_magenta_geom_layers(gg), 0L)
+})
+
+test_that("plotVolcano significant mode does not add a magenta highlight geom (POI-exclusive)", {
+  skip_if_not_installed("ggplot2")
+  skip_if_not_installed("ggrepel")
+  fx <- make_volcano_export_fixture()
+  gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
+                    label_proteins = character(0), label_mode = "significant")
+  # No POI -> no magenta highlight geom, even though significant points are labeled.
+  expect_equal(count_magenta_geom_layers(gg), 0L)
+  # A ggrepel text layer should still be present for the labeled significant points.
+  has_repel <- any(vapply(gg$layers, function(ly) {
+    inherits(ly$geom, "GeomTextRepel")
+  }, logical(1)))
+  expect_true(has_repel)
+})
+
 ## regex_escape ###############################################################
 
 test_that("regex_escape escapes PCRE metacharacters", {
