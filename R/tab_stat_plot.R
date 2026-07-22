@@ -663,14 +663,10 @@ statPlot_Ome_Server <- function(id,
       hidden_label_count(0L)
     })
 
-    # Auto-enable POI checkbox when proteins are added to the list
-    observeEvent(proteins_of_interest(), {
-      pois <- proteins_of_interest()
-      if (length(pois) > 0 && !"poi" %in% isolate(label_mode_for_contrast())) {
-        updateCheckboxGroupInput(session, "label_mode",
-          selected = unique(c(isolate(label_mode_for_contrast()), "poi")))
-      }
-    }, ignoreNULL = FALSE)
+    # NOTE: Searching / clicking a feature adds it to the POI list, which
+    # highlights it in magenta via the highlight pass in add_volcano_labels().
+    # It does NOT auto-check "Feature(s) of interest" in Label Features  -  search
+    # controls highlighting; the checkbox independently controls labeling.
 
     # Hidden label overlap note
     output$hidden_labels_warning <- renderUI({
