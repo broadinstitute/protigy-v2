@@ -85,6 +85,44 @@ build_simple_expr <- function(num, den) {
 }
 
 
+#' Build a Multi (2x2) contrast expression: (a - b) - (c - d).
+#'
+#' Assembles the fixed difference-of-differences template from four design
+#' coefficients. Feeds the SAME limma::makeContrasts backend as a simple
+#' contrast. Returns "" if any of the four slots is empty/NULL.
+#'
+#' @param a,b,c,d Character scalars, design-column names for the four slots.
+#' @return Character scalar, e.g. "(A - B) - (C - D)". Empty if any slot empty.
+build_multi_expr <- function(a, b, c, d) {
+  slots <- list(a, b, c, d)
+  if (any(vapply(slots, function(x) is.null(x) || !nzchar(x), logical(1)))) {
+    return("")
+  }
+  paste0("(", a, " - ", b, ") - (", c, " - ", d, ")")
+}
+
+
+#' Auto-generate a nested readable label for a Multi (2x2) contrast.
+#'
+#' Applies strip_shared_prefix() to (a, b) and to (c, d) INDEPENDENTLY, then
+#' wraps each stripped pair in parentheses joined by "-", per the naming
+#' convention documented in this file's header. Whitespace-free (CSV/TSV safe).
+#' Returns "" if any slot is empty/NULL.
+#'
+#' @param a,b,c,d Character scalars, design-column names for the four slots.
+#' @return Character scalar, e.g. "(GR4-GR3)-(Drug-Vehicle)". Empty if any empty.
+make_multi_label <- function(a, b, c, d) {
+  slots <- list(a, b, c, d)
+  if (any(vapply(slots, function(x) is.null(x) || !nzchar(x), logical(1)))) {
+    return("")
+  }
+  p1 <- strip_shared_prefix(a, b)
+  p2 <- strip_shared_prefix(c, d)
+  lbl <- paste0("(", p1[1], "-", p1[2], ")-(", p2[1], "-", p2[2], ")")
+  gsub("\\s+", "", lbl)
+}
+
+
 #' Direction sentence for a simple contrast.
 #'
 #' @param label Character scalar, the auto-generated label.

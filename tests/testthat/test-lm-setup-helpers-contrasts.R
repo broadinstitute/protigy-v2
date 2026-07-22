@@ -136,3 +136,42 @@ test_that("new_contrast_row_id returns distinct ids across rapid calls", {
   ids <- replicate(20, new_contrast_row_id())
   expect_equal(length(unique(ids)), length(ids))
 })
+
+test_that("build_multi_expr assembles a nested diff-of-differences expression", {
+  expect_equal(
+    build_multi_expr("SubgroupGR4", "SubgroupGR3", "treatmentDrug", "treatmentVehicle"),
+    "(SubgroupGR4 - SubgroupGR3) - (treatmentDrug - treatmentVehicle)"
+  )
+})
+
+test_that("build_multi_expr returns empty when any slot is empty or NULL", {
+  expect_equal(build_multi_expr("", "b", "c", "d"), "")
+  expect_equal(build_multi_expr("a", "", "c", "d"), "")
+  expect_equal(build_multi_expr("a", "b", "", "d"), "")
+  expect_equal(build_multi_expr("a", "b", "c", ""), "")
+  expect_equal(build_multi_expr(NULL, "b", "c", "d"), "")
+})
+
+test_that("make_multi_label strips a shared prefix within each pair independently", {
+  expect_equal(
+    make_multi_label("genotypeWT", "genotypeKO", "treatmentDrug", "treatmentVehicle"),
+    "(WT-KO)-(Drug-Vehicle)"
+  )
+})
+
+test_that("make_multi_label keeps a pair verbatim when it shares no prefix", {
+  expect_equal(
+    make_multi_label("Drug", "Control", "treatmentDrug", "treatmentVehicle"),
+    "(Drug-Control)-(Drug-Vehicle)"
+  )
+})
+
+test_that("make_multi_label returns empty when any slot is empty or NULL", {
+  expect_equal(make_multi_label("", "b", "c", "d"), "")
+  expect_equal(make_multi_label("a", "b", "c", NULL), "")
+})
+
+test_that("make_multi_label output contains no whitespace", {
+  lbl <- make_multi_label("a b", "c", "d", "e")
+  expect_false(grepl("\\s", lbl))
+})
