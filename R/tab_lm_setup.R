@@ -379,15 +379,10 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
       include_intercept <- isTRUE(input$include_intercept)
 
-      # Parse interaction terms
-      interactions <- list()
-      if (!is.null(input$interaction_terms)) {
-        vars_list <- input$selected_variables
-        pairs <- combn(vars_list, 2, simplify = FALSE)
-        pair_labels <- sapply(pairs, function(p) paste(p[1], ":", p[2]))
-        selected_indices <- which(pair_labels %in% input$interaction_terms)
-        interactions <- pairs[selected_indices]
-      }
+      # Parse interaction terms. parse_interaction_terms() is crash-proof when
+      # the selection shrinks to a single variable while a stale (non-NULL)
+      # interaction_terms value persists -- it never calls combn() with < 2 vars.
+      interactions <- parse_interaction_terms(vars, input$interaction_terms)
 
       build_formula_string(vars, include_intercept, interactions)
     })
@@ -831,6 +826,29 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         )))
       }
     })
+
+    # Fresh start when the set of model variables changes. Contrast rows store
+    # design-coefficient names (e.g. "SubgroupB"); changing which variables are
+    # selected invalidates those coefficients, so stale num/den references would
+    # point at columns that no longer exist. Reseed to a single empty row and
+    # clear the (now stale) interaction selection, matching the "Clear all"
+    # state, so the user rebuilds contrasts against the new design. ignoreInit
+    # avoids wiping anything on module startup / first selection.
+    observeEvent(input$selected_variables, {
+      contrast_rows(list(list(
+        id = new_contrast_row_id(),
+        type = "simple",
+        num = "",
+        den = "",
+        advanced_expr = "",
+        label = "",
+        label_user_edited = FALSE
+      )))
+      # Drop the stale interaction picker selection so formula_string() and the
+      # fit never see an interaction referencing a removed variable.
+      shinyWidgets::updatePickerInput(session, "interaction_terms",
+                                      selected = character(0))
+    }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
     # Helper to stably derive the display id (C1, C2, ...) from position
     display_ids <- function(rows) {
@@ -1326,17 +1344,11 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       vtypes <- variable_types()
       gcts <- GCTs()
 
-      # Parse interactions
-      interactions <- list()
-      if (!is.null(input$interaction_terms) && !is.null(input$selected_variables)) {
-        vars_list <- input$selected_variables
-        if (length(vars_list) >= 2) {
-          pairs <- combn(vars_list, 2, simplify = FALSE)
-          pair_labels <- sapply(pairs, function(p) paste(p[1], ":", p[2]))
-          selected_indices <- which(pair_labels %in% input$interaction_terms)
-          interactions <- pairs[selected_indices]
-        }
-      }
+      # Parse interactions (shares the crash-proof helper with formula_string()
+      # so the fit's interaction set can never diverge from the previewed one).
+      interactions <- parse_interaction_terms(
+        input$selected_variables, input$interaction_terms
+      )
 
       # Build contrasts list from structured state (empty rows ignored).
       # Use the user-facing, whitespace-stripped `label` as the column key so
