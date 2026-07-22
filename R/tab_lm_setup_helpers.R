@@ -135,6 +135,40 @@ format_reference_level_annotation <- function(result) {
 }
 
 
+#' Caveat about how the intercept setting affects the chosen reference levels.
+#'
+#' Reference levels are treatment-coding baselines. When the intercept is
+#' included (`~ variables`), every factor is coded against its reference, so the
+#' choice matters for all of them and no caveat is needed. When the intercept is
+#' dropped (`~ 0 + variables`), R cell-means-codes only the *first* factor - its
+#' reference merely reorders columns and changes no test - while every other
+#' factor (and any interaction) stays treatment-coded, so their references still
+#' matter. This helper returns the user-facing note describing that coupling.
+#'
+#' @param include_intercept Logical scalar; the state of the "Include intercept"
+#'   checkbox.
+#' @param n_factors Integer count of factor variables in the model.
+#' @return Character scalar. Empty string when no caveat applies (intercept on,
+#'   or no factors).
+#' @export
+reference_level_intercept_note <- function(include_intercept, n_factors) {
+  if (isTRUE(include_intercept) || is.null(n_factors) || n_factors < 1) {
+    return("")
+  }
+  if (n_factors == 1) {
+    return(paste(
+      "With the intercept off, this factor is coded as group means, so its",
+      "reference level has no effect on the fitted model or its p-values."
+    ))
+  }
+  paste(
+    "With the intercept off, the first factor is coded as group means (its",
+    "reference level has no effect); other factors are still measured against",
+    "their reference, so their choices still matter."
+  )
+}
+
+
 #' Summarize how many samples will be dropped by `complete.cases` filtering.
 #'
 #' Given the working `cdesc` and the variables that participate in the design

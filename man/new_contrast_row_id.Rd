@@ -11,6 +11,6 @@ Character scalar id.
 }
 \description{
 Uses the current time plus a random integer to avoid collisions across
-quickly-successive clicks. Not globally unique — only unique within a
+quickly-successive clicks. Not globally unique -  only unique within a
 single Shiny session.
 }

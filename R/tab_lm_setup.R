@@ -492,11 +492,31 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       })
       controls <- controls[!vapply(controls, is.null, logical(1))]
       if (length(controls) == 0) return(NULL)
+      # Reactive caveat: when the intercept is off, the first factor is cell-means
+      # coded (its reference is inert) while other factors stay reference-coded.
+      # Reading input$include_intercept here keeps the note live with the toggle.
+      intercept_note <- reference_level_intercept_note(
+        include_intercept = isTRUE(input$include_intercept),
+        n_factors = length(controls)
+      )
+      note_ui <- if (nzchar(intercept_note)) {
+        tags$div(
+          style = paste(
+            "font-size: 0.9em; color: #8a6d3b; background: #fcf8e3;",
+            "border: 1px solid #faebcc; border-radius: 4px;",
+            "padding: 6px 8px; margin-bottom: 6px;"
+          ),
+          intercept_note
+        )
+      } else {
+        NULL
+      }
       tagList(
         h5(strong("Reference levels:")),
         tags$div(style = "font-size: 0.9em; color: #666; margin-bottom: 6px;",
                  "Pick which level should be the baseline for each factor. ",
                  "Other levels are measured relative to this one."),
+        note_ui,
         controls
       )
     })

@@ -10,7 +10,8 @@ lm.regression(
   variable_types = list(),
   blocking_var = NULL,
   contrasts_list = NULL,
-  intensity = FALSE
+  intensity = FALSE,
+  reference_levels = list()
 )
 }
 \arguments{
@@ -25,9 +26,15 @@ lm.regression(
 \item{contrasts_list}{Optional list of contrast strings for makeContrasts}
 
 \item{intensity}{Logical, whether data is intensity-based (enables eBayes trend)}
+
+\item{reference_levels}{Named list mapping factor variables to the user's chosen
+reference level (string). Unknown variable names or unknown levels are ignored
+with a warning so the user is not silently surprised.}
 }
 \value{
-A data.frame with rdesc columns, per-coefficient stats, and normalized values
+A data.frame with rdesc columns, per-coefficient stats, optional
+per-factor F-test columns (for variables with >1 non-intercept coefficient),
+and the original normalized sample values.
 }
 \description{
 Run limma linear model regression on a GCT object

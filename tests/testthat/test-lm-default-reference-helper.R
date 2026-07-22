@@ -157,3 +157,35 @@ test_that("annotation helper produces human-readable strings", {
     level = NA_character_, reason = "empty"
   )), "")
 })
+
+
+test_that("intercept note is empty when the intercept is included", {
+  # With an intercept, every factor is treatment-coded against its reference,
+  # so the reference matters for all of them - no caveat needed.
+  expect_identical(reference_level_intercept_note(TRUE, 1L), "")
+  expect_identical(reference_level_intercept_note(TRUE, 3L), "")
+})
+
+test_that("intercept-off note with a single factor says the reference is inert", {
+  # ~ 0 + A cell-means codes the ONLY factor: relevel just reorders columns and
+  # changes no test. The note must tell the user the reference has no effect.
+  note <- reference_level_intercept_note(FALSE, 1L)
+  expect_true(nzchar(note))
+  expect_match(note, "no effect|does not|ignored", ignore.case = TRUE)
+})
+
+test_that("intercept-off note with multiple factors scopes the caveat to the first factor", {
+  # ~ 0 + A + B: only A is cell-means coded; B (and interactions) are still
+  # treatment-coded, so their reference DOES matter. The note must not claim
+  # the reference is globally inert.
+  note <- reference_level_intercept_note(FALSE, 2L)
+  expect_true(nzchar(note))
+  expect_match(note, "first factor", ignore.case = TRUE)
+  expect_match(note, "other", ignore.case = TRUE)
+})
+
+test_that("intercept note tolerates zero factors", {
+  # Degenerate guard: no factors -> nothing to caption, regardless of intercept.
+  expect_identical(reference_level_intercept_note(FALSE, 0L), "")
+  expect_identical(reference_level_intercept_note(TRUE, 0L), "")
+})
