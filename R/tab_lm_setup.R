@@ -32,7 +32,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
     # Structured contrast state: list of rows, each with stable schema
     #   list(
-    #     id,             # stable internal key: "C1", "C2", ... — used as the
+    #     id,             # stable internal key: "C1", "C2", ... - used as the
     #                     # column prefix in the fitted contrasts matrix
     #     type,           # "simple" | "advanced"
     #     num,            # simple: design-matrix column name (numerator)
@@ -45,7 +45,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
     contrast_rows <- reactiveVal(list())
 
     # Which design-matrix coefficients the user wants to *display* in Results /
-    # Volcano tabs. Display-only filter — does NOT change the fitted model.
+    # Volcano tabs. Display-only filter - does NOT change the fitted model.
     coefficient_selection <- reactiveVal(character(0))
 
     ns <- session$ns
@@ -116,7 +116,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           tags$div(
             class = "lm-setup-col2",
             div(class = "stat-setup-controls",
-              # Model Formula moved to top for prominence — no top padding so
+              # Model Formula moved to top for prominence - no top padding so
               # the verbatim box top-aligns with col1's selectInput.
               tags$div(style = "padding-top: 0; padding-bottom: 6px;",
                 h5(strong("Model Formula:")),
@@ -168,7 +168,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
             style = "padding-top: 2px;",
             div(
               h5(strong("Design Matrix Preview (first 10 rows):")),
-              # Sample-count caption — tells the user when complete.cases() will
+              # Sample-count caption - tells the user when complete.cases() will
               # drop samples and which column(s) caused the drops.
               tags$div(
                 style = "font-size: 0.9em; color: #495057; margin-bottom: 6px;",
@@ -354,7 +354,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           title = paste(
             "Use this for repeated measures: pick the subject identifier",
             "(patient, donor, animal) when the same subject was measured",
-            "more than once. Avoid using a batch/plate variable here —",
+            "more than once. Avoid using a batch/plate variable here - ",
             "those are usually covariates, not blocking factors."
           ),
           placement = "right",
@@ -398,7 +398,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       f
     })
 
-    # Annotate blocking variable under the formula (informational — not R syntax)
+    # Annotate blocking variable under the formula (informational - not R syntax)
     output$blocking_formula_annotation <- renderUI({
       bv <- input$blocking_variable
       if (is.null(bv) || nchar(bv) == 0) return(NULL)
@@ -483,7 +483,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
               "The baseline level for this factor. Other levels are reported",
               "relative to the reference (e.g. for Treatment with reference",
               "\"Vehicle\", the coefficient \"TreatmentDrug\" reads as",
-              "Drug − Vehicle). Pick the biologically meaningful baseline."
+              "Drug - Vehicle). Pick the biologically meaningful baseline."
             ),
             placement = "right",
             trigger = "hover"
@@ -518,40 +518,33 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
     })
 
 
-    ## SHARED DESIGN MATRIX REACTIVE ##
-    # Single source of truth for design matrix used by preview, coefficient list,
-    # and contrast dropdowns. Returns NULL on any error.
-    design_matrix <- reactive({
+    ## SHARED DESIGN REACTIVE ##
+    # Single source of truth for the design matrix, shared with the actual fit:
+    # both the preview and lm.regression() call build_lm_design(), so what the
+    # user previews is exactly what will be fit (same complete-case dropping
+    # over formula + blocking vars, same single-level guard, same rank check,
+    # same empty-formula + blocking repeated-measures support). Returns the full
+    # structured result: $design, $cdesc_clean, $n_used/$n_total/$dropped,
+    # $repeated_measures_only, $warnings, $error.
+    design_built <- reactive({
       f <- formula_string()
-      if (is.null(f)) return(NULL)
       req(cdesc())
+      bv <- input$blocking_variable
+      if (!is.null(bv) && !nzchar(bv)) bv <- NULL
 
-      cdesc_work <- cdesc()
-      vtypes <- variable_types()
-      ref_levels <- reference_levels()
-      for (var_name in names(vtypes)) {
-        if (var_name %in% colnames(cdesc_work)) {
-          if (vtypes[[var_name]] == "factor") {
-            ff <- factor(cdesc_work[[var_name]])
-            ref <- ref_levels[[var_name]]
-            if (!is.null(ref) && as.character(ref) %in% levels(ff)) {
-              ff <- stats::relevel(ff, ref = as.character(ref))
-            }
-            cdesc_work[[var_name]] <- ff
-          } else {
-            cdesc_work[[var_name]] <- as.numeric(as.character(cdesc_work[[var_name]]))
-          }
-        }
-      }
-
-      model_vars <- all.vars(as.formula(f))
-      complete_mask <- complete.cases(cdesc_work[, model_vars, drop = FALSE])
-      cdesc_clean <- cdesc_work[complete_mask, , drop = FALSE]
-
-      tryCatch(
-        model.matrix(as.formula(f), data = cdesc_clean),
-        error = function(e) NULL
+      build_lm_design(
+        cdesc = cdesc(),
+        formula_string = if (is.null(f)) "" else f,
+        variable_types = variable_types(),
+        reference_levels = reference_levels(),
+        blocking_var = bv
       )
+    })
+
+    # Design matrix (or NULL on error) - kept for callers that only need the
+    # matrix (coefficient attribution, contrast dropdowns).
+    design_matrix <- reactive({
+      design_built()$design
     })
 
     # Sorted coefficient names for contrast dropdowns
@@ -563,16 +556,16 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
 
     ## SAMPLE DROP SUMMARY ##
-    # Renders "Using N of M samples (K dropped: missing 'Age')." above the
-    # design preview so users notice when complete.cases() filtering reduces
-    # the effective sample size.
+    # Renders "Using N of M samples (K dropped ...)" above the design preview so
+    # users notice when complete.cases() filtering reduces the effective sample
+    # size. Uses the SAME drop accounting the shared builder / fit apply.
     output$sample_drop_summary <- renderText({
       cd <- cdesc()
       f <- formula_string()
       bv <- input$blocking_variable
       if (is.null(cd)) return("")
-      # Variables that feed the complete.cases filter inside design_matrix() and
-      # lm.regression(): all formula vars plus the blocking variable (if any).
+      # Variables that feed the complete.cases filter inside build_lm_design()
+      # and lm.regression(): all formula vars plus the blocking variable (if any).
       vars <- character(0)
       if (!is.null(f) && nzchar(f)) {
         vars <- tryCatch(all.vars(as.formula(f)), error = function(e) character(0))
@@ -586,16 +579,35 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
 
     ## DESIGN MATRIX PREVIEW ##
+    # Faithful to the fit: on a fatal config the preview shows the SAME error the
+    # fit would stop() with (e.g. a factor collapsing to one level), and it
+    # surfaces non-fatal notices (rank deficiency, degenerate blocking) instead
+    # of hiding them. A valid empty-formula + blocking config previews its
+    # intercept-only design rather than "Could not build design matrix".
     output$design_matrix_preview <- DT::renderDataTable({
-      dm <- design_matrix()
-      if (is.null(dm)) {
+      built <- design_built()
+
+      if (!is.null(built$error)) {
         return(DT::datatable(
-          data.frame(Error = "Could not build design matrix. Check variable types."),
+          data.frame(Error = built$error),
           options = list(dom = "t")
         ))
       }
+
+      dm <- built$design
       preview <- as.data.frame(dm[seq_len(min(10, nrow(dm))), , drop = FALSE])
-      DT::datatable(preview, options = list(dom = "t", scrollX = TRUE, pageLength = 10))
+      caption <- NULL
+      if (length(built$warnings) > 0) {
+        caption <- htmltools::tags$caption(
+          style = "caption-side: top; color: #b45309; font-size: 90%;",
+          paste(built$warnings, collapse = " ")
+        )
+      }
+      DT::datatable(
+        preview,
+        caption = caption,
+        options = list(dom = "t", scrollX = TRUE, pageLength = 10)
+      )
     })
 
 
@@ -1044,9 +1056,9 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
 
     # Suggest all pairwise contrasts for a single-factor design.
     # Requirements:
-    #   - Exactly one variable is selected (the factor of interest).
-    #   - That variable is typed as a factor.
-    #   - The variable has >= 2 observed levels in `cdesc`.
+    # - Exactly one variable is selected (the factor of interest).
+    # - That variable is typed as a factor.
+    # - The variable has >= 2 observed levels in `cdesc`.
     # If preconditions aren't met, show a notification and do nothing.
     observeEvent(input$suggest_pairwise_contrasts, {
       vars <- input$selected_variables
@@ -1152,7 +1164,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       })
     })
 
-    # Remove a specific row — delegate via observer across all current row ids
+    # Remove a specific row - delegate via observer across all current row ids
     observe({
       rows <- contrast_rows()
       lapply(rows, function(r) {
@@ -1319,7 +1331,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         labels <- vapply(specs, `[[`, character(1), "label")
         ids    <- vapply(specs, `[[`, character(1), "id")
         types  <- vapply(specs, `[[`, character(1), "type")
-        # Ensure uniqueness — same label twice would collapse columns silently
+        # Ensure uniqueness - same label twice would collapse columns silently
         labels_unique <- make.unique(labels, sep = "_")
         contrasts_list <- setNames(exprs, labels_unique)
         # Full metadata for the export layer (workflow_table, JSON)
@@ -1367,7 +1379,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       }
       lm_param(current_params)
 
-      # Run the model — preserve results from other omes
+      # Run the model - preserve results from other omes
       test_results <- if (!is.null(lm_results()) && is.list(lm_results())) lm_results() else list()
 
       withProgress(message = "Fitting linear model", value = 0, {
@@ -1375,7 +1387,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           incProgress(1 / length(omes_to_run), detail = paste("Processing", ome))
 
           # Read the intensity flag for THIS ome (apply-to-all must not leak
-          # the selected ome's flag onto other omes — reviewer §2.4).
+          # the selected ome's flag onto other omes - reviewer section 2.4).
           ome_intensity <- pick_intensity_for_ome(parameters(), ome)
 
           result <- NULL

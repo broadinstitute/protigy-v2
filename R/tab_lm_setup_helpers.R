@@ -58,12 +58,12 @@ pick_intensity_for_ome <- function(parameters, ome) {
 #' @param values Character vector or factor of observed levels (one entry per
 #'   sample). NA and empty strings are dropped.
 #' @return A list with:
-#'   - `level`: chosen level (character) or `NA_character_` for empty input.
-#'   - `reason`: one of `"control_token"`, `"modal"`, `"tie_alphabetical"`,
+#' - `level`: chosen level (character) or `NA_character_` for empty input.
+#' - `reason`: one of `"control_token"`, `"modal"`, `"tie_alphabetical"`,
 #'     `"single"`, `"empty"`.
-#'   - `matched_token`: present only when `reason == "control_token"`; the
+#' - `matched_token`: present only when `reason == "control_token"`; the
 #'     lowercase token from `.lm_control_tokens` that matched.
-#'   - `n`: present only when `reason == "modal"`; the count for the modal level.
+#' - `n`: present only when `reason == "modal"`; the count for the modal level.
 #' @export
 pick_default_reference_level <- function(values) {
   if (is.null(values) || length(values) == 0) {
@@ -119,7 +119,7 @@ pick_default_reference_level <- function(values) {
 #'
 #' @param result Output of [pick_default_reference_level()].
 #' @return Character scalar. Empty string for `single` / `empty` (no useful
-#'   annotation in those cases — the picker can stay un-annotated).
+#'   annotation in those cases - the picker can stay un-annotated).
 #' @export
 format_reference_level_annotation <- function(result) {
   if (is.null(result) || is.null(result$reason)) return("")
@@ -151,13 +151,13 @@ format_reference_level_annotation <- function(result) {
 #'   ignored so callers don't have to pre-filter the formula's `all.vars()`
 #'   output against `colnames(cdesc)`.
 #' @return Either NULL or a list with:
-#'   - `n_total`: integer, `nrow(cdesc)`.
-#'   - `n_used`: integer, surviving rowcount.
-#'   - `n_dropped`: integer, `n_total - n_used`.
-#'   - `dropped_columns`: character vector of column names whose NAs caused
+#' - `n_total`: integer, `nrow(cdesc)`.
+#' - `n_used`: integer, surviving rowcount.
+#' - `n_dropped`: integer, `n_total - n_used`.
+#' - `dropped_columns`: character vector of column names whose NAs caused
 #'     drops, ordered by descending NA count (alphabetical tie-break). Empty
 #'     when nothing was dropped.
-#'   - `message`: one-line human-readable caption suitable for display above
+#' - `message`: one-line human-readable caption suitable for display above
 #'     the design-matrix preview.
 #' @export
 summarize_sample_drops <- function(cdesc, model_vars) {
@@ -237,6 +237,183 @@ build_formula_string <- function(variables, include_intercept = TRUE, interactio
 }
 
 
+#' Build the LM design matrix: single source of truth for preview and fit
+#'
+#' Constructs the design matrix exactly as [lm.regression()] does, so the
+#' on-screen design preview (in `tab_lm_setup`) and the actual fit can never
+#' disagree. It performs, in order: formula normalization (empty formula plus a
+#' blocking variable becomes intercept-only `~ 1`), per-variable coercion and
+#' reference releveling, complete-case sample dropping over the formula
+#' variables *and* the blocking variable, `droplevels` with a single-level
+#' guard, repeated-measures detection, and a rank-deficiency check.
+#'
+#' Diagnostics are returned as DATA, never signalled: `error` is a message
+#' string when no usable design can be built (or `NULL` on success), and
+#' `warnings` is a character vector of non-fatal notices (rank deficiency,
+#' missing/degenerate blocking). The preview renders these; [lm.regression()]
+#' re-raises them via `stop()`/`warning()`.
+#'
+#' @param cdesc Sample metadata `data.frame` (a GCT `cdesc`); row names are
+#'   sample ids.
+#' @param formula_string Model formula string; `""`/`NA`/`NULL` is allowed only
+#'   when `blocking_var` is set (repeated measures without groups).
+#' @param variable_types Named list mapping variable names to `"factor"` or
+#'   `"continuous"`.
+#' @param reference_levels Named list mapping factor variables to a chosen
+#'   reference level; unknown variables/levels are ignored.
+#' @param blocking_var Optional blocking variable name (a column in `cdesc`).
+#' @return A list with elements: `design` (numeric matrix or `NULL` on error),
+#'   `cdesc_clean` (filtered metadata or `NULL`), `n_used`, `n_total`,
+#'   `dropped` (count), `repeated_measures_only` (logical),
+#'   `warnings` (character vector), and `error` (message string or `NULL`).
+build_lm_design <- function(cdesc,
+                            formula_string,
+                            variable_types = list(),
+                            reference_levels = list(),
+                            blocking_var = NULL) {
+
+  warnings <- character(0)
+  n_total <- nrow(cdesc)
+
+  fail <- function(msg) {
+    list(design = NULL, cdesc_clean = NULL, n_used = 0L, n_total = n_total,
+         dropped = n_total, repeated_measures_only = FALSE,
+         warnings = warnings, error = msg)
+  }
+
+  # Empty formula is valid ONLY with a blocking variable (repeated measures
+  # without groups): the design is intercept-only. Otherwise it is an error.
+  if (is.null(formula_string) || is.na(formula_string) || !nzchar(formula_string)) {
+    if (!is.null(blocking_var)) {
+      formula_string <- "~ 1"
+    } else {
+      return(fail("No predictor variables provided."))
+    }
+  }
+
+  formula_obj <- tryCatch(
+    stats::as.formula(formula_string),
+    error = function(e) NULL
+  )
+  if (is.null(formula_obj)) {
+    return(fail(paste0("Invalid formula string '", formula_string, "'.")))
+  }
+  model_vars <- all.vars(formula_obj)
+
+  # A blocking variable must not also be a fixed effect.
+  if (!is.null(blocking_var) && blocking_var %in% model_vars) {
+    return(fail(paste0(
+      "Blocking variable '", blocking_var, "' cannot also appear in the model ",
+      "formula. Blocking variables model within-subject correlation as a random ",
+      "effect; they should not be included as fixed effects."
+    )))
+  }
+
+  # Coerce columns per variable_types, releveling factors to the chosen reference.
+  cdesc_work <- cdesc
+  for (var_name in names(variable_types)) {
+    if (var_name %in% colnames(cdesc_work)) {
+      if (variable_types[[var_name]] == "factor") {
+        f <- factor(cdesc_work[[var_name]])
+        ref <- reference_levels[[var_name]]
+        if (!is.null(ref) && nzchar(as.character(ref))) {
+          if (as.character(ref) %in% levels(f)) {
+            f <- stats::relevel(f, ref = as.character(ref))
+          } else {
+            warnings <- c(warnings, paste0(
+              "Ignoring reference level '", ref, "' for variable '", var_name,
+              "': not present among observed levels (",
+              paste(levels(f), collapse = ", "), ")."
+            ))
+          }
+        }
+        cdesc_work[[var_name]] <- f
+      } else if (variable_types[[var_name]] == "continuous") {
+        cdesc_work[[var_name]] <- as.numeric(as.character(cdesc_work[[var_name]]))
+      }
+    }
+  }
+
+  # Complete-case columns: formula vars PLUS the blocking var (if present).
+  if (!is.null(blocking_var) && blocking_var %in% colnames(cdesc_work)) {
+    model_vars_with_block <- unique(c(model_vars, blocking_var))
+  } else {
+    if (!is.null(blocking_var)) {
+      warnings <- c(warnings, paste0(
+        "Blocking variable '", blocking_var, "' not found in sample metadata. ",
+        "Proceeding without blocking - results may be statistically incorrect."
+      ))
+    }
+    model_vars_with_block <- model_vars
+  }
+
+  vars_for_complete <- if (length(model_vars) == 0 && !is.null(blocking_var) &&
+                             blocking_var %in% colnames(cdesc_work)) {
+    blocking_var
+  } else {
+    model_vars_with_block
+  }
+
+  complete_mask <- stats::complete.cases(
+    cdesc_work[, vars_for_complete, drop = FALSE]
+  )
+  cdesc_clean <- cdesc_work[complete_mask, , drop = FALSE]
+  n_used <- nrow(cdesc_clean)
+
+  # Drop unused factor levels; a factor collapsing to one level is fatal.
+  for (var_name in names(variable_types)) {
+    if (variable_types[[var_name]] == "factor" &&
+        var_name %in% colnames(cdesc_clean)) {
+      cdesc_clean[[var_name]] <- droplevels(cdesc_clean[[var_name]])
+      if (nlevels(cdesc_clean[[var_name]]) < 2) {
+        return(fail(paste0(
+          "Variable '", var_name, "' has only one level after filtering NAs. ",
+          "Remove it from the model or choose a different dataset."
+        )))
+      }
+    }
+  }
+
+  # Repeated-measures-without-groups: blocking var set, no formula predictors.
+  repeated_measures_only <- length(model_vars) == 0 &&
+    !is.null(blocking_var) &&
+    blocking_var %in% colnames(cdesc_clean)
+
+  design <- tryCatch(
+    if (repeated_measures_only) {
+      stats::model.matrix(~ 1, data = cdesc_clean)
+    } else {
+      stats::model.matrix(formula_obj, data = cdesc_clean)
+    },
+    error = function(e) NULL
+  )
+  if (is.null(design)) {
+    return(fail("Could not build design matrix. Check variable types."))
+  }
+
+  # Rank-deficiency preflight: warn before limma produces silent NA coefficients.
+  design_rank <- qr(design)$rank
+  if (design_rank < ncol(design)) {
+    warnings <- c(warnings, paste0(
+      "Design matrix is rank-deficient (rank ", design_rank, " < ", ncol(design),
+      " columns). Some coefficients will be NA. Consider removing redundant ",
+      "variables or interactions."
+    ))
+  }
+
+  list(
+    design = design,
+    cdesc_clean = cdesc_clean,
+    n_used = n_used,
+    n_total = n_total,
+    dropped = n_total - n_used,
+    repeated_measures_only = repeated_measures_only,
+    warnings = warnings,
+    error = NULL
+  )
+}
+
+
 #' Run limma linear model regression on a GCT object
 #'
 #' @param gct A GCT object
@@ -278,138 +455,49 @@ lm.regression <- function(gct,
     rdesc$id <- rownames(rdesc)
   }
 
-  # Allow empty formula when blocking_var is set (repeated measures without groups)
-  if (is.null(formula_string) || is.na(formula_string) || !nzchar(formula_string)) {
-    if (!is.null(blocking_var)) {
-      formula_string <- "~ 1"  # intercept-only placeholder
-    } else {
-      stop("No predictor variables provided.")
-    }
-  }
-
-  # Parse the formula to extract variable names
-  formula_obj <- tryCatch(
-    as.formula(formula_string),
-    error = function(e) stop("Invalid formula string '", formula_string, "': ", e$message)
+  # Build the design matrix via the SHARED builder so the fit and the on-screen
+  # preview cannot diverge. build_lm_design() performs formula normalization
+  # (empty formula + blocking -> intercept-only), variable coercion + reference
+  # releveling, complete-case dropping over formula vars PLUS the blocking var,
+  # droplevels with a single-level guard, repeated-measures detection, and the
+  # rank-deficiency check. It reports diagnostics as data; re-raise them here so
+  # lm.regression keeps its original stop()/warning() contract.
+  built <- build_lm_design(
+    cdesc = cdesc,
+    formula_string = formula_string,
+    variable_types = variable_types,
+    reference_levels = reference_levels,
+    blocking_var = blocking_var
   )
-  model_vars <- all.vars(formula_obj)
-
-  # Validate: blocking variable cannot also be a fixed effect.
-  # duplicateCorrelation treats the block as a random effect; a variable should
-  # be either a fixed-effect predictor OR a blocking random effect, not both.
-  if (!is.null(blocking_var) && blocking_var %in% model_vars) {
-    stop(
-      "Blocking variable '", blocking_var, "' cannot also appear in the model formula. ",
-      "Blocking variables model within-subject correlation as a random effect; ",
-      "they should not be included as fixed effects."
-    )
+  if (!is.null(built$error)) {
+    stop(built$error)
   }
+  for (w in built$warnings) warning(w)
 
-  # Coerce cdesc columns per variable_types. For factors, optionally relevel to
-  # the user-specified reference (so coefficient signs match the user's mental
-  # model rather than R's default alphabetical ordering).
-  cdesc_work <- cdesc
-  for (var_name in names(variable_types)) {
-    if (var_name %in% colnames(cdesc_work)) {
-      if (variable_types[[var_name]] == "factor") {
-        f <- factor(cdesc_work[[var_name]])
-        ref <- reference_levels[[var_name]]
-        if (!is.null(ref) && nzchar(as.character(ref))) {
-          if (as.character(ref) %in% levels(f)) {
-            f <- stats::relevel(f, ref = as.character(ref))
-          } else {
-            warning(
-              "Ignoring reference level '", ref, "' for variable '", var_name,
-              "': not present among observed levels (",
-              paste(levels(f), collapse = ", "), ")."
-            )
-          }
-        }
-        cdesc_work[[var_name]] <- f
-      } else if (variable_types[[var_name]] == "continuous") {
-        cdesc_work[[var_name]] <- as.numeric(as.character(cdesc_work[[var_name]]))
-      }
-    }
-  }
-
-  # Include blocking variable for complete.cases only if it exists in cdesc
-  if (!is.null(blocking_var) && blocking_var %in% colnames(cdesc_work)) {
-    model_vars_with_block <- unique(c(model_vars, blocking_var))
-  } else {
-    if (!is.null(blocking_var)) {
-      warning(
-        "Blocking variable '", blocking_var, "' not found in sample metadata. ",
-        "Proceeding without blocking — results may be statistically incorrect."
-      )
-    }
-    model_vars_with_block <- model_vars
-  }
-
-  # When formula has no vars, complete.cases uses only blocking_var
-  vars_for_complete <- if (length(model_vars) == 0 && !is.null(blocking_var) &&
-                            blocking_var %in% colnames(cdesc_work)) {
-    blocking_var
-  } else {
-    model_vars_with_block
-  }
-
-  # Remove samples with NA in any model variable (including blocking var)
-  complete_mask <- complete.cases(cdesc_work[, vars_for_complete, drop = FALSE])
-  cdesc_clean <- cdesc_work[complete_mask, , drop = FALSE]
+  design <- built$design
+  cdesc_clean <- built$cdesc_clean
+  repeated_measures_only <- built$repeated_measures_only
   mat_clean <- mat[, rownames(cdesc_clean), drop = FALSE]
-
-  # Drop unused factor levels that may remain after complete-case filtering,
-  # and validate that each factor still has at least two levels.
-  for (var_name in names(variable_types)) {
-    if (variable_types[[var_name]] == "factor" &&
-        var_name %in% colnames(cdesc_clean)) {
-      cdesc_clean[[var_name]] <- droplevels(cdesc_clean[[var_name]])
-      if (nlevels(cdesc_clean[[var_name]]) < 2) {
-        stop(
-          "Variable '", var_name, "' has only one level after filtering NAs. ",
-          "Remove it from the model or choose a different dataset."
-        )
-      }
-    }
-  }
-
-  # Detect repeated-measures-without-groups mode:
-  # blocking var is set but no predictors in formula
-  repeated_measures_only <- length(model_vars) == 0 &&
-    !is.null(blocking_var) &&
-    blocking_var %in% colnames(cdesc_clean)
 
   block <- NULL
   correlation <- NULL
 
   if (repeated_measures_only) {
     # Repeated-measures without groups: blocking var is the subject ID.
-    # Use intercept-only design; duplicateCorrelation estimates within-subject
-    # correlation; lmFit accounts for it via block + correlation.
+    # duplicateCorrelation estimates within-subject correlation; lmFit accounts
+    # for it via block + correlation. (The intercept-only design and the >=2
+    # blocking-level guarantee both come from build_lm_design.)
     sampleRepeats <- droplevels(factor(cdesc_clean[[blocking_var]]))
     if (nlevels(sampleRepeats) < 2) {
       stop("Blocking variable '", blocking_var, "' has fewer than 2 levels after filtering; ",
            "cannot estimate within-subject correlation.")
     }
-    design <- model.matrix(~ 1, data = cdesc_clean)
     dupcor <- limma::duplicateCorrelation(mat_clean, design, block = sampleRepeats)
     correlation <- dupcor$consensus.correlation
     block <- sampleRepeats
     fit <- limma::lmFit(mat_clean, design, block = block, correlation = correlation)
   } else {
-    # Normal path: use formula_string design matrix
-    design <- model.matrix(formula_obj, data = cdesc_clean)
-
-    # Rank-deficiency preflight: warn before limma produces silent NA coefficients.
-    design_rank <- qr(design)$rank
-    if (design_rank < ncol(design)) {
-      warning(
-        "Design matrix is rank-deficient (rank ", design_rank, " < ", ncol(design),
-        " columns). Some coefficients will be NA. Consider removing redundant ",
-        "variables or interactions."
-      )
-    }
-
+    # Normal path: the shared design is already built and rank-checked.
     if (!is.null(blocking_var) && blocking_var %in% colnames(cdesc_clean)) {
       block <- droplevels(factor(cdesc_clean[[blocking_var]]))
       n_block_levels <- nlevels(block)
@@ -526,7 +614,7 @@ lm.regression <- function(gct,
   }
 
   # Determine which coefficients to extract.
-  # Exclude "(Intercept)" when no contrasts are specified — it tests only the
+  # Exclude "(Intercept)" when no contrasts are specified - it tests only the
   # grand mean vs. zero, which is not a differential comparison of interest.
   coef_names <- colnames(fit$coefficients)
   if (is.null(contrasts_list) || length(contrasts_list) == 0) {
@@ -629,7 +717,7 @@ attribute_design_coefs <- function(pre_contrast_coefs, variable_types) {
     parts <- strsplit(coef, ":", fixed = TRUE)[[1]]
     matched <- vapply(parts, match_var, character(1), vars = var_names)
     if (any(is.na(matched))) {
-      # Unrecognised coef (e.g. continuous variable name itself) — skip from
+      # Unrecognised coef (e.g. continuous variable name itself) - skip from
       # per-factor F-tests; per-coef t-test is already emitted.
       next
     }
