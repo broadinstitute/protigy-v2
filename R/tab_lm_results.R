@@ -490,6 +490,17 @@ lmResults_Ome_Server <- function(id,
       nom_pvals <- get_lm_pvals(ome, lm_results(), coef, "P.Value")
       suggestion <- suggest_alpha_level(nom_pvals)
       if (!is.na(suggestion$alpha)) {
+        # The suggestion is derived from the NOMINAL p-value distribution
+        # (a KS-uniformity scan of the tail), so applying it must also move
+        # the active statistic onto the nominal scale. Otherwise a
+        # nominal-derived cutoff is applied against the adjusted-p scale.
+        # Write both fields directly into lm_params (single source of truth);
+        # the update*Input calls only keep the on-screen widgets in sync.
+        current <- lm_params()
+        current[[ome]]$stat <- "nom.p.val"
+        current[[ome]]$cutoff <- suggestion$alpha
+        lm_params(current)
+        updateSelectInput(session, "select_stat", selected = "nom.p.val")
         updateNumericInput(session, "select_cutoff_text", value = suggestion$alpha)
       }
     })
