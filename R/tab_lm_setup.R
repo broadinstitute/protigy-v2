@@ -34,13 +34,15 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
     #   list(
     #     id,             # stable internal key: "C1", "C2", ... - used as the
     #                     # column prefix in the fitted contrasts matrix
-    #     type,           # "simple" | "advanced"
-    #     num,            # simple: design-matrix column name (numerator)
-    #     den,            # simple: design-matrix column name (denominator)
-    #     advanced_expr,  # advanced: free-text limma contrast expression
+    #     type,           # "simple" (1x1) | "multi" (2x2)
+    #     num,            # slot A: design-matrix column name (numerator)
+    #     den,            # slot B: design-matrix column name (denominator)
+    #     num2,           # multi slot C: design-matrix column name
+    #     den2,           # multi slot D: design-matrix column name
     #     label,          # human-readable; default auto-generated, editable
     #     label_user_edited  # bool: true means don't auto-regenerate on level change
     #   )
+    # simple expr = num - den; multi expr = (num - den) - (num2 - den2).
     # Empty rows are kept and ignored at submit time.
     contrast_rows <- reactiveVal(list())
 
@@ -759,11 +761,6 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
              font-size: 12px;
            }
            .lm-contrast-card .type-radio .radio-inline { margin-left: 10px; }
-           .lm-contrast-card .direction-sentence {
-             font-style: italic; color: #495057; font-size: 12px;
-             padding: 2px 6px; background: #eef3f8; border-radius: 3px;
-             margin-top: 4px;
-           }
            .lm-contrast-card .expr-preview {
              font-family: monospace; color: #495057; font-size: 11px;
              padding: 2px 6px; background: #f0f0f0; border-radius: 3px;
@@ -780,30 +777,17 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           "Each contrast card builds one linear combination of model coefficients, ",
           "tested AFTER fitting. Contrasts add columns to the results keyed by your ",
           "editable label (e.g. \"Drug-Vehicle\"). Use ",
-          tags$b("Simple"), " for one-coefficient-vs-one-coefficient differences, or ",
-          tags$b("Advanced"), " for interaction / weighted / multi-coef expressions ",
-          "like ", tags$code("(A - B) - (C - D)"), ". Empty cards are ignored at run time."
+          tags$b("Single coef (1x1)"), " for a one-coefficient-vs-one-coefficient ",
+          "difference, or ", tags$b("Multi coef (2x2)"),
+          " to build a difference-of-differences (interaction) contrast ",
+          tags$code("(A - B) - (C - D)"), " from four coefficient dropdowns. ",
+          "Empty cards are ignored at run time."
         ),
         uiOutput(ns("contrast_rows_ui")),
         div(
           style = "display: flex; justify-content: flex-start; margin-top: 10px; gap: 16px; flex-wrap: wrap;",
-          actionButton(ns("add_contrast"), "+ Add Simple",
+          actionButton(ns("add_contrast"), "+ Add contrast",
                        class = "btn btn-sm btn-default"),
-          actionButton(ns("add_contrast_advanced"), "+ Add Advanced",
-                       class = "btn btn-sm btn-default"),
-          actionButton(ns("suggest_pairwise_contrasts"),
-                       "+ Suggest all pairwise",
-                       class = "btn btn-sm btn-default"),
-          shinyBS::bsTooltip(
-            ns("suggest_pairwise_contrasts"),
-            title = paste0(
-              "Insert one Simple card for every level-vs-level pair of the ",
-              "selected factor. Works only when exactly one factor variable ",
-              "is in the model."
-            ),
-            placement = "top",
-            trigger = "hover"
-          ),
           actionButton(ns("clear_contrasts"), "Clear all",
                        class = "btn btn-sm btn-danger")
         ),
@@ -820,7 +804,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           type = "simple",
           num = "",
           den = "",
-          advanced_expr = "",
+          num2 = "",
+          den2 = "",
           label = "",
           label_user_edited = FALSE
         )))
@@ -840,7 +825,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         type = "simple",
         num = "",
         den = "",
-        advanced_expr = "",
+        num2 = "",
+        den2 = "",
         label = "",
         label_user_edited = FALSE
       )))
@@ -861,7 +847,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       rows <- contrast_rows()
       coefs <- design_coefs()
       if (length(rows) == 0) {
-        return(helpText("No contrasts defined. Click '+ Add Simple' to add one."))
+        return(helpText("No contrasts defined. Click '+ Add contrast' to add one."))
       }
 
       # Simple num/den dropdowns exclude "(Intercept)": subtracting or ratioing
@@ -880,51 +866,77 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         type_id  <- paste0("type_", r$id)
         num_id   <- paste0("num_",  r$id)
         den_id   <- paste0("den_",  r$id)
+        num2_id  <- paste0("num2_", r$id)
+        den2_id  <- paste0("den2_", r$id)
         swap_id  <- paste0("swap_", r$id)
-        expr_id  <- paste0("expr_", r$id)
         label_id <- paste0("label_", r$id)
         rm_id    <- paste0("rm_",    r$id)
 
-        # Build type-specific panel
-        if (identical(r$type, "advanced")) {
-          # Advanced panel: free-text expression
-          advanced_panel <- tagList(
-            tags$label(
-              tags$span(style = "font-weight: 600;", "Contrast expression:"),
-              tags$span(style = "font-size: 11px; color: #6c757d; margin-left: 6px;",
-                        "(refer to design coefficients shown on the right)")
-            ),
-            textAreaInput(ns(expr_id), label = NULL, value = r$advanced_expr %||% "",
-                          width = "100%", rows = 2,
-                          placeholder = "e.g. (groupA.X - groupA.Y) - (groupB.X - groupB.Y)")
+        # A single labelled coefficient dropdown, reused across slots.
+        coef_dropdown <- function(input_id, lbl_text, selected_val) {
+          tags$div(
+            tags$label(lbl_text, style = "font-size: 12px; color: #6c757d; margin-bottom: 2px;"),
+            selectizeInput(ns(input_id), label = NULL,
+                           choices = choices, selected = selected_val %||% "",
+                           options = list(placeholder = "choose coefficient"),
+                           width = "100%")
           )
-          expr_for_preview <- sanitize_label(r$advanced_expr %||% "")
-          # Validate
-          validation <- validate_advanced_expr(r$advanced_expr %||% "", coefs)
+        }
+        minus_glyph <- function() {
+          tags$div(style = "text-align: center; font-weight: bold; font-size: 16px; padding-top: 18px;", "\u2212")
+        }
+
+        # Build type-specific panel + preview expr + validation
+        if (identical(r$type, "multi")) {
+          # Multi (2x2) panel: four dropdowns wired into (A - B) - (C - D).
+          slot_panel <- tagList(
+            tags$div(
+              style = "font-size: 12px; color: #6c757d; margin-bottom: 4px;",
+              "( A \u2212 B ) \u2212 ( C \u2212 D )  \u2014  difference of differences"
+            ),
+            div(
+              style = paste(
+                "display: grid;",
+                "grid-template-columns: 1fr 24px 1fr;",
+                "align-items: center; column-gap: 8px; margin-bottom: 6px;"
+              ),
+              coef_dropdown(num_id,  "A", r$num),
+              minus_glyph(),
+              coef_dropdown(den_id,  "B", r$den)
+            ),
+            tags$div(style = "text-align: center; font-weight: bold; font-size: 16px; margin: 2px 0;", "\u2212"),
+            div(
+              style = paste(
+                "display: grid;",
+                "grid-template-columns: 1fr 24px 1fr;",
+                "align-items: center; column-gap: 8px;"
+              ),
+              coef_dropdown(num2_id, "C", r$num2),
+              minus_glyph(),
+              coef_dropdown(den2_id, "D", r$den2)
+            )
+          )
+          expr_for_preview <- build_multi_expr(r$num %||% "", r$den %||% "",
+                                                r$num2 %||% "", r$den2 %||% "")
+          slots <- c(r$num %||% "", r$den %||% "", r$num2 %||% "", r$den2 %||% "")
+          if (any(!nzchar(slots))) {
+            validation <- list(ok = FALSE, message = "(choose all four coefficients A, B, C, D)",
+                               unknown = character(0))
+          } else {
+            validation <- validate_advanced_expr(expr_for_preview, coefs)
+          }
         } else {
-          # Simple panel: numerator / denominator dropdowns + swap
-          advanced_panel <- div(
+          # Single (1x1) panel: numerator / denominator dropdowns + swap
+          slot_panel <- div(
             style = paste(
               "display: grid;",
               "grid-template-columns: 1fr 24px 1fr 40px;",
               "align-items: center;",
               "column-gap: 8px;"
             ),
-            tags$div(
-              tags$label("Numerator", style = "font-size: 12px; color: #6c757d; margin-bottom: 2px;"),
-              selectizeInput(ns(num_id), label = NULL,
-                             choices = choices, selected = r$num %||% "",
-                             options = list(placeholder = "choose coefficient"),
-                             width = "100%")
-            ),
-            tags$div(style = "text-align: center; font-weight: bold; font-size: 16px; padding-top: 18px;", "\u2212"),
-            tags$div(
-              tags$label("Denominator", style = "font-size: 12px; color: #6c757d; margin-bottom: 2px;"),
-              selectizeInput(ns(den_id), label = NULL,
-                             choices = choices, selected = r$den %||% "",
-                             options = list(placeholder = "choose coefficient"),
-                             width = "100%")
-            ),
+            coef_dropdown(num_id, "Numerator", r$num),
+            minus_glyph(),
+            coef_dropdown(den_id, "Denominator", r$den),
             tags$div(
               style = "text-align: center; padding-top: 18px;",
               actionButton(ns(swap_id), label = NULL,
@@ -934,7 +946,6 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
             )
           )
           expr_for_preview <- build_simple_expr(r$num %||% "", r$den %||% "")
-          # Validate: both must be non-empty AND present in design coefs
           if (!nzchar(r$num %||% "") || !nzchar(r$den %||% "")) {
             validation <- list(ok = FALSE, message = "(choose numerator and denominator)",
                                unknown = character(0))
@@ -949,18 +960,10 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         # Compute effective label (auto or user-edited)
         effective_label <- if (isTRUE(r$label_user_edited) && nzchar(r$label %||% "")) {
           r$label
-        } else if (identical(r$type, "advanced")) {
-          # Default advanced label: the id + truncated expr
-          if (nzchar(r$advanced_expr %||% "")) sanitize_label(r$advanced_expr) else ""
+        } else if (identical(r$type, "multi")) {
+          make_multi_label(r$num %||% "", r$den %||% "", r$num2 %||% "", r$den2 %||% "")
         } else {
           make_simple_label(r$num %||% "", r$den %||% "")
-        }
-
-        # Direction sentence (only meaningful for simple)
-        dir_sent <- if (identical(r$type, "simple") && validation$ok) {
-          direction_sentence_simple(effective_label, r$num, r$den)
-        } else {
-          ""
         }
 
         card_class <- if (validation$ok) "lm-contrast-card valid" else "lm-contrast-card invalid"
@@ -975,7 +978,8 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
               class = "type-radio",
               style = "margin-bottom: 0;",
               radioButtons(ns(type_id), label = NULL,
-                           choices = c("Simple" = "simple", "Advanced" = "advanced"),
+                           choices = c("Single coef (1x1)" = "simple",
+                                       "Multi coef (2x2)" = "multi"),
                            selected = r$type %||% "simple",
                            inline = TRUE)
             ),
@@ -988,7 +992,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
           ),
 
           # Type-specific body
-          advanced_panel,
+          slot_panel,
 
           # Label input (always editable)
           div(
@@ -1003,9 +1007,6 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                       width = "100%",
                       placeholder = "auto-generated from numerator/denominator")
           ),
-
-          # Direction sentence (simple only)
-          if (nzchar(dir_sent)) div(class = "direction-sentence", dir_sent),
 
           # Expr preview
           if (nzchar(expr_for_preview)) div(class = "expr-preview",
@@ -1035,43 +1036,50 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       if (length(rows) == 0) return()
       changed <- FALSE
       new_rows <- lapply(rows, function(r) {
-        # Type radio
+        # Type radio. On an actual mode switch, clear ALL slots (both modes
+        # share num/den; multi adds num2/den2) so no stale value carries across
+        # the Single<->Multi shape change.
         type_val <- input[[paste0("type_", r$id)]]
         if (!is.null(type_val) && !identical(type_val, r$type)) {
           r$type <- type_val
+          r$num <- ""; r$den <- ""; r$num2 <- ""; r$den2 <- ""
+          if (!isTRUE(r$label_user_edited)) r$label <- ""
           changed <<- TRUE
+          # Skip reading the (now-stale) slot inputs this cycle; the re-render
+          # will repopulate empty dropdowns.
+          return(r)
         }
-        # Simple fields
-        if (identical(r$type, "simple")) {
-          num_val <- input[[paste0("num_", r$id)]]
-          den_val <- input[[paste0("den_", r$id)]]
-          if (!is.null(num_val) && !identical(num_val, r$num)) {
-            r$num <- num_val; changed <<- TRUE
-          }
-          if (!is.null(den_val) && !identical(den_val, r$den)) {
-            r$den <- den_val; changed <<- TRUE
-          }
+        # Slot A/B (both modes)
+        num_val <- input[[paste0("num_", r$id)]]
+        den_val <- input[[paste0("den_", r$id)]]
+        if (!is.null(num_val) && !identical(num_val, r$num)) {
+          r$num <- num_val; changed <<- TRUE
         }
-        # Advanced field
-        if (identical(r$type, "advanced")) {
-          expr_val <- input[[paste0("expr_", r$id)]]
-          if (!is.null(expr_val) && !identical(expr_val, r$advanced_expr %||% "")) {
-            r$advanced_expr <- expr_val; changed <<- TRUE
+        if (!is.null(den_val) && !identical(den_val, r$den)) {
+          r$den <- den_val; changed <<- TRUE
+        }
+        # Slot C/D (multi only)
+        if (identical(r$type, "multi")) {
+          num2_val <- input[[paste0("num2_", r$id)]]
+          den2_val <- input[[paste0("den2_", r$id)]]
+          if (!is.null(num2_val) && !identical(num2_val, r$num2)) {
+            r$num2 <- num2_val; changed <<- TRUE
+          }
+          if (!is.null(den2_val) && !identical(den2_val, r$den2)) {
+            r$den2 <- den2_val; changed <<- TRUE
           }
         }
         # Label input
         label_val <- input[[paste0("label_", r$id)]]
         if (!is.null(label_val)) {
           label_clean <- sanitize_label(label_val)
-          # Compute what the auto label would be right now
-          auto_label <- if (identical(r$type, "simple")) {
-            make_simple_label(r$num %||% "", r$den %||% "")
+          auto_label <- if (identical(r$type, "multi")) {
+            make_multi_label(r$num %||% "", r$den %||% "", r$num2 %||% "", r$den2 %||% "")
           } else {
-            sanitize_label(r$advanced_expr %||% "")
+            make_simple_label(r$num %||% "", r$den %||% "")
           }
           if (!identical(label_clean, r$label %||% "")) {
             r$label <- label_clean
-            # If the new label differs from the auto-label, flag as user-edited
             r$label_user_edited <- !identical(label_clean, auto_label)
             changed <<- TRUE
           }
@@ -1087,85 +1095,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
                       list(list(id = new_contrast_row_id(),
                                 type = "simple",
                                 num = "", den = "",
-                                advanced_expr = "",
-                                label = "",
-                                label_user_edited = FALSE))))
-    })
-
-    # Suggest all pairwise contrasts for a single-factor design.
-    # Requirements:
-    # - Exactly one variable is selected (the factor of interest).
-    # - That variable is typed as a factor.
-    # - The variable has >= 2 observed levels in `cdesc`.
-    # If preconditions aren't met, show a notification and do nothing.
-    observeEvent(input$suggest_pairwise_contrasts, {
-      vars <- input$selected_variables
-      vtypes <- variable_types()
-      cd <- cdesc()
-      if (is.null(vars) || length(vars) != 1) {
-        showNotification(
-          "Suggest pairwise contrasts: select exactly one factor variable.",
-          type = "warning", duration = 4
-        )
-        return()
-      }
-      v <- vars[[1]]
-      if (is.null(vtypes[[v]]) || vtypes[[v]] != "factor") {
-        showNotification(
-          "Suggest pairwise contrasts: the selected variable must be a factor.",
-          type = "warning", duration = 4
-        )
-        return()
-      }
-      if (is.null(cd) || !(v %in% colnames(cd))) {
-        showNotification(
-          "Suggest pairwise contrasts: variable not found in sample metadata.",
-          type = "error", duration = 4
-        )
-        return()
-      }
-      lv <- levels(factor(cd[[v]]))
-      if (length(lv) < 2) {
-        showNotification(
-          "Suggest pairwise contrasts: variable has fewer than 2 levels.",
-          type = "warning", duration = 4
-        )
-        return()
-      }
-      new_rows <- enumerate_pairwise_simple_rows(
-        factor_levels = lv,
-        variable_name = v,
-        include_intercept = isTRUE(input$include_intercept)
-      )
-      if (length(new_rows) == 0) {
-        showNotification("No pairwise contrasts to add.", type = "warning",
-                         duration = 3)
-        return()
-      }
-      # If the current list has only one empty seed row, replace it; otherwise
-      # append.
-      cur <- contrast_rows()
-      is_seed <- length(cur) == 1 &&
-        identical(cur[[1]]$type, "simple") &&
-        !nzchar(cur[[1]]$num %||% "") &&
-        !nzchar(cur[[1]]$den %||% "")
-      if (isTRUE(is_seed)) {
-        contrast_rows(new_rows)
-      } else {
-        contrast_rows(c(cur, new_rows))
-      }
-      showNotification(paste0("Added ", length(new_rows), " pairwise contrasts."),
-                       type = "message", duration = 3)
-    })
-
-
-    # Add Advanced contrast card
-    observeEvent(input$add_contrast_advanced, {
-      contrast_rows(c(contrast_rows(),
-                      list(list(id = new_contrast_row_id(),
-                                type = "advanced",
-                                num = "", den = "",
-                                advanced_expr = "",
+                                num2 = "", den2 = "",
                                 label = "",
                                 label_user_edited = FALSE))))
     })
@@ -1175,7 +1105,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       contrast_rows(list(list(id = new_contrast_row_id(),
                               type = "simple",
                               num = "", den = "",
-                              advanced_expr = "",
+                              num2 = "", den2 = "",
                               label = "",
                               label_user_edited = FALSE)))
     })
@@ -1227,12 +1157,13 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       specs <- lapply(seq_along(rows), function(i) {
         r <- rows[[i]]
         did <- dids[i]
-        if (identical(r$type, "advanced")) {
-          e <- r$advanced_expr %||% ""
-          if (!nzchar(trimws(e))) return(NULL)
+        if (identical(r$type, "multi")) {
+          slots <- c(r$num %||% "", r$den %||% "", r$num2 %||% "", r$den2 %||% "")
+          if (any(!nzchar(slots))) return(NULL)
+          e <- build_multi_expr(r$num, r$den, r$num2, r$den2)
           lbl <- if (isTRUE(r$label_user_edited) && nzchar(r$label %||% ""))
-                    r$label else sanitize_label(e)
-          list(id = did, label = lbl, expr = e, type = "advanced")
+                    r$label else make_multi_label(r$num, r$den, r$num2, r$den2)
+          list(id = did, label = lbl, expr = e, type = "multi")
         } else {
           if (!nzchar(r$num %||% "") || !nzchar(r$den %||% "")) return(NULL)
           if (identical(r$num, r$den)) return(NULL)

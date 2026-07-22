@@ -6,7 +6,6 @@
 #  - Auto-generate readable labels from numerator/denominator design coefs
 #  - Strip common variable prefix so labels look like "Drug-Vehicle" rather
 #     than "treatmentDrug-treatmentVehicle" when a shared prefix is detected.
-#  - Direction sentence to explain the sign of log2FC
 #
 # Naming conventions (see plan):
 #   "-"  between the two sides of a single-variable contrast (num minus den)
