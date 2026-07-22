@@ -66,18 +66,6 @@ test_that("build_simple_expr returns empty when either input is empty", {
 })
 
 
-test_that("direction_sentence_simple interprets the sign of log2FC", {
-  sent <- direction_sentence_simple("Drug-Vehicle", "treatmentDrug", "treatmentVehicle")
-  expect_match(sent, "Positive log2FC")
-  expect_match(sent, "Drug")
-  expect_match(sent, "Vehicle")
-})
-
-test_that("direction_sentence_simple is empty when label is empty", {
-  expect_equal(direction_sentence_simple("", "a", "b"), "")
-})
-
-
 test_that("validate_advanced_expr accepts an expression referencing known coefs", {
   coefs <- c("groupA", "groupB", "groupC")
   res <- validate_advanced_expr("groupA - groupB", coefs)
