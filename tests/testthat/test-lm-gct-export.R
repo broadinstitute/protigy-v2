@@ -42,7 +42,7 @@ test_that("build_lm_stat_gct produces an SSGSEA-ready GCT", {
   # All feature ids are preserved as rid.
   expect_equal(gct@rid, df$id)
   # rdesc carries everything that isn't a logSignP column (including the raw
-  # sample columns and the other per-coef stats — those are NOT in @mat).
+  # sample columns and the other per-coef stats - those are NOT in @mat).
   expect_true("geneSymbol" %in% colnames(gct@rdesc))
   expect_true("logFC.cond_B" %in% colnames(gct@rdesc))
   expect_false(any(startsWith(colnames(gct@rdesc), "logSignP.")))

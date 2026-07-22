@@ -35,7 +35,7 @@ get_lm_pvals <- function(ome, lm_results, coefficient, pval_type = c("adj.P.Val"
 #' so for each candidate alpha in seq(0.01, 0.10, by=0.01), we test whether the
 #' tail (p > alpha) is uniform on (alpha, 1) via a KS test. The lowest alpha
 #' whose tail is not rejected is returned. Note: the returned value is advisory
-#' only — it is NOT a principled FDR estimator. For a statistically rigorous
+#' only - it is NOT a principled FDR estimator. For a statistically rigorous
 #' null-proportion estimate, see `qvalue::pi0est`.
 #'
 #' @param pvals Numeric vector of NOMINAL p-values (NAs already removed)

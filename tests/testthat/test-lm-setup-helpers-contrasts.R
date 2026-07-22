@@ -26,7 +26,7 @@ test_that("strip_shared_prefix handles empty inputs without error", {
 })
 
 test_that("strip_shared_prefix does not over-strip when one is a prefix of the other", {
-  # e.g. "Drug" and "DrugHigh" — stripping "Drug" would leave "" for the first
+  # e.g. "Drug" and "DrugHigh" - stripping "Drug" would leave "" for the first
   expect_equal(
     strip_shared_prefix("Drug", "DrugHigh"),
     c("Drug", "DrugHigh")

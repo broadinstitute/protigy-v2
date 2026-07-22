@@ -8,15 +8,15 @@
 # the golden was produced by the same buggy path) would still be caught here.
 #
 # Coverage (driven by the gt_* fixtures in tests/lm-sandbox/data/):
-#   1. Null calibration   — gt_pure_null: nominal p ~ Uniform(0,1); FDR control.
-#   2. Sign & magnitude   — gt_sign_convention: contrast logFC == planted shift.
-#   3. Recovery / power    — gt_power_recovery: sensitivity on true positives,
+#   1. Null calibration   -  gt_pure_null: nominal p ~ Uniform(0,1); FDR control.
+#   2. Sign & magnitude   -  gt_sign_convention: contrast logFC == planted shift.
+#   3. Recovery / power    -  gt_power_recovery: sensitivity on true positives,
 #                            specificity on true nulls.
-#   4. Blocking behaviour  — gt_blocking: duplicateCorrelation blocking recovers
+#   4. Blocking behaviour  -  gt_blocking: duplicateCorrelation blocking recovers
 #                            within-subject effects that the unblocked fit misses.
-#   5. Structural invariants — row order, NA handling, monotone FDR, sign of
+#   5. Structural invariants - row order, NA handling, monotone FDR, sign of
 #                            logSignP, reference-level algebra.
-#   6. Graceful degradation — gt_rank_deficient: warns, does not crash.
+#   6. Graceful degradation - gt_rank_deficient: warns, does not crash.
 #
 # Thresholds are deliberately loose around the observed (seeded) values so the
 # tests assert the *statistical property*, not a brittle exact number.
@@ -84,16 +84,16 @@ test_that("pure null: nominal p-values are uniform and well-calibrated", {
   expect_gt(length(p), 1000)  # the full feature set survives
 
   # Under the global null, nominal p-values are Uniform(0,1):
-  #   - mean ~ 0.5
-  #   - a KS test against the uniform should NOT reject
-  #   - the fraction below alpha should be ~ alpha
+  #  - mean ~ 0.5
+  #  - a KS test against the uniform should NOT reject
+  #  - the fraction below alpha should be ~ alpha
   expect_equal(mean(p), 0.5, tolerance = 0.05)
   ks_p <- suppressWarnings(stats::ks.test(p, "punif"))$p.value
   expect_gt(ks_p, 0.01)                       # not rejected as non-uniform
   expect_lt(abs(mean(p < 0.05) - 0.05), 0.02) # type-I rate near nominal 0.05
 })
 
-test_that("pure null: BH-FDR controls false discoveries (≈ none expected)", {
+test_that("pure null: BH-FDR controls false discoveries (~ none expected)", {
   fx <- load_gt("gt_pure_null")
   res <- lm.regression(
     gct = wrap_gct(fx),
@@ -198,7 +198,7 @@ test_that("power recovery: planted features are detected; nulls are not", {
   adj <- res$adj.P.Val.conditionTrt
 
   # Sensitivity: with shift=2, sigma=1, n=6/group, BH across 1000 features and
-  # eBayes shrinkage, ~70% of true positives clear BH 5% (≈80% at BH 10%). This
+  # eBayes shrinkage, ~70% of true positives clear BH 5% (~80% at BH 10%). This
   # matches the analytic power for this SNR; assert a healthy floor, not a number
   # the seed happens to hit exactly.
   sensitivity <- mean(adj[tp] < 0.05)

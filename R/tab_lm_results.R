@@ -357,7 +357,7 @@ lmResults_Ome_Server <- function(id,
         # Render each contrast as "<label>: <expr>" so the user sees both the
         # readable name and the limma expression that defines it. Colon has
         # no space around it to keep rows compact, and entries are separated
-        # by " | " (pipe with spaces) — safer in table cells than ";".
+        # by " | " (pipe with spaces) - safer in table cells than ";".
         contrast_lines <- paste0(names(params$contrasts), ": ", params$contrasts)
         descriptions <- c(descriptions, "Contrasts")
         values <- c(values, paste(contrast_lines, collapse = " | "))
@@ -616,7 +616,7 @@ lmResults_Ome_Server <- function(id,
       )
     }
 
-    # SSGSEA-ready GCT export — mirrors tab_stat_summary.R dual-export pattern.
+    # SSGSEA-ready GCT export - mirrors tab_stat_summary.R dual-export pattern.
     # Silent no-op if the results frame has no `logSignP.<coef>` columns
     # (e.g. an F-only model would skip this).
     lm_results_gct_export <- function(dir_name) {

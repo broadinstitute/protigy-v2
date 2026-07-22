@@ -34,7 +34,7 @@ test_that("lm.regression rejects a blocking var that is also a fixed effect", {
       gct = gct,
       formula_string = "~ group + time",
       variable_types = list(group = "factor", time = "factor"),
-      blocking_var = "group",  # ← overlap with formula
+      blocking_var = "group",  # <- overlap with formula
       contrasts_list = NULL,
       intensity = FALSE
     ),

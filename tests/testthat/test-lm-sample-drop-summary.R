@@ -1,15 +1,15 @@
 ################################################################################
-# Tests for summarize_sample_drops() — pure helper backing the "Using N of M
+# Tests for summarize_sample_drops() - pure helper backing the "Using N of M
 # samples..." caption above the design-matrix preview.
 #
 # Given the working cdesc, the variables that feed `complete.cases`, and the
 # total cdesc row count, the helper reports:
-#   - n_total: input rowcount
-#   - n_used:  rowcount after complete.cases over the model + blocking vars
-#   - n_dropped
-#   - dropped_columns: character vector of variable names whose NAs caused
+#  - n_total: input rowcount
+#  - n_used:  rowcount after complete.cases over the model + blocking vars
+#  - n_dropped
+#  - dropped_columns: character vector of variable names whose NAs caused
 #     drops, sorted by descending NA count then alphabetical
-#   - message: a one-line human-readable string used as the caption
+#  - message: a one-line human-readable string used as the caption
 ################################################################################
 
 library(testthat)

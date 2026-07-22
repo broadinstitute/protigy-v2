@@ -1,5 +1,5 @@
 ################################################################################
-# Tests for pick_default_reference_level() — the heuristic that chooses a
+# Tests for pick_default_reference_level() - the heuristic that chooses a
 # defensible default reference level for a factor variable.
 #
 # Rule chain:
@@ -108,7 +108,7 @@ test_that("works with factor input", {
 
 
 test_that("control token match wins even when it's not the modal level", {
-  # Drug appears 5x, Vehicle only 2x — Vehicle still wins because of token rule.
+  # Drug appears 5x, Vehicle only 2x - Vehicle still wins because of token rule.
   res <- pick_default_reference_level(c(rep("Drug", 5), rep("Vehicle", 2)))
   expect_identical(res$level, "Vehicle")
   expect_identical(res$reason, "control_token")

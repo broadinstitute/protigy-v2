@@ -1,7 +1,7 @@
 ################################################################################
 # Phase 3: intensity flag per-ome consumption.
 #
-# Reviewer §2.4: when `Apply to all datasets` is active, `intensity_param` is
+# Reviewer section 2.4: when `Apply to all datasets` is active, `intensity_param` is
 # read once OUTSIDE the per-ome loop at tab_lm_setup.R:1077, so every ome ends
 # up using the selected ome's `intensity` setting even if other omes have a
 # different setting in `parameters()[[ome]]$intensity`.

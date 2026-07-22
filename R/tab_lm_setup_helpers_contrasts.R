@@ -2,11 +2,11 @@
 # Module: LM_Setup Contrast Builder Helpers
 #
 # Pure helpers for the redesigned contrast builder:
-#   - id/label/expr three-field model for contrasts
-#   - Auto-generate readable labels from numerator/denominator design coefs
-#   - Strip common variable prefix so labels look like "Drug-Vehicle" rather
+#  - id/label/expr three-field model for contrasts
+#  - Auto-generate readable labels from numerator/denominator design coefs
+#  - Strip common variable prefix so labels look like "Drug-Vehicle" rather
 #     than "treatmentDrug-treatmentVehicle" when a shared prefix is detected.
-#   - Direction sentence to explain the sign of log2FC
+#  - Direction sentence to explain the sign of log2FC
 #
 # Naming conventions (see plan):
 #   "-"  between the two sides of a single-variable contrast (num minus den)
@@ -42,7 +42,7 @@ strip_shared_prefix <- function(num, den) {
   if (common == 0L) return(c(num, den))
   # Only strip if both remainders are non-empty (otherwise prefix == whole
   # string, meaning the two tokens are identical or one is a prefix of the
-  # other — don't strip in those cases).
+  # other -  don't strip in those cases).
   if (common >= nchar(num) || common >= nchar(den)) return(c(num, den))
   # Also guard: prefix must look like a variable name (letters, digits, dots,
   # underscores). Otherwise don't strip.
@@ -56,9 +56,9 @@ strip_shared_prefix <- function(num, den) {
 #' Auto-generate a readable label from a numerator and denominator design coef.
 #'
 #' Rules:
-#'   - strip shared prefix (e.g. "treatmentDrug"/"treatmentVehicle" -> "Drug"/"Vehicle")
-#'   - join with "-" (per user naming convention)
-#'   - strip any whitespace
+#'  - strip shared prefix (e.g. "treatmentDrug"/"treatmentVehicle" -> "Drug"/"Vehicle")
+#'  - join with "-" (per user naming convention)
+#'  - strip any whitespace
 #'
 #' @param num Character scalar, numerator design-column name.
 #' @param den Character scalar, denominator design-column name.
@@ -213,7 +213,7 @@ enumerate_pairwise_simple_rows <- function(factor_levels,
 #' Generate a fresh row id for contrast state.
 #'
 #' Uses the current time plus a random integer to avoid collisions across
-#' quickly-successive clicks. Not globally unique — only unique within a
+#' quickly-successive clicks. Not globally unique -  only unique within a
 #' single Shiny session.
 #' @return Character scalar id.
 new_contrast_row_id <- function() {
