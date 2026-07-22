@@ -850,10 +850,10 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
         return(helpText("No contrasts defined. Click '+ Add contrast' to add one."))
       }
 
-      # Simple num/den dropdowns exclude "(Intercept)": subtracting or ratioing
-      # the grand-mean term against a group coefficient is not a meaningful
-      # between-group contrast. Advanced mode still sees the full `coefs` set
-      # (its validator must match the real design, intercept included).
+      # Slot dropdowns (Single and Multi) exclude "(Intercept)": subtracting or
+      # ratioing the grand-mean term against a group coefficient is not a
+      # meaningful between-group contrast. The `coefs` set passed to the
+      # validator still includes the intercept, so it matches the real design.
       simple_coefs <- setdiff(coefs, "(Intercept)")
       choices <- c(setNames("", "\u2014 choose \u2014"),
                    setNames(simple_coefs, simple_coefs))
@@ -1089,7 +1089,7 @@ lmSetup_Tab_Server <- function(id = "lmSetupTab", GCTs_and_params, globals, pare
       if (changed) contrast_rows(new_rows)
     })
 
-    # Add Simple contrast card
+    # Add a contrast card (seeds as Single; user can switch to Multi)
     observeEvent(input$add_contrast, {
       contrast_rows(c(contrast_rows(),
                       list(list(id = new_contrast_row_id(),

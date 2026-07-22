@@ -37,10 +37,10 @@ make_globals <- function() {
 configured_rows <- function() {
   list(list(id = "row_1", type = "simple",
             num = "PAM50LumA", den = "PAM50Basal",
-            advanced_expr = "", label = "LumA-Basal", label_user_edited = FALSE),
+            num2 = "", den2 = "", label = "LumA-Basal", label_user_edited = FALSE),
        list(id = "row_2", type = "simple",
             num = "PAM50LumB", den = "PAM50Basal",
-            advanced_expr = "", label = "LumB-Basal", label_user_edited = FALSE))
+            num2 = "", den2 = "", label = "LumB-Basal", label_user_edited = FALSE))
 }
 
 
