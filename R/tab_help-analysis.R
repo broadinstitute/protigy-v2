@@ -37,7 +37,14 @@ helpAnalysisTabUI <- function(id = "helpTab") {
           tabPanel(
             "Statistics",
             includeMarkdown(
-              system.file("help_documentation/protigy_statistics_help.md", 
+              system.file("help_documentation/protigy_statistics_help.md",
+                          package = "Protigy")
+            )
+          ),
+          tabPanel(
+            "Linear Model",
+            includeMarkdown(
+              system.file("help_documentation/protigy_linear_model_help.md",
                           package = "Protigy")
             )
           ),
