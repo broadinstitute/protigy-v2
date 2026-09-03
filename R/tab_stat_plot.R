@@ -914,6 +914,20 @@ statPlot_Ome_Server <- function(id,
     
 
     ## COMPILE EXPORTS ##
+
+    # proteins_of_interest()/label_mode_for_contrast()/top_n_sig() all key off
+    # current_contrast_key(), which req()s input$volcano_contrasts /
+    # input$volcano_groups. Those inputs are only bound once the user has
+    # actually opened THIS ome's Volcano Plot tab in the browser (Shiny
+    # suspends rendering for hidden tabs by default). A user who runs the
+    # stats test and exports right away, without ever visiting that tab, used
+    # to hit an empty shiny.silent.error here -- aborting the whole export
+    # item and leaving a 0-page PDF with no indication of why. Fall back to
+    # `default` (no manual per-contrast overrides) instead of throwing.
+    safe_export_isolate <- function(expr, default) {
+      tryCatch(isolate(expr), error = function(e) default)
+    }
+
     volcano_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
       
@@ -933,8 +947,8 @@ statPlot_Ome_Server <- function(id,
       pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       on.exit(dev.off(), add = TRUE)
 
-      label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
-      n_top_export      <- isolate(top_n_sig())
+      label_mode_export <- safe_export_isolate(label_mode_for_contrast(), character(0)) %||% character(0)
+      n_top_export      <- safe_export_isolate(top_n_sig(), 20L)
       label_column_export <- isolate(input$label_column)        %||% "id"
       label_split_export  <- isTRUE(isolate(input$label_split_enabled))
       label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
@@ -977,7 +991,7 @@ statPlot_Ome_Server <- function(id,
         },
         {
           # "none"  -  use only the current contrast's POI for export
-          isolate(proteins_of_interest())
+          safe_export_isolate(proteins_of_interest(), character(0))
         }
       )
       # Force "poi" into label_mode when union is active and produced IDs.
@@ -1052,11 +1066,11 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
+        label_mode_export <- safe_export_isolate(label_mode_for_contrast(), character(0)) %||% character(0)
         label_column_export <- isolate(input$label_column)        %||% "id"
         label_split_export  <- isTRUE(isolate(input$label_split_enabled))
         label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
-        poi <- isolate(proteins_of_interest())
+        poi <- safe_export_isolate(proteins_of_interest(), character(0))
 
         show_poi <- "poi" %in% label_mode_export
         show_sig <- "significant" %in% label_mode_export
@@ -1081,7 +1095,7 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
-        n_top_csv <- isolate(top_n_sig())
+        n_top_csv <- safe_export_isolate(top_n_sig(), 20L)
 
         # Effective POI: per-contrast union when union mode is on.
         effective_poi_csv <- switch(

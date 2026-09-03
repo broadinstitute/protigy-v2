@@ -331,15 +331,33 @@ multiomeHeatmapTabServer <- function(
     
     ## function for exporting
     multiome_heatmap_export_function <- function(dir_path) {
+      # HM.out() throws via validate() when no genes have been typed into
+      # Multi-ome > Heatmap (or merged_rdesc()/merged_mat()/sample_anno()
+      # aren't ready, or min/max are invalid). Nothing populates a gene list
+      # during a headless export, so calling HM.out() directly used to abort
+      # this export item on EVERY export with a bare "Input genes to see
+      # results" and no visible sign anywhere in the app that it had failed.
+      # Skip cleanly instead (mirrors qc_corr_heatmap_export_function's
+      # pattern for single-sample omes), reusing the same need() checks
+      # HM.out() uses but without validate()'s throw.
+      not_ready <- need(merged_rdesc(), "x") %then%
+        need(merged_mat(), "x") %then%
+        need(sample_anno(), "x") %then%
+        need(HM.params()$genes.char, "x") %then%
+        need(HM.params()$min.val < HM.params()$max.val, "x")
+      if (!is.null(not_ready)) {
+        return(invisible(NULL))
+      }
+
       req(HM.out()$HM)
-      
+
       # Use special dimensions for multi-ome heatmap
       pdf_params <- get_pdf_params("multiome_heatmap")
       pdf(file = file.path(dir_path, "multiome-heatmap.pdf"),
           width = pdf_params$width,
           height = pdf_params$height)
+      on.exit(dev.off(), add = TRUE)
       draw_multiome_HM(HM.out()$HM)
-      dev.off()
     }
 
     return(list(multi_ome = list(
