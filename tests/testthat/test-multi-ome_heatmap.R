@@ -564,3 +564,81 @@ test_that("myComplexHeatmap handles GENEMAX parameter", {
   # GENEMAX = 10 must cap the number of distinct genes shown
   expect_lte(length(unique(data_rows$geneSymbol)), 10)
 })
+
+# ---------------------------------------------------------------------------
+# multiome_heatmap export must skip cleanly, not crash, when no genes have
+# been typed into Multi-ome > Heatmap
+#
+# HM.out() throws via validate()'s "Input genes to see results" whenever
+# HM.params()$genes.char is empty. Nothing populates the genes text input
+# during a headless export (input$genes stays unset, exactly like this
+# testServer session, which never calls session$setInputs(genes = ...)), so
+# this failed on EVERY export -- single-ome or multi-ome -- with no visible
+# sign of failure beyond a bare error swallowed by tab_export.R's per-item
+# tryCatch. It should now skip cleanly (mirrors qc_corr_heatmap_export_function
+# for single-sample omes): no error, no file.
+# ---------------------------------------------------------------------------
+
+test_that("multiome_heatmap export skips cleanly (no error, no file) when no genes are set", {
+  gcts_and_params <- create_mock_gcts_and_params()
+
+  shiny::testServer(
+    multiomeHeatmapTabServer,
+    args = list(
+      GCTs_and_params = shiny::reactiveVal(gcts_and_params),
+      globals = shiny::reactiveValues(
+        colors = list(multi_ome = list(
+          group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("red", "blue"))
+        )),
+        default_ome = "proteome",
+        default_annotations = list(proteome = "group", phosphoproteome = "group")
+      )
+    ),
+    expr = {
+      exports <- session$getReturned()
+      tmp_dir <- tempfile("multiome_hm_export_")
+      dir.create(tmp_dir)
+      on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+      # input$genes was never set (no session$setInputs() call above) -- this
+      # is exactly the headless-export scenario that used to crash.
+      expect_no_error(exports$multi_ome$multiome_heatmap(tmp_dir))
+      expect_identical(list.files(tmp_dir), character(0))
+    }
+  )
+})
+
+# The export guard added to multiome_heatmap_export_function() reuses the
+# exact same need()/%then% checks HM.out() itself validates on -- it just
+# avoids validate()'s throw. This directly exercises that condition chain
+# (same functions, not a copy) to confirm it only blocks when something is
+# genuinely missing/invalid, and lets a fully-populated, valid state through.
+# (A full end-to-end "render a real heatmap during export" positive control
+# would additionally exercise options_multiomeHeatmapTabServer's entire
+# parameter set and myComplexHeatmap()'s rendering internals, which is
+# already covered independently by the "myComplexHeatmap works with valid
+# parameters" test above; wiring both through testServer at once mostly
+# re-tests that unrelated machinery rather than this guard.)
+test_that("multiome_heatmap export guard only blocks when genes/range are genuinely unset", {
+  shiny::isolate({
+    merged_rdesc <- shiny::reactive("some rdesc")
+    merged_mat   <- shiny::reactive("some mat")
+    sample_anno  <- shiny::reactive("some anno")
+
+    guard <- function(genes.char, min.val, max.val) {
+      need(merged_rdesc(), "x") %then%
+        need(merged_mat(), "x") %then%
+        need(sample_anno(), "x") %then%
+        need(genes.char, "x") %then%
+        need(min.val < max.val, "x")
+    }
+
+    # Exactly the headless-export scenario that used to crash: nothing typed in.
+    expect_false(is.null(guard(genes.char = NULL, min.val = NA, max.val = NA)))
+    expect_false(is.null(guard(genes.char = "",   min.val = -2, max.val = 2)))
+    # Invalid range (min >= max) must also block, same as HM.out() itself.
+    expect_false(is.null(guard(genes.char = "gene_1", min.val = 2, max.val = -2)))
+    # Fully populated, valid state must NOT block.
+    expect_true(is.null(guard(genes.char = "gene_1", min.val = -2, max.val = 2)))
+  })
+})

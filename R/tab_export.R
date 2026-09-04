@@ -177,6 +177,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
 
         success_exports <- c()
         error_exports <- c()
+        error_messages <- list()  # item path (ome/tab/name) -> failure reason, for the summary notification
         
         # EXP-5: snapshot each selected tab's export object ONCE here, so the
         # progress pre-loop and the write loop below both read from the snapshot
@@ -235,24 +236,28 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
               # M11: capture success/failure from the tryCatch RESULT, not from a
               # dir.exists() probe. `exports_in_tab_path` is the tab folder created
               # at :219 -- it always exists, so the old `!file.exists()` check could
-              # never detect a failed export. `expr` returns TRUE on success;
-              # `return.error = FALSE` is the sentinel a caught error returns.
-              export_ok <- my_shinyalert_tryCatch(
-                text.error = paste0("<b>Export Failed for ", p_name, ":</b>"),
-                append.error = TRUE,
-                show.error = FALSE,  # Don't show popup for individual export failures
-                return.error = FALSE,
-                expr = {
-                  # save the plot using the p() function
-                  p(exports_in_tab_path)
-                  TRUE
-                }
-              )
+              # never detect a failed export.
+              # Use a plain tryCatch (not my_shinyalert_tryCatch) so we can keep the
+              # actual failure reason: my_shinyalert_tryCatch with show.error = FALSE
+              # discarded cond$message entirely, so a failed item only ever showed up
+              # in the server console (via its message()/cat() calls), never in the
+              # app -- the final notification below only had the item's path, with no
+              # way to tell the user *why* it failed.
+              export_result <- tryCatch({
+                # save the plot using the p() function
+                p(exports_in_tab_path)
+                list(ok = TRUE, message = NULL)
+              }, error = function(cond) {
+                message("Export failed for ", p_name, ": ", conditionMessage(cond))
+                list(ok = FALSE, message = conditionMessage(cond))
+              })
 
-              if (isTRUE(export_ok)) {
-                success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+              item_path <- file.path(ome, tab_name, p_name)
+              if (isTRUE(export_result$ok)) {
+                success_exports <<- c(success_exports, item_path)
               } else {
-                error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
+                error_exports <<- c(error_exports, item_path)
+                error_messages[[item_path]] <<- export_result$message
               }
               
             }
@@ -268,22 +273,38 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         zip::zip(file, file.path(dir_name, list.files(exports_dir)), 
                  recurse = TRUE, root = zip_dir)
         
-        # Show notification for exports that succeeded and errored
+        # Show notification for exports that succeeded and errored.
+        # When there ARE failures, lead with that fact (don't bury it under
+        # "successfully saved!") and use type = "warning" so it's visually
+        # distinct from a clean success -- previously both cases used the same
+        # blue "message" notification, so a partial failure looked identical
+        # to a full success unless the user scrolled through the item list.
         if (length(error_exports) == 0) {
           notification_ui <- HTML("<div>Analysis results successfully saved!</div>")
+          notification_type <- "message"
         } else {
+          error_items_html <- vapply(error_exports, function(item) {
+            reason <- error_messages[[item]]
+            reason_html <- if (!is.null(reason) && nzchar(reason)) {
+              paste0(" &mdash; <em>", reason, "</em>")
+            } else {
+              ""
+            }
+            paste0("<li>", item, reason_html, "</li>")
+          }, character(1))
+
           notification_ui <- HTML(paste0(
             "<div style='text-align: left'>",
-            "Analysis results successfully saved!<br><br>",
-            "<strong>Could not save:</strong><br>",
-            "<ul><li>",
-            paste(error_exports, collapse = "</li><li>"),
-            "</li></ul></div>"
+            "<strong>", length(error_exports), " export item(s) could not be saved.</strong> ",
+            "Everything else was saved successfully.<br><br>",
+            "<strong>Could not save:</strong>",
+            "<ul>", paste(error_items_html, collapse = ""), "</ul></div>"
           ))
+          notification_type <- "warning"
         }
         showNotification(
           ui = notification_ui,
-          type = "message",
+          type = notification_type,
           duration = NULL,
           closeButton = TRUE
         )

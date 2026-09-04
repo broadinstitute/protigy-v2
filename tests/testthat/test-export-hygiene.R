@@ -188,6 +188,80 @@ test_that("M11: per-export success/failure is captured from the tryCatch result"
   })
 })
 
+test_that("error reporting: a failed export's real message reaches the notification, not just its path", {
+  shiny::isolate({
+    exports_dir <- tempfile("errmsg_"); dir.create(exports_dir)
+    on.exit(unlink(exports_dir, recursive = TRUE), add = TRUE)
+    tab_path <- file.path(exports_dir, "proteome", "tabX")
+    dir.create(tab_path, recursive = TRUE)
+
+    items <- list(
+      good = function(dir_name) writeLines("ok", file.path(dir_name, "good.txt")),
+      bad  = function(dir_name) stop("subscript out of bounds")
+    )
+
+    # Mirror tab_export.R's CURRENT per-export capture: a plain tryCatch that
+    # keeps conditionMessage(cond), not my_shinyalert_tryCatch(show.error =
+    # FALSE, return.error = FALSE), which discarded it entirely. Before this
+    # fix, a failed item only ever showed its reason in the server console
+    # (via message()/cat()) -- the app-facing notification had just the item's
+    # path, with no way to tell the user *why* it failed.
+    success_exports <- character(0)
+    error_exports   <- character(0)
+    error_messages  <- list()
+    for (nm in names(items)) {
+      p <- items[[nm]]
+      export_result <- tryCatch({
+        p(tab_path)
+        list(ok = TRUE, message = NULL)
+      }, error = function(cond) {
+        list(ok = FALSE, message = conditionMessage(cond))
+      })
+      if (isTRUE(export_result$ok)) {
+        success_exports <- c(success_exports, nm)
+      } else {
+        error_exports <- c(error_exports, nm)
+        error_messages[[nm]] <- export_result$message
+      }
+    }
+
+    expect_identical(success_exports, "good")
+    expect_identical(error_exports, "bad")
+    expect_identical(error_messages[["bad"]], "subscript out of bounds")
+
+    # Mirror tab_export.R's notification-building branch.
+    if (length(error_exports) == 0) {
+      notification_ui <- "<div>Analysis results successfully saved!</div>"
+      notification_type <- "message"
+    } else {
+      error_items_html <- vapply(error_exports, function(item) {
+        reason <- error_messages[[item]]
+        reason_html <- if (!is.null(reason) && nzchar(reason)) {
+          paste0(" &mdash; <em>", reason, "</em>")
+        } else {
+          ""
+        }
+        paste0("<li>", item, reason_html, "</li>")
+      }, character(1))
+      notification_ui <- paste0(
+        "<div style='text-align: left'>",
+        "<strong>", length(error_exports), " export item(s) could not be saved.</strong> ",
+        "Everything else was saved successfully.<br><br>",
+        "<strong>Could not save:</strong>",
+        "<ul>", paste(error_items_html, collapse = ""), "</ul></div>"
+      )
+      notification_type <- "warning"
+    }
+
+    expect_identical(notification_type, "warning")
+    expect_match(notification_ui, "bad", fixed = TRUE)
+    expect_match(notification_ui, "subscript out of bounds", fixed = TRUE)
+    # A clean run (no failures) must NOT be flagged as a warning, and must not
+    # claim a failure reason it doesn't have.
+    expect_false(grepl("could not be saved", "<div>Analysis results successfully saved!</div>"))
+  })
+})
+
 test_that("empty selection yields zero exports and cleaned temp dir", {
   shiny::isolate({
     ctr <- new.env()

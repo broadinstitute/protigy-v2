@@ -1,7 +1,7 @@
 ################################################################################
-# Tests: volcano plot UI controls
+# Tests: volcano plot UI controls, and the volcano/labeled-feature exports
 #
-# Both tests use shiny::testServer() with injected mock data  -  no browser,
+# All tests use shiny::testServer() with injected mock data  -  no browser,
 # no real statistics run, fully deterministic.
 #
 # Test 1  -  sidebar controls
@@ -11,6 +11,16 @@
 # Test 2  -  POI list layout
 #   Triggers the feature search, then inspects output$poi_list_ui HTML to
 #   confirm the scroll container and Clear-all button are structured correctly.
+#
+# Tests 3-4  -  export regression tests (never-visited Volcano Plot tab)
+#   volcano_plot_export_function()/labeled_volcano_csv_export_function() used
+#   to depend on input$volcano_contrasts (via current_contrast_key()), which is
+#   only bound once a user has actually opened this ome's Volcano Plot tab
+#   (Shiny suspends rendering for hidden tabs by default). A user who ran the
+#   stats test and exported immediately -- without ever visiting that tab --
+#   hit an empty shiny.silent.error and got a 0-page PDF with no visible sign
+#   of failure. These tests deliberately never call session$setInputs() for
+#   volcano_contrasts/volcano_groups, reproducing exactly that scenario.
 ################################################################################
 
 library(testthat)
@@ -146,6 +156,58 @@ test_that("volcano POI list has scrollable container with Clear all outside it (
     expect_true(
       n_close >= n_open,
       info = "clear_all_poi must appear outside (not nested inside) the scroll div"
+    )
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Test 3: volcano_plot export must not crash when the Volcano Plot tab was
+# never visited (input$volcano_contrasts never bound)
+# ---------------------------------------------------------------------------
+
+test_that("volcano_plot export does not crash when the Volcano Plot tab was never visited", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_export_")
+    dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # input$volcano_contrasts is deliberately left unset here -- that is
+    # exactly the scenario that used to throw an empty shiny.silent.error and
+    # leave a 0-page PDF (see current_contrast_key() in tab_stat_plot.R).
+    expect_no_error(suppressWarnings(exports$volcano_plot(tmp_dir)))
+
+    pdf_file <- file.path(tmp_dir, "volcano_plots_Proteome.pdf")
+    expect_true(file.exists(pdf_file))
+    expect_gt(file.info(pdf_file)$size, 0)
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Test 4: labeled-feature CSV export must skip cleanly (not crash) in the
+# same never-visited-tab scenario
+# ---------------------------------------------------------------------------
+
+test_that("labeled-feature CSV export skips cleanly (not a crash) when the Volcano Plot tab was never visited", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_csv_export_")
+    dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # This function already wrapped its body in its own tryCatch, so a crash
+    # here never propagated to the caller -- it just logged "...failed for
+    # ome..." to the console while silently producing no CSV. Since no label
+    # criteria were ever configured (registries are empty, exactly as they'd
+    # be for a session where that tab was never opened), the function should
+    # now hit its existing, unrelated "skipped...enable at least one label
+    # option" early-return -- never the "failed" message.
+    msgs <- testthat::capture_messages(
+      suppressWarnings(exports$proteins_of_interest(tmp_dir))
+    )
+    expect_false(
+      any(grepl("^Volcano labeled export failed", msgs)),
+      info = paste(msgs, collapse = "\n")
     )
   })
 })
