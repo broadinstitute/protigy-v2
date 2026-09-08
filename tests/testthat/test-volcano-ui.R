@@ -29,6 +29,23 @@ library(testthat)
 # Helpers shared by both tests
 # ---------------------------------------------------------------------------
 
+# Count the pages a PDF declares. The broken export produced a structurally
+# valid but EMPTY pdf (header, catalog, /Count 0) that still passed a
+# size > 0 check, so page count is the assertion that actually distinguishes
+# a working export from the bug this file exists to guard.
+#
+# The file has embedded NULs and non-UTF8 bytes, so rawToChar() on the whole
+# thing errors -- search the raw vector and decode only a short window.
+pdf_page_count <- function(path) {
+  rb <- readBin(path, "raw", file.info(path)$size)
+  hits <- grepRaw("/Type /Pages", rb, all = TRUE, fixed = TRUE)
+  if (length(hits) == 0L) return(NA_integer_)
+  window <- rawToChar(rb[hits[1]:min(hits[1] + 200L, length(rb))])
+  m <- regmatches(window, regexpr("/Count[[:space:]]+([0-9]+)", window))
+  if (length(m) == 0L) return(NA_integer_)
+  as.integer(sub("/Count[[:space:]]+", "", m))
+}
+
 make_mock_stat_params <- function() {
   list(
     Proteome = list(
@@ -179,7 +196,11 @@ test_that("volcano_plot export does not crash when the Volcano Plot tab was neve
 
     pdf_file <- file.path(tmp_dir, "volcano_plots_Proteome.pdf")
     expect_true(file.exists(pdf_file))
-    expect_gt(file.info(pdf_file)$size, 0)
+    # NOT expect_gt(size, 0): the BROKEN export produced a valid 3,611-byte PDF
+    # with zero pages, so a size check passes either way. One page per contrast
+    # is the assertion that fails when the export aborts.
+    n_contrasts <- length(make_mock_stat_params()$Proteome$contrasts)
+    expect_identical(pdf_page_count(pdf_file), n_contrasts)
   })
 })
 
@@ -209,5 +230,59 @@ test_that("labeled-feature CSV export skips cleanly (not a crash) when the Volca
       any(grepl("^Volcano labeled export failed", msgs)),
       info = paste(msgs, collapse = "\n")
     )
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Multi-contrast export: one page per contrast, all of them.
+#
+# The single-contrast fixture above distinguishes 1 page from 0. This one also
+# catches a PARTIAL export -- an abort part-way through the contrast loop, which
+# would still yield a non-empty PDF and a passing 1-page assertion.
+# ---------------------------------------------------------------------------
+
+VOLCANO_TEST_CONTRASTS <- c("A / B", "A / C", "B / C")
+VOLCANO_TEST_SUFFIXES  <- c("A_over_B", "A_over_C", "B_over_C")
+
+make_mock_stat_params_multi <- function() {
+  list(Proteome = list(
+    test      = "Two-sample Moderated T-test",
+    groups    = c("A", "B", "C"),
+    contrasts = VOLCANO_TEST_CONTRASTS,
+    stat      = "adj.p.val",
+    cutoff    = 0.05
+  ))
+}
+
+make_mock_stat_results_multi <- function() {
+  df <- data.frame(id = c("p1", "p2"), geneSymbol = c("G1", "G2"),
+                   stringsAsFactors = FALSE)
+  for (s in VOLCANO_TEST_SUFFIXES) {
+    df[[paste0("logFC.", s)]]       <- c(1.0, -0.5)
+    df[[paste0("P.Value.", s)]]     <- c(0.001, 0.6)
+    df[[paste0("adj.P.Val.", s)]]   <- c(0.01, 0.9)
+    df[[paste0("Log.P.Value.", s)]] <- c(3.0, 0.22)
+    df[[paste0("significant.", s)]] <- c(TRUE, FALSE)
+  }
+  list(Proteome = df)
+}
+
+test_that("volcano_plot export writes one page per contrast, not a partial PDF", {
+  args_multi <- modifyList(make_server_args(), list(
+    stat_params  = shiny::reactive(make_mock_stat_params_multi()),
+    stat_results = shiny::reactive(make_mock_stat_results_multi())
+  ))
+
+  shiny::testServer(statPlot_Ome_Server, args = args_multi, {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_multi_"); dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # Volcano Plot tab still never visited: input$volcano_contrasts unset.
+    expect_no_error(suppressWarnings(exports$volcano_plot(tmp_dir)))
+
+    pdf_file <- file.path(tmp_dir, "volcano_plots_Proteome.pdf")
+    expect_true(file.exists(pdf_file))
+    expect_identical(pdf_page_count(pdf_file), length(VOLCANO_TEST_CONTRASTS))
   })
 })
