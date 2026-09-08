@@ -244,15 +244,22 @@ multiomeHeatmapTabServer <- function(
       }
     }, ignoreInit = TRUE)
     
+    # Single source of truth for "can a heatmap be drawn right now?".
+    # Returns NULL when everything needed is present, otherwise the first
+    # failing need()'s message. HM.out() validate()s it, so the on-screen
+    # messages are unchanged; the export branches on it, so a headless export
+    # (where no gene list is ever typed) skips cleanly instead of throwing.
+    hm_not_ready <- reactive({
+      need(merged_rdesc(), "Complete setup to see heatmap") %then%
+      need(merged_mat(), "Complete setup to see heatmap") %then%
+      need(sample_anno(), "Complete setup to see heatmap") %then%
+      need(HM.params()$genes.char, "Input genes to see results") %then%
+      need(HM.params()$min.val < HM.params()$max.val, "Input valid min and max")
+    })
+
     ## Generate Heatmap
     HM.out <- reactive({
-      validate(
-        need(merged_rdesc(), "Complete setup to see heatmap") %then%
-        need(merged_mat(), "Complete setup to see heatmap") %then%
-        need(sample_anno(), "Complete setup to see heatmap") %then%
-        need(HM.params()$genes.char, "Input genes to see results") %then%
-        need(HM.params()$min.val < HM.params()$max.val, "Input valid min and max")
-      )
+      validate(hm_not_ready())
       myComplexHeatmap(params = HM.params(),
                        merged_rdesc = merged_rdesc(),
                        merged_mat = merged_mat(),
@@ -340,12 +347,7 @@ multiomeHeatmapTabServer <- function(
       # Skip cleanly instead (mirrors qc_corr_heatmap_export_function's
       # pattern for single-sample omes), reusing the same need() checks
       # HM.out() uses but without validate()'s throw.
-      not_ready <- need(merged_rdesc(), "x") %then%
-        need(merged_mat(), "x") %then%
-        need(sample_anno(), "x") %then%
-        need(HM.params()$genes.char, "x") %then%
-        need(HM.params()$min.val < HM.params()$max.val, "x")
-      if (!is.null(not_ready)) {
+      if (!is.null(hm_not_ready())) {
         return(invisible(NULL))
       }
 

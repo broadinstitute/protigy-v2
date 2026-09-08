@@ -608,37 +608,56 @@ test_that("multiome_heatmap export skips cleanly (no error, no file) when no gen
   )
 })
 
-# The export guard added to multiome_heatmap_export_function() reuses the
-# exact same need()/%then% checks HM.out() itself validates on -- it just
-# avoids validate()'s throw. This directly exercises that condition chain
-# (same functions, not a copy) to confirm it only blocks when something is
-# genuinely missing/invalid, and lets a fully-populated, valid state through.
-# (A full end-to-end "render a real heatmap during export" positive control
-# would additionally exercise options_multiomeHeatmapTabServer's entire
-# parameter set and myComplexHeatmap()'s rendering internals, which is
-# already covered independently by the "myComplexHeatmap works with valid
-# parameters" test above; wiring both through testServer at once mostly
-# re-tests that unrelated machinery rather than this guard.)
-test_that("multiome_heatmap export guard only blocks when genes/range are genuinely unset", {
-  shiny::isolate({
-    merged_rdesc <- shiny::reactive("some rdesc")
-    merged_mat   <- shiny::reactive("some mat")
-    sample_anno  <- shiny::reactive("some anno")
+# ---------------------------------------------------------------------------
+# The readiness check is now one reactive (hm_not_ready) that both the on-screen
+# heatmap and the export consume. This drives the REAL reactive through the real
+# module -- no stub reactives, no re-declared need() chain -- and pins the two
+# consumers together: HM.out()'s validate() must throw with exactly the message
+# hm_not_ready() returned. If anyone re-duplicates the chain with different
+# wording, this fails.
+#
+# Note: HM.params() belongs to the nested options module, so a parent testServer
+# cannot set its inputs. That is why this asserts the blocked state (the real
+# headless-export scenario) and the screen/export coupling, rather than trying
+# to drive a fully-configured heatmap from here.
+# ---------------------------------------------------------------------------
 
-    guard <- function(genes.char, min.val, max.val) {
-      need(merged_rdesc(), "x") %then%
-        need(merged_mat(), "x") %then%
-        need(sample_anno(), "x") %then%
-        need(genes.char, "x") %then%
-        need(min.val < max.val, "x")
+test_that("hm_not_ready is the single source of truth for screen and export", {
+  shiny::testServer(
+    multiomeHeatmapTabServer,
+    args = list(
+      GCTs_and_params = shiny::reactiveVal(create_mock_gcts_and_params()),
+      globals = shiny::reactiveValues(
+        colors = list(multi_ome = list(
+          group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("red", "blue"))
+        )),
+        default_ome = "proteome",
+        default_annotations = list(proteome = "group", phosphoproteome = "group")
+      )
+    ),
+    expr = {
+      # No genes typed -- the headless-export state. The guard must block, and
+      # must do so with the REAL user-facing message, not the old "x" placeholder.
+      not_ready <- hm_not_ready()
+      expect_false(is.null(not_ready))
+      expect_identical(not_ready, "Input genes to see results")
+
+      # The on-screen heatmap must fail with that exact same message: one
+      # definition, two consumers.
+      screen_err <- tryCatch({ HM.out(); NA_character_ },
+                             error = function(e) conditionMessage(e))
+      expect_identical(screen_err, not_ready)
+
+      # ...and it must be a validation signal, not a crash.
+      screen_cls <- tryCatch({ HM.out(); NULL }, error = function(e) class(e))
+      expect_true("shiny.silent.error" %in% screen_cls)
+
+      # The export consumes the same reactive: no error, no file.
+      exports <- session$getReturned()
+      tmp_dir <- tempfile("hm_not_ready_"); dir.create(tmp_dir)
+      on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+      expect_no_error(exports$multi_ome$multiome_heatmap(tmp_dir))
+      expect_identical(list.files(tmp_dir), character(0))
     }
-
-    # Exactly the headless-export scenario that used to crash: nothing typed in.
-    expect_false(is.null(guard(genes.char = NULL, min.val = NA, max.val = NA)))
-    expect_false(is.null(guard(genes.char = "",   min.val = -2, max.val = 2)))
-    # Invalid range (min >= max) must also block, same as HM.out() itself.
-    expect_false(is.null(guard(genes.char = "gene_1", min.val = 2, max.val = -2)))
-    # Fully populated, valid state must NOT block.
-    expect_true(is.null(guard(genes.char = "gene_1", min.val = -2, max.val = 2)))
-  })
+  )
 })
