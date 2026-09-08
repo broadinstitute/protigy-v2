@@ -42,6 +42,11 @@ volcano_build_hover_text <- function(ids,
   ht
 }
 
+# Default number of top-significant features labelled on a volcano plot.
+# Single source for the fallback used across tab_stat_plot.R's per-contrast
+# registry reads and this file's helper defaults.
+volcano_default_top_n <- function() 20L
+
 # #Input parameters- 
 # ome- ome that plot is run on
 # volcano_groups- current group selected in the plot sidebar
@@ -55,7 +60,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
                         label_proteins = character(0), label_mode = character(0),
                         label_column = "id", label_split_enabled = FALSE,
                         label_split_sep = ";", label_display_trim_enabled = FALSE,
-                        n_top = 20L) {
+                        n_top = volcano_default_top_n()) {
   
   cat('\n-- plotVolcano --\n')
 
@@ -492,7 +497,7 @@ parse_protein_search_input <- function(raw) {
 # then decreasing abs(logFC). Ties on (logP, abs(logFC)): keep all matching rows
 # at the cutoff (may exceed n).
 # @noRd
-volcano_label_top_significant_subset <- function(df, n = 20L) {
+volcano_label_top_significant_subset <- function(df, n = volcano_default_top_n()) {
   n <- as.integer(n)[1L]
   if (is.na(n) || n < 1L || nrow(df) == 0L) {
     return(df[FALSE, , drop = FALSE])
@@ -532,7 +537,7 @@ volcano_label_top_significant_subset <- function(df, n = 20L) {
 #' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
 #' @return `character()` of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
-volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = 20L) {
+volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = volcano_default_top_n()) {
   if (is.null(label_mode) || length(label_mode) == 0) {
     label_mode <- character(0)
   }
@@ -576,7 +581,7 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = 20L) {
 #' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
 #' @return \code{character()} of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
-volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi, n_top = 20L) {
+volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi, n_top = volcano_default_top_n()) {
   if (is.null(stat_results_ome) || nrow(stat_results_ome) == 0) return(character(0))
   if (is.null(stat_params_ome)) return(character(0))
 
@@ -646,7 +651,7 @@ volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label
 add_volcano_labels <- function(p, df, poi, label_mode, y_cutoff,
                                 hidden_count_rv, min_dist = 0.04,
                                 label_display_trim_enabled = FALSE,
-                                n_top = 20L) {
+                                n_top = volcano_default_top_n()) {
 
   poi <- unique(as.character(poi))
 

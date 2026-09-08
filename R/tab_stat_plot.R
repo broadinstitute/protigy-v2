@@ -128,7 +128,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
 
     # top_n_registry: parent-level named list keyed by "<ome>::<contrast_key>",
     # each slot is a single integer  -  how many top significant features to label
-    # for that contrast. Independent per contrast; default 20L when not yet set.
+    # for that contrast. Independent per contrast; default when not yet set,
+    # see volcano_default_top_n().
     top_n_registry <- reactiveVal(list())
 
     # label_mode_registry: parent-level named list keyed by "<ome>::<contrast_key>",
@@ -240,7 +241,7 @@ statPlot_Ome_Server <- function(id,
       key <- current_contrast_key()
       req(key)
       reg <- top_n_registry()
-      reg[[key]] %||% 20L
+      reg[[key]] %||% volcano_default_top_n()
     })
 
     # Setter  -  writes this contrast's top-N value into the shared registry.
@@ -817,7 +818,7 @@ statPlot_Ome_Server <- function(id,
             Reduce(union, lapply(keys, function(k) {
               c_poi   <- poi_reg[[k]]   %||% character(0)
               c_lm    <- lm_reg[[k]]    %||% character(0)
-              c_n_top <- tn_reg[[k]]    %||% 20L
+              c_n_top <- tn_reg[[k]]    %||% volcano_default_top_n()
               c_suffix <- sub(paste0("^", ome, "::"), "", k)
               cols <- tryCatch(
                 if (sp$test == "One-sample Moderated T-test")
@@ -962,7 +963,7 @@ statPlot_Ome_Server <- function(id,
       on.exit(dev.off(), add = TRUE)
 
       label_mode_export <- safe_export_isolate(label_mode_for_contrast(), character(0)) %||% character(0)
-      n_top_export      <- safe_export_isolate(top_n_sig(), 20L)
+      n_top_export      <- safe_export_isolate(top_n_sig(), volcano_default_top_n())
       label_column_export <- isolate(input$label_column)        %||% "id"
       label_split_export  <- isTRUE(isolate(input$label_split_enabled))
       label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
@@ -985,7 +986,7 @@ statPlot_Ome_Server <- function(id,
           Reduce(union, lapply(keys_exp, function(k) {
             c_poi    <- poi_reg_exp[[k]] %||% character(0)
             c_lm     <- lm_reg_exp[[k]] %||% character(0)
-            c_n_top  <- tn_reg_exp[[k]] %||% 20L
+            c_n_top  <- tn_reg_exp[[k]] %||% volcano_default_top_n()
             c_suffix <- sub(paste0("^", ome, "::"), "", k)
             cols <- tryCatch(
               if (sp_exp$test == "One-sample Moderated T-test")
@@ -1109,7 +1110,7 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
-        n_top_csv <- safe_export_isolate(top_n_sig(), 20L)
+        n_top_csv <- safe_export_isolate(top_n_sig(), volcano_default_top_n())
 
         # Effective POI: per-contrast union when union mode is on.
         effective_poi_csv <- switch(
@@ -1125,7 +1126,7 @@ statPlot_Ome_Server <- function(id,
             Reduce(union, lapply(keys_csv, function(k) {
               c_poi    <- poi_reg_csv[[k]] %||% character(0)
               c_lm     <- lm_reg_csv[[k]] %||% character(0)
-              c_n_top  <- tn_reg_csv[[k]] %||% 20L
+              c_n_top  <- tn_reg_csv[[k]] %||% volcano_default_top_n()
               c_suffix <- sub(paste0("^", ome, "::"), "", k)
               cols <- tryCatch(
                 if (sp$test == "One-sample Moderated T-test")
