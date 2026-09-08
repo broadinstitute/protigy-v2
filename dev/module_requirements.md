@@ -172,7 +172,12 @@ The "Export" tab is set up to handle all exports from the app. Follow these step
     -   The export function should take a single input, `dir_name`, which is the output directory where your export should be saved. You can assume this directory will already exist at the time that the export function is called.
     -   The export function should save a file inside of the directory `dir_name`.
     -   The contents of the function should generate your export file. You can assume that the function will be called in a reactive environment, so you should use reactive variables as such.
-    -   This function can and should throw an error if the export cannot be generated (say, you are exporting a plot, but the GCTs have not been processed yet).
+    -   Distinguish "not configured" from "broken", because the Export tab reports them differently:
+        -   **Not configured** (the user never set this item up -- no gene list typed, a single-sample ome, a tab never visited): return early and quietly, `return(invisible(NULL))`. Do not write a file. `R/tab_qc_correlation.R`'s `qc_corr_heatmap_export_function()` is the reference implementation, and most export functions in the app already work this way. If you reach a `req()`/`validate()` gate instead of returning, that is also fine -- `tab_export.R` recognises Shiny's `shiny.silent.error` and lists the item under "Skipped", not "Could not save".
+        -   **Broken** (something went genuinely wrong): let the error propagate, or `stop()` with a message a user can act on. `tab_export.R` catches it, lists the item under "Could not save", and shows your message as the reason -- so write the message for the user, not for the console.
+
+    > **Known gap.** An export function that returns quietly is currently counted as a *success*, so an item that wrote no file is reported to the user as "successfully saved". Tracked separately; see PR #105's punch list, item 8.
+
 2.  Save each export function in a list of lists. The first level of the list should be the ome name or `"multi_ome"`. The second level of the list should contain export functions for each object and their names.
 3.  Return the list of lists from your module's server.
 4.  Assign your modules output in `app_server()`. Then, add the output to the `all_exports` list at the bottom of `app_server()`.
