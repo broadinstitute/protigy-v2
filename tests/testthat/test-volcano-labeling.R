@@ -524,8 +524,8 @@ test_that("add_volcano_labels significant mode labels points but adds no magenta
 
 ## plotVolcano highlight/label parity (PDF export path) #######################
 # The exported ggplot must mirror the on-screen separation: POI points get the
-# magenta highlight geom even with no label mode; significant/top-N points are
-# labeled but not highlighted magenta (POI-exclusive highlight).
+# gold highlight geom even with no label mode; significant/top-N points are
+# labeled but not highlighted gold (POI-exclusive highlight).
 
 # Minimal two-sample stat_results df + reactive-style accessors for plotVolcano.
 make_volcano_export_fixture <- function() {
@@ -543,45 +543,45 @@ make_volcano_export_fixture <- function() {
   list(df = df, statp = function() sp, statr = function() list(myome = df))
 }
 
-# Count magenta highlight POINT layers: geom_point layers whose data carries the
-# magenta highlight color. Excludes ggrepel text layers (their text may be magenta
-# for labeling, which is a separate concern from point highlighting).
-count_magenta_geom_layers <- function(gg) {
+# Count POI highlight POINT layers: geom_point layers whose data carries the
+# gold POI highlight fill. Excludes ggrepel label layers (a label's text colour
+# tracks the point it labels, which is a separate concern from point highlighting).
+count_poi_geom_layers <- function(gg) {
   sum(vapply(gg$layers, function(ly) {
     d <- ly$data
     inherits(ly$geom, "GeomPoint") &&
       is.data.frame(d) && "label_col" %in% names(d) && nrow(d) > 0 &&
-      any(d$label_col == .volcano_label_hex)
+      any(d$label_col == .volcano_poi_fill)
   }, logical(1)))
 }
 
-test_that("plotVolcano highlights POI in magenta even when label_mode is empty", {
+test_that("plotVolcano highlights POI in gold even when label_mode is empty", {
   skip_if_not_installed("ggplot2")
   fx <- make_volcano_export_fixture()
   gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
                     label_proteins = c("A"), label_mode = character(0))
-  expect_gte(count_magenta_geom_layers(gg), 1L)
+  expect_gte(count_poi_geom_layers(gg), 1L)
 })
 
-test_that("plotVolcano does not highlight anything magenta when no POI and no label mode", {
+test_that("plotVolcano does not highlight any POI point when no POI and no label mode", {
   skip_if_not_installed("ggplot2")
   fx <- make_volcano_export_fixture()
   gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
                     label_proteins = character(0), label_mode = character(0))
-  expect_equal(count_magenta_geom_layers(gg), 0L)
+  expect_equal(count_poi_geom_layers(gg), 0L)
 })
 
-test_that("plotVolcano significant mode does not add a magenta highlight geom (POI-exclusive)", {
+test_that("plotVolcano significant mode does not add a POI highlight geom (POI-exclusive)", {
   skip_if_not_installed("ggplot2")
   skip_if_not_installed("ggrepel")
   fx <- make_volcano_export_fixture()
   gg <- plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
                     label_proteins = character(0), label_mode = "significant")
-  # No POI -> no magenta highlight geom, even though significant points are labeled.
-  expect_equal(count_magenta_geom_layers(gg), 0L)
+  # No POI -> no gold highlight geom, even though significant points are labeled.
+  expect_equal(count_poi_geom_layers(gg), 0L)
   # A ggrepel text layer should still be present for the labeled significant points.
   has_repel <- any(vapply(gg$layers, function(ly) {
-    inherits(ly$geom, "GeomTextRepel")
+    inherits(ly$geom, "GeomLabelRepel")
   }, logical(1)))
   expect_true(has_repel)
 })

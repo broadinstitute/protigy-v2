@@ -4,9 +4,27 @@
 # Allow users to see the Volcano plot of their results
 ################################################################################
 
-# Magenta for all volcano feature labels (POI, top-20, and all-significant);
-# contrasts with darkred significant scatter points (plotVolcano sig.col).
+# Magenta for all volcano feature labels (POI, top-20, and all-significant) on
+# the INTERACTIVE plotly plot (add_volcano_labels()). The static ggplot built by
+# plotVolcano() uses the direction palette below instead.
 .volcano_label_hex <- "#FF00FF"
+
+# Static-plot palette. Colour encodes SIGNIFICANCE first and direction second:
+# only points clearing the shared cutoff (stat_params[[ome]]$stat / $cutoff) get
+# red or blue, everything else stays grey. Direction alone never colours a point.
+.volcano_cat_colors <- c(
+  "Down-regulated" = "blue",
+  "Up-regulated"   = "red",
+  "Insignificant"  = "gray80"
+)
+
+# Proteins of interest are drawn as shape 21: gold fill, black outline, so they
+# read on top of both the grey cloud and the red/blue significant points.
+.volcano_poi_fill    <- "gold"
+.volcano_poi_outline <- "black"
+# Darkgoldenrod, NOT .volcano_poi_fill: geom_label_repel draws on a white label
+# background, and gold text on white is unreadable.
+.volcano_poi_label_color <- "#B8860B"
 
 # Build plotly hover `text` for volcano points: always `ID: ...`; optional second
 # line from the real gene-symbol metadata column when `gs_vals` is provided
@@ -188,7 +206,17 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
   }
   
   df$Significant <- df$logP > y_cutoff
-  df$point_color <- ifelse(df$Significant, sig.col, bg.col)
+  # Category drives the point colour: direction when significant, "Insignificant"
+  # otherwise. Derived from $Significant rather than re-deriving the comparison,
+  # so a point's colour can never disagree with the cutoff line or the label gate.
+  # An NA logFC has no direction, so it stays in the grey cloud rather than being
+  # silently dropped by a factor level it does not match.
+  df$category <- ifelse(
+    is.na(df$Significant) | !df$Significant | is.na(df$logFC),
+    "Insignificant",
+    ifelse(df$logFC < 0, "Down-regulated", "Up-regulated")
+  )
+  df$point_color <- unname(.volcano_cat_colors[df$category])
 
   if (stat_params()[[ome]]$test == "Two-sample Moderated T-test"){
     group_contrast<- volcano_contrasts
@@ -214,14 +242,60 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     lbl_vals     = extra_lbl_vals,
     lbl_col_name = extra_lbl_name
   )
+  # Title reads "<group1> vs <group2>" for two-sample contrasts (stored as
+  # "<group1> / <group2>"); a one-sample group name is used as-is.
+  contrast_title <- if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
+    paste(unlist(strsplit(group_contrast, " / ", fixed = TRUE)), collapse = " vs ")
+  } else {
+    group_contrast
+  }
+  # Name the statistic the cutoff is actually applied to. Hardcoding "adj. P"
+  # would mislabel a run where the user picked nominal p in Statistics > Summary.
+  cutoff_stat_label <- if (identical(sig_stat, "adj.p.val")) "adj. P" else "nom. P"
+
+  # Points are drawn insignificant-first so the grey cloud sits UNDER the
+  # significant points -- with ~10k features overplotting is heavy and this
+  # order is what keeps the hits visible.
+  cat_layer <- function(cat_name) {
+    d <- df[!is.na(df$category) & df$category == cat_name, , drop = FALSE]
+    if (nrow(d) == 0L) return(NULL)
+    geom_point(
+      data = d,
+      aes(x = .data$logFC, y = .data$logP, color = .data$point_color,
+          text = .data$.hover_text),
+      inherit.aes = FALSE, size = 1, na.rm = TRUE
+    )
+  }
+
   volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP,
                        text = .data$.hover_text)) +
-    geom_point(aes(color = .data$point_color), size = 1) +
+    cat_layer("Insignificant") +
+    cat_layer("Down-regulated") +
+    cat_layer("Up-regulated") +
     scale_color_identity() +
-    geom_hline(yintercept = y_cutoff, color = "black", linetype = "solid", linewidth = 0.5) +
-    labs(title = paste("Volcano plot for",ome, ": ",group_contrast, "(cutoff:", stat_params()[[ome]]$cutoff, ")"), x = "log2 Fold Change", y = "-log10 Nom. p-value") +
-    theme_minimal()
-  
+    geom_hline(yintercept = y_cutoff, color = "black", linetype = "dashed", linewidth = 0.5) +
+    labs(
+      title = paste0("Volcano plot for ", ome, ": ", contrast_title),
+      # The cutoff is metadata about the plot, not part of the comparison being
+      # plotted, so it sits in the subtitle rather than the title.
+      subtitle = paste0(cutoff_stat_label, " cutoff: ", sig_cutoff),
+      x = "log2(Fold Change)",
+      y = "-log10(Nom. P)"
+    ) +
+    theme_bw() +
+    theme(
+      plot.title       = element_text(face = "bold", size = 14, hjust = 0.5),
+      # hjust = 0.5 to sit under the centred title: theme_bw() left-aligns the
+      # subtitle by default, which reads as a misalignment rather than a choice.
+      plot.subtitle    = element_text(face = "plain", size = 12,
+                                      colour = "black", hjust = 0.5),
+      axis.title.x     = element_text(face = "bold", size = 12),
+      axis.title.y     = element_text(face = "bold", size = 12),
+      axis.text        = element_text(size = 8),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+
 
   if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
     groups <- unlist(strsplit(volcano_contrasts, " / "))
@@ -232,32 +306,45 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     x_range <- range(df$logFC, na.rm = TRUE)
     y_range <- range(df$logP, na.rm = TRUE)
     
+    # size is in MILLIMETRES for annotate(), unlike element_text(size=) above
+    # which is in points -- dividing by .pt is what makes this 12 pt on the page,
+    # matching the axis titles.
+    annot_size <- 12 / ggplot2::.pt
     volcano <- volcano +
-      annotate("text", x = x_range[1], y = y_range[2], label = group2, hjust = -0.1, vjust = 3.1, size = 5, fontface = "bold", color = "red") +
-      annotate("text", x = x_range[2], y = y_range[2], label = group1, hjust = 1.1, vjust = 3.1, size = 5, fontface = "bold", color = "red")
+      annotate("text", x = x_range[1], y = y_range[2], label = group2, hjust = -0.1, vjust = 3.1, size = annot_size, fontface = "bold", color = "red", alpha = 0.6) +
+      annotate("text", x = x_range[2], y = y_range[2], label = group1, hjust = 1.1, vjust = 3.1, size = annot_size, fontface = "bold", color = "red", alpha = 0.6)
   }
   
   # Highlight and label are independent, mirroring add_volcano_labels():
-  #   * HIGHLIGHT (magenta geom_point)  -  POI-exclusive; drawn whenever
+  #   * HIGHLIGHT (gold geom_point)  -  POI-exclusive; drawn whenever
   #     label_proteins are supplied, regardless of label_mode.
-  #   * LABEL (ggrepel text)             -  driven only by label_mode.
+  #   * LABEL (ggrepel label)        -  driven only by label_mode.
 
-  ## HIGHLIGHT PASS  -  magenta markers for POI points, independent of label_mode.
+  ## HIGHLIGHT PASS  -  gold markers for POI points, independent of label_mode.
+  # shape 21 reads `fill`, not `colour`, so the gold fill is a fixed layer
+  # parameter and cannot collide with the scale_color_identity() the category
+  # layers use. `colour` here is the outline ring only.
   if (length(label_proteins) > 0) {
     poi_hl <- df[df$id %in% label_proteins, , drop = FALSE]
     if (nrow(poi_hl) > 0) {
-      poi_hl$label_col <- .volcano_label_hex
+      poi_hl$label_col <- .volcano_poi_fill
       volcano <- volcano +
         geom_point(
           data        = poi_hl,
           aes(
             x     = .data$logFC,
             y     = .data$logP,
-            color = .data$label_col,
             text  = .data$.hover_text
           ),
           inherit.aes = FALSE,
-          size        = 2,
+          shape       = 21,
+          # Larger than the size-1 category points on purpose: at size 1 the
+          # black outline ring swallows the gold fill and the POI disappears.
+          size        = 1.5,
+          fill        = .volcano_poi_fill,
+          color       = .volcano_poi_outline,
+          stroke      = 0.3,
+          na.rm       = TRUE,
           show.legend = FALSE
         )
     }
@@ -281,7 +368,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     if (nrow(sig_rows) > 0) {
       label_df_gg <- rbind(label_df_gg, data.frame(
         id = sig_rows$id, logFC = sig_rows$logFC, logP = sig_rows$logP,
-          label_txt = sig_rows$geneSymbol, label_col = .volcano_label_hex,
+          label_txt = sig_rows$geneSymbol, label_col = sig_rows$point_color,
         stringsAsFactors = FALSE
       ))
     }
@@ -292,7 +379,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
         label_df_gg <- label_df_gg[!label_df_gg$id %in% poi_rows$id, ]
         label_df_gg <- rbind(label_df_gg, data.frame(
           id = poi_rows$id, logFC = poi_rows$logFC, logP = poi_rows$logP,
-          label_txt = poi_rows$geneSymbol, label_col = .volcano_label_hex,
+          label_txt = poi_rows$geneSymbol,
+          label_col = .volcano_poi_label_color,
           stringsAsFactors = FALSE
         ))
       }
@@ -303,20 +391,37 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
         label_df_gg$label_txt, label_display_trim_enabled
       )
       label_df_gg$.hover_text <- df$.hover_text[match(as.character(label_df_gg$id), as.character(df$id))]
+      # geom_label_repel, not geom_text_repel: the white label box is what keeps
+      # a red/blue label readable over the point cloud it sits in (bg.color/bg.r
+      # were the text_repel equivalent and have no meaning here -- fill,
+      # label.padding, label.r and label.size own that job now).
+      # `color` stays an aes mapped through scale_color_identity(), so each label
+      # takes the colour of the point it labels.
+      # max.overlaps = Inf: draw every requested label rather than silently
+      # discarding the ones that do not fit. With "label all significant" on a
+      # large ome this is a lot of labels by construction -- that is the mode
+      # doing what it says, not a layout failure.
       volcano <- volcano +
-        ggrepel::geom_text_repel(
+        ggrepel::geom_label_repel(
           data          = label_df_gg,
           aes(x = .data$logFC, y = .data$logP, label = .data$label_txt,
               color = .data$label_col),
           inherit.aes   = FALSE,
+          fill          = "white",
           size          = 3,
-          max.overlaps  = 20,
-          box.padding   = 0.35,
-          point.padding = 0.3,
-          segment.color = "grey50",
-          show.legend   = FALSE,
-          bg.color      = "white",
-          bg.r          = 0.15
+          fontface      = "bold",
+          box.padding   = 0.1,
+          point.padding = 0,
+          label.padding = 0.1,
+          label.r       = 0.1,
+          label.size    = 0.15,
+          segment.color = "black",
+          segment.size  = 0.3,
+          max.overlaps  = Inf,
+          min.segment.length = 0,
+          force         = 20,
+          seed          = 42,
+          show.legend   = FALSE
         )
     }
   }

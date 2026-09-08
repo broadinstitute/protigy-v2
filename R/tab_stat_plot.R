@@ -959,7 +959,7 @@ statPlot_Ome_Server <- function(id,
       pdf_path <- file.path(dir_name, pdf_filename)
       
       # Start PDF device
-      pdf_params <- get_pdf_params()
+      pdf_params <- get_pdf_params("volcano")
       pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       on.exit(dev.off(), add = TRUE)
 

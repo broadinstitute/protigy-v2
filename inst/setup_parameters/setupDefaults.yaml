@@ -27,6 +27,10 @@ row_filter_values: []
 plot_export_width: 8
 plot_export_height: 6
 plot_export_units: "in"
+# Special dimensions for volcano plots
+volcano_width: 6
+volcano_height: 5
+volcano_units: "in"
 # Special dimensions for multi-ome heatmap
 multiome_heatmap_width: 12
 multiome_heatmap_height: 8
