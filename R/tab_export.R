@@ -177,6 +177,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
 
         success_exports <- c()
         error_exports <- c()
+        skipped_exports <- c()
         error_messages <- list()  # item path (ome/tab/name) -> failure reason, for the summary notification
 
         # conditionMessage() is only *conventionally* a length-1 string: a
@@ -253,19 +254,36 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
               # in the server console (via its message()/cat() calls), never in the
               # app -- the final notification below only had the item's path, with no
               # way to tell the user *why* it failed.
+              # Three outcomes, not two:
+              #   ok      - the export function ran and wrote its file
+              #   skipped - it hit a req()/validate() gate, i.e. the user never
+              #             set this item up. Shiny signals that with a
+              #             shiny.silent.error, whose message is "" for req()
+              #             and the need() text for validate(need(x, "...")).
+              #   failed  - anything else, which is a real bug worth surfacing.
+              # The shiny.silent.error handler must come FIRST: tryCatch matches
+              # handlers against the condition's class vector in the order given,
+              # and shiny.silent.error also inherits from "error".
               export_result <- tryCatch({
-                # save the plot using the p() function
                 p(exports_in_tab_path)
-                list(ok = TRUE, message = NULL)
+                list(status = "ok", message = "")
+              }, shiny.silent.error = function(cond) {
+                reason <- first_message(cond)
+                message("Export skipped for ", p_name,
+                        if (nzchar(reason)) paste0(": ", reason) else " (not ready)")
+                list(status = "skipped", message = reason)
               }, error = function(cond) {
                 reason <- first_message(cond)
                 message("Export failed for ", p_name, ": ", reason)
-                list(ok = FALSE, message = reason)
+                list(status = "failed", message = reason)
               })
 
               item_path <- file.path(ome, tab_name, p_name)
-              if (isTRUE(export_result$ok)) {
+              if (identical(export_result$status, "ok")) {
                 success_exports <<- c(success_exports, item_path)
+              } else if (identical(export_result$status, "skipped")) {
+                skipped_exports <<- c(skipped_exports, item_path)
+                error_messages[[item_path]] <<- export_result$message
               } else {
                 error_exports <<- c(error_exports, item_path)
                 error_messages[[item_path]] <<- export_result$message
@@ -290,30 +308,53 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         # distinct from a clean success -- previously both cases used the same
         # blue "message" notification, so a partial failure looked identical
         # to a full success unless the user scrolled through the item list.
-        if (length(error_exports) == 0) {
+        if (length(error_exports) == 0 && length(skipped_exports) == 0) {
           notification_ui <- HTML("<div>Analysis results successfully saved!</div>")
           notification_type <- "message"
         } else {
-          error_items_html <- vapply(error_exports, function(item) {
-            reason <- error_messages[[item]]
-            reason_html <- if (!is.null(reason) && length(reason) == 1L && nzchar(reason)) {
-              paste0(" &mdash; <em>", reason, "</em>")
-            } else {
-              # req()/validate() raise a shiny.silent.error whose message is "",
-              # so without this the item renders as a bare path with no reason.
-              " &mdash; <em>no details available; this item may not have been ready to export</em>"
-            }
-            paste0("<li>", item, reason_html, "</li>")
-          }, character(1))
+          item_list_html <- function(items, fallback) {
+            entries <- vapply(items, function(item) {
+              reason <- error_messages[[item]]
+              reason_html <- if (!is.null(reason) && length(reason) == 1L && nzchar(reason)) {
+                paste0(" &mdash; <em>", reason, "</em>")
+              } else if (nzchar(fallback)) {
+                paste0(" &mdash; <em>", fallback, "</em>")
+              } else {
+                ""
+              }
+              paste0("<li>", item, reason_html, "</li>")
+            }, character(1))
+            paste0("<ul>", paste(entries, collapse = ""), "</ul>")
+          }
+
+          header_html <- if (length(error_exports) > 0) {
+            paste0("<strong>", length(error_exports),
+                   " export item(s) could not be saved.</strong> ",
+                   "Everything else was saved successfully.<br><br>")
+          } else {
+            "<strong>Analysis results successfully saved.</strong><br><br>"
+          }
+
+          failed_html <- if (length(error_exports) > 0) {
+            paste0("<strong>Could not save:</strong>",
+                   item_list_html(error_exports,
+                                  "no details available; this item may not have been ready to export"))
+          } else {
+            ""
+          }
+
+          skipped_html <- if (length(skipped_exports) > 0) {
+            paste0("<strong>Skipped (nothing to export &mdash; these were never set up):</strong>",
+                   item_list_html(skipped_exports, ""))
+          } else {
+            ""
+          }
 
           notification_ui <- HTML(paste0(
             "<div style='text-align: left'>",
-            "<strong>", length(error_exports), " export item(s) could not be saved.</strong> ",
-            "Everything else was saved successfully.<br><br>",
-            "<strong>Could not save:</strong>",
-            "<ul>", paste(error_items_html, collapse = ""), "</ul></div>"
+            header_html, failed_html, skipped_html, "</div>"
           ))
-          notification_type <- "warning"
+          notification_type <- if (length(error_exports) > 0) "warning" else "message"
         }
         showNotification(
           ui = notification_ui,

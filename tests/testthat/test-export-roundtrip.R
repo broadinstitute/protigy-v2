@@ -299,7 +299,7 @@ test_that("a clean export is not reported as a failure", {
   expect_identical(res$type, "message")
 })
 
-test_that("an export that is merely 'not ready' still reports something readable", {
+test_that("an export that is merely 'not ready' is reported as skipped, not failed", {
   not_ready <- list(
     omes = shiny::reactive("proteome"),
     exports = list(summary_exports = list(proteome = list(
@@ -309,8 +309,32 @@ test_that("an export that is merely 'not ready' still reports something readable
   res <- run_export_capturing_notification(not_ready)
   expect_type(res$ui, "character")
   expect_match(res$ui, "proteome/summary_exports/unset", fixed = TRUE)
-  # the item must not appear as a bare path with no explanation at all
-  expect_false(grepl("<li>proteome/summary_exports/unset</li>", res$ui, fixed = TRUE))
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  # a skip is not a failure: no warning styling, no "could not be saved"
+  expect_identical(res$type, "message")
+  expect_false(grepl("could not be saved", res$ui, fixed = TRUE))
+})
+
+test_that("validate(need()) is skipped and keeps its message; a real error is still a failure", {
+  mixed <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good    = make_export_fn("good.txt", "ok"),
+      ungated = function(dir_name) shiny::validate(shiny::need(FALSE, "Input genes to see results")),
+      broken  = function(dir_name) stop("subscript out of bounds")
+    )))
+  )
+  res <- run_export_capturing_notification(mixed)
+  expect_type(res$ui, "character")
+  # the real failure leads, with its reason
+  expect_identical(res$type, "warning")
+  expect_match(res$ui, "1 export item(s) could not be saved", fixed = TRUE)
+  expect_match(res$ui, "subscript out of bounds", fixed = TRUE)
+  # the gated item is listed separately, keeping the need() message
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  expect_match(res$ui, "Input genes to see results", fixed = TRUE)
+  # the good one appears in neither list
+  expect_false(grepl("summary_exports/good", res$ui, fixed = TRUE))
 })
 
 test_that("a zero-length or multi-element condition message does not crash the download", {
