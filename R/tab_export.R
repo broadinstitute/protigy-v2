@@ -178,7 +178,17 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         success_exports <- c()
         error_exports <- c()
         error_messages <- list()  # item path (ome/tab/name) -> failure reason, for the summary notification
-        
+
+        # conditionMessage() is only *conventionally* a length-1 string: a
+        # hand-rolled condition can carry character(0) or a 2-element vector,
+        # and `&&` in the notification builder below errors on either. Normalise
+        # once, here, so every value that reaches error_messages is a single
+        # non-NA string.
+        first_message <- function(cond) {
+          msg <- conditionMessage(cond)
+          if (length(msg) == 0L || is.na(msg[[1L]])) "" else as.character(msg[[1L]])
+        }
+
         # EXP-5: snapshot each selected tab's export object ONCE here, so the
         # progress pre-loop and the write loop below both read from the snapshot
         # instead of evaluating each `exports[[tab_name]]()` reactive twice.
@@ -248,8 +258,9 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
                 p(exports_in_tab_path)
                 list(ok = TRUE, message = NULL)
               }, error = function(cond) {
-                message("Export failed for ", p_name, ": ", conditionMessage(cond))
-                list(ok = FALSE, message = conditionMessage(cond))
+                reason <- first_message(cond)
+                message("Export failed for ", p_name, ": ", reason)
+                list(ok = FALSE, message = reason)
               })
 
               item_path <- file.path(ome, tab_name, p_name)
@@ -285,10 +296,12 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         } else {
           error_items_html <- vapply(error_exports, function(item) {
             reason <- error_messages[[item]]
-            reason_html <- if (!is.null(reason) && nzchar(reason)) {
+            reason_html <- if (!is.null(reason) && length(reason) == 1L && nzchar(reason)) {
               paste0(" &mdash; <em>", reason, "</em>")
             } else {
-              ""
+              # req()/validate() raise a shiny.silent.error whose message is "",
+              # so without this the item renders as a bare path with no reason.
+              " &mdash; <em>no details available; this item may not have been ready to export</em>"
             }
             paste0("<li>", item, reason_html, "</li>")
           }, character(1))

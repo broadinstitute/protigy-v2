@@ -298,3 +298,35 @@ test_that("a clean export is not reported as a failure", {
   expect_false(grepl("could not be saved", res$ui, fixed = TRUE))
   expect_identical(res$type, "message")
 })
+
+test_that("an export that is merely 'not ready' still reports something readable", {
+  not_ready <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      unset = function(dir_name) shiny::req(FALSE)
+    )))
+  )
+  res <- run_export_capturing_notification(not_ready)
+  expect_type(res$ui, "character")
+  expect_match(res$ui, "proteome/summary_exports/unset", fixed = TRUE)
+  # the item must not appear as a bare path with no explanation at all
+  expect_false(grepl("<li>proteome/summary_exports/unset</li>", res$ui, fixed = TRUE))
+})
+
+test_that("a zero-length or multi-element condition message does not crash the download", {
+  odd_messages <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      empty = function(dir_name) stop(structure(
+        class = c("oddError", "error", "condition"),
+        list(message = character(0), call = NULL))),
+      two   = function(dir_name) stop(structure(
+        class = c("oddError", "error", "condition"),
+        list(message = c("first half", "second half"), call = NULL)))
+    )))
+  )
+  res <- run_export_capturing_notification(odd_messages)
+  expect_type(res$ui, "character")
+  expect_match(res$ui, "proteome/summary_exports/empty", fixed = TRUE)
+  expect_match(res$ui, "proteome/summary_exports/two",   fixed = TRUE)
+})
