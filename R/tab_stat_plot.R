@@ -236,7 +236,8 @@ statPlot_Ome_Server <- function(id,
       poi_registry(reg)
     }
 
-    # top_n_sig: reads this contrast's top-N value from the registry (default 20).
+    # top_n_sig: reads this contrast's top-N value from the registry (default
+    # from volcano_default_top_n()).
     top_n_sig <- reactive({
       key <- current_contrast_key()
       req(key)

@@ -337,6 +337,27 @@ test_that("validate(need()) is skipped and keeps its message; a real error is st
   expect_false(grepl("summary_exports/good", res$ui, fixed = TRUE))
 })
 
+test_that("mixed success/skip/failure reports the actual saved count, not a false 'everything else' claim", {
+  mixed <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good   = make_export_fn("good.txt", "ok"),
+      unset  = function(dir_name) shiny::req(FALSE),
+      broken = function(dir_name) stop("subscript out of bounds")
+    )))
+  )
+  res <- run_export_capturing_notification(mixed)
+  expect_type(res$ui, "character")
+  expect_identical(res$type, "warning")
+  expect_match(res$ui, "1 export item(s) could not be saved", fixed = TRUE)
+  expect_match(res$ui, "subscript out of bounds", fixed = TRUE)
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  # the false claim must be gone now that there is a real saved count to report
+  expect_false(grepl("Everything else was saved successfully", res$ui, fixed = TRUE))
+  # ...replaced with the actual saved count
+  expect_match(res$ui, "1 item(s) were saved", fixed = TRUE)
+})
+
 test_that("a zero-length or multi-element condition message does not crash the download", {
   odd_messages <- list(
     omes = shiny::reactive("proteome"),

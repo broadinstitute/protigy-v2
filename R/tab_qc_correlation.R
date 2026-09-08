@@ -284,8 +284,7 @@ QCCorrelation_Ome_Server <- function(id,
     qc_corr_heatmap_export_function <- function(dir_name) {
       # Single-sample omes grey out on screen via the validate(need(...)) gate in
       # qc_corr_heatmap_out(). Skip the export cleanly (mirrors the PCA/CV tabs) so
-      # the gate does not raise a shiny.silent.error that tab_export.R would surface
-      # as a misleading "Could not save" failure.
+      # returning early keeps this item out of the export summary entirely.
       if (!is.null(min_samples_message(GCT_processed(), n = 2, analysis = "Correlation"))) {
         return(invisible(NULL))
       }

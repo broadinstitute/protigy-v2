@@ -455,9 +455,8 @@ QCPCA_Ome_Server <- function(id,
       # that errored on a degenerate matrix (cached_pca_result()$error). In both
       # cases the on-screen panels grey out and the export reactives carry the same
       # validate(need(...)) gates. Skip the exports cleanly (mirrors the CV tab's
-      # cv_export_available guard) so the bundle does not raise a shiny.silent.error
-      # inside ggsave()/write.csv() that tab_export.R would surface as a misleading
-      # "Could not save" failure.
+      # cv_export_available guard) so returning early keeps the bundle out of the
+      # export summary entirely.
       if (!is.null(pca_min_samples_msg())) return(invisible(NULL))
       if (!is.null(cached_pca_result()$error)) return(invisible(NULL))
 

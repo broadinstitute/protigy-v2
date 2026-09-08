@@ -178,7 +178,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         success_exports <- c()
         error_exports <- c()
         skipped_exports <- c()
-        error_messages <- list()  # item path (ome/tab/name) -> failure reason, for the summary notification
+        error_messages <- list()  # item path (ome/tab/name) -> failure/skip reason, for the summary notification
 
         # conditionMessage() is only *conventionally* a length-1 string: a
         # hand-rolled condition can carry character(0) or a 2-element vector,
@@ -246,7 +246,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
               
               # M11: capture success/failure from the tryCatch RESULT, not from a
               # dir.exists() probe. `exports_in_tab_path` is the tab folder created
-              # at :219 -- it always exists, so the old `!file.exists()` check could
+              # above -- it always exists, so the old `!file.exists()` check could
               # never detect a failed export.
               # Use a plain tryCatch (not my_shinyalert_tryCatch) so we can keep the
               # actual failure reason: my_shinyalert_tryCatch with show.error = FALSE
@@ -308,7 +308,8 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         # distinct from a clean success -- previously both cases used the same
         # blue "message" notification, so a partial failure looked identical
         # to a full success unless the user scrolled through the item list.
-        if (length(error_exports) == 0 && length(skipped_exports) == 0) {
+        has_failures <- length(error_exports) > 0
+        if (!has_failures && length(skipped_exports) == 0) {
           notification_ui <- HTML("<div>Analysis results successfully saved!</div>")
           notification_type <- "message"
         } else {
@@ -327,18 +328,17 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             paste0("<ul>", paste(entries, collapse = ""), "</ul>")
           }
 
-          header_html <- if (length(error_exports) > 0) {
+          header_html <- if (has_failures) {
             paste0("<strong>", length(error_exports),
                    " export item(s) could not be saved.</strong> ",
-                   "Everything else was saved successfully.<br><br>")
+                   length(success_exports), " item(s) were saved.<br><br>")
           } else {
             "<strong>Analysis results successfully saved.</strong><br><br>"
           }
 
-          failed_html <- if (length(error_exports) > 0) {
+          failed_html <- if (has_failures) {
             paste0("<strong>Could not save:</strong>",
-                   item_list_html(error_exports,
-                                  "no details available; this item may not have been ready to export"))
+                   item_list_html(error_exports, "no details available"))
           } else {
             ""
           }
@@ -354,7 +354,7 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
             "<div style='text-align: left'>",
             header_html, failed_html, skipped_html, "</div>"
           ))
-          notification_type <- if (length(error_exports) > 0) "warning" else "message"
+          notification_type <- if (has_failures) "warning" else "message"
         }
         showNotification(
           ui = notification_ui,

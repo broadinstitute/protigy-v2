@@ -173,10 +173,10 @@ The "Export" tab is set up to handle all exports from the app. Follow these step
     -   The export function should save a file inside of the directory `dir_name`.
     -   The contents of the function should generate your export file. You can assume that the function will be called in a reactive environment, so you should use reactive variables as such.
     -   Distinguish "not configured" from "broken", because the Export tab reports them differently:
-        -   **Not configured** (the user never set this item up -- no gene list typed, a single-sample ome, a tab never visited): return early and quietly, `return(invisible(NULL))`. Do not write a file. `R/tab_qc_correlation.R`'s `qc_corr_heatmap_export_function()` is the reference implementation, and most export functions in the app already work this way. If you reach a `req()`/`validate()` gate instead of returning, that is also fine -- `tab_export.R` recognises Shiny's `shiny.silent.error` and lists the item under "Skipped", not "Could not save".
+        -   **Not configured** (the user never set this item up -- no gene list typed, a single-sample ome, a tab never visited): return early and quietly, `return(invisible(NULL))`. Do not write a file -- this keeps the item out of the export summary entirely, rather than calling out an expected, uninteresting state. `R/tab_qc_correlation.R`'s `qc_corr_heatmap_export_function()` is the reference implementation, and most export functions in the app already work this way. If you reach a `req()`/`validate()` gate instead of returning, that is also fine -- `tab_export.R` recognises Shiny's `shiny.silent.error` and lists the item under "Skipped", not "Could not save".
         -   **Broken** (something went genuinely wrong): let the error propagate, or `stop()` with a message a user can act on. `tab_export.R` catches it, lists the item under "Could not save", and shows your message as the reason -- so write the message for the user, not for the console.
 
-    > **Known gap.** An export function that returns quietly is currently counted as a *success*, so an item that wrote no file is reported to the user as "successfully saved". Tracked separately; see PR #105's punch list, item 8.
+    > **Known gap.** An export function that returns quietly is currently counted as a *success*, so an item that wrote no file is reported to the user as "successfully saved". Tracked separately; see PR #105's punch list, item 8. Likewise, a `validate(need(x, "msg"))` used to report a genuine fault still lands under "Skipped", not "Could not save" -- `tab_export.R` classifies by condition class (`shiny.silent.error`), not by what the message says.
 
 2.  Save each export function in a list of lists. The first level of the list should be the ome name or `"multi_ome"`. The second level of the list should contain export functions for each object and their names.
 3.  Return the list of lists from your module's server.
@@ -207,7 +207,7 @@ example_plot_export_function <- function(dir_name) {
 # create the nested list of exports
 module_exports <- list()
 module_exports[[ome]] <- list(
-  example_plot <- example_plot_export_function
+  example_plot = example_plot_export_function
   # add other functions for plots/exports here
 )
 

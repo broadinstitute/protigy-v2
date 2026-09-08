@@ -35,15 +35,20 @@ library(testthat)
 # a working export from the bug this file exists to guard.
 #
 # The file has embedded NULs and non-UTF8 bytes, so rawToChar() on the whole
-# thing errors -- search the raw vector and decode only a short window.
+# thing errors -- and even a 2000-byte window after the "/Type /Pages" hit can
+# reach into a compressed (FlateDecode) binary stream, e.g. an embedded ICC
+# color profile, which is arbitrary bytes and very likely to contain a NUL.
+# So: search for "/Count NNN" directly in the raw window with grepRaw(), and
+# rawToChar() only the short matched token itself (never the whole window) --
+# that token is always plain ASCII PDF syntax, so it can never contain a NUL.
 pdf_page_count <- function(path) {
   rb <- readBin(path, "raw", file.info(path)$size)
   hits <- grepRaw("/Type /Pages", rb, all = TRUE, fixed = TRUE)
   if (length(hits) == 0L) return(NA_integer_)
-  window <- rawToChar(rb[hits[1]:min(hits[1] + 200L, length(rb))])
-  m <- regmatches(window, regexpr("/Count[[:space:]]+([0-9]+)", window))
+  window <- rb[hits[1]:min(hits[1] + 2000L, length(rb))]
+  m <- grepRaw("/Count[[:space:]]+[0-9]+", window, value = TRUE)
   if (length(m) == 0L) return(NA_integer_)
-  as.integer(sub("/Count[[:space:]]+", "", m))
+  as.integer(sub("/Count[[:space:]]+", "", rawToChar(m)))
 }
 
 make_mock_stat_params <- function() {

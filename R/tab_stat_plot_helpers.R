@@ -534,7 +534,7 @@ volcano_label_top_significant_subset <- function(df, n = volcano_default_top_n()
 #' @param df_plot Output of `build_volcano_df()` (columns include `id`, `Significant`, ...).
 #' @param label_mode Character vector; may include `"poi"`, `"significant_top20"`, `"significant"`.
 #' @param poi Character vector of manually selected POI feature IDs.
-#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
+#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Defaults to `volcano_default_top_n()`.
 #' @return `character()` of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
 volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = volcano_default_top_n()) {
@@ -578,7 +578,7 @@ volcano_labeled_feature_ids <- function(df_plot, label_mode, poi, n_top = volcan
 #' @param stat_params_ome  Named list; \code{stat_params()[[ome]]}.
 #' @param label_mode Character vector; active label modes (e.g. \code{"poi"}, \code{"significant_top20"}).
 #' @param poi Character vector of manually selected feature IDs.
-#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Default 20.
+#' @param n_top Integer; how many top significant features to label when `"significant_top20"` is active. Defaults to `volcano_default_top_n()`.
 #' @return \code{character()} of unique feature IDs (empty if nothing would be labeled).
 #' @noRd
 volcano_label_union_for_ome <- function(stat_results_ome, stat_params_ome, label_mode, poi, n_top = volcano_default_top_n()) {
