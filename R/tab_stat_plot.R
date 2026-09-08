@@ -924,8 +924,22 @@ statPlot_Ome_Server <- function(id,
     # to hit an empty shiny.silent.error here -- aborting the whole export
     # item and leaving a 0-page PDF with no indication of why. Fall back to
     # `default` (no manual per-contrast overrides) instead of throwing.
+    # Catch only the "not ready" signal, not every error: `error =` would also
+    # swallow a genuine failure and silently export with default labelling.
+    # req() and validate(need()) share the shiny.silent.error class; req()'s
+    # message is "", need()'s is the text the developer wrote -- log the latter
+    # rather than discarding it.
     safe_export_isolate <- function(expr, default) {
-      tryCatch(isolate(expr), error = function(e) default)
+      tryCatch(
+        isolate(expr),
+        shiny.silent.error = function(e) {
+          msg <- conditionMessage(e)
+          if (length(msg) == 1L && !is.na(msg) && nzchar(msg)) {
+            message("Export fell back to defaults: ", msg)
+          }
+          default
+        }
+      )
     }
 
     volcano_plot_export_function <- function(dir_name) {

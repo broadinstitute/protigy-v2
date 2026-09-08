@@ -286,3 +286,32 @@ test_that("volcano_plot export writes one page per contrast, not a partial PDF",
     expect_identical(pdf_page_count(pdf_file), length(VOLCANO_TEST_CONTRASTS))
   })
 })
+
+# ---------------------------------------------------------------------------
+# safe_export_isolate must fall back only for "not ready" signals.
+#
+# A genuine error inside a settings reactive is a bug, and swallowing it means
+# the export quietly uses default labelling with nothing to show for it -- the
+# same silent failure this PR exists to remove, one layer down.
+# ---------------------------------------------------------------------------
+
+test_that("safe_export_isolate falls back on req() but lets real errors through", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    # "not ready" -> fall back to the default, quietly
+    expect_identical(
+      safe_export_isolate(shiny::req(FALSE), "fallback"),
+      "fallback"
+    )
+    # validate(need()) is the same condition class, so it also falls back --
+    # but its message must be logged rather than discarded
+    expect_message(
+      expect_identical(
+        safe_export_isolate(shiny::validate(shiny::need(FALSE, "pick a contrast")), "fallback"),
+        "fallback"
+      ),
+      "pick a contrast"
+    )
+    # a genuine error must NOT be swallowed
+    expect_error(safe_export_isolate(stop("boom"), "fallback"), "boom")
+  })
+})
