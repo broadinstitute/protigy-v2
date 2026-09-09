@@ -191,18 +191,17 @@ test_that("both axis titles are 12 pt bold and axis text is 8 pt", {
   expect_equal(resolved(gg, "axis.text.y")$size, 8)
 })
 
-test_that("group annotations render at 12 pt, matching the axis titles", {
-  # annotate() sizes in MILLIMETRES while element_text() sizes in POINTS, so a
-  # literal size = 12 here would draw at ~34 pt. The stored value must be the
-  # mm equivalent of 12 pt.
-  gg <- build_style_plot(make_style_fixture())
-  annots <- Filter(function(ly) inherits(ly$geom, "GeomText"), gg$layers)
-  expect_gt(length(annots), 0)
-  for (ly in annots) {
-    expect_equal(ly$aes_params$size * ggplot2::.pt, 12)
-    expect_equal(ly$aes_params$fontface, "bold")
-    expect_equal(ly$aes_params$colour, "red")
-    expect_equal(ly$aes_params$alpha, 0.6)
+test_that("no group annotation is drawn on the panel", {
+  # The two group names used to sit in the top corners as big red, semi-
+  # transparent annotate("text") layers. They were removed on purpose: the title
+  # ("<num> over <den>") already names the comparison, and positive log2FC is
+  # still the numerator. GeomText is the annotate("text") geom; the feature
+  # labels are GeomLabelRepel, so they do not match this filter -- checked with
+  # labels on so a re-added annotation cannot hide behind them.
+  for (mode in list(character(0), "significant")) {
+    gg <- build_style_plot(make_style_fixture(), label_mode = mode)
+    annots <- Filter(function(ly) inherits(ly$geom, "GeomText"), gg$layers)
+    expect_length(annots, 0)
   }
 })
 
@@ -214,9 +213,9 @@ test_that("gridlines are removed", {
 
 ## Title and subtitle text #####################################################
 
-test_that("the title names the contrast with 'vs' and carries no cutoff clause", {
+test_that("the title names the contrast with 'over' and carries no cutoff clause", {
   gg <- build_style_plot(make_style_fixture())
-  expect_equal(gg$labels$title, "Volcano plot for myome: X vs Y")
+  expect_equal(gg$labels$title, "Volcano plot for myome: X over Y")
   # The contrast is stored as "X / Y"; the slash is a storage detail, not a
   # thing to show a reader. The cutoff belongs to the subtitle now.
   expect_false(grepl("/", gg$labels$title, fixed = TRUE))
@@ -261,8 +260,8 @@ test_that("a non-default cutoff moves the line and the colours with the subtitle
 
 test_that("axis titles name the transform applied to each axis", {
   gg <- build_style_plot(make_style_fixture())
-  expect_equal(gg$labels$x, "log2(Fold Change)")
-  expect_equal(gg$labels$y, "-log10(Nom. P)")
+  expect_equal(gg$labels$x, "log2(fold change)")
+  expect_equal(gg$labels$y, "-log10(p-value)")
 })
 
 ## Cutoff line #################################################################
@@ -354,18 +353,12 @@ test_that("every requested label is drawn rather than silently discarded", {
   expect_identical(repel_layer(gg)$geom_params$max.overlaps, Inf)
 })
 
-test_that("feature labels are plain, while the group annotations stay bold", {
-  # Two different text layers with two different answers, which is exactly how
-  # they get confused: the reference script's geom_label_repel parameters bold
-  # the labels (its own are 1.7 mm on a small figure), the group annotations are
-  # bold on purpose. Pinning both here keeps a change to one from drifting the
-  # other.
+test_that("feature labels are plain, not bold", {
+  # The reference script's geom_label_repel parameters bold the labels (its own
+  # are 1.7 mm on a small figure). At this figure's label size bold turns the
+  # point cloud's labels into blobs, so the fontface is pinned here.
   gg <- build_style_plot(make_style_fixture(), label_mode = "significant")
   expect_equal(repel_layer(gg)$aes_params$fontface, "plain")
-
-  annots <- Filter(function(ly) inherits(ly$geom, "GeomText"), gg$layers)
-  expect_gt(length(annots), 0)
-  for (ly in annots) expect_equal(ly$aes_params$fontface, "bold")
 })
 
 test_that("a label takes the colour of the point it labels", {

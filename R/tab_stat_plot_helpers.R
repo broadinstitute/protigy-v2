@@ -306,10 +306,10 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
 
   # Attach the plotly-only aesthetic only when it will actually be read.
   hover_aes <- if (interactive) aes(text = .data$.hover_text) else NULL
-  # Title reads "<group1> vs <group2>" for two-sample contrasts (stored as
-  # "<group1> / <group2>"); a one-sample group name is used as-is.
+  # Title reads "<numerator> over <denominator>" for two-sample contrasts (stored
+  # as "<group1> / <group2>"); a one-sample group name is used as-is.
   contrast_title <- if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
-    paste(unlist(strsplit(group_contrast, " / ", fixed = TRUE)), collapse = " vs ")
+    paste(unlist(strsplit(group_contrast, " / ", fixed = TRUE)), collapse = " over ")
   } else {
     group_contrast
   }
@@ -348,8 +348,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       # Statistics > Summary and used for the colouring and the cutoff line
       # above. Never a literal: the subtitle has to move when the user moves it.
       subtitle = paste0(cutoff_stat_label, " cutoff: ", sig_cutoff),
-      x = "log2(Fold Change)",
-      y = "-log10(Nom. P)"
+      x = "log2(fold change)",
+      y = "-log10(p-value)"
     ) +
     theme_bw() +
     theme(
@@ -365,25 +365,6 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       panel.grid.minor = element_blank()
     )
 
-
-  if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
-    groups <- unlist(strsplit(volcano_contrasts, " / "))
-    # The log fold change is now calculated as group1 - group2 (where group1 is the first group in contrast)
-    # So positive logFC means higher expression in group1, negative logFC means higher expression in group2
-    group1 <- groups[1]  # First group in contrast (right side of volcano plot for positive logFC)
-    group2 <- groups[2]  # Second group in contrast (left side of volcano plot for negative logFC)
-    x_range <- range(df$logFC, na.rm = TRUE)
-    y_range <- range(df$logP, na.rm = TRUE)
-    
-    # size is in MILLIMETRES for annotate(), unlike element_text(size=) above
-    # which is in points -- dividing by .pt is what makes this 12 pt on the page,
-    # matching the axis titles.
-    annot_size <- 12 / ggplot2::.pt
-    volcano <- volcano +
-      annotate("text", x = x_range[1], y = y_range[2], label = group2, hjust = -0.1, vjust = 3.1, size = annot_size, fontface = "bold", color = "red", alpha = 0.6) +
-      annotate("text", x = x_range[2], y = y_range[2], label = group1, hjust = 1.1, vjust = 3.1, size = annot_size, fontface = "bold", color = "red", alpha = 0.6)
-  }
-  
   # Highlight and label are independent, mirroring add_volcano_labels():
   #   * HIGHLIGHT (gold geom_point)  -  POI-exclusive; drawn whenever
   #     label_proteins are supplied, regardless of label_mode.
