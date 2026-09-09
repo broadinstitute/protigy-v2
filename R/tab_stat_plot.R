@@ -407,7 +407,11 @@ statPlot_Ome_Server <- function(id,
           column(8,
             tagList(
               shinydashboardPlus::box(
-                plotlyOutput(ns("volcano_plot")),
+                # Taller than plotlyOutput's 400px default: a volcano is a
+                # dense scatter whose labels need vertical room to place
+                # without colliding, and the tall thin cloud reads badly in a
+                # short panel.
+                plotlyOutput(ns("volcano_plot"), height = "650px"),
                 status = "primary",
                 width = NULL,
                 title = "Volcano Plot",

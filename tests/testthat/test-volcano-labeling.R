@@ -437,21 +437,21 @@ test_that("add_volcano_labels with significant_top20 caps labeled significant ro
 })
 
 ## Highlight vs. label separation #############################################
-# Search-to-highlight (POI) controls the magenta point overlay; "Label Features"
+# Search-to-highlight (POI) controls the gold point overlay; "Label Features"
 # (label_mode) controls only whether text annotations are drawn. Highlighting a
 # POI must NOT require a label mode, and significant/top-N modes color no points
-# magenta (highlight is POI-exclusive).
+# gold (highlight is POI-exclusive).
 
-# Count magenta highlight overlay traces (the "#FF00FF" marker layer) in a built
+# Count POI highlight overlay traces (the gold marker layer) in a built
 # plotly object. The base scatter uses plotly's default blue, so any trace whose
 # marker color is the volcano label hex is a highlight overlay.
-count_magenta_traces <- function(built) {
+count_poi_traces <- function(built) {
   sum(vapply(built$x$data, function(tr) {
-    isTRUE(any(unlist(tr$marker$color) == .volcano_label_hex))
+    isTRUE(any(unlist(tr$marker$color) == "gold"))
   }, logical(1)))
 }
 
-test_that("add_volcano_labels highlights POI in magenta with no label mode and no annotations", {
+test_that("add_volcano_labels highlights POI in gold with no label mode and no annotations", {
   skip_if_not_installed("plotly")
   df <- data.frame(
     id = c("A", "B", "C"), logFC = c(1, -1, 0.1),
@@ -463,8 +463,8 @@ test_that("add_volcano_labels highlights POI in magenta with no label mode and n
   result <- add_volcano_labels(p, df, poi = "A", label_mode = character(0),
                                y_cutoff = 2, hidden_count_rv = rv)
   built <- plotly::plotly_build(result)
-  # One magenta highlight overlay for the single POI point ...
-  expect_equal(count_magenta_traces(built), 1L)
+  # One gold highlight overlay for the single POI point ...
+  expect_equal(count_poi_traces(built), 1L)
   # ... and NO text annotations, because no label mode is active.
   expect_length(built$x$layout$annotations %||% list(), 0L)
 })
@@ -481,7 +481,7 @@ test_that("add_volcano_labels with empty poi and no mode adds no highlight and n
   result <- add_volcano_labels(p, df, poi = character(0), label_mode = character(0),
                                y_cutoff = 2, hidden_count_rv = rv)
   built <- plotly::plotly_build(result)
-  expect_equal(count_magenta_traces(built), 0L)
+  expect_equal(count_poi_traces(built), 0L)
   expect_length(built$x$layout$annotations %||% list(), 0L)
 })
 
@@ -498,13 +498,121 @@ test_that("add_volcano_labels adds POI text annotation only when 'poi' label mod
                                y_cutoff = 2, hidden_count_rv = rv)
   built <- plotly::plotly_build(result)
   # Still highlighted, and now also labeled.
-  expect_equal(count_magenta_traces(built), 1L)
+  expect_equal(count_poi_traces(built), 1L)
   ann <- built$x$layout$annotations %||% list()
   expect_length(ann, 1L)
   expect_equal(ann[[1]]$text, "G1")
 })
 
-test_that("add_volcano_labels significant mode labels points but adds no magenta highlight (POI-exclusive)", {
+## Screen/export colour parity ################################################
+# plotVolcano() (the PDF) and add_volcano_labels() (the interactive plot) are
+# two separate rendering paths over the same data. When they derive colour
+# independently they drift, and the same feature ends up a different colour on
+# screen than in the exported figure. These pin them together.
+
+# The colour of the annotation whose text is `txt`, from a built plotly object.
+annotation_color_for <- function(built, txt) {
+  ann <- built$x$layout$annotations %||% list()
+  hit <- Filter(function(a) identical(a$text, txt), ann)
+  if (length(hit) == 0L) NA_character_ else hit[[1]]$font$color
+}
+
+make_parity_df <- function() {
+  data.frame(
+    id          = c("A", "B", "C"),
+    logFC       = c(1, -1, 0.1),
+    logP        = c(10, 8, 1),
+    Significant = c(TRUE, TRUE, FALSE),
+    geneSymbol  = c("G1", "G2", "G3"),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("an in-app label takes the colour of the point it labels", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = character(0),
+    label_mode = "significant", y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  # Same rule, and the same two colours, as the exported figure.
+  expect_equal(annotation_color_for(built, "G1"), "red")   # significant, up
+  expect_equal(annotation_color_for(built, "G2"), "blue")  # significant, down
+})
+
+test_that("an in-app POI label uses darkgoldenrod, not the gold of its marker", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = "A",
+    label_mode = "poi", y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  # These annotations are drawn on an rgba(255,255,255,0.85) background, where
+  # gold text is unreadable -- the same reason the export uses darkgoldenrod.
+  expect_equal(annotation_color_for(built, "G1"), "#B8860B")
+})
+
+test_that("POI labelling wins over the direction colour for the same feature", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  # A is significant AND up (so "red" by direction) AND a POI. It must be
+  # labelled once, in the POI colour.
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = "A",
+    label_mode = c("significant", "poi"), y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  ann <- built$x$layout$annotations %||% list()
+  expect_equal(sum(vapply(ann, function(a) identical(a$text, "G1"), logical(1))), 1L)
+  expect_equal(annotation_color_for(built, "G1"), "#B8860B")
+})
+
+test_that("the in-app POI marker is gold with a black outline, like the export", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = "A",
+    label_mode = character(0), y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  gold <- Filter(function(tr) isTRUE(any(unlist(tr$marker$color) == "gold")),
+                 built$x$data)
+  expect_length(gold, 1L)
+  # The ring is what makes a gold point read against the grey cloud; without it
+  # the marker is a pale blob. Literals, not the constants, so repainting a
+  # constant cannot make this pass vacuously.
+  expect_equal(unlist(gold[[1]]$marker$line$color)[1], "black")
+})
+
+## Label headroom #############################################################
+
+test_that("the in-app y axis leaves room above the top point for its label", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = character(0),
+    label_mode = "significant", y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  rng <- built$x$layout$yaxis$range
+  # Annotations anchor ABOVE their point, so plotly's data-derived autorange
+  # clips the topmost label against the panel edge. The axis must extend past
+  # the highest point, not stop at it.
+  expect_gt(rng[2], max(df$logP))
+  # autorange would override an explicit range, so it has to be off.
+  expect_false(isTRUE(built$x$layout$yaxis$autorange))
+})
+
+test_that("the in-app y axis is left alone when nothing is labelled", {
+  skip_if_not_installed("plotly")
+  df <- make_parity_df()
+  # No label mode -> no annotations -> no reason to reserve headroom, and the
+  # plot should keep the range plotly computed for it.
+  built <- plotly::plotly_build(add_volcano_labels(
+    make_test_plotly(df), df, poi = character(0),
+    label_mode = character(0), y_cutoff = 2, hidden_count_rv = mock_rv()
+  ))
+  expect_false(isFALSE(built$x$layout$yaxis$autorange))
+})
+
+test_that("add_volcano_labels significant mode labels points but adds no POI highlight (POI-exclusive)", {
   skip_if_not_installed("plotly")
   df <- data.frame(
     id = c("A", "B", "C"), logFC = c(1, -1, 0.1),
@@ -518,8 +626,8 @@ test_that("add_volcano_labels significant mode labels points but adds no magenta
   built <- plotly::plotly_build(result)
   # Two significant points get text labels ...
   expect_length(built$x$layout$annotations %||% list(), 2L)
-  # ... but significance alone does NOT paint points magenta.
-  expect_equal(count_magenta_traces(built), 0L)
+  # ... but significance alone does NOT paint points gold.
+  expect_equal(count_poi_traces(built), 0L)
 })
 
 ## plotVolcano highlight/label parity (PDF export path) #######################

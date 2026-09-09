@@ -46,7 +46,7 @@ library(testthat)
 # Real stat.testing() output emits P.Value before Log.P.Value, and this fixture
 # mirrors that order. Reversing it silently makes every feature significant.
 # ---------------------------------------------------------------------------
-make_style_fixture <- function(stat = "adj.p.val") {
+make_style_fixture <- function(stat = "adj.p.val", cutoff = 0.05) {
   df <- data.frame(
     id         = c("A", "B", "C", "D", "E", "F"),
     geneSymbol = c("GA", "GB", "GC", "GD", "GE", "GF"),
@@ -56,7 +56,7 @@ make_style_fixture <- function(stat = "adj.p.val") {
   df[["P.Value.X_over_Y"]]     <- c(1e-5, 1e-4, 0.5, 1e-3, 0.2, 1e-6)
   df[["adj.P.Val.X_over_Y"]]   <- c(0.001, 0.002, 0.9, 0.01, 0.6, 0.0005)
   df[["Log.P.Value.X_over_Y"]] <- -log10(df[["P.Value.X_over_Y"]])
-  sp <- list(myome = list(test = "Two-sample Moderated T-test", cutoff = 0.05,
+  sp <- list(myome = list(test = "Two-sample Moderated T-test", cutoff = cutoff,
                           stat = stat, contrasts = "X / Y", groups = NULL))
   list(df = df, statp = function() sp, statr = function() list(myome = df))
 }
@@ -186,14 +186,38 @@ test_that("the title names the contrast with 'vs' and carries no cutoff clause",
 
 test_that("the subtitle carries the cutoff without parentheses", {
   gg <- build_style_plot(make_style_fixture())
-  expect_equal(gg$labels$subtitle, "adj. P cutoff: 0.05")
+  expect_equal(gg$labels$subtitle, "Adj. P cutoff: 0.05")
 })
 
 test_that("the subtitle names nominal p when that is the stat the cutoff uses", {
-  # The stat is user-selectable in Statistics > Summary. Hardcoding "adj. P"
+  # The stat is user-selectable in Statistics > Summary. Hardcoding "Adj. P"
   # would print a false label on every nominal-p run.
   gg <- build_style_plot(make_style_fixture(stat = "nom.p.val"))
-  expect_equal(gg$labels$subtitle, "nom. P cutoff: 0.05")
+  expect_equal(gg$labels$subtitle, "Nom. P cutoff: 0.05")
+})
+
+test_that("the subtitle tracks the shared cutoff instead of naming a fixed one", {
+  # THE POINT OF THIS TEST: the two assertions above use a fixture whose cutoff
+  # happens to be 0.05, so they pass just as well against a hardcoded "0.05".
+  # Only varying the cutoff distinguishes "read from stat_params()[[ome]]$cutoff"
+  # from "printed a literal". That setting is shared with the colouring and the
+  # cutoff line (Statistics > Summary), so a subtitle that disagreed with it
+  # would be describing a plot other than the one on the page.
+  for (cut in c(0.01, 0.1, 0.25)) {
+    gg <- build_style_plot(make_style_fixture(cutoff = cut))
+    expect_equal(gg$labels$subtitle, paste0("Adj. P cutoff: ", cut),
+                 info = paste("cutoff =", cut))
+  }
+})
+
+test_that("a non-default cutoff moves the line and the colours with the subtitle", {
+  # The subtitle is only honest if the rest of the figure moved too. At 0.01,
+  # D (adj.P.Val = 0.01, not < 0.01) drops out of the passing set, which raises
+  # the y cutoff and turns B grey.
+  gg <- build_style_plot(make_style_fixture(cutoff = 0.01))
+  expect_equal(gg$labels$subtitle, "Adj. P cutoff: 0.01")
+  expect_setequal(layer_data_for_color(gg, "red")$id, c("A", "F"))
+  expect_true("B" %in% layer_data_for_color(gg, "gray80")$id)
 })
 
 test_that("axis titles name the transform applied to each axis", {

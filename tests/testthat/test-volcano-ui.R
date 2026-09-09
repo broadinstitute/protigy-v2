@@ -132,6 +132,22 @@ test_that("volcano sidebar HTML contains new controls (testServer)", {
 })
 
 # ---------------------------------------------------------------------------
+# Volcano panel height
+# ---------------------------------------------------------------------------
+
+test_that("the volcano plot panel is taller than plotlyOutput's default", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    session$setInputs(volcano_contrasts = "A / B")
+    html <- paste(as.character(suppressWarnings(output$ome_plot_contents)),
+                  collapse = " ")
+    # plotlyOutput() defaults to 400px, which crowds a dense scatter and leaves
+    # the repelled labels no vertical room. An explicit height must be emitted.
+    expect_match(html, "height:\\s*650px")
+    expect_no_match(html, "height:\\s*400px")
+  })
+})
+
+# ---------------------------------------------------------------------------
 # Test 2: POI list layout  -  scroll container + Clear-all placement
 # ---------------------------------------------------------------------------
 
