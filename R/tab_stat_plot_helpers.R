@@ -480,7 +480,12 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
           inherit.aes   = FALSE,
           fill          = "white",
           size          = 3,
-          fontface      = "bold",
+          # Plain, not bold. The reference script this call's parameters came
+          # from bolds its labels because they are 1.7 mm on a small figure and
+          # need the weight to stay legible; at 3 mm here bold just thickens a
+          # crowded field. The group annotations are the only bold text on the
+          # plot besides the title.
+          fontface      = "plain",
           box.padding   = 0.1,
           point.padding = 0,
           label.padding = 0.1,

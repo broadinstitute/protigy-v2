@@ -354,6 +354,20 @@ test_that("every requested label is drawn rather than silently discarded", {
   expect_identical(repel_layer(gg)$geom_params$max.overlaps, Inf)
 })
 
+test_that("feature labels are plain, while the group annotations stay bold", {
+  # Two different text layers with two different answers, which is exactly how
+  # they get confused: the reference script's geom_label_repel parameters bold
+  # the labels (its own are 1.7 mm on a small figure), the group annotations are
+  # bold on purpose. Pinning both here keeps a change to one from drifting the
+  # other.
+  gg <- build_style_plot(make_style_fixture(), label_mode = "significant")
+  expect_equal(repel_layer(gg)$aes_params$fontface, "plain")
+
+  annots <- Filter(function(ly) inherits(ly$geom, "GeomText"), gg$layers)
+  expect_gt(length(annots), 0)
+  for (ly in annots) expect_equal(ly$aes_params$fontface, "bold")
+})
+
 test_that("a label takes the colour of the point it labels", {
   gg <- build_style_plot(make_style_fixture(), label_mode = "significant")
   d <- repel_layer(gg)$data
