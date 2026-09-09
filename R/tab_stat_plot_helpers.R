@@ -325,7 +325,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     if (nrow(d) == 0L) return(NULL)
     geom_point(
       data = d,
-      mapping = modifyList(
+      mapping = utils::modifyList(
         aes(x = .data$logFC, y = .data$logP, color = .data$point_color),
         hover_aes %||% list()
       ),
@@ -333,7 +333,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     )
   }
 
-  volcano <- ggplot(df, modifyList(aes(x = .data$logFC, y = .data$logP),
+  volcano <- ggplot(df, utils::modifyList(aes(x = .data$logFC, y = .data$logP),
                                    hover_aes %||% list())) +
     cat_layer("Insignificant") +
     cat_layer("Down-regulated") +
@@ -400,7 +400,7 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       volcano <- volcano +
         geom_point(
           data        = poi_hl,
-          mapping = modifyList(
+          mapping = utils::modifyList(
             aes(x = .data$logFC, y = .data$logP),
             hover_aes %||% list()
           ),
