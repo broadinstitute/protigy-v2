@@ -134,7 +134,15 @@ get_plot_export_dimensions <- function(plot_type = "default") {
     system.file('setup_parameters/setupDefaults.yaml', package = 'Protigy')
   )
   
-  if (plot_type == "multiome_heatmap") {
+  if (plot_type == "volcano") {
+    # Volcano plots get their own page size; every other plot export keeps the
+    # shared default above.
+    return(list(
+      width = default_params$volcano_width,
+      height = default_params$volcano_height,
+      units = default_params$volcano_units
+    ))
+  } else if (plot_type == "multiome_heatmap") {
     # Use special dimensions for multi-ome heatmap
     return(list(
       width = default_params$multiome_heatmap_width,

@@ -128,7 +128,8 @@ statPlot_Tab_Server <- function(id = "statPlotTab",
 
     # top_n_registry: parent-level named list keyed by "<ome>::<contrast_key>",
     # each slot is a single integer  -  how many top significant features to label
-    # for that contrast. Independent per contrast; default 20L when not yet set.
+    # for that contrast. Independent per contrast; default when not yet set,
+    # see volcano_default_top_n().
     top_n_registry <- reactiveVal(list())
 
     # label_mode_registry: parent-level named list keyed by "<ome>::<contrast_key>",
@@ -235,12 +236,13 @@ statPlot_Ome_Server <- function(id,
       poi_registry(reg)
     }
 
-    # top_n_sig: reads this contrast's top-N value from the registry (default 20).
+    # top_n_sig: reads this contrast's top-N value from the registry (default
+    # from volcano_default_top_n()).
     top_n_sig <- reactive({
       key <- current_contrast_key()
       req(key)
       reg <- top_n_registry()
-      reg[[key]] %||% 20L
+      reg[[key]] %||% volcano_default_top_n()
     })
 
     # Setter  -  writes this contrast's top-N value into the shared registry.
@@ -405,7 +407,11 @@ statPlot_Ome_Server <- function(id,
           column(8,
             tagList(
               shinydashboardPlus::box(
-                plotlyOutput(ns("volcano_plot")),
+                # Taller than plotlyOutput's 400px default: a volcano is a
+                # dense scatter whose labels need vertical room to place
+                # without colliding, and the tall thin cloud reads badly in a
+                # short panel.
+                plotlyOutput(ns("volcano_plot"), height = "650px"),
                 status = "primary",
                 width = NULL,
                 title = "Volcano Plot",
@@ -743,7 +749,10 @@ statPlot_Ome_Server <- function(id,
 
       # Build base ggplot (no labels)  -  wrapped in tryCatch to show friendly error
       gg <- tryCatch(
-        plotVolcano(
+        # interactive = TRUE attaches the plotly hover aesthetic; the muffler
+        # drops only the "unknown aesthetics: text" warning that mapping
+        # necessarily produces (see volcano_muffle_unknown_aes()).
+        volcano_muffle_unknown_aes(plotVolcano(
           ome               = ome,
           volcano_groups    = input$volcano_groups,
           volcano_contrasts = as.character(input$volcano_contrasts),
@@ -753,8 +762,9 @@ statPlot_Ome_Server <- function(id,
           label_column                = input$label_column        %||% "id",
           label_split_enabled         = isTRUE(input$label_split_enabled),
           label_split_sep             = input$label_split_sep     %||% ";",
-          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled)
-        ),
+          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled),
+          interactive                 = TRUE
+        )),
         error = function(e) {
           showNotification(
             paste0("Could not render volcano plot: ", conditionMessage(e)),
@@ -817,7 +827,7 @@ statPlot_Ome_Server <- function(id,
             Reduce(union, lapply(keys, function(k) {
               c_poi   <- poi_reg[[k]]   %||% character(0)
               c_lm    <- lm_reg[[k]]    %||% character(0)
-              c_n_top <- tn_reg[[k]]    %||% 20L
+              c_n_top <- tn_reg[[k]]    %||% volcano_default_top_n()
               c_suffix <- sub(paste0("^", ome, "::"), "", k)
               cols <- tryCatch(
                 if (sp$test == "One-sample Moderated T-test")
@@ -914,6 +924,34 @@ statPlot_Ome_Server <- function(id,
     
 
     ## COMPILE EXPORTS ##
+
+    # proteins_of_interest()/label_mode_for_contrast()/top_n_sig() all key off
+    # current_contrast_key(), which req()s input$volcano_contrasts /
+    # input$volcano_groups. Those inputs are only bound once the user has
+    # actually opened THIS ome's Volcano Plot tab in the browser (Shiny
+    # suspends rendering for hidden tabs by default). A user who runs the
+    # stats test and exports right away, without ever visiting that tab, used
+    # to hit an empty shiny.silent.error here -- aborting the whole export
+    # item and leaving a 0-page PDF with no indication of why. Fall back to
+    # `default` (no manual per-contrast overrides) instead of throwing.
+    # Catch only the "not ready" signal, not every error: `error =` would also
+    # swallow a genuine failure and silently export with default labelling.
+    # req() and validate(need()) share the shiny.silent.error class; req()'s
+    # message is "", need()'s is the text the developer wrote -- log the latter
+    # rather than discarding it.
+    safe_export_isolate <- function(expr, default) {
+      tryCatch(
+        isolate(expr),
+        shiny.silent.error = function(e) {
+          msg <- conditionMessage(e)
+          if (length(msg) == 1L && !is.na(msg) && nzchar(msg)) {
+            message("Export fell back to defaults: ", msg)
+          }
+          default
+        }
+      )
+    }
+
     volcano_plot_export_function <- function(dir_name) {
       test <- stat_params()[[ome]]$test
       
@@ -929,12 +967,12 @@ statPlot_Ome_Server <- function(id,
       pdf_path <- file.path(dir_name, pdf_filename)
       
       # Start PDF device
-      pdf_params <- get_pdf_params()
+      pdf_params <- get_pdf_params("volcano")
       pdf(pdf_path, width = pdf_params$width, height = pdf_params$height)
       on.exit(dev.off(), add = TRUE)
 
-      label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
-      n_top_export      <- isolate(top_n_sig())
+      label_mode_export <- safe_export_isolate(label_mode_for_contrast(), character(0)) %||% character(0)
+      n_top_export      <- safe_export_isolate(top_n_sig(), volcano_default_top_n())
       label_column_export <- isolate(input$label_column)        %||% "id"
       label_split_export  <- isTRUE(isolate(input$label_split_enabled))
       label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
@@ -957,7 +995,7 @@ statPlot_Ome_Server <- function(id,
           Reduce(union, lapply(keys_exp, function(k) {
             c_poi    <- poi_reg_exp[[k]] %||% character(0)
             c_lm     <- lm_reg_exp[[k]] %||% character(0)
-            c_n_top  <- tn_reg_exp[[k]] %||% 20L
+            c_n_top  <- tn_reg_exp[[k]] %||% volcano_default_top_n()
             c_suffix <- sub(paste0("^", ome, "::"), "", k)
             cols <- tryCatch(
               if (sp_exp$test == "One-sample Moderated T-test")
@@ -977,7 +1015,7 @@ statPlot_Ome_Server <- function(id,
         },
         {
           # "none"  -  use only the current contrast's POI for export
-          isolate(proteins_of_interest())
+          safe_export_isolate(proteins_of_interest(), character(0))
         }
       )
       # Force "poi" into label_mode when union is active and produced IDs.
@@ -1052,11 +1090,11 @@ statPlot_Ome_Server <- function(id,
           return()
         }
 
-        label_mode_export <- isolate(label_mode_for_contrast()) %||% character(0)
+        label_mode_export <- safe_export_isolate(label_mode_for_contrast(), character(0)) %||% character(0)
         label_column_export <- isolate(input$label_column)        %||% "id"
         label_split_export  <- isTRUE(isolate(input$label_split_enabled))
         label_sep_export    <- isolate(input$label_split_sep)     %||% ";"
-        poi <- isolate(proteins_of_interest())
+        poi <- safe_export_isolate(proteins_of_interest(), character(0))
 
         show_poi <- "poi" %in% label_mode_export
         show_sig <- "significant" %in% label_mode_export
@@ -1081,7 +1119,7 @@ statPlot_Ome_Server <- function(id,
         sig_cutoff <- sp$cutoff
         sig_stat <- sp$stat
 
-        n_top_csv <- isolate(top_n_sig())
+        n_top_csv <- safe_export_isolate(top_n_sig(), volcano_default_top_n())
 
         # Effective POI: per-contrast union when union mode is on.
         effective_poi_csv <- switch(
@@ -1097,7 +1135,7 @@ statPlot_Ome_Server <- function(id,
             Reduce(union, lapply(keys_csv, function(k) {
               c_poi    <- poi_reg_csv[[k]] %||% character(0)
               c_lm     <- lm_reg_csv[[k]] %||% character(0)
-              c_n_top  <- tn_reg_csv[[k]] %||% 20L
+              c_n_top  <- tn_reg_csv[[k]] %||% volcano_default_top_n()
               c_suffix <- sub(paste0("^", ome, "::"), "", k)
               cols <- tryCatch(
                 if (sp$test == "One-sample Moderated T-test")

@@ -218,3 +218,160 @@ test_that("P3.1: handler tolerates NULL colors (no customization write failure)"
     }
   )
 })
+
+# ---------------------------------------------------------------------------
+# The export notification, asserted against the REAL handler.
+#
+# tab_export.R decides success/failure purely on whether an export function
+# throws, and reports the outcome through showNotification(). Both live inside
+# the downloadHandler, so we drive the real handler with drive_download() and
+# intercept showNotification() via local_mocked_bindings(). The mock binds
+# because NAMESPACE has import(shiny, ...) and tab_export.R calls
+# showNotification() bare -- if anyone rewrites it as shiny::showNotification()
+# the mock stops firing, which is what the expect_type() guard below catches.
+# ---------------------------------------------------------------------------
+
+make_failing_exports <- function(msg = "subscript out of bounds") {
+  force(msg)
+  list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good = make_export_fn("good.txt", "ok"),
+      bad  = function(dir_name) stop(msg)
+    )))
+  )
+}
+
+run_export_capturing_notification <- function(all_exports) {
+  captured <- NULL; captured_type <- NULL
+  testthat::local_mocked_bindings(
+    showNotification = function(ui, type = "default", ...) {
+      captured      <<- paste(as.character(ui), collapse = "")
+      captured_type <<- type
+      invisible(NULL)
+    },
+    .package = "Protigy"
+  )
+  shiny::testServer(
+    exportTabServer,
+    args = list(all_exports = all_exports,
+                GCTs_and_params = shiny::reactiveVal(make_gcts_and_params()),
+                globals = make_globals_with_colors()),
+    {
+      session$setInputs(omesForExport = "proteome", tabsForExport = "summary_exports")
+      suppressMessages(drive_download(session, "download"))
+    }
+  )
+  list(ui = captured, type = captured_type)
+}
+
+test_that("a failed export's real error message reaches the notification", {
+  res <- run_export_capturing_notification(make_failing_exports())
+
+  # Guard: if the mock never fired, every expect_match() below would fail with
+  # "object must be a character vector, not NULL", which reads like a bug in
+  # the app rather than a broken test. Fail clearly instead.
+  expect_type(res$ui, "character")
+
+  # the item path, as before...
+  expect_match(res$ui, "proteome/summary_exports/bad", fixed = TRUE)
+  # ...and the actual reason, which is the point of the change
+  expect_match(res$ui, "subscript out of bounds", fixed = TRUE)
+  # failure count leads, rather than "successfully saved!"
+  expect_match(res$ui, "could not be saved", fixed = TRUE)
+  # warning styling, not the blue success notification
+  expect_identical(res$type, "warning")
+  # items that succeeded are not listed as failures
+  expect_false(grepl("summary_exports/good", res$ui, fixed = TRUE))
+})
+
+test_that("a clean export is not reported as a failure", {
+  clean <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good = make_export_fn("good.txt", "ok")
+    )))
+  )
+  res <- run_export_capturing_notification(clean)
+  expect_type(res$ui, "character")
+  expect_match(res$ui, "successfully saved", fixed = TRUE)
+  expect_false(grepl("could not be saved", res$ui, fixed = TRUE))
+  expect_identical(res$type, "message")
+})
+
+test_that("an export that is merely 'not ready' is reported as skipped, not failed", {
+  not_ready <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      unset = function(dir_name) shiny::req(FALSE)
+    )))
+  )
+  res <- run_export_capturing_notification(not_ready)
+  expect_type(res$ui, "character")
+  expect_match(res$ui, "proteome/summary_exports/unset", fixed = TRUE)
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  # a skip is not a failure: no warning styling, no "could not be saved"
+  expect_identical(res$type, "message")
+  expect_false(grepl("could not be saved", res$ui, fixed = TRUE))
+})
+
+test_that("validate(need()) is skipped and keeps its message; a real error is still a failure", {
+  mixed <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good    = make_export_fn("good.txt", "ok"),
+      ungated = function(dir_name) shiny::validate(shiny::need(FALSE, "Input genes to see results")),
+      broken  = function(dir_name) stop("subscript out of bounds")
+    )))
+  )
+  res <- run_export_capturing_notification(mixed)
+  expect_type(res$ui, "character")
+  # the real failure leads, with its reason
+  expect_identical(res$type, "warning")
+  expect_match(res$ui, "1 export item(s) could not be saved", fixed = TRUE)
+  expect_match(res$ui, "subscript out of bounds", fixed = TRUE)
+  # the gated item is listed separately, keeping the need() message
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  expect_match(res$ui, "Input genes to see results", fixed = TRUE)
+  # the good one appears in neither list
+  expect_false(grepl("summary_exports/good", res$ui, fixed = TRUE))
+})
+
+test_that("mixed success/skip/failure reports the actual saved count, not a false 'everything else' claim", {
+  mixed <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      good   = make_export_fn("good.txt", "ok"),
+      unset  = function(dir_name) shiny::req(FALSE),
+      broken = function(dir_name) stop("subscript out of bounds")
+    )))
+  )
+  res <- run_export_capturing_notification(mixed)
+  expect_type(res$ui, "character")
+  expect_identical(res$type, "warning")
+  expect_match(res$ui, "1 export item(s) could not be saved", fixed = TRUE)
+  expect_match(res$ui, "subscript out of bounds", fixed = TRUE)
+  expect_match(res$ui, "Skipped", fixed = TRUE)
+  # the false claim must be gone now that there is a real saved count to report
+  expect_false(grepl("Everything else was saved successfully", res$ui, fixed = TRUE))
+  # ...replaced with the actual saved count
+  expect_match(res$ui, "1 item(s) were saved", fixed = TRUE)
+})
+
+test_that("a zero-length or multi-element condition message does not crash the download", {
+  odd_messages <- list(
+    omes = shiny::reactive("proteome"),
+    exports = list(summary_exports = list(proteome = list(
+      empty = function(dir_name) stop(structure(
+        class = c("oddError", "error", "condition"),
+        list(message = character(0), call = NULL))),
+      two   = function(dir_name) stop(structure(
+        class = c("oddError", "error", "condition"),
+        list(message = c("first half", "second half"), call = NULL)))
+    )))
+  )
+  res <- run_export_capturing_notification(odd_messages)
+  expect_type(res$ui, "character")
+  expect_match(res$ui, "proteome/summary_exports/empty", fixed = TRUE)
+  expect_match(res$ui, "proteome/summary_exports/two",   fixed = TRUE)
+})

@@ -67,9 +67,8 @@ test_that("min_samples_message message is ASCII only", {
 
 # A single-sample ome cannot run PCA. The on-screen panels grey out via
 # validate(need(is.null(pca_min_samples_msg()), ...)). The export bundle must
-# SKIP cleanly (like the CV tab's cv_export_available guard) rather than let the
-# inner reactives raise a shiny.silent.error inside ggsave()/write.csv(), which
-# tab_export.R would record as a misleading "Could not save: .../qc_PCA" failure.
+# SKIP cleanly (like the CV tab's cv_export_available guard) so returning early
+# keeps this item out of the export summary entirely.
 test_that("PCA export bundle skips single-sample omes without erroring or writing", {
   single <- make_gct_n_samples(1)
   shiny::testServer(

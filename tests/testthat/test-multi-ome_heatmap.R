@@ -564,3 +564,100 @@ test_that("myComplexHeatmap handles GENEMAX parameter", {
   # GENEMAX = 10 must cap the number of distinct genes shown
   expect_lte(length(unique(data_rows$geneSymbol)), 10)
 })
+
+# ---------------------------------------------------------------------------
+# multiome_heatmap export must skip cleanly, not crash, when no genes have
+# been typed into Multi-ome > Heatmap
+#
+# HM.out() throws via validate()'s "Input genes to see results" whenever
+# HM.params()$genes.char is empty. Nothing populates the genes text input
+# during a headless export (input$genes stays unset, exactly like this
+# testServer session, which never calls session$setInputs(genes = ...)), so
+# this failed on EVERY export -- single-ome or multi-ome -- with no visible
+# sign of failure beyond a bare error swallowed by tab_export.R's per-item
+# tryCatch. It should now skip cleanly (mirrors qc_corr_heatmap_export_function
+# for single-sample omes): no error, no file.
+# ---------------------------------------------------------------------------
+
+test_that("multiome_heatmap export skips cleanly (no error, no file) when no genes are set", {
+  gcts_and_params <- create_mock_gcts_and_params()
+
+  shiny::testServer(
+    multiomeHeatmapTabServer,
+    args = list(
+      GCTs_and_params = shiny::reactiveVal(gcts_and_params),
+      globals = shiny::reactiveValues(
+        colors = list(multi_ome = list(
+          group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("red", "blue"))
+        )),
+        default_ome = "proteome",
+        default_annotations = list(proteome = "group", phosphoproteome = "group")
+      )
+    ),
+    expr = {
+      exports <- session$getReturned()
+      tmp_dir <- tempfile("multiome_hm_export_")
+      dir.create(tmp_dir)
+      on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+      # input$genes was never set (no session$setInputs() call above) -- this
+      # is exactly the headless-export scenario that used to crash.
+      expect_no_error(exports$multi_ome$multiome_heatmap(tmp_dir))
+      expect_identical(list.files(tmp_dir), character(0))
+    }
+  )
+})
+
+# ---------------------------------------------------------------------------
+# The readiness check is now one reactive (hm_not_ready) that both the on-screen
+# heatmap and the export consume. This drives the REAL reactive through the real
+# module -- no stub reactives, no re-declared need() chain -- and pins the two
+# consumers together: HM.out()'s validate() must throw with exactly the message
+# hm_not_ready() returned. If anyone re-duplicates the chain with different
+# wording, this fails.
+#
+# Note: HM.params() belongs to the nested options module, so a parent testServer
+# cannot set its inputs. That is why this asserts the blocked state (the real
+# headless-export scenario) and the screen/export coupling, rather than trying
+# to drive a fully-configured heatmap from here.
+# ---------------------------------------------------------------------------
+
+test_that("hm_not_ready is the single source of truth for screen and export", {
+  shiny::testServer(
+    multiomeHeatmapTabServer,
+    args = list(
+      GCTs_and_params = shiny::reactiveVal(create_mock_gcts_and_params()),
+      globals = shiny::reactiveValues(
+        colors = list(multi_ome = list(
+          group = list(is_discrete = TRUE, vals = c("A", "B"), colors = c("red", "blue"))
+        )),
+        default_ome = "proteome",
+        default_annotations = list(proteome = "group", phosphoproteome = "group")
+      )
+    ),
+    expr = {
+      # No genes typed -- the headless-export state. The guard must block, and
+      # must do so with the REAL user-facing message, not the old "x" placeholder.
+      not_ready <- hm_not_ready()
+      expect_false(is.null(not_ready))
+      expect_identical(not_ready, "Input genes to see results")
+
+      # The on-screen heatmap must fail with that exact same message: one
+      # definition, two consumers.
+      screen_err <- tryCatch({ HM.out(); NA_character_ },
+                             error = function(e) conditionMessage(e))
+      expect_identical(screen_err, not_ready)
+
+      # ...and it must be a validation signal, not a crash.
+      screen_cls <- tryCatch({ HM.out(); NULL }, error = function(e) class(e))
+      expect_true("shiny.silent.error" %in% screen_cls)
+
+      # The export consumes the same reactive: no error, no file.
+      exports <- session$getReturned()
+      tmp_dir <- tempfile("hm_not_ready_"); dir.create(tmp_dir)
+      on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+      expect_no_error(exports$multi_ome$multiome_heatmap(tmp_dir))
+      expect_identical(list.files(tmp_dir), character(0))
+    }
+  )
+})

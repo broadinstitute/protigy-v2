@@ -177,7 +177,19 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
 
         success_exports <- c()
         error_exports <- c()
-        
+        skipped_exports <- c()
+        error_messages <- list()  # item path (ome/tab/name) -> failure/skip reason, for the summary notification
+
+        # conditionMessage() is only *conventionally* a length-1 string: a
+        # hand-rolled condition can carry character(0) or a 2-element vector,
+        # and `&&` in the notification builder below errors on either. Normalise
+        # once, here, so every value that reaches error_messages is a single
+        # non-NA string.
+        first_message <- function(cond) {
+          msg <- conditionMessage(cond)
+          if (length(msg) == 0L || is.na(msg[[1L]])) "" else as.character(msg[[1L]])
+        }
+
         # EXP-5: snapshot each selected tab's export object ONCE here, so the
         # progress pre-loop and the write loop below both read from the snapshot
         # instead of evaluating each `exports[[tab_name]]()` reactive twice.
@@ -234,25 +246,47 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
               
               # M11: capture success/failure from the tryCatch RESULT, not from a
               # dir.exists() probe. `exports_in_tab_path` is the tab folder created
-              # at :219 -- it always exists, so the old `!file.exists()` check could
-              # never detect a failed export. `expr` returns TRUE on success;
-              # `return.error = FALSE` is the sentinel a caught error returns.
-              export_ok <- my_shinyalert_tryCatch(
-                text.error = paste0("<b>Export Failed for ", p_name, ":</b>"),
-                append.error = TRUE,
-                show.error = FALSE,  # Don't show popup for individual export failures
-                return.error = FALSE,
-                expr = {
-                  # save the plot using the p() function
-                  p(exports_in_tab_path)
-                  TRUE
-                }
-              )
+              # above -- it always exists, so the old `!file.exists()` check could
+              # never detect a failed export.
+              # Use a plain tryCatch (not my_shinyalert_tryCatch) so we can keep the
+              # actual failure reason: my_shinyalert_tryCatch with show.error = FALSE
+              # discarded cond$message entirely, so a failed item only ever showed up
+              # in the server console (via its message()/cat() calls), never in the
+              # app -- the final notification below only had the item's path, with no
+              # way to tell the user *why* it failed.
+              # Three outcomes, not two:
+              #   ok      - the export function ran and wrote its file
+              #   skipped - it hit a req()/validate() gate, i.e. the user never
+              #             set this item up. Shiny signals that with a
+              #             shiny.silent.error, whose message is "" for req()
+              #             and the need() text for validate(need(x, "...")).
+              #   failed  - anything else, which is a real bug worth surfacing.
+              # The shiny.silent.error handler must come FIRST: tryCatch matches
+              # handlers against the condition's class vector in the order given,
+              # and shiny.silent.error also inherits from "error".
+              export_result <- tryCatch({
+                p(exports_in_tab_path)
+                list(status = "ok", message = "")
+              }, shiny.silent.error = function(cond) {
+                reason <- first_message(cond)
+                message("Export skipped for ", p_name,
+                        if (nzchar(reason)) paste0(": ", reason) else " (not ready)")
+                list(status = "skipped", message = reason)
+              }, error = function(cond) {
+                reason <- first_message(cond)
+                message("Export failed for ", p_name, ": ", reason)
+                list(status = "failed", message = reason)
+              })
 
-              if (isTRUE(export_ok)) {
-                success_exports <<- c(success_exports, file.path(ome, tab_name, p_name))
+              item_path <- file.path(ome, tab_name, p_name)
+              if (identical(export_result$status, "ok")) {
+                success_exports <<- c(success_exports, item_path)
+              } else if (identical(export_result$status, "skipped")) {
+                skipped_exports <<- c(skipped_exports, item_path)
+                error_messages[[item_path]] <<- export_result$message
               } else {
-                error_exports <<- c(error_exports, file.path(ome, tab_name, p_name))
+                error_exports <<- c(error_exports, item_path)
+                error_messages[[item_path]] <<- export_result$message
               }
               
             }
@@ -268,22 +302,63 @@ exportTabServer <- function(id = "exportTab", all_exports, GCTs_and_params, glob
         zip::zip(file, file.path(dir_name, list.files(exports_dir)), 
                  recurse = TRUE, root = zip_dir)
         
-        # Show notification for exports that succeeded and errored
-        if (length(error_exports) == 0) {
+        # Show notification for exports that succeeded and errored.
+        # When there ARE failures, lead with that fact (don't bury it under
+        # "successfully saved!") and use type = "warning" so it's visually
+        # distinct from a clean success -- previously both cases used the same
+        # blue "message" notification, so a partial failure looked identical
+        # to a full success unless the user scrolled through the item list.
+        has_failures <- length(error_exports) > 0
+        if (!has_failures && length(skipped_exports) == 0) {
           notification_ui <- HTML("<div>Analysis results successfully saved!</div>")
+          notification_type <- "message"
         } else {
+          item_list_html <- function(items, fallback) {
+            entries <- vapply(items, function(item) {
+              reason <- error_messages[[item]]
+              reason_html <- if (!is.null(reason) && length(reason) == 1L && nzchar(reason)) {
+                paste0(" &mdash; <em>", reason, "</em>")
+              } else if (nzchar(fallback)) {
+                paste0(" &mdash; <em>", fallback, "</em>")
+              } else {
+                ""
+              }
+              paste0("<li>", item, reason_html, "</li>")
+            }, character(1))
+            paste0("<ul>", paste(entries, collapse = ""), "</ul>")
+          }
+
+          header_html <- if (has_failures) {
+            paste0("<strong>", length(error_exports),
+                   " export item(s) could not be saved.</strong> ",
+                   length(success_exports), " item(s) were saved.<br><br>")
+          } else {
+            "<strong>Analysis results successfully saved.</strong><br><br>"
+          }
+
+          failed_html <- if (has_failures) {
+            paste0("<strong>Could not save:</strong>",
+                   item_list_html(error_exports, "no details available"))
+          } else {
+            ""
+          }
+
+          skipped_html <- if (length(skipped_exports) > 0) {
+            paste0("<strong>Skipped (nothing to export &mdash; these were never set up):</strong>",
+                   item_list_html(skipped_exports, ""))
+          } else {
+            ""
+          }
+
           notification_ui <- HTML(paste0(
             "<div style='text-align: left'>",
-            "Analysis results successfully saved!<br><br>",
-            "<strong>Could not save:</strong><br>",
-            "<ul><li>",
-            paste(error_exports, collapse = "</li><li>"),
-            "</li></ul></div>"
+            header_html, failed_html, skipped_html, "</div>"
           ))
+          notification_type <- if (has_failures) "warning" else "message"
         }
         showNotification(
           ui = notification_ui,
-          type = "message",
+          type = notification_type,
           duration = NULL,
           closeButton = TRUE
         )

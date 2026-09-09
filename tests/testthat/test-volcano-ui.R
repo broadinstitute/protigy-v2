@@ -1,7 +1,7 @@
 ################################################################################
-# Tests: volcano plot UI controls
+# Tests: volcano plot UI controls, and the volcano/labeled-feature exports
 #
-# Both tests use shiny::testServer() with injected mock data  -  no browser,
+# All tests use shiny::testServer() with injected mock data  -  no browser,
 # no real statistics run, fully deterministic.
 #
 # Test 1  -  sidebar controls
@@ -11,6 +11,16 @@
 # Test 2  -  POI list layout
 #   Triggers the feature search, then inspects output$poi_list_ui HTML to
 #   confirm the scroll container and Clear-all button are structured correctly.
+#
+# Tests 3-4  -  export regression tests (never-visited Volcano Plot tab)
+#   volcano_plot_export_function()/labeled_volcano_csv_export_function() used
+#   to depend on input$volcano_contrasts (via current_contrast_key()), which is
+#   only bound once a user has actually opened this ome's Volcano Plot tab
+#   (Shiny suspends rendering for hidden tabs by default). A user who ran the
+#   stats test and exported immediately -- without ever visiting that tab --
+#   hit an empty shiny.silent.error and got a 0-page PDF with no visible sign
+#   of failure. These tests deliberately never call session$setInputs() for
+#   volcano_contrasts/volcano_groups, reproducing exactly that scenario.
 ################################################################################
 
 library(testthat)
@@ -18,6 +28,28 @@ library(testthat)
 # ---------------------------------------------------------------------------
 # Helpers shared by both tests
 # ---------------------------------------------------------------------------
+
+# Count the pages a PDF declares. The broken export produced a structurally
+# valid but EMPTY pdf (header, catalog, /Count 0) that still passed a
+# size > 0 check, so page count is the assertion that actually distinguishes
+# a working export from the bug this file exists to guard.
+#
+# The file has embedded NULs and non-UTF8 bytes, so rawToChar() on the whole
+# thing errors -- and even a 2000-byte window after the "/Type /Pages" hit can
+# reach into a compressed (FlateDecode) binary stream, e.g. an embedded ICC
+# color profile, which is arbitrary bytes and very likely to contain a NUL.
+# So: search for "/Count NNN" directly in the raw window with grepRaw(), and
+# rawToChar() only the short matched token itself (never the whole window) --
+# that token is always plain ASCII PDF syntax, so it can never contain a NUL.
+pdf_page_count <- function(path) {
+  rb <- readBin(path, "raw", file.info(path)$size)
+  hits <- grepRaw("/Type /Pages", rb, all = TRUE, fixed = TRUE)
+  if (length(hits) == 0L) return(NA_integer_)
+  window <- rb[hits[1]:min(hits[1] + 2000L, length(rb))]
+  m <- grepRaw("/Count[[:space:]]+[0-9]+", window, value = TRUE)
+  if (length(m) == 0L) return(NA_integer_)
+  as.integer(sub("/Count[[:space:]]+", "", rawToChar(m)))
+}
 
 make_mock_stat_params <- function() {
   list(
@@ -100,6 +132,22 @@ test_that("volcano sidebar HTML contains new controls (testServer)", {
 })
 
 # ---------------------------------------------------------------------------
+# Volcano panel height
+# ---------------------------------------------------------------------------
+
+test_that("the volcano plot panel is taller than plotlyOutput's default", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    session$setInputs(volcano_contrasts = "A / B")
+    html <- paste(as.character(suppressWarnings(output$ome_plot_contents)),
+                  collapse = " ")
+    # plotlyOutput() defaults to 400px, which crowds a dense scatter and leaves
+    # the repelled labels no vertical room. An explicit height must be emitted.
+    expect_match(html, "height:\\s*650px")
+    expect_no_match(html, "height:\\s*400px")
+  })
+})
+
+# ---------------------------------------------------------------------------
 # Test 2: POI list layout  -  scroll container + Clear-all placement
 # ---------------------------------------------------------------------------
 
@@ -147,5 +195,144 @@ test_that("volcano POI list has scrollable container with Clear all outside it (
       n_close >= n_open,
       info = "clear_all_poi must appear outside (not nested inside) the scroll div"
     )
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Test 3: volcano_plot export must not crash when the Volcano Plot tab was
+# never visited (input$volcano_contrasts never bound)
+# ---------------------------------------------------------------------------
+
+test_that("volcano_plot export does not crash when the Volcano Plot tab was never visited", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_export_")
+    dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # input$volcano_contrasts is deliberately left unset here -- that is
+    # exactly the scenario that used to throw an empty shiny.silent.error and
+    # leave a 0-page PDF (see current_contrast_key() in tab_stat_plot.R).
+    expect_no_error(suppressWarnings(exports$volcano_plot(tmp_dir)))
+
+    pdf_file <- file.path(tmp_dir, "volcano_plots_Proteome.pdf")
+    expect_true(file.exists(pdf_file))
+    # NOT expect_gt(size, 0): the BROKEN export produced a valid 3,611-byte PDF
+    # with zero pages, so a size check passes either way. One page per contrast
+    # is the assertion that fails when the export aborts.
+    n_contrasts <- length(make_mock_stat_params()$Proteome$contrasts)
+    expect_identical(pdf_page_count(pdf_file), n_contrasts)
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Test 4: labeled-feature CSV export must skip cleanly (not crash) in the
+# same never-visited-tab scenario
+# ---------------------------------------------------------------------------
+
+test_that("labeled-feature CSV export skips cleanly (not a crash) when the Volcano Plot tab was never visited", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_csv_export_")
+    dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # This function already wrapped its body in its own tryCatch, so a crash
+    # here never propagated to the caller -- it just logged "...failed for
+    # ome..." to the console while silently producing no CSV. Since no label
+    # criteria were ever configured (registries are empty, exactly as they'd
+    # be for a session where that tab was never opened), the function should
+    # now hit its existing, unrelated "skipped...enable at least one label
+    # option" early-return -- never the "failed" message.
+    msgs <- testthat::capture_messages(
+      suppressWarnings(exports$proteins_of_interest(tmp_dir))
+    )
+    expect_false(
+      any(grepl("^Volcano labeled export failed", msgs)),
+      info = paste(msgs, collapse = "\n")
+    )
+  })
+})
+
+# ---------------------------------------------------------------------------
+# Multi-contrast export: one page per contrast, all of them.
+#
+# The single-contrast fixture above distinguishes 1 page from 0. This one also
+# catches a PARTIAL export -- an abort part-way through the contrast loop, which
+# would still yield a non-empty PDF and a passing 1-page assertion.
+# ---------------------------------------------------------------------------
+
+VOLCANO_TEST_CONTRASTS <- c("A / B", "A / C", "B / C")
+VOLCANO_TEST_SUFFIXES  <- c("A_over_B", "A_over_C", "B_over_C")
+
+make_mock_stat_params_multi <- function() {
+  list(Proteome = list(
+    test      = "Two-sample Moderated T-test",
+    groups    = c("A", "B", "C"),
+    contrasts = VOLCANO_TEST_CONTRASTS,
+    stat      = "adj.p.val",
+    cutoff    = 0.05
+  ))
+}
+
+make_mock_stat_results_multi <- function() {
+  df <- data.frame(id = c("p1", "p2"), geneSymbol = c("G1", "G2"),
+                   stringsAsFactors = FALSE)
+  for (s in VOLCANO_TEST_SUFFIXES) {
+    df[[paste0("logFC.", s)]]       <- c(1.0, -0.5)
+    df[[paste0("P.Value.", s)]]     <- c(0.001, 0.6)
+    df[[paste0("adj.P.Val.", s)]]   <- c(0.01, 0.9)
+    df[[paste0("Log.P.Value.", s)]] <- c(3.0, 0.22)
+    df[[paste0("significant.", s)]] <- c(TRUE, FALSE)
+  }
+  list(Proteome = df)
+}
+
+test_that("volcano_plot export writes one page per contrast, not a partial PDF", {
+  args_multi <- modifyList(make_server_args(), list(
+    stat_params  = shiny::reactive(make_mock_stat_params_multi()),
+    stat_results = shiny::reactive(make_mock_stat_results_multi())
+  ))
+
+  shiny::testServer(statPlot_Ome_Server, args = args_multi, {
+    exports <- session$getReturned()
+    tmp_dir <- tempfile("volcano_multi_"); dir.create(tmp_dir)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # Volcano Plot tab still never visited: input$volcano_contrasts unset.
+    expect_no_error(suppressWarnings(exports$volcano_plot(tmp_dir)))
+
+    pdf_file <- file.path(tmp_dir, "volcano_plots_Proteome.pdf")
+    expect_true(file.exists(pdf_file))
+    expect_identical(pdf_page_count(pdf_file), length(VOLCANO_TEST_CONTRASTS))
+  })
+})
+
+# ---------------------------------------------------------------------------
+# safe_export_isolate must fall back only for "not ready" signals.
+#
+# A genuine error inside a settings reactive is a bug, and swallowing it means
+# the export quietly uses default labelling with nothing to show for it -- the
+# same silent failure this PR exists to remove, one layer down.
+# ---------------------------------------------------------------------------
+
+test_that("safe_export_isolate falls back on req() but lets real errors through", {
+  shiny::testServer(statPlot_Ome_Server, args = make_server_args(), {
+    # "not ready" -> fall back to the default, quietly
+    expect_identical(
+      safe_export_isolate(shiny::req(FALSE), "fallback"),
+      "fallback"
+    )
+    # validate(need()) is the same condition class, so it also falls back --
+    # but its message must be logged rather than discarded
+    expect_message(
+      expect_identical(
+        safe_export_isolate(shiny::validate(shiny::need(FALSE, "pick a contrast")), "fallback"),
+        "fallback"
+      ),
+      "pick a contrast"
+    )
+    # a genuine error must NOT be swallowed
+    expect_error(safe_export_isolate(stop("boom"), "fallback"), "boom")
   })
 })

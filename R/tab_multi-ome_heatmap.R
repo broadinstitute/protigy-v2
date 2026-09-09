@@ -244,15 +244,22 @@ multiomeHeatmapTabServer <- function(
       }
     }, ignoreInit = TRUE)
     
+    # Single source of truth for "can a heatmap be drawn right now?".
+    # Returns NULL when everything needed is present, otherwise the first
+    # failing need()'s message. HM.out() validate()s it, so the on-screen
+    # messages are unchanged; the export branches on it, so a headless export
+    # (where no gene list is ever typed) skips cleanly instead of throwing.
+    hm_not_ready <- reactive({
+      need(merged_rdesc(), "Complete setup to see heatmap") %then%
+      need(merged_mat(), "Complete setup to see heatmap") %then%
+      need(sample_anno(), "Complete setup to see heatmap") %then%
+      need(HM.params()$genes.char, "Input genes to see results") %then%
+      need(HM.params()$min.val < HM.params()$max.val, "Input valid min and max")
+    })
+
     ## Generate Heatmap
     HM.out <- reactive({
-      validate(
-        need(merged_rdesc(), "Complete setup to see heatmap") %then%
-        need(merged_mat(), "Complete setup to see heatmap") %then%
-        need(sample_anno(), "Complete setup to see heatmap") %then%
-        need(HM.params()$genes.char, "Input genes to see results") %then%
-        need(HM.params()$min.val < HM.params()$max.val, "Input valid min and max")
-      )
+      validate(hm_not_ready())
       myComplexHeatmap(params = HM.params(),
                        merged_rdesc = merged_rdesc(),
                        merged_mat = merged_mat(),
@@ -331,15 +338,28 @@ multiomeHeatmapTabServer <- function(
     
     ## function for exporting
     multiome_heatmap_export_function <- function(dir_path) {
+      # HM.out() throws via validate() when no genes have been typed into
+      # Multi-ome > Heatmap (or merged_rdesc()/merged_mat()/sample_anno()
+      # aren't ready, or min/max are invalid). Nothing populates a gene list
+      # during a headless export, so calling HM.out() directly used to abort
+      # this export item on EVERY export with a bare "Input genes to see
+      # results" and no visible sign anywhere in the app that it had failed.
+      # Skip cleanly instead (mirrors qc_corr_heatmap_export_function's
+      # pattern for single-sample omes), reusing the same need() checks
+      # HM.out() uses but without validate()'s throw.
+      if (!is.null(hm_not_ready())) {
+        return(invisible(NULL))
+      }
+
       req(HM.out()$HM)
-      
+
       # Use special dimensions for multi-ome heatmap
       pdf_params <- get_pdf_params("multiome_heatmap")
       pdf(file = file.path(dir_path, "multiome-heatmap.pdf"),
           width = pdf_params$width,
           height = pdf_params$height)
+      on.exit(dev.off(), add = TRUE)
       draw_multiome_HM(HM.out()$HM)
-      dev.off()
     }
 
     return(list(multi_ome = list(
