@@ -61,12 +61,11 @@ make_style_fixture <- function(stat = "adj.p.val", cutoff = 0.05) {
   list(df = df, statp = function() sp, statr = function() list(myome = df))
 }
 
-# plotVolcano() maps plotly's `text` aesthetic, which ggplot2 does not know.
-# That warning is expected and unrelated to anything asserted here.
+# NOT wrapped in suppressWarnings(): the export path is supposed to be silent,
+# and suppressing here would hide a reintroduced warning from every test in the
+# file. See "the export path builds without warnings" below.
 build_style_plot <- function(fx, ...) {
-  suppressWarnings(
-    plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr, ...)
-  )
+  plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr, ...)
 }
 
 resolved <- function(gg, element) {
@@ -100,6 +99,46 @@ poi_layer <- function(gg) {
   )
   if (length(hits) == 0L) NULL else hits[[1]]
 }
+
+## Warnings ####################################################################
+
+test_that("the export path builds without warnings", {
+  # `text` is a plotly convention (ggplotly(tooltip = "text")), not a ggplot2
+  # aesthetic, so mapping it makes layer() warn once PER LAYER. The export never
+  # reads it and builds one plot per contrast, so mapping it there produced a
+  # wall of "Ignoring unknown aesthetics: text" for no benefit.
+  fx <- make_style_fixture()
+  gg <- expect_no_warning(
+    plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
+                label_proteins = "A", label_mode = c("significant", "poi"))
+  )
+  # ... and the hover strings behind that aesthetic are not built either. The
+  # export loops every contrast over the whole ome, so this is real work
+  # (~10k pasted strings per contrast) with no reader.
+  expect_null(gg$data$.hover_text)
+})
+
+test_that("the interactive path still carries the plotly hover aesthetic", {
+  # The export must be silent, but not by breaking the tooltip: interactive =
+  # TRUE has to keep mapping `text`, warning and all.
+  fx <- make_style_fixture()
+  gg <- suppressWarnings(
+    plotVolcano("myome", NULL, "X / Y", fx$df, fx$statp, fx$statr,
+                interactive = TRUE)
+  )
+  mapped <- unique(unlist(lapply(gg$layers, function(ly) names(ly$mapping))))
+  expect_true("text" %in% c(names(gg$mapping), mapped))
+  expect_true(all(nzchar(gg$data$.hover_text)))
+})
+
+test_that("volcano_muffle_unknown_aes drops only the aesthetics warning", {
+  # A blanket suppressWarnings() at the interactive call site would also swallow
+  # real problems, so the muffler matches on the message. This is the assertion
+  # that stops it being widened later.
+  expect_no_warning(volcano_muffle_unknown_aes(warning("Ignoring unknown aesthetics: text")))
+  expect_warning(volcano_muffle_unknown_aes(warning("a genuine problem")),
+                 "a genuine problem")
+})
 
 ## Page size ###################################################################
 

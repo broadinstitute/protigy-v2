@@ -749,7 +749,10 @@ statPlot_Ome_Server <- function(id,
 
       # Build base ggplot (no labels)  -  wrapped in tryCatch to show friendly error
       gg <- tryCatch(
-        plotVolcano(
+        # interactive = TRUE attaches the plotly hover aesthetic; the muffler
+        # drops only the "unknown aesthetics: text" warning that mapping
+        # necessarily produces (see volcano_muffle_unknown_aes()).
+        volcano_muffle_unknown_aes(plotVolcano(
           ome               = ome,
           volcano_groups    = input$volcano_groups,
           volcano_contrasts = as.character(input$volcano_contrasts),
@@ -759,8 +762,9 @@ statPlot_Ome_Server <- function(id,
           label_column                = input$label_column        %||% "id",
           label_split_enabled         = isTRUE(input$label_split_enabled),
           label_split_sep             = input$label_split_sep     %||% ";",
-          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled)
-        ),
+          label_display_trim_enabled  = isTRUE(input$label_display_trim_enabled),
+          interactive                 = TRUE
+        )),
         error = function(e) {
           showNotification(
             paste0("Could not render volcano plot: ", conditionMessage(e)),

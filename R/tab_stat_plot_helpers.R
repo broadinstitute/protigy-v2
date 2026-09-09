@@ -83,6 +83,32 @@ volcano_build_hover_text <- function(ids,
   ht
 }
 
+# Muffle ONLY ggplot2's "Ignoring unknown aesthetics" warning, letting every
+# other warning through untouched.
+#
+# The interactive volcano passes its hover string as aes(text = ), which is how
+# ggplotly(tooltip = "text") is documented to receive custom hover text -- but
+# `text` is not a ggplot2 aesthetic, so ggplot2's layer() warns about it by
+# design. There is no supported way to register it: a Geom subclass with
+# optional_aes = "text" does silence the warning, but plotly's geom2trace
+# dispatches on the exact geom class name, so the subclass falls through to
+# geom2trace.default and renders an EMPTY trace.
+#
+# Matching on the message keeps this narrow -- a blanket suppressWarnings()
+# around plot construction would also swallow real problems (missing values
+# dropped, scale overrides, and so on).
+# @noRd
+volcano_muffle_unknown_aes <- function(expr) {
+  withCallingHandlers(
+    expr,
+    warning = function(w) {
+      if (grepl("unknown aesthetics", conditionMessage(w), fixed = TRUE)) {
+        invokeRestart("muffleWarning")
+      }
+    }
+  )
+}
+
 # Default number of top-significant features labelled on a volcano plot.
 # Single source for the fallback used across tab_stat_plot.R's per-contrast
 # registry reads and this file's helper defaults.
@@ -101,7 +127,8 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
                         label_proteins = character(0), label_mode = character(0),
                         label_column = "id", label_split_enabled = FALSE,
                         label_split_sep = ";", label_display_trim_enabled = FALSE,
-                        n_top = volcano_default_top_n()) {
+                        n_top = volcano_default_top_n(),
+                        interactive = FALSE) {
   
   cat('\n-- plotVolcano --\n')
 
@@ -254,13 +281,31 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
   extra_lbl_vals <- if (!is_id_col && !is_gs_col) df$geneSymbol else NULL
   extra_lbl_name <- if (!is_id_col && !is_gs_col) lbl_col       else NULL
 
-  df$.hover_text <- volcano_build_hover_text(
-    df$id,
-    gs_vals      = gs_for_hover,
-    gs_col_name  = geneSymbol_col,
-    lbl_vals     = extra_lbl_vals,
-    lbl_col_name = extra_lbl_name
-  )
+  # `text` is a plotly convention consumed by ggplotly(tooltip = "text"), NOT a
+  # ggplot2 aesthetic -- mapping it makes ggplot2's layer() emit "Ignoring
+  # unknown aesthetics: text", once per layer. The PDF export never reads it, so
+  # it is only attached for the interactive plot; that alone removes the warning
+  # from the export path, which builds one plot per contrast.
+  #
+  # Do NOT "fix" the remaining interactive warning with a Geom subclass carrying
+  # optional_aes = "text": it silences the warning, but plotly's geom2trace
+  # dispatches on the exact geom class name, so the subclass falls through to
+  # geom2trace.default and the trace renders EMPTY. Verified. The interactive
+  # call site muffles that one warning by message instead.
+  df$.hover_text <- if (interactive) {
+    volcano_build_hover_text(
+      df$id,
+      gs_vals      = gs_for_hover,
+      gs_col_name  = geneSymbol_col,
+      lbl_vals     = extra_lbl_vals,
+      lbl_col_name = extra_lbl_name
+    )
+  } else {
+    NULL
+  }
+
+  # Attach the plotly-only aesthetic only when it will actually be read.
+  hover_aes <- if (interactive) aes(text = .data$.hover_text) else NULL
   # Title reads "<group1> vs <group2>" for two-sample contrasts (stored as
   # "<group1> / <group2>"); a one-sample group name is used as-is.
   contrast_title <- if (stat_params()[[ome]]$test == "Two-sample Moderated T-test") {
@@ -280,14 +325,16 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
     if (nrow(d) == 0L) return(NULL)
     geom_point(
       data = d,
-      aes(x = .data$logFC, y = .data$logP, color = .data$point_color,
-          text = .data$.hover_text),
+      mapping = modifyList(
+        aes(x = .data$logFC, y = .data$logP, color = .data$point_color),
+        hover_aes %||% list()
+      ),
       inherit.aes = FALSE, size = 1, na.rm = TRUE
     )
   }
 
-  volcano <- ggplot(df, aes(x = .data$logFC, y = .data$logP,
-                       text = .data$.hover_text)) +
+  volcano <- ggplot(df, modifyList(aes(x = .data$logFC, y = .data$logP),
+                                   hover_aes %||% list())) +
     cat_layer("Insignificant") +
     cat_layer("Down-regulated") +
     cat_layer("Up-regulated") +
@@ -353,10 +400,9 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       volcano <- volcano +
         geom_point(
           data        = poi_hl,
-          aes(
-            x     = .data$logFC,
-            y     = .data$logP,
-            text  = .data$.hover_text
+          mapping = modifyList(
+            aes(x = .data$logFC, y = .data$logP),
+            hover_aes %||% list()
           ),
           inherit.aes = FALSE,
           shape       = 21,
@@ -412,7 +458,10 @@ plotVolcano <- function(ome, volcano_groups, volcano_contrasts, df, stat_params,
       label_df_gg$label_txt <- volcano_maybe_display_trim(
         label_df_gg$label_txt, label_display_trim_enabled
       )
-      label_df_gg$.hover_text <- df$.hover_text[match(as.character(label_df_gg$id), as.character(df$id))]
+      if (interactive) {
+        label_df_gg$.hover_text <-
+          df$.hover_text[match(as.character(label_df_gg$id), as.character(df$id))]
+      }
       # geom_label_repel, not geom_text_repel: the white label box is what keeps
       # a red/blue label readable over the point cloud it sits in (bg.color/bg.r
       # were the text_repel equivalent and have no meaning here -- fill,
